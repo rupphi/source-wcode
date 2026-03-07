@@ -21,9 +21,7 @@ import javafx.scene.effect.InnerShadow;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.MouseEvent;
-import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.VBox;
+import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.stage.FileChooser;
 
@@ -243,9 +241,13 @@ public class HomeController implements Initializable {
                     @Override
                     protected List<Order> call() throws Exception {
                         List<Order> newOrderList = OrderService.getOrdersToExcel(file);
+                        Comparator<String> stringComparator =
+                                Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER);
                         newOrderList.sort(
-                          Comparator.comparing(Order::getArticle, Comparator.nullsLast(String::compareTo))
-                                  .thenComparing(Order::getSize, Comparator.nullsLast(String::compareTo))
+                                Comparator.comparing(Order::getName, stringComparator)
+                                        .thenComparing(Order::getArticle, stringComparator)
+                                        .thenComparing(Order::getColor, stringComparator)
+                                        .thenComparing(Order::getSize, stringComparator)
                         );
                         return newOrderList;
                     }
@@ -419,13 +421,17 @@ public class HomeController implements Initializable {
                     // 3. Post Kiz lên WB
                     if (!usedKizList.isEmpty()) {
                         for (Order order : orders) {
+                            if (order.getKiz() == null || order.getKiz().isBlank()) {
+                                continue; // order không cần KIZ thì bỏ qua
+                            }
+
                             KizService.addDataMatrixCodeToOrder(
                                     selectedShop.getApiKey(),
                                     order.getId(),
                                     order.getKiz()
                             );
 
-                            Thread.sleep(70); // tránh rate limit
+                            Thread.sleep(70);
                         }
                     }
 
@@ -530,11 +536,16 @@ public class HomeController implements Initializable {
         HBox hBox = new HBox();
         hBox.setPadding(new Insets(2));
         hBox.setSpacing(4);
-        HBox.setMargin(hBox, new Insets(0, 1, 1, 0));
         hBox.setAlignment(Pos.CENTER_LEFT);
         hBox.setMinHeight(40);
         hBox.setPrefWidth(182);
         hBox.getStyleClass().add("bg-warning");
+        hBox.setBorder(new Border(new BorderStroke(
+                Color.LIGHTGRAY,
+                BorderStrokeStyle.SOLID,
+                CornerRadii.EMPTY,
+                new BorderWidths(0, 0, 1, 0)
+        )));
 
         Label idLabel = new Label("ID: " + category.getId());
         idLabel.setPrefWidth(43);

@@ -18,7 +18,7 @@
 <?import javafx.scene.layout.VBox?>
 <?import javafx.scene.text.Font?>
 
-<BorderPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="600.0" prefWidth="1000.0" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.HomeController">
+<BorderPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="665.0" prefWidth="1194.0" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.HomeController">
    <left>
       <VBox fx:id="leftPane" prefHeight="600.0" prefWidth="162.0" spacing="8.0" style="-fx-border-width: 0 1 0 0; -fx-border-color: #ffffff;" styleClass="bg-info" BorderPane.alignment="CENTER">
          <children>
@@ -35,10 +35,10 @@
                   <String fx:value="btn-sm" />
                </styleClass>
             </Button>
-            <HBox alignment="CENTER" prefHeight="23.0" prefWidth="146.0" />
-            <ScrollPane hbarPolicy="NEVER" prefHeight="534.0" prefWidth="146.0">
+            <HBox alignment="CENTER" prefHeight="18.0" prefWidth="145.0" />
+            <ScrollPane hbarPolicy="NEVER" prefHeight="550.0" prefWidth="145.0">
                <content>
-                  <VBox fx:id="shopPane" prefHeight="498.0" prefWidth="144.0" spacing="1.0" styleClass="bg-info" />
+                  <VBox fx:id="shopPane" prefHeight="545.0" prefWidth="144.0" spacing="1.0" styleClass="bg-info" />
                </content>
             </ScrollPane>
          </children>
@@ -66,7 +66,7 @@
                         <String fx:value="btn-warning" />
                      </styleClass>
                   </ImageView>
-                  <HBox alignment="CENTER" prefHeight="41.0" prefWidth="154.0">
+                  <HBox alignment="CENTER" prefHeight="41.0" prefWidth="360.0">
                      <children>
                         <ProgressBar fx:id="loading" prefHeight="20.0" prefWidth="116.0" visible="false" />
                      </children></HBox>
@@ -94,14 +94,14 @@
             <TableView fx:id="orderTable" prefHeight="200.0" prefWidth="200.0" BorderPane.alignment="CENTER">
               <columns>
                 <TableColumn fx:id="noTC" prefWidth="39.0" text="No" />
-                <TableColumn fx:id="idTC" prefWidth="58.0" text="№ задания" />
-                  <TableColumn fx:id="nameTC" prefWidth="103.0" text="Наименование" />
-                  <TableColumn fx:id="articleTC" prefWidth="58.0" text="Артикул продавца" />
-                  <TableColumn fx:id="colorTC" prefWidth="58.0" text="Цвет" />
-                  <TableColumn fx:id="sizeTC" prefWidth="57.0" text="Размер" />
-                  <TableColumn fx:id="stickerTC" prefWidth="64.0" text="Стикер" />
-                  <TableColumn fx:id="barcodeTC" prefWidth="73.0" text="Баркод" />
-                  <TableColumn fx:id="stickerCodeTC" prefWidth="76.0" text="Стикер Code" />
+                  <TableColumn fx:id="nameTC" prefWidth="179.0" text="Наименование" />
+                  <TableColumn fx:id="articleTC" prefWidth="128.0" text="Артикул продавца" />
+                  <TableColumn fx:id="colorTC" prefWidth="62.0" text="Цвет" />
+                  <TableColumn fx:id="sizeTC" prefWidth="73.0" text="Размер" />
+                  <TableColumn fx:id="stickerTC" prefWidth="79.0" text="Стикер" />
+                  <TableColumn fx:id="barcodeTC" prefWidth="74.0" text="Баркод" />
+                <TableColumn fx:id="idTC" prefWidth="68.0" text="№ задания" />
+                  <TableColumn fx:id="stickerCodeTC" prefWidth="78.0" text="Стикер Code" />
               </columns>
             </TableView>
          </center>
@@ -138,9 +138,9 @@
                   <Insets />
                </VBox.margin>
             </HBox>
-            <ScrollPane hbarPolicy="NEVER" prefHeight="323.0" prefWidth="184.0">
+            <ScrollPane hbarPolicy="NEVER" prefHeight="376.0" prefWidth="234.0">
                <content>
-                  <VBox fx:id="categoryVBox" prefHeight="318.0" prefWidth="232.0">
+                  <VBox fx:id="categoryVBox" prefHeight="368.0" prefWidth="232.0">
                      <children>
                         <HBox alignment="CENTER_LEFT" minHeight="40.0" prefHeight="40.0" prefWidth="182.0" spacing="4.0" styleClass="bg-warning">
                            <children>
