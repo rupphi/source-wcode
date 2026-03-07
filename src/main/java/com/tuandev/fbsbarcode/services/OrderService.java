@@ -27,10 +27,7 @@ import org.apache.poi.xssf.usermodel.*;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class OrderService {
     private static final OkHttpClient client = new OkHttpClient();
@@ -86,7 +83,25 @@ public class OrderService {
     }
 
     public static List<Sticker> getStickers(String apiKey, List<Long> orders) throws IOException {
-        List<Sticker> stickers = new ArrayList<>();
+
+        List<Sticker> allStickers = new ArrayList<>();
+
+        int batchSize = 100;
+
+        for (int i = 0; i < orders.size(); i += batchSize) {
+
+            List<Long> batch = orders.subList(i, Math.min(i + batchSize, orders.size()));
+
+            List<Sticker> batchStickers = requestStickerBatch(apiKey, batch);
+
+            allStickers.addAll(batchStickers);
+        }
+
+        return allStickers;
+    }
+
+    private static List<Sticker> requestStickerBatch(String apiKey, List<Long> orders) throws IOException {
+
         String url = "https://marketplace-api.wildberries.ru/api/v3/orders/stickers?type=png&width=58&height=40";
 
         Map<String, Object> bodyMap = new HashMap<>();
@@ -94,7 +109,10 @@ public class OrderService {
 
         String orderIdsJson = gson.toJson(bodyMap);
 
-        RequestBody body = RequestBody.create(MediaType.parse("application/json"), orderIdsJson);
+        RequestBody body = RequestBody.create(
+                MediaType.parse("application/json"),
+                orderIdsJson
+        );
 
         Request request = new Request.Builder()
                 .url(url)
@@ -105,13 +123,18 @@ public class OrderService {
         try (Response response = client.newCall(request).execute()) {
 
             if (response.isSuccessful()) {
-                assert response.body() != null;
-                StickerResponse stickerResponse =  gson.fromJson(response.body().string(), StickerResponse.class);
-                stickers = stickerResponse.getStickers();
+
+                StickerResponse stickerResponse =
+                        gson.fromJson(response.body().string(), StickerResponse.class);
+
+                return stickerResponse.getStickers();
+
+            } else {
+
+                System.out.println(response.body().string());
+                return Collections.emptyList();
             }
         }
-
-        return stickers;
     }
 
     public static void exportOrdersToPdf(File file, List<Order> orders) throws IOException {

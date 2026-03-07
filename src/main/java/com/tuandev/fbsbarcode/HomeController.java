@@ -57,6 +57,7 @@ public class HomeController implements Initializable {
     private List<Shop> shops = new ArrayList<>();
     private List<Order> orders = new ArrayList<>();
     private List<Category> categories = new ArrayList<>();
+    private Set<String> categoriesWB = new HashSet<>();
     private Shop selectedShop;
     private HBox selectedBox;
     private FileChooser fileChooser;
@@ -64,6 +65,21 @@ public class HomeController implements Initializable {
     @Override
     public void initialize(URL url, ResourceBundle resourceBundle) {
         Database.initDatabase();
+
+        Task<List<CategoryWB>> loadCategoryWbTask = new Task<>() {
+            @Override
+            protected List<CategoryWB> call() throws Exception {
+                return CategoryService.loadCategories();
+            }
+        };
+        loadCategoryWbTask.setOnSucceeded(event -> {
+            categoriesWB = loadCategoryWbTask.getValue()
+                    .stream().map(CategoryWB::getSubjectName)
+                    .filter(Objects::nonNull)
+                    .map(String::toLowerCase)
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
+        });
+        new Thread(loadCategoryWbTask).start();
 
         fileChooser = new FileChooser();
         fileChooser.setInitialDirectory(new File(System.getProperty("user.home"), "Downloads"));
@@ -230,6 +246,55 @@ public class HomeController implements Initializable {
         }
     }
 
+    private String extractProductType(String name) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+
+        String lower = name.toLowerCase();
+
+        List<String> productTypes = List.of(
+                "куртка", "ветровка", "бомбер", "пальто", "жилет",
+                "джинсы", "брюки", "толстовка", "худи", "свитшот"
+        );
+
+        for (String type : productTypes) {
+            if (lower.contains(type)) {
+                return type;
+            }
+        }
+
+        return lower;
+    }
+
+    private String extractCategoryFromName(String productName, Set<String> categoriesWB) {
+        if (productName == null || productName.isBlank()) {
+            return null;
+        }
+
+        String normalizedName = normalizeText(productName);
+
+        for (String category : categoriesWB) {
+            if (normalizedName.contains(category)) {
+                return category;
+            }
+        }
+
+        return null;
+    }
+
+    private String normalizeText(String text) {
+        if (text == null) {
+            return null;
+        }
+
+        return text.toLowerCase()
+                .replace('ё', 'е')
+                .replaceAll("[^\\p{L}\\p{N}\\s-]", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
     public void onUploadExcel(ActionEvent actionEvent) {
         fileChooser.setTitle("Open Excel File");
         fileChooser.getExtensionFilters().setAll(new FileChooser.ExtensionFilter("Excel Files", "*.xlsx"));
@@ -244,7 +309,8 @@ public class HomeController implements Initializable {
                         Comparator<String> stringComparator =
                                 Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER);
                         newOrderList.sort(
-                                Comparator.comparing(Order::getName, stringComparator)
+                                Comparator.comparing((Order o) -> extractCategoryFromName(o.getName(), categoriesWB),
+                                                stringComparator)
                                         .thenComparing(Order::getArticle, stringComparator)
                                         .thenComparing(Order::getColor, stringComparator)
                                         .thenComparing(Order::getSize, stringComparator)
@@ -296,7 +362,7 @@ public class HomeController implements Initializable {
                         });
                         loadStickersTask.setOnFailed(e2 -> {
                             loading.setVisible(false);
-                            showError("Không lấy được mã vận đơn! Vui lòng kiểm tra lại API KEY");
+                            showError("Không lấy được mã vận đơn! Vui lòng kiểm tra lại API KEY\ncửa hàng hoặc API KEY");
                             e2.getSource().getException().printStackTrace();
                         });
                         new Thread(loadStickersTask).start();
@@ -318,6 +384,9 @@ public class HomeController implements Initializable {
             return;
         }
         // Get Kizs
+        for (Order order : orders) {
+            order.setKiz(null);
+        }
         String command = kizCommand.getText();
         List<Kiz> usedKizList = new ArrayList<>();
         if (!command.isBlank()) {

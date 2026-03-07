@@ -1,11 +1,22 @@
 package com.tuandev.fbsbarcode.services;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.tuandev.fbsbarcode.config.Database;
+import com.tuandev.fbsbarcode.dto.CategoryResponse;
 import com.tuandev.fbsbarcode.models.Category;
+import com.tuandev.fbsbarcode.models.CategoryWB;
 
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.*;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+
 
 public class CategoryService {
     public static int createCategory(Category category) throws SQLException {
@@ -32,5 +43,22 @@ public class CategoryService {
             throw new RuntimeException(e);
         }
         return categories;
+    }
+
+    private static final Gson GSON = new GsonBuilder().create();
+
+    public static List<CategoryWB> loadCategories() {
+        try (Reader reader = new InputStreamReader(CategoryService.class.getResourceAsStream("categories.json"), StandardCharsets.UTF_8)) {
+            CategoryResponse response = GSON.fromJson(reader, CategoryResponse.class);
+
+            if (response == null || response.getCategories() == null) {
+                return Collections.emptyList();
+            }
+
+            return response.getCategories();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Collections.emptyList();
+        }
     }
 }

@@ -1,0 +1,400 @@
+{
+  "categories": [
+    {
+      "subjectID": 1791,
+      "parentID": 1,
+      "subjectName": "Анорака",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 216,
+      "parentID": 1,
+      "subjectName": "Бермуд",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 41,
+      "parentID": 1,
+      "subjectName": "Блузка",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 1429,
+      "parentID": 1,
+      "subjectName": "Блузка-боди",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 225,
+      "parentID": 1,
+      "subjectName": "Болеро",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 1635,
+      "parentID": 1,
+      "subjectName": "Бомбер",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 147,
+      "parentID": 1,
+      "subjectName": "Бриджи",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 11,
+      "parentID": 1,
+      "subjectName": "Брюки",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 3835,
+      "parentID": 1,
+      "subjectName": "Велосипедка",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 172,
+      "parentID": 1,
+      "subjectName": "Ветровка",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 153,
+      "parentID": 1,
+      "subjectName": "Водолазка",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 1629,
+      "parentID": 1,
+      "subjectName": "Дафлкот",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 1687,
+      "parentID": 1,
+      "subjectName": "Джеггинс",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 215,
+      "parentID": 1,
+      "subjectName": "Джемпер",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 180,
+      "parentID": 1,
+      "subjectName": "Джинсы",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 1631,
+      "parentID": 1,
+      "subjectName": "Дождевика",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 322,
+      "parentID": 1,
+      "subjectName": "Дубленка",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 155,
+      "parentID": 1,
+      "subjectName": "Жакет",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 156,
+      "parentID": 1,
+      "subjectName": "Жилет",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 313,
+      "parentID": 1,
+      "subjectName": "Капри",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 191,
+      "parentID": 1,
+      "subjectName": "Кардиган",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 284,
+      "parentID": 1,
+      "subjectName": "Карнавальне костюм",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 1630,
+      "parentID": 1,
+      "subjectName": "Кейп",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 2649,
+      "parentID": 1,
+      "subjectName": "Кигуруми",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 1869,
+      "parentID": 1,
+      "subjectName": "Килт банне",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 157,
+      "parentID": 1,
+      "subjectName": "Комбинезон",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 177,
+      "parentID": 1,
+      "subjectName": "Костюм",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 2110,
+      "parentID": 1,
+      "subjectName": "Косухи",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 161,
+      "parentID": 1,
+      "subjectName": "Кофта",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 4856,
+      "parentID": 1,
+      "subjectName": "Крестильне комплект",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 168,
+      "parentID": 1,
+      "subjectName": "Куртка",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 148,
+      "parentID": 1,
+      "subjectName": "Леггинсы",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 217,
+      "parentID": 1,
+      "subjectName": "Лонгслив",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 2544,
+      "parentID": 1,
+      "subjectName": "Мантии",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 285,
+      "parentID": 1,
+      "subjectName": "Ночне сорочка",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 170,
+      "parentID": 1,
+      "subjectName": "Пальто",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 1591,
+      "parentID": 1,
+      "subjectName": "Парка",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 1935,
+      "parentID": 1,
+      "subjectName": "Пеньюар",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 149,
+      "parentID": 1,
+      "subjectName": "Пиджака",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 162,
+      "parentID": 1,
+      "subjectName": "Пижама",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 69,
+      "parentID": 1,
+      "subjectName": "Платье",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 171,
+      "parentID": 1,
+      "subjectName": "Плащи",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 394,
+      "parentID": 1,
+      "subjectName": "Полукомбинезон",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 1641,
+      "parentID": 1,
+      "subjectName": "Полупальто",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 1633,
+      "parentID": 1,
+      "subjectName": "Пончо",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 160,
+      "parentID": 1,
+      "subjectName": "Пуловер",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 174,
+      "parentID": 1,
+      "subjectName": "Пуховика",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 184,
+      "parentID": 1,
+      "subjectName": "Рубашка",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 70,
+      "parentID": 1,
+      "subjectName": "Сарафан",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 163,
+      "parentID": 1,
+      "subjectName": "Свитер",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 159,
+      "parentID": 1,
+      "subjectName": "Свитшот",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 158,
+      "parentID": 1,
+      "subjectName": "Твинсет",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 233,
+      "parentID": 1,
+      "subjectName": "Толстовка",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 185,
+      "parentID": 1,
+      "subjectName": "Топ",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 193,
+      "parentID": 1,
+      "subjectName": "Тренчкот",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 150,
+      "parentID": 1,
+      "subjectName": "Туника",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 1340,
+      "parentID": 1,
+      "subjectName": "Фартука детские",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 192,
+      "parentID": 1,
+      "subjectName": "Футболка",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 219,
+      "parentID": 1,
+      "subjectName": "Футболка-поло",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 211,
+      "parentID": 1,
+      "subjectName": "Халат банне",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 2803,
+      "parentID": 1,
+      "subjectName": "Халат домашние",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 1724,
+      "parentID": 1,
+      "subjectName": "Худи",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 151,
+      "parentID": 1,
+      "subjectName": "Шорты",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 4377,
+      "parentID": 1,
+      "subjectName": "Шуба искусственная",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 173,
+      "parentID": 1,
+      "subjectName": "Шуба натуральне",
+      "parentName": "Одежда"
+    },
+    {
+      "subjectID": 38,
+      "parentID": 1,
+      "subjectName": "Юбка",
+      "parentName": "Одежда"
+    }
+  ]
+}
