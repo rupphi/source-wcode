@@ -275,7 +275,7 @@ public class HomeController implements Initializable {
                             List<Sticker> stickers = loadStickersTask.getValue();
 
                             if (stickers.isEmpty()) {
-                                showError("Không lấy được mã vận đơn! Vui lòng kiểm tra lại API KEY");
+                                showError("Không lấy được mã vận đơn! Vui lòng kiểm tra lại\ncửa hàng hoặc API KEY");
                                 return;
                             }
                             Map<Long, String> stickerMap = stickers.stream()
