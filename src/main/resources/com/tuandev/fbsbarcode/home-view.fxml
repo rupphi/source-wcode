@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import java.lang.String?>
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.Cursor?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ProgressBar?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.control.TableColumn?>
+<?import javafx.scene.control.TableView?>
+<?import javafx.scene.control.TextArea?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.text.Font?>
+
+<BorderPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="600.0" prefWidth="1000.0" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.HomeController">
+   <left>
+      <VBox fx:id="leftPane" prefHeight="600.0" prefWidth="162.0" spacing="8.0" style="-fx-border-width: 0 1 0 0; -fx-border-color: #ffffff;" styleClass="bg-info" BorderPane.alignment="CENTER">
+         <children>
+            <Button mnemonicParsing="false" onAction="#onSettings" prefHeight="25.0" prefWidth="146.0" text="Chọn kiểu in">
+               <styleClass>
+                  <String fx:value="btn" />
+                  <String fx:value="btn-warning" />
+               </styleClass>
+            </Button>
+            <Button mnemonicParsing="false" onAction="#onAddShop" prefHeight="25.0" prefWidth="158.0" text="+ Thêm cửa hàng">
+               <styleClass>
+                  <String fx:value="btn" />
+                  <String fx:value="btn-primary" />
+                  <String fx:value="btn-sm" />
+               </styleClass>
+            </Button>
+            <HBox alignment="CENTER" prefHeight="23.0" prefWidth="146.0" />
+            <ScrollPane hbarPolicy="NEVER" prefHeight="534.0" prefWidth="146.0">
+               <content>
+                  <VBox fx:id="shopPane" prefHeight="498.0" prefWidth="144.0" spacing="1.0" styleClass="bg-info" />
+               </content>
+            </ScrollPane>
+         </children>
+         <padding>
+            <Insets bottom="8.0" left="8.0" right="8.0" top="8.0" />
+         </padding>
+      </VBox>
+   </left>
+   <center>
+      <BorderPane fx:id="contentPane" prefHeight="200.0" prefWidth="200.0" style="-fx-border-color: #fff; -fx-border-width: 0 1 0 0;" BorderPane.alignment="CENTER">
+         <top>
+            <HBox alignment="CENTER_LEFT" prefHeight="41.0" prefWidth="738.0" spacing="8.0" styleClass="bg-info" BorderPane.alignment="CENTER">
+               <children>
+                  <Label fx:id="currentShopLabel" prefHeight="30.0" prefWidth="131.0" text="Formela">
+                     <font>
+                        <Font name="System Bold" size="20.0" />
+                     </font>
+                  </Label>
+                  <ImageView fitHeight="31.0" fitWidth="34.0" onMouseClicked="#onUpdateShop" pickOnBounds="true" preserveRatio="true">
+                     <image>
+                        <Image url="@icons8-edit-48.png" />
+                     </image>
+                     <styleClass>
+                        <String fx:value="btn" />
+                        <String fx:value="btn-warning" />
+                     </styleClass>
+                  </ImageView>
+                  <HBox alignment="CENTER" prefHeight="41.0" prefWidth="154.0">
+                     <children>
+                        <ProgressBar fx:id="loading" prefHeight="20.0" prefWidth="116.0" visible="false" />
+                     </children></HBox>
+                  <Button mnemonicParsing="false" onAction="#onUploadExcel" prefWidth="135.0" text="Up đơn hàng (Excel)">
+                     <styleClass>
+                        <String fx:value="btn" />
+                        <String fx:value="btn-sm" />
+                        <String fx:value="btn-primary" />
+                     </styleClass>
+                  </Button>
+                  <Button mnemonicParsing="false" onAction="#onExport" text="Tải xuống">
+                     <styleClass>
+                        <String fx:value="btn" />
+                        <String fx:value="btn-sm" />
+                        <String fx:value="btn-success" />
+                     </styleClass>
+                  </Button>
+               </children>
+               <padding>
+                  <Insets left="8.0" right="8.0" />
+               </padding>
+            </HBox>
+         </top>
+         <center>
+            <TableView fx:id="orderTable" prefHeight="200.0" prefWidth="200.0" BorderPane.alignment="CENTER">
+              <columns>
+                <TableColumn fx:id="noTC" prefWidth="39.0" text="No" />
+                <TableColumn fx:id="idTC" prefWidth="58.0" text="№ задания" />
+                  <TableColumn fx:id="nameTC" prefWidth="103.0" text="Наименование" />
+                  <TableColumn fx:id="articleTC" prefWidth="58.0" text="Артикул продавца" />
+                  <TableColumn fx:id="colorTC" prefWidth="58.0" text="Цвет" />
+                  <TableColumn fx:id="sizeTC" prefWidth="57.0" text="Размер" />
+                  <TableColumn fx:id="stickerTC" prefWidth="64.0" text="Стикер" />
+                  <TableColumn fx:id="barcodeTC" prefWidth="73.0" text="Баркод" />
+                  <TableColumn fx:id="stickerCodeTC" prefWidth="76.0" text="Стикер Code" />
+              </columns>
+            </TableView>
+         </center>
+      </BorderPane>
+   </center>
+   <right>
+      <VBox fx:id="rightPage" prefHeight="600.0" prefWidth="250.0" spacing="8.0" BorderPane.alignment="CENTER">
+         <children>
+            <Label text="Nhập Yêu Cầu KIZ (ID:FROM-TO)">
+               <font>
+                  <Font name="System Bold" size="12.0" />
+               </font>
+            </Label>
+            <TextArea fx:id="kizCommand" prefHeight="200.0" prefWidth="200.0" promptText="ID:FROM-TO">
+               <font>
+                  <Font size="16.0" />
+               </font>
+            </TextArea>
+            <HBox alignment="CENTER_LEFT" prefHeight="29.0" prefWidth="184.0">
+               <children>
+                  <Label prefHeight="17.0" prefWidth="116.0" text="Quản lý kho KIZ">
+                     <font>
+                        <Font name="System Bold" size="12.0" />
+                     </font>
+                  </Label>
+                  <Button mnemonicParsing="false" onAction="#onAddCategory" text="+ Thêm mặt hàng">
+                     <styleClass>
+                        <String fx:value="btn-sm" />
+                        <String fx:value="btn-primary" />
+                     </styleClass>
+                  </Button>
+               </children>
+               <VBox.margin>
+                  <Insets />
+               </VBox.margin>
+            </HBox>
+            <ScrollPane hbarPolicy="NEVER" prefHeight="323.0" prefWidth="184.0">
+               <content>
+                  <VBox fx:id="categoryVBox" prefHeight="318.0" prefWidth="232.0">
+                     <children>
+                        <HBox alignment="CENTER_LEFT" minHeight="40.0" prefHeight="40.0" prefWidth="182.0" spacing="4.0" styleClass="bg-warning">
+                           <children>
+                              <Label prefHeight="17.0" prefWidth="43.0" text="ID: 10" />
+                              <Label prefHeight="17.0" prefWidth="91.0" text="Ao khoac am" />
+                              <TextField alignment="CENTER" editable="false" prefHeight="25.0" prefWidth="44.0" text="2000" />
+                              <Button mnemonicParsing="false" style="-fx-background-color: #3A9AFF;" text="+" textFill="WHITE">
+                                 <cursor>
+                                    <Cursor fx:constant="HAND" />
+                                 </cursor>
+                              </Button>
+                           </children>
+                           <padding>
+                              <Insets bottom="2.0" left="2.0" right="2.0" top="2.0" />
+                           </padding>
+                           <VBox.margin>
+                              <Insets bottom="1.0" />
+                           </VBox.margin>
+                        </HBox>
+                     </children>
+                  </VBox>
+               </content>
+            </ScrollPane>
+         </children>
+         <padding>
+            <Insets bottom="8.0" left="8.0" right="8.0" top="8.0" />
+         </padding></VBox>
+   </right>
+</BorderPane>
