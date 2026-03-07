@@ -317,38 +317,69 @@ public class HomeController implements Initializable {
         }
         // Get Kizs
         String command = kizCommand.getText();
-        List<Kiz> kizList = new ArrayList<>();
+        List<Kiz> usedKizList = new ArrayList<>();
         if (!command.isBlank()) {
-            String[] commands = command.split("\n");
+            String[] commands = command.split("\\R");
             for (String commandLine : commands) {
-                if (commandLine.isBlank()) {
+                if (commandLine == null || commandLine.isBlank()) {
                     continue;
                 }
                 try {
-                    String[] idAndCount = commandLine.split(":");
-                    String[] fromTo = idAndCount[1].split("-");
+                    String[] idAndRange = commandLine.trim().split(":");
+                    if (idAndRange.length != 2) {
+                        showError("Sai định dạng: " + commandLine + " | Đúng: ID:FROM-TO");
+                        return;
+                    }
 
-                    int categoryId = Integer.parseInt(idAndCount[0]);
-                    int count = Integer.parseInt(fromTo[1]) - Integer.parseInt(fromTo[0]) + 1;
+                    int categoryId = Integer.parseInt(idAndRange[0].trim());
+                    String[] fromTo = idAndRange[1].trim().split("-");
+                    if (fromTo.length != 2) {
+                        showError("Sai khoảng FROM-TO: " + commandLine);
+                        return;
+                    }
+
+                    int from = Integer.parseInt(fromTo[0].trim());
+                    int to = Integer.parseInt(fromTo[1].trim());
+
+                    if (from < 1 || to < 1 || from > to) {
+                        showError("Khoảng KIZ không hợp lệ: " + commandLine);
+                        return;
+                    }
+
+                    if (to > orders.size()) {
+                        showError("Vị trí order vượt quá số lượng đơn: " + commandLine);
+                        return;
+                    }
+
+                    int count = to - from + 1;
 
                     List<Kiz> kizListItem = KizService.getKizs(selectedShop.getId(), categoryId, count);
-                    kizList.addAll(kizListItem);
+
+                    if (kizListItem.isEmpty() || kizListItem.size() != count) {
+                        showError("Không lấy đủ KIZ cho dòng: " + commandLine);
+                        return;
+                    }
+
+                    for (int i = 0; i < count; i++) {
+                        int orderIndex = from - 1 + i;
+
+                        // chống overlap: cùng 1 order bị gán KIZ 2 lần
+                        if (orders.get(orderIndex).getKiz() != null) {
+                            showError("Order thứ " + (orderIndex + 1) + " bị gán KIZ trùng nhau");
+                            return;
+                        }
+
+                        Kiz kiz = kizListItem.get(i);
+                        orders.get(orderIndex).setKiz(kiz.getCode());
+                        usedKizList.add(kiz);
+                    }
                 } catch (NumberFormatException e) {
-                    showError("Yêu cầu lấy kiz chưa đúng (ID:FROM-TO)");
+                    showError("Yêu cầu lấy KIZ chưa đúng. Định dạng đúng: ID:FROM-TO");
+                    return;
+                } catch (Exception e) {
+                    showError("Lỗi xử lý dòng: " + commandLine + "\n" + e.getMessage());
                     return;
                 }
-            }
-
-            if (orders.size() != kizList.size()) {
-                Alert alert = new Alert(Alert.AlertType.WARNING);
-                alert.setTitle("Thông báo");
-                alert.setHeaderText("Vui lòng kiểm tra! số lượng KIZ khác số lượng đơn hàng");
-                alert.showAndWait();
-                return;
-            }
-
-            for (int i = 0; i < orders.size(); i++) {
-                orders.get(i).setKiz(kizList.get(i).getCode());
             }
 
         }
@@ -381,12 +412,12 @@ public class HomeController implements Initializable {
                     OrderService.exportOrdersToPdf(orderDetailsFile, orders);
 
                     // 2. Delete Kiz
-                    if (!kizList.isEmpty()) {
-                        KizService.deleteKizs(kizList);
+                    if (!usedKizList.isEmpty()) {
+                        KizService.deleteKizs(usedKizList);
                     }
 
                     // 3. Post Kiz lên WB
-                    if (!kizList.isEmpty()) {
+                    if (!usedKizList.isEmpty()) {
                         for (Order order : orders) {
                             KizService.addDataMatrixCodeToOrder(
                                     selectedShop.getApiKey(),
