@@ -29,6 +29,15 @@ public class CategoryService {
         }
     }
 
+    public static void deleteCategory(int id) throws SQLException {
+        String sql = "DELETE FROM categories WHERE id = ?";
+        try (Connection conn = Database.getConnection();
+        PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, id);
+            ps.executeUpdate();
+        }
+    }
+
     public static List<Category> getAllCategories(int shopId) {
         List<Category> categories = new ArrayList<>();
         String sql = "SELECT c.id, c.name, COUNT(k.code) as kizs_count FROM categories c LEFT JOIN kizs k ON c.id = k.category_id AND k.shop_id = " + shopId + " GROUP BY c.id, c.name ORDER BY c.id";
@@ -61,4 +70,5 @@ public class CategoryService {
             return Collections.emptyList();
         }
     }
+
 }

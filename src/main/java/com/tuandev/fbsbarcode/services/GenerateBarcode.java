@@ -162,14 +162,15 @@ public class GenerateBarcode {
         Paragraph article = new Paragraph("Арт: " + order.getArticle())
                 .setFontSize(7)
                 .setTextAlignment(TextAlignment.LEFT)
-                .setFixedPosition(75, HEIGHT - 36, 80);
+                .setMultipliedLeading(0.9f)
+                .setFixedPosition(75, HEIGHT - 42, 80);
         document.add(article);
 
         if (order.getColor() != null) {
             Paragraph color = new Paragraph("Цвет: " + order.getColor())
                     .setFontSize(7)
                     .setTextAlignment(TextAlignment.LEFT)
-                    .setFixedPosition(75, HEIGHT - 44, 80);
+                    .setFixedPosition(75, HEIGHT - 52, 80);
             document.add(color);
         }
 
@@ -177,13 +178,13 @@ public class GenerateBarcode {
             Paragraph size = new Paragraph("Размер: " + order.getSize())
                     .setFontSize(7)
                     .setTextAlignment(TextAlignment.LEFT)
-                    .setFixedPosition(75, HEIGHT - 52, 80);
+                    .setFixedPosition(75, HEIGHT - 60, 80);
             document.add(size);
         }
 
         Image chestniyZnack = new Image(ImageDataFactory.create(Objects.requireNonNull(GenerateBarcode.class.getResource("chestniy-znak.png"))));
         chestniyZnack.scaleToFit(30, 15);
-        chestniyZnack.setFixedPosition(75, HEIGHT - 63);
+        chestniyZnack.setFixedPosition(125, HEIGHT - 62);
         document.add(chestniyZnack);
 
         PdfPage currentPage = pdfDocument.getPage(pdfDocument.getNumberOfPages());

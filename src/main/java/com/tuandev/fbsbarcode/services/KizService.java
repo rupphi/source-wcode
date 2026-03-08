@@ -57,6 +57,18 @@ public class KizService {
          }
     }
 
+    public static void deleteKizs(int shopId, int categoryId) {
+        String sql = "DELETE FROM kizs WHERE shop_id = ? AND category_id = ?";
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, shopId);
+            ps.setInt(2, categoryId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public static void deleteKizs(List<Kiz> kizList) {
         String sql = "DELETE FROM kizs WHERE id = ?";
 

@@ -18,7 +18,7 @@
 <?import javafx.scene.layout.VBox?>
 <?import javafx.scene.text.Font?>
 
-<BorderPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="665.0" prefWidth="1194.0" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.HomeController">
+<BorderPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="665.0" prefWidth="1271.0" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.HomeController">
    <left>
       <VBox fx:id="leftPane" prefHeight="600.0" prefWidth="162.0" spacing="8.0" style="-fx-border-width: 0 1 0 0; -fx-border-color: #ffffff;" styleClass="bg-info" BorderPane.alignment="CENTER">
          <children>
@@ -108,7 +108,7 @@
       </BorderPane>
    </center>
    <right>
-      <VBox fx:id="rightPage" prefHeight="600.0" prefWidth="250.0" spacing="8.0" BorderPane.alignment="CENTER">
+      <VBox fx:id="rightPage" prefHeight="666.0" prefWidth="324.0" spacing="8.0" BorderPane.alignment="CENTER">
          <children>
             <Label text="Nhập Yêu Cầu KIZ (ID:FROM-TO)">
                <font>
@@ -140,12 +140,12 @@
             </HBox>
             <ScrollPane hbarPolicy="NEVER" prefHeight="376.0" prefWidth="234.0">
                <content>
-                  <VBox fx:id="categoryVBox" prefHeight="368.0" prefWidth="232.0">
+                  <VBox fx:id="categoryVBox" prefHeight="368.0" prefWidth="304.0">
                      <children>
                         <HBox alignment="CENTER_LEFT" minHeight="40.0" prefHeight="40.0" prefWidth="182.0" spacing="4.0" styleClass="bg-warning">
                            <children>
                               <Label prefHeight="17.0" prefWidth="43.0" text="ID: 10" />
-                              <Label prefHeight="17.0" prefWidth="91.0" text="Ao khoac am" />
+                              <Label prefHeight="18.0" prefWidth="134.0" text="Ao khoac am" />
                               <TextField alignment="CENTER" editable="false" prefHeight="25.0" prefWidth="44.0" text="2000" />
                               <Button mnemonicParsing="false" style="-fx-background-color: #3A9AFF;" text="+" textFill="WHITE">
                                  <cursor>

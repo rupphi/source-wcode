@@ -617,18 +617,23 @@ public class HomeController implements Initializable {
         )));
 
         Label idLabel = new Label("ID: " + category.getId());
-        idLabel.setPrefWidth(43);
+        idLabel.setPrefWidth(46);
 
         Label nameLabel = new Label(category.getName());
-        nameLabel.setPrefWidth(91);
+        nameLabel.setPrefWidth(95);
 
         TextField countKizsField = new TextField();
         countKizsField.setEditable(false);
         countKizsField.setAlignment(Pos.CENTER);
-        countKizsField.setPrefWidth(44);
+        countKizsField.setPrefWidth(46);
         countKizsField.setText(String.valueOf(category.getCountKiz()));
 
-        Button addKizBtn = new Button("+");
+        Button addKizBtn = new Button(" + ");
+        addKizBtn.setStyle(
+                "-fx-background-color: #0d6efd;" +
+                        "-fx-text-fill: #e8e8e8;" +
+                        "-fx-font-weight: bold;"
+        );
         addKizBtn.setOnAction(e -> {
             fileChooser.setTitle("Open PDF File");
             fileChooser.getExtensionFilters().setAll(new FileChooser.ExtensionFilter("PDF Files", "*.pdf"));
@@ -660,7 +665,30 @@ public class HomeController implements Initializable {
             }
         });
 
-        hBox.getChildren().addAll(idLabel, nameLabel, countKizsField, addKizBtn);
+        Button deleteCategory = new Button("Del");
+        deleteCategory.setStyle(
+                "-fx-background-color: #d70202;" +
+                        "-fx-text-fill: #e6e6e6;"
+        );
+        deleteCategory.setOnAction(e -> {
+            Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+            alert.setTitle("Xóa danh mục");
+            alert.setHeaderText("Bạn chắc chắn muốn xóa danh mục " + category.getName() + " không?");
+
+            ButtonType buttonTypeConfirm = new ButtonType("Xóa", ButtonBar.ButtonData.YES);
+            ButtonType buttonTypeCancel =  new ButtonType("Hủy", ButtonBar.ButtonData.CANCEL_CLOSE);
+
+            alert.getButtonTypes().setAll(buttonTypeConfirm, buttonTypeCancel);
+
+            Optional<ButtonType> result = alert.showAndWait();
+
+            if (result.isPresent() && result.get() == buttonTypeConfirm) {
+                KizService.deleteKizs(selectedShop.getId(), category.getId());
+                loadCategories();
+            }
+        });
+
+        hBox.getChildren().addAll(idLabel, nameLabel, countKizsField, addKizBtn, deleteCategory);
 
         return hBox;
     }
