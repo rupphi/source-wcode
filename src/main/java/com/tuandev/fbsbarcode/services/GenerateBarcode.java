@@ -146,7 +146,6 @@ public class GenerateBarcode {
         if (order.getBrand() != null) {
             Paragraph brand = new Paragraph(order.getBrand())
                     .setFontSize(7)
-                    .setBold()
                     .setFixedPosition(75, HEIGHT - 20, 80)
                     .setTextAlignment(TextAlignment.CENTER);
             document.add(brand);
@@ -154,31 +153,31 @@ public class GenerateBarcode {
 
         String[] names = order.getName().split(" ");
         Paragraph name = new Paragraph((names.length > 1) ? names[0] + " " + names[1] : names[0])
-                .setFontSize(7)
+                .setFontSize(8)
                 .setTextAlignment(TextAlignment.LEFT)
-                .setFixedPosition(75, HEIGHT - 28, 80);
+                .setFixedPosition(75, HEIGHT - 28, 90);
         document.add(name);
 
         Paragraph article = new Paragraph("Арт: " + order.getArticle())
-                .setFontSize(7)
+                .setFontSize(8)
                 .setTextAlignment(TextAlignment.LEFT)
                 .setMultipliedLeading(0.9f)
-                .setFixedPosition(75, HEIGHT - 42, 80);
+                .setFixedPosition(75, HEIGHT - 42, 90);
         document.add(article);
 
         if (order.getColor() != null) {
             Paragraph color = new Paragraph("Цвет: " + order.getColor())
-                    .setFontSize(7)
+                    .setFontSize(8)
                     .setTextAlignment(TextAlignment.LEFT)
-                    .setFixedPosition(75, HEIGHT - 52, 80);
+                    .setFixedPosition(75, HEIGHT - 54, 90);
             document.add(color);
         }
 
         if (order.getSize() != null) {
             Paragraph size = new Paragraph("Размер: " + order.getSize())
-                    .setFontSize(7)
+                    .setFontSize(8)
                     .setTextAlignment(TextAlignment.LEFT)
-                    .setFixedPosition(75, HEIGHT - 60, 80);
+                    .setFixedPosition(75, HEIGHT - 64, 90);
             document.add(size);
         }
 
@@ -315,24 +314,28 @@ public class GenerateBarcode {
 
         Paragraph brand = new Paragraph("Бренд: " + order.getBrand())
                 .setFontSize(8)
+                .setBold()
                 .setFixedPosition(8, HEIGHT - 40, WIDTH - 16)
                 .setTextAlignment(TextAlignment.LEFT);
         document.add(brand);
 
         Paragraph article = new  Paragraph("Арт: " + order.getArticle())
                 .setFontSize(8)
+                .setBold()
                 .setFixedPosition(8, HEIGHT - 50, WIDTH - 16)
                 .setTextAlignment(TextAlignment.LEFT);
         document.add(article);
 
         Paragraph size = new  Paragraph("Размер: " + order.getSize())
                 .setFontSize(8)
+                .setBold()
                 .setFixedPosition(8, HEIGHT - 60, WIDTH - 16)
                 .setTextAlignment(TextAlignment.LEFT);
         document.add(size);
 
         Paragraph color = new  Paragraph("Цвет: " + order.getColor())
                 .setFontSize(8)
+                .setBold()
                 .setFixedPosition(8, HEIGHT - 70, WIDTH - 16)
                 .setTextAlignment(TextAlignment.LEFT);
         document.add(color);

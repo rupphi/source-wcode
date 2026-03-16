@@ -312,7 +312,6 @@ public class HomeController implements Initializable {
                                 Comparator.comparing((Order o) -> extractCategoryFromName(o.getName(), categoriesWB),
                                                 stringComparator)
                                         .thenComparing(Order::getArticle, stringComparator)
-                                        .thenComparing(Order::getColor, stringComparator)
                                         .thenComparing(Order::getSize, stringComparator)
                         );
                         return newOrderList;
