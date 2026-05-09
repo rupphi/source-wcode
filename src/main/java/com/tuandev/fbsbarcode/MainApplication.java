@@ -1,6 +1,6 @@
 package com.tuandev.fbsbarcode;
 
-import com.tuandev.fbsbarcode.services.AppTaskExecutor;
+import com.tuandev.fbsbarcode.shared.AppTaskExecutor;
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
@@ -16,7 +16,7 @@ public class MainApplication extends Application {
         FXMLLoader fxmlLoader = new FXMLLoader(MainApplication.class.getResource("home-view.fxml"));
         Scene scene = new Scene(fxmlLoader.load());
         scene.getStylesheets().add(BootstrapFX.bootstrapFXStylesheet());
-        stage.setTitle("FBS Barcode");
+        stage.setTitle("FBS Barcode (Zalo: 0335407670)");
 
         Image appIcon = new Image(MainApplication.class.getResourceAsStream("logo-fbs.png"));
         stage.getIcons().add(appIcon);

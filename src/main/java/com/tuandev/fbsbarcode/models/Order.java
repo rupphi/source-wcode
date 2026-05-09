@@ -5,6 +5,7 @@ public class Order {
     private byte[] image;
     private String brand;
     private String name;
+    private String subjectName;
     private String size;
     private String color;
     private String article;
@@ -12,6 +13,7 @@ public class Order {
     private String barcode;
     private String kiz;
     private String stickerCode;
+    private String imageUrl;
 
     public Order() {
     }
@@ -68,6 +70,14 @@ public class Order {
         this.name = name;
     }
 
+    public String getSubjectName() {
+        return subjectName;
+    }
+
+    public void setSubjectName(String subjectName) {
+        this.subjectName = subjectName;
+    }
+
     public String getSize() {
         return size;
     }
@@ -116,12 +126,21 @@ public class Order {
         this.stickerCode = stickerCode;
     }
 
+    public String getImageUrl() {
+        return imageUrl;
+    }
+
+    public void setImageUrl(String imageUrl) {
+        this.imageUrl = imageUrl;
+    }
+
     @Override
     public String toString() {
         return "Order{" +
                 "id='" + id + '\'' +
                 ", brand='" + brand + '\'' +
                 ", name='" + name + '\'' +
+                ", subjectName='" + subjectName + '\'' +
                 ", size='" + size + '\'' +
                 ", color='" + color + '\'' +
                 ", article='" + article + '\'' +

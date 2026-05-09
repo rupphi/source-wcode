@@ -1,0 +1,37 @@
+package com.tuandev.fbsbarcode.integration.wb;
+
+import com.tuandev.fbsbarcode.models.Shop;
+
+import java.io.IOException;
+
+public class WbSyncWorkflow {
+    private final WbProductSyncService productSyncService = new WbProductSyncService();
+    private final WbSupplySyncService supplySyncService = new WbSupplySyncService();
+    private final WbOrderSyncService orderSyncService = new WbOrderSyncService();
+
+    public int syncProducts(Shop shop) throws IOException {
+        return productSyncService.sync(shop);
+    }
+
+    public WbSyncReport syncOverview(Shop shop) throws IOException {
+        int supplies = supplySyncService.syncIncremental(shop);
+        int openSupplyDetails = supplySyncService.syncOpenSupplyDetails(shop);
+        return new WbSyncReport(0, supplies + openSupplyDetails, 0, 0);
+    }
+
+    public WbSyncReport syncAll(Shop shop) throws IOException {
+        int products = productSyncService.sync(shop);
+        int supplies = supplySyncService.sync(shop);
+        int newOrders = orderSyncService.syncNewOrders(shop);
+        int orderWindow = orderSyncService.syncOrdersWindow(shop);
+        int supplyDetails = supplySyncService.syncRecentSupplyDetails(shop);
+        return new WbSyncReport(products, supplies + supplyDetails, newOrders + orderWindow, 0);
+    }
+
+    public int syncSupplyOrdersAndStatuses(Shop shop, String supplyId) throws IOException {
+        orderSyncService.syncOrdersWindow(shop);
+        int supplyOrders = orderSyncService.syncSupplyOrders(shop, supplyId);
+        int statuses = orderSyncService.syncOrderStatusesForSupply(shop, supplyId);
+        return supplyOrders + statuses;
+    }
+}

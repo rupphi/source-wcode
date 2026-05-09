@@ -9,6 +9,8 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
 
+import com.tuandev.fbsbarcode.integration.wb.WbSchemaSupport;
+
 public class Database {
 
     private static final String DB_DIR =
@@ -30,6 +32,9 @@ public class Database {
             );
             try (Statement statement = connection.createStatement()) {
                 statement.execute("PRAGMA foreign_keys = ON");
+                statement.execute("PRAGMA busy_timeout = 5000");
+                statement.execute("PRAGMA journal_mode = WAL");
+                statement.execute("PRAGMA synchronous = NORMAL");
             }
             return connection;
 
@@ -75,6 +80,7 @@ public class Database {
             """);
 
             st.execute("INSERT INTO config (id, type) SELECT 1, 1 WHERE NOT EXISTS (SELECT 1 FROM config WHERE id = 1)");
+            WbSchemaSupport.initialize(conn);
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }

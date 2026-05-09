@@ -1,0 +1,138 @@
+package com.tuandev.fbsbarcode.integration.wb;
+
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+public class WbApiClient {
+    private static final Logger LOGGER = LoggerFactory.getLogger(WbApiClient.class);
+    private static final MediaType JSON = MediaType.parse("application/json");
+    private static final Gson GSON = new Gson();
+    private static final OkHttpClient CLIENT = new OkHttpClient();
+
+    public WbProductCardsResponse getProductCards(String apiKey, String locale, String updatedAtCursor, Long nmIdCursor, int limit)
+            throws IOException {
+        Map<String, Object> cursor = new LinkedHashMap<>();
+        cursor.put("limit", limit);
+        if (updatedAtCursor != null && !updatedAtCursor.isBlank()) {
+            cursor.put("updatedAt", updatedAtCursor);
+        }
+        if (nmIdCursor != null && nmIdCursor > 0) {
+            cursor.put("nmID", nmIdCursor);
+        }
+
+        Map<String, Object> payload = Map.of(
+                "settings", Map.of(
+                        "sort", Map.of("ascending", true),
+                        "filter", Map.of("withPhoto", -1),
+                        "cursor", cursor
+                )
+        );
+
+        String url = "https://content-api.wildberries.ru/content/v2/get/cards/list?locale=" + locale;
+        return postJson(apiKey, url, payload, WbProductCardsResponse.class);
+    }
+
+    public WbSuppliesResponse getSupplies(String apiKey, long next, int limit) throws IOException {
+        String url = "https://marketplace-api.wildberries.ru/api/v3/supplies?limit=" + limit + "&next=" + next;
+        return getJson(apiKey, url, WbSuppliesResponse.class);
+    }
+
+    public WbOrdersResponse getNewOrders(String apiKey) throws IOException {
+        String url = "https://marketplace-api.wildberries.ru/api/v3/orders/new";
+        return getJson(apiKey, url, WbOrdersResponse.class);
+    }
+
+    public WbOrdersResponse getOrders(String apiKey, long next, int limit, Long dateFrom, Long dateTo) throws IOException {
+        StringBuilder url = new StringBuilder("https://marketplace-api.wildberries.ru/api/v3/orders?limit=")
+                .append(limit)
+                .append("&next=")
+                .append(next);
+        if (dateFrom != null) {
+            url.append("&dateFrom=").append(dateFrom);
+        }
+        if (dateTo != null) {
+            url.append("&dateTo=").append(dateTo);
+        }
+        return getJson(apiKey, url.toString(), WbOrdersResponse.class);
+    }
+
+    public WbOrderStatusesResponse getOrderStatuses(String apiKey, List<Long> orderIds) throws IOException {
+        String url = "https://marketplace-api.wildberries.ru/api/v3/orders/status";
+        return postJson(apiKey, url, Map.of("orders", orderIds), WbOrderStatusesResponse.class);
+    }
+
+    public WbSupplyOrderIdsResponse getSupplyOrderIds(String apiKey, String supplyId) throws IOException {
+        String url = "https://marketplace-api.wildberries.ru/api/marketplace/v3/supplies/" + supplyId + "/order-ids";
+        return getJson(apiKey, url, WbSupplyOrderIdsResponse.class);
+    }
+
+    public WbSupplyDto getSupplyDetail(String apiKey, String supplyId) throws IOException {
+        String url = "https://marketplace-api.wildberries.ru/api/v3/supplies/" + supplyId;
+        return getJson(apiKey, url, WbSupplyDto.class);
+    }
+
+    private <T> T getJson(String apiKey, String url, Class<T> type) throws IOException {
+        Request request = new Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer " + apiKey)
+                .get()
+                .build();
+        return execute(request, type);
+    }
+
+    private <T> T postJson(String apiKey, String url, Object payload, Class<T> type) throws IOException {
+        RequestBody body = RequestBody.create(GSON.toJson(payload), JSON);
+        Request request = new Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer " + apiKey)
+                .post(body)
+                .build();
+        return execute(request, type);
+    }
+
+    private <T> T execute(Request request, Class<T> type) throws IOException {
+        try (Response response = CLIENT.newCall(request).execute()) {
+            String body = response.body() == null ? "" : response.body().string();
+            if (!response.isSuccessful()) {
+                String message = extractErrorMessage(body);
+                LOGGER.warn("WB API request failed: {} {} -> {} {}", request.method(), request.url(), response.code(), message);
+                throw new WbApiException(message, response.code(), body);
+            }
+            return GSON.fromJson(body, type);
+        }
+    }
+
+    private String extractErrorMessage(String body) {
+        if (body == null || body.isBlank()) {
+            return "WB API request failed";
+        }
+        try {
+            JsonObject object = JsonParser.parseString(body).getAsJsonObject();
+            if (object.has("message")) {
+                return object.get("message").getAsString();
+            }
+            if (object.has("errorText")) {
+                return object.get("errorText").getAsString();
+            }
+            if (object.has("code")) {
+                return object.get("code").getAsString();
+            }
+        } catch (Exception ignored) {
+            // fall back to raw body
+        }
+        return body;
+    }
+}

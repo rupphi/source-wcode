@@ -7,7 +7,7 @@
 <?import javafx.scene.control.TextField?>
 <?import javafx.scene.layout.HBox?>
 
-<HBox fx:id="root" alignment="CENTER_LEFT" minHeight="40.0" prefWidth="182.0" spacing="4.0" styleClass="bg-warning" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.CategoryItemController">
+<HBox fx:id="root" alignment="CENTER_LEFT" minHeight="40.0" prefWidth="182.0" spacing="4.0" styleClass="bg-warning" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.ui.kiz.CategoryItemController">
     <children>
         <Label fx:id="idLabel" prefWidth="46.0" text="ID: 0" />
         <Label fx:id="nameLabel" prefWidth="95.0" text="Category" />

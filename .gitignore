@@ -35,5 +35,9 @@ build/
 ### VS Code ###
 .vscode/
 
+### jpackage output ###
+out/
+out-*/
+
 ### Mac OS ###
 .DS_Store
