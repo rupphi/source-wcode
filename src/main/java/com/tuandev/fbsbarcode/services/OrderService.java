@@ -12,6 +12,7 @@ import com.itextpdf.layout.element.Cell;
 import com.itextpdf.layout.element.Image;
 import com.itextpdf.layout.element.Paragraph;
 import com.itextpdf.layout.element.Table;
+import com.itextpdf.layout.element.Text;
 import com.itextpdf.layout.properties.TextAlignment;
 import com.itextpdf.layout.properties.UnitValue;
 import com.itextpdf.layout.properties.VerticalAlignment;
@@ -19,10 +20,13 @@ import com.tuandev.fbsbarcode.dto.StickerResponse;
 import com.tuandev.fbsbarcode.models.Order;
 import com.tuandev.fbsbarcode.models.Sticker;
 import okhttp3.*;
+import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -30,8 +34,10 @@ import java.io.IOException;
 import java.util.*;
 
 public class OrderService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(OrderService.class);
     private static final OkHttpClient client = new OkHttpClient();
     private static final Gson gson = new Gson();
+    private static final DataFormatter DATA_FORMATTER = new DataFormatter();
 
     public static List<Order> getOrdersToExcel(File file) throws Exception {
         List<Order> orders = new ArrayList<>();
@@ -43,23 +49,37 @@ public class OrderService {
 
             for (int i = 5; i <= sheet.getLastRowNum(); i++) {
                 Row row = sheet.getRow(i);
+                if (row == null) {
+                    continue;
+                }
 
                 byte[] image = images.get(i);
+                String idValue = readCell(row, 0);
+                if (idValue.isBlank()) {
+                    continue;
+                }
 
                 orders.add(new Order(
-                        Long.parseLong(row.getCell(0).getStringCellValue()),
+                        Long.parseLong(idValue),
                         image,
-                        row.getCell(2) != null ? row.getCell(2).getStringCellValue() : "",
-                        row.getCell(3).getStringCellValue(),
-                        row.getCell(4) != null ? row.getCell(4).getStringCellValue() : "",
-                        row.getCell(5) != null ? row.getCell(5).getStringCellValue() : "",
-                        row.getCell(6).getStringCellValue(),
-                        row.getCell(7).getStringCellValue(),
-                        row.getCell(8).getStringCellValue()
+                        readCell(row, 2),
+                        readCell(row, 3),
+                        readCell(row, 4),
+                        readCell(row, 5),
+                        readCell(row, 6),
+                        readCell(row, 7),
+                        readCell(row, 8)
                 ));
             }
         }
         return orders;
+    }
+
+    private static String readCell(Row row, int cellIndex) {
+        if (row.getCell(cellIndex) == null) {
+            return "";
+        }
+        return DATA_FORMATTER.formatCellValue(row.getCell(cellIndex)).trim();
     }
 
     private static Map<Integer, byte[]> getImages(Sheet sheet) {
@@ -130,8 +150,8 @@ public class OrderService {
                 return stickerResponse.getStickers();
 
             } else {
-
-                System.out.println(response.body().string());
+                String responseBody = response.body() == null ? "" : response.body().string();
+                LOGGER.warn("WB sticker request failed with status {} and body {}", response.code(), responseBody);
                 return Collections.emptyList();
             }
         }
@@ -144,22 +164,23 @@ public class OrderService {
         document.setMargins(20, 20, 20, 20);
         document.setFont(GenerateBarcode.getArialFont());
 
-        float[] widths = {90, 80, 90, 220, 60, 90, 120, 120};
+        float[] widths = {35, 80, 80, 55, 75, 105, 130};
 
         Table table = new Table(widths);
         table.setWidth(UnitValue.createPercentValue(100));
 
+        addHeader(table, "№");
         addHeader(table, "№ задания");
         addHeader(table, "Фото");
-        addHeader(table, "Бренд");
-        addHeader(table, "Наименование");
         addHeader(table, "Размер");
         addHeader(table, "Цвет");
         addHeader(table, "Артикул продавца");
         addHeader(table, "Стикер");
 
-        for (Order order : orders) {
+        for (int index = 0; index < orders.size(); index++) {
+            Order order = orders.get(index);
 
+            table.addCell(cell(String.valueOf(index + 1)));
             table.addCell(cell(order.getId() + ""));
 
             // image
@@ -180,12 +201,10 @@ public class OrderService {
                 table.addCell(cell(""));
             }
 
-            table.addCell(cell(order.getBrand()));
-            table.addCell(cell(order.getName()));
             table.addCell(cell(order.getSize()));
             table.addCell(cell(order.getColor()));
             table.addCell(cell(order.getArticle()));
-            table.addCell(cell(order.getSticker()));
+            table.addCell(stickerCell(order.getSticker()));
         }
 
         document.add(table);
@@ -195,7 +214,30 @@ public class OrderService {
     private static Cell cell(String text) {
 
         return new Cell()
-                .add(new Paragraph(text).setFontSize(9))
+                .add(new Paragraph(text).setFontSize(10))
+                .setTextAlignment(TextAlignment.LEFT)
+                .setVerticalAlignment(VerticalAlignment.MIDDLE);
+    }
+
+    private static Cell stickerCell(String sticker) {
+        String safeSticker = StickerText.safe(sticker);
+
+        Paragraph paragraph = new Paragraph().setFontSize(12).setBold();
+
+        if (safeSticker.length() <= 4) {
+            paragraph.add(new Text(safeSticker)
+                    .setFontColor(ColorConstants.WHITE)
+                    .setBackgroundColor(ColorConstants.BLACK));
+        } else {
+            int highlightStart = safeSticker.length() - 4;
+            paragraph.add(new Text(safeSticker.substring(0, highlightStart)));
+            paragraph.add(new Text(safeSticker.substring(highlightStart))
+                    .setFontColor(ColorConstants.WHITE)
+                    .setBackgroundColor(ColorConstants.BLACK));
+        }
+
+        return new Cell()
+                .add(paragraph)
                 .setTextAlignment(TextAlignment.LEFT)
                 .setVerticalAlignment(VerticalAlignment.MIDDLE);
     }
@@ -204,7 +246,7 @@ public class OrderService {
 
         table.addHeaderCell(
                 new Cell()
-                        .add(new Paragraph(text).setBold().setFontSize(9))
+                        .add(new Paragraph(text).setBold().setFontSize(10))
                         .setVerticalAlignment(VerticalAlignment.MIDDLE)
                         .setTextAlignment(TextAlignment.CENTER)
                         .setBackgroundColor(ColorConstants.LIGHT_GRAY)

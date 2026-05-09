@@ -4,6 +4,8 @@ import com.google.gson.Gson;
 import com.tuandev.fbsbarcode.config.Database;
 import com.tuandev.fbsbarcode.models.Kiz;
 import okhttp3.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.sql.Connection;
@@ -13,13 +15,14 @@ import java.sql.SQLException;
 import java.util.*;
 
 public class KizService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(KizService.class);
     private static final OkHttpClient client = new OkHttpClient();
     private static final Gson gson = new Gson();
 
     public static List<Kiz> getKizs(int shopId, int categoryId, int count) {
         List<Kiz> kizList = new ArrayList<>();
 
-        String sql = "SELECT id, code FROM kizs WHERE shop_id = ? AND category_id = ? LIMIT ?";
+        String sql = "SELECT id, code FROM kizs WHERE shop_id = ? AND category_id = ? ORDER BY id LIMIT ?";
         try (Connection conn = Database.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, shopId);
@@ -84,7 +87,7 @@ public class KizService {
         }
     }
 
-    public static int addDataMatrixCodeToOrder(String apiKey, Long orderId, String code) throws IOException {
+    public static AttachCodeResult addDataMatrixCodeToOrder(String apiKey, Long orderId, String code) throws IOException {
         String url = "https://marketplace-api.wildberries.ru/api/v3/orders/" + orderId + "/meta/sgtin";
 
         Map<String, Object> bodyMap = new HashMap<>();
@@ -99,7 +102,14 @@ public class KizService {
                 .build();
 
         try (Response response = client.newCall(request).execute()) {
-            return response.code();
+            String responseBody = response.body() == null ? "" : response.body().string();
+            if (!response.isSuccessful()) {
+                LOGGER.warn("WB attach KIZ failed for order {} with status {} and body {}", orderId, response.code(), responseBody);
+            }
+            return new AttachCodeResult(response.isSuccessful(), response.code(), responseBody);
         }
+    }
+
+    public record AttachCodeResult(boolean success, int statusCode, String responseBody) {
     }
 }

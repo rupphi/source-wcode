@@ -7,6 +7,8 @@ import com.google.zxing.datamatrix.DataMatrixReader;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.PDFRenderer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -17,11 +19,16 @@ import java.util.List;
 import java.util.concurrent.*;
 
 public class PdfDataMatrixReader {
+    private static final Logger LOGGER = LoggerFactory.getLogger(PdfDataMatrixReader.class);
+    private static final int DECODE_THREADS = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
+    private static final ExecutorService DECODE_EXECUTOR = Executors.newFixedThreadPool(DECODE_THREADS, runnable -> {
+        Thread thread = new Thread(runnable, "fbsbarcode-datamatrix");
+        thread.setDaemon(true);
+        return thread;
+    });
+
     public static List<String> readDataMatrixFromPdf(File pdfFile) throws IOException, InterruptedException {
         List<String> results = Collections.synchronizedList(new ArrayList<>());
-
-        int threads = Runtime.getRuntime().availableProcessors();
-        ExecutorService executor = Executors.newFixedThreadPool(threads);
 
         try (PDDocument document = Loader.loadPDF(pdfFile)) {
             PDFRenderer renderer = new PDFRenderer(document);
@@ -32,7 +39,7 @@ public class PdfDataMatrixReader {
             for (int page =  0; page < totalPages; page++) {
                 BufferedImage image = renderer.renderImageWithDPI(page, 200);
 
-                futures.add(executor.submit(() -> {
+                futures.add(DECODE_EXECUTOR.submit(() -> {
                     String code = decodeDataMatrix(image);
                     if (code != null && code.length() > 20) {
                         results.add(code);
@@ -44,12 +51,14 @@ public class PdfDataMatrixReader {
                 try {
                     future.get();
                 } catch (ExecutionException | InterruptedException e) {
+                    LOGGER.warn("Không thể đọc DataMatrix từ một trang trong file {}", pdfFile.getAbsolutePath(), e);
+                    if (e instanceof InterruptedException interruptedException) {
+                        Thread.currentThread().interrupt();
+                        throw interruptedException;
+                    }
                 }
             }
         }
-
-        executor.shutdown();
-        executor.awaitTermination(1, TimeUnit.MINUTES);
         return results;
     }
 

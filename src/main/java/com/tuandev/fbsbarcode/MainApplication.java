@@ -1,5 +1,6 @@
 package com.tuandev.fbsbarcode;
 
+import com.tuandev.fbsbarcode.services.AppTaskExecutor;
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
@@ -22,5 +23,10 @@ public class MainApplication extends Application {
 
         stage.setScene(scene);
         stage.show();
+    }
+
+    @Override
+    public void stop() {
+        AppTaskExecutor.shutdown();
     }
 }

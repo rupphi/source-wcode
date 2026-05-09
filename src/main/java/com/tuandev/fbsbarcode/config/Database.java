@@ -1,6 +1,5 @@
 package com.tuandev.fbsbarcode.config;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -11,25 +10,37 @@ import java.sql.SQLException;
 import java.sql.Statement;
 
 public class Database {
-    private static final String DB_PATH = "app";
+
+    private static final String DB_DIR =
+            System.getProperty("user.home") + "/fbsbarcode";
     private static final String DB_NAME = "database.db";
 
     public static Connection getConnection() {
         try {
-            Path path = Paths.get(DB_PATH);
-            if (!Files.exists(path)) {
-                Files.createDirectory(path);
+            Path dir = Paths.get(DB_DIR);
+
+            if (!Files.exists(dir)) {
+                Files.createDirectories(dir);
             }
-            return DriverManager.getConnection("jdbc:sqlite:" + DB_PATH + "/" + DB_NAME);
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
-        } catch (IOException e) {
+
+            Path dbFile = dir.resolve(DB_NAME);
+
+            Connection connection = DriverManager.getConnection(
+                    "jdbc:sqlite:" + dbFile.toString()
+            );
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("PRAGMA foreign_keys = ON");
+            }
+            return connection;
+
+        } catch (IOException | SQLException e) {
             throw new RuntimeException(e);
         }
     }
 
     public static void initDatabase() {
-        try (Statement st = getConnection().createStatement()) {
+        try (Connection conn = getConnection();
+             Statement st = conn.createStatement()) {
             st.execute("""
                 CREATE TABLE IF NOT EXISTS shops(
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
