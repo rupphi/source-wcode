@@ -16,7 +16,7 @@
                 <Font name="System Bold" size="20.0" />
             </font>
         </Label>
-        <Button mnemonicParsing="false" onAction="#onSettings" prefHeight="34.0" prefWidth="190.0" text="Chọn kiểu in">
+        <Button mnemonicParsing="false" onAction="#onSettings" prefHeight="34.0" prefWidth="190.0" text="Thiết kế tem">
             <styleClass>
                 <String fx:value="btn" />
                 <String fx:value="btn-warning" />

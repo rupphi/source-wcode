@@ -18,6 +18,7 @@ public class OrderExportWorkflow {
     private static final Logger LOGGER = LoggerFactory.getLogger(OrderExportWorkflow.class);
     private final BarcodePrintService barcodePrintService = new BarcodePrintService();
     private final OrderDetailsPdfExporter orderDetailsPdfExporter = new OrderDetailsPdfExporter();
+    private final PrintTemplateService printTemplateService = new PrintTemplateService();
 
     public ExportResult export(ExportRequest request) throws IOException, WriterException {
         List<Order> workingOrders = copyOrders(request.orders());
@@ -27,7 +28,7 @@ public class OrderExportWorkflow {
                 request.kizCommand()
         );
 
-        exportPdfFiles(request.printType(), request.outputFile(), request.detailsFile(), workingOrders);
+        exportPdfFiles(request.outputFile(), request.detailsFile(), workingOrders);
 
         if (!usedKizs.isEmpty()) {
             List<String> failures = attachKizCodes(request.shop(), workingOrders);
@@ -96,8 +97,8 @@ public class OrderExportWorkflow {
         return usedKizs;
     }
 
-    private void exportPdfFiles(int printType, File outputFile, File detailsFile, List<Order> orders) throws IOException, WriterException {
-        barcodePrintService.export(printType, orders, outputFile);
+    private void exportPdfFiles(File outputFile, File detailsFile, List<Order> orders) throws IOException, WriterException {
+        barcodePrintService.export(printTemplateService.getDefaultTemplate(), orders, outputFile);
         orderDetailsPdfExporter.export(detailsFile, orders);
     }
 
@@ -132,7 +133,6 @@ public class OrderExportWorkflow {
             Shop shop,
             List<Order> orders,
             String kizCommand,
-            int printType,
             File outputFile,
             File detailsFile
     ) {

@@ -34,14 +34,12 @@ import java.io.InputStream;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class GenerateBarcode {
-    private static final float WIDTH = 164f, HEIGHT = 113f; // 58mmx40mm
+    private static final float WIDTH = (float) PrintTemplateService.PAGE_WIDTH;
+    private static final float HEIGHT = (float) PrintTemplateService.PAGE_HEIGHT;
     private static volatile byte[] arialFontBytes;
-    private static volatile byte[] eacImageBytes;
-    private static volatile byte[] chestniyZnakImageBytes;
 
     public static PdfFont getArialFont() {
         if (arialFontBytes == null) {
@@ -67,202 +65,185 @@ public class GenerateBarcode {
         }
     }
 
-    public static void type1(List<Order> orders, File file) throws IOException, WriterException {
+    public static void exportTemplateAndSticker(PrintTemplate template, List<Order> orders, File file) throws IOException, WriterException {
         PdfWriter pdfWriter = new PdfWriter(file);
         PdfDocument pdfDocument = new PdfDocument(pdfWriter);
 
         PageSize pageSize = new PageSize(WIDTH, HEIGHT);
         Document document = new Document(pdfDocument, pageSize);
-        document.setMargins(5,5,5,5);
+        document.setMargins(0, 0, 0, 0);
         document.setFont(getArialFont());
         RenderContext renderContext = new RenderContext();
 
         for (int i = 0; i < orders.size(); i++) {
             Order order = orders.get(i);
-
-            if (order.getKiz() != null) {
-                addPageKiz(order, document, renderContext);
-                document.add(new AreaBreak(AreaBreakType.NEXT_PAGE));
-            }
-
-            addPageSticker(order, document, pdfDocument, renderContext);
+            addTemplatePage(order, template, document, pdfDocument, renderContext);
             document.add(new AreaBreak(AreaBreakType.NEXT_PAGE));
-
-            addPageProduct(order, document, renderContext);
-            if (i != orders.size() - 1) {
-                document.add(new AreaBreak(AreaBreakType.NEXT_PAGE));
-            }
-        }
-
-        document.close();
-    }
-
-    public static void type2(List<Order> orders, File file) throws IOException, WriterException {
-        PdfWriter pdfWriter = new PdfWriter(file);
-        PdfDocument pdfDocument = new PdfDocument(pdfWriter);
-
-        PageSize pageSize = new PageSize(WIDTH, HEIGHT);
-        Document document = new Document(pdfDocument, pageSize);
-        document.setMargins(5,5,5,5);
-        document.setFont(getArialFont());
-        RenderContext renderContext = new RenderContext();
-
-        for (int i = 0; i < orders.size(); i++) {
-            Order order = orders.get(i);
-
-            addPageProduct(order, document, renderContext);
-            document.add(new AreaBreak(AreaBreakType.NEXT_PAGE));
-
-            addPageSticker(order, document, pdfDocument, renderContext);
-            document.add(new AreaBreak(AreaBreakType.NEXT_PAGE));
-
-            if (order.getKiz() != null) {
-                addPageKiz(order, document, renderContext);
-                if (i != orders.size() - 1) {
-                    document.add(new AreaBreak(AreaBreakType.NEXT_PAGE));
-                }
-            }
-        }
-
-        document.close();
-    }
-
-    public static void type3(List<Order> orders, File file) throws IOException, WriterException {
-        PdfWriter pdfWriter = new PdfWriter(file);
-        PdfDocument pdfDocument = new PdfDocument(pdfWriter);
-
-        PageSize pageSize = new PageSize(WIDTH, HEIGHT);
-        Document document = new Document(pdfDocument, pageSize);
-        document.setMargins(5,5,5,5);
-        document.setFont(getArialFont());
-        RenderContext renderContext = new RenderContext();
-
-        for (int i = 0; i < orders.size(); i++) {
-            Order order = orders.get(i);
-
-            addPageProductAndKiz(order, document, pdfDocument, renderContext);
-            document.add(new AreaBreak(AreaBreakType.NEXT_PAGE));
-
             addPageSticker(order, document, pdfDocument, renderContext);
             if (i != orders.size() - 1) {
                 document.add(new AreaBreak(AreaBreakType.NEXT_PAGE));
             }
-
         }
 
         document.close();
     }
 
-    private static void addPageProductAndKiz(Order order, Document document, PdfDocument pdfDocument, RenderContext renderContext) throws IOException {
-        if (order.getKiz() != null) {
-            Image kiz = new Image(ImageDataFactory.create(renderContext.getDataMatrix(order.getKiz(), 325)));
-            kiz.scaleToFit(52, 52);
-            kiz.setFixedPosition(10, HEIGHT - 62);
-            document.add(kiz);
+    private static void addTemplatePage(
+            Order order,
+            PrintTemplate template,
+            Document document,
+            PdfDocument pdfDocument,
+            RenderContext renderContext
+    ) throws IOException {
+        List<PrintTemplateElement> elements = template.getElements().stream()
+                .filter(PrintTemplateElement::isVisible)
+                .sorted((left, right) -> Integer.compare(left.getZIndex(), right.getZIndex()))
+                .toList();
+
+        for (PrintTemplateElement element : elements) {
+            switch (element.getType()) {
+                case KIZ_DATAMATRIX -> renderKiz(order, element, document, renderContext);
+                case BARCODE_CODE128 -> renderBarcode(order, element, document, renderContext);
+                case TEXT_FIELD -> renderTextField(order, element, document);
+                case STICKER_TAIL -> renderStickerTail(order, element, document);
+                case SEPARATOR_LINE -> renderSeparatorLine(element, pdfDocument);
+            }
+        }
+    }
+
+    private static void renderKiz(Order order, PrintTemplateElement element, Document document, RenderContext renderContext) throws IOException {
+        String kiz = safeValue(order.getKiz());
+        if (kiz.isBlank() || element.getWidth() <= 0 || element.getHeight() <= 0) {
+            return;
         }
 
-        if (order.getBrand() != null) {
-            Paragraph brand = new Paragraph(safeValue(order.getBrand()))
-                    .setFontSize(9)
-                    .setBold()
-                    .setFixedPosition(70, HEIGHT - 20, 85)
-                    .setTextAlignment(TextAlignment.CENTER);
-            document.add(brand);
+        Image image = new Image(ImageDataFactory.create(renderContext.getDataMatrix(kiz, 600)));
+        image.scaleToFit((float) element.getWidth(), (float) element.getHeight());
+        image.setFixedPosition((float) element.getX(), toBottomY(element));
+        document.add(image);
+    }
+
+    private static void renderBarcode(Order order, PrintTemplateElement element, Document document, RenderContext renderContext) throws IOException {
+        String barcode = safeValue(order.getBarcode());
+        if (barcode.isBlank() || element.getWidth() <= 0 || element.getHeight() <= 0) {
+            return;
         }
 
-        Paragraph name = new Paragraph(compactProductName(order.getName()))
-                .setFontSize(8)
-                .setTextAlignment(TextAlignment.LEFT)
-                .setFixedPosition(70, HEIGHT - 28, 85);
-        document.add(name);
-
-        if (order.getColor() != null) {
-            Paragraph color = new Paragraph("Цвет: " + safeValue(order.getColor()))
-                    .setFontSize(8)
-                    .setTextAlignment(TextAlignment.LEFT)
-                    .setMultipliedLeading(0.9f)
-                    .setFixedPosition(70, HEIGHT - 42, 85);
-            document.add(color);
+        float imageHeight = (float) element.getHeight();
+        if (element.isShowHumanReadable()) {
+            imageHeight = Math.max(16f, (float) element.getHeight() - 10f);
         }
 
-        Paragraph article = new Paragraph("Арт: " + safeValue(order.getArticle()))
-                .setFontSize(8)
-                .setTextAlignment(TextAlignment.LEFT)
-                .setMultipliedLeading(0.9f)
-                .setFixedPosition(70, HEIGHT - 54, 85);
-        document.add(article);
+        Image image = new Image(ImageDataFactory.create(
+                renderContext.getCode128(barcode, Math.max(120, (int) Math.round(element.getWidth() * 3)), Math.max(45, Math.round(imageHeight * 3)))
+        ));
+        image.scaleToFit((float) element.getWidth(), imageHeight);
+        image.setFixedPosition((float) element.getX(), toBottomY(element) + (float) (element.getHeight() - imageHeight));
+        document.add(image);
 
-        if (order.getSize() != null) {
-            Paragraph size = new Paragraph("Разм: " + safeValue(order.getSize()))
-                    .setFontSize(9)
-                    .setTextAlignment(TextAlignment.LEFT)
-                    .setFixedPosition(70, HEIGHT - 66, 85);
-            document.add(size);
+        if (element.isShowHumanReadable()) {
+            Paragraph paragraph = baseParagraph(barcode, element)
+                    .setFontSize(Math.max(6f, element.getFontSize() - 1))
+                    .setFixedPosition((float) element.getX(), toBottomY(element), (float) element.getWidth());
+            document.add(paragraph);
+        }
+    }
+
+    private static void renderTextField(Order order, PrintTemplateElement element, Document document) {
+        String value = resolveFieldValue(order, element.getFieldKey());
+        String output = withPrefix(element.getPrefix(), value);
+        if (output.isBlank() || element.getWidth() <= 0 || element.getHeight() <= 0 || element.getFontSize() <= 0f) {
+            return;
         }
 
+        Paragraph paragraph = baseParagraph(output, element)
+                .setFixedPosition((float) element.getX(), toBottomY(element), (float) element.getWidth());
+        document.add(paragraph);
+    }
+
+    private static void renderStickerTail(Order order, PrintTemplateElement element, Document document) {
+        String value = normalizeStickerTail(StickerText.secondPartOrFirst(order.getSticker()));
+        String output = withPrefix(element.getPrefix(), value);
+        if (output.isBlank() || element.getWidth() <= 0 || element.getHeight() <= 0 || element.getFontSize() <= 0f) {
+            return;
+        }
+
+        Paragraph paragraph = baseParagraph(output, element)
+                .setFixedPosition((float) element.getX(), toBottomY(element), (float) element.getWidth());
+        document.add(paragraph);
+    }
+
+    private static void renderSeparatorLine(PrintTemplateElement element, PdfDocument pdfDocument) {
+        if (element.getWidth() <= 0 || element.getHeight() <= 0) {
+            return;
+        }
         PdfPage currentPage = pdfDocument.getPage(pdfDocument.getNumberOfPages());
         PdfCanvas canvas = new PdfCanvas(currentPage);
-        canvas.setLineWidth(1f);
-        canvas.moveTo(10, HEIGHT - 67);
-        canvas.lineTo(WIDTH - 10, HEIGHT - 67);
+        float y = (float) (HEIGHT - element.getY() - (element.getHeight() / 2f));
+        canvas.setLineWidth(Math.max(0.5f, (float) element.getHeight()));
+        canvas.moveTo((float) element.getX(), y);
+        canvas.lineTo((float) (element.getX() + element.getWidth()), y);
         canvas.stroke();
-
-        Image barcodeImage = new Image(ImageDataFactory.create(renderContext.getCode128(requiredValue(order.getBarcode(), "Barcode", order), 420, 75)));
-        barcodeImage.scaleToFit(140, 25);
-        barcodeImage.setFixedPosition(WIDTH - 152, 16);
-        document.add(barcodeImage);
-
-        Paragraph barcode = new Paragraph(safeValue(order.getBarcode()))
-                .setFontSize(8)
-                .setFixedPosition(8, 4, WIDTH - 20)
-                .setTextAlignment(TextAlignment.CENTER);
-        document.add(barcode);
-
-        Paragraph stickerPathB = new Paragraph(StickerText.secondPartOrFirst(order.getSticker()))
-                .setFontSize(8)
-                .setTextAlignment(TextAlignment.RIGHT)
-                .setFixedPosition(WIDTH - 30, 4, 20);
-        document.add(stickerPathB);
     }
 
-    private static void addPageKiz(Order order, Document document, RenderContext renderContext) throws IOException {
-        Image dataMatrix = new Image(ImageDataFactory.create(renderContext.getDataMatrix(order.getKiz(), 600)));
-        dataMatrix.scaleToFit(70, 70);
-        dataMatrix.setFixedPosition(10, HEIGHT - 80);
-        document.add(dataMatrix);
-
-        String kiz = safeValue(order.getKiz());
-        if (kiz.length() > 32) {
-            kiz = kiz.substring(0, 32);
+    private static Paragraph baseParagraph(String text, PrintTemplateElement element) {
+        Paragraph paragraph = new Paragraph(text)
+                .setMargin(0)
+                .setMultipliedLeading(0.9f)
+                .setFontSize(element.getFontSize())
+                .setTextAlignment(toTextAlignment(element.getAlign()));
+        if (element.isBold()) {
+            paragraph.setBold();
         }
-        Paragraph kizPr = new Paragraph(kiz)
-                .setFontSize(6)
-                .setTextAlignment(TextAlignment.CENTER)
-                .setFixedPosition(10, HEIGHT - 100, 70);
-        document.add(kizPr);
+        return paragraph;
+    }
 
-        Image chestniyZnack = new Image(ImageDataFactory.create(getChestniyZnakImageBytes()));
-        chestniyZnack.scaleToFit(60, 30);
-        chestniyZnack.setFixedPosition(WIDTH - 80, 80);
-        document.add(chestniyZnack);
+    private static String resolveFieldValue(Order order, PrintFieldKey fieldKey) {
+        if (fieldKey == null) {
+            return "";
+        }
+        return switch (fieldKey) {
+            case BRAND -> safeValue(order.getBrand());
+            case NAME -> compactProductName(order.getName());
+            case SUBJECT_NAME -> safeValue(order.getSubjectName());
+            case COLOR -> safeValue(order.getColor());
+            case ARTICLE -> safeValue(order.getArticle());
+            case SIZE -> safeValue(order.getSize());
+            case BARCODE -> safeValue(order.getBarcode());
+            case STICKER_TAIL -> normalizeStickerTail(StickerText.secondPartOrFirst(order.getSticker()));
+        };
+    }
 
-        Paragraph name = new Paragraph(compactProductName(order.getName()))
-                .setFontSize(8)
-                .setTextAlignment(TextAlignment.CENTER)
-                .setFixedPosition(WIDTH - 80, 60, 70);
-        document.add(name);
+    private static String normalizeStickerTail(String value) {
+        String safe = safeValue(value);
+        if (safe.matches("\\d{1,4}")) {
+            return String.format("%04d", Integer.parseInt(safe));
+        }
+        return safe;
+    }
 
-        Paragraph article = new Paragraph(safeValue(order.getArticle()))
-                .setFontSize(8)
-                .setTextAlignment(TextAlignment.CENTER)
-                .setFixedPosition(WIDTH - 80, 40, 70);
-        document.add(article);
+    private static String withPrefix(String prefix, String value) {
+        String safeValue = safeValue(value);
+        if (safeValue.isBlank()) {
+            return "";
+        }
+        String safePrefix = safeValue(prefix);
+        return safePrefix.isBlank() ? safeValue : safePrefix + ": " + safeValue;
+    }
 
-        Paragraph stickerPathB = new Paragraph(StickerText.secondPartOrFirst(order.getSticker()))
-                .setFontSize(8)
-                .setTextAlignment(TextAlignment.RIGHT)
-                .setFixedPosition(WIDTH - 30, 10, 20);
-        document.add(stickerPathB);
+    private static float toBottomY(PrintTemplateElement element) {
+        return (float) (HEIGHT - element.getY() - element.getHeight());
+    }
+
+    private static TextAlignment toTextAlignment(PrintTextAlign align) {
+        if (align == null) {
+            return TextAlignment.LEFT;
+        }
+        return switch (align) {
+            case LEFT -> TextAlignment.LEFT;
+            case CENTER -> TextAlignment.CENTER;
+            case RIGHT -> TextAlignment.RIGHT;
+        };
     }
 
     private static void addPageSticker(Order order, Document document, PdfDocument pdfDoc, RenderContext renderContext) throws IOException, WriterException {
@@ -321,65 +302,6 @@ public class GenerateBarcode {
         document.add(stickerPathB);
     }
 
-    private static void addPageProduct(Order order, Document document, RenderContext renderContext) throws IOException {
-
-        Paragraph name = new  Paragraph(safeValue(order.getName()))
-                .setFontSize(9)
-                .setFixedPosition(8, HEIGHT - 30, WIDTH - 16)
-                .setTextAlignment(TextAlignment.CENTER);
-        document.add(name);
-
-        Paragraph brand = new Paragraph("Бренд: " + safeValue(order.getBrand()))
-                .setFontSize(8)
-                .setBold()
-                .setFixedPosition(8, HEIGHT - 40, WIDTH - 16)
-                .setTextAlignment(TextAlignment.LEFT);
-        document.add(brand);
-
-        Paragraph article = new  Paragraph("Арт: " + safeValue(order.getArticle()))
-                .setFontSize(8)
-                .setBold()
-                .setFixedPosition(8, HEIGHT - 50, WIDTH - 16)
-                .setTextAlignment(TextAlignment.LEFT);
-        document.add(article);
-
-        Paragraph size = new  Paragraph("Размер: " + safeValue(order.getSize()))
-                .setFontSize(8)
-                .setBold()
-                .setFixedPosition(8, HEIGHT - 60, WIDTH - 16)
-                .setTextAlignment(TextAlignment.LEFT);
-        document.add(size);
-
-        Paragraph color = new  Paragraph("Цвет: " + safeValue(order.getColor()))
-                .setFontSize(8)
-                .setBold()
-                .setFixedPosition(8, HEIGHT - 70, WIDTH - 16)
-                .setTextAlignment(TextAlignment.LEFT);
-        document.add(color);
-
-        Image barcodeImage = new Image(ImageDataFactory.create(renderContext.getCode128(requiredValue(order.getBarcode(), "Barcode", order), 420, 75)));
-        barcodeImage.scaleToFit(140, 25);
-        barcodeImage.setFixedPosition(WIDTH - 152, 16);
-        document.add(barcodeImage);
-
-        Paragraph barcode = new Paragraph(safeValue(order.getBarcode()))
-                .setFontSize(8)
-                .setFixedPosition(8, 5, WIDTH - 16)
-                .setTextAlignment(TextAlignment.CENTER);
-        document.add(barcode);
-
-        Image eac = new Image(ImageDataFactory.create(getEacImageBytes()));
-        eac.scaleToFit(16, 12);
-        eac.setFixedPosition(WIDTH - 35, HEIGHT / 2 - 12, WIDTH - 16);
-        document.add(eac);
-
-        Paragraph stickerPathB = new Paragraph(StickerText.secondPartOrFirst(order.getSticker()))
-                .setFontSize(8)
-                .setTextAlignment(TextAlignment.RIGHT)
-                .setFixedPosition(WIDTH - 30, 5, 20);
-        document.add(stickerPathB);
-    }
-
     private static String compactProductName(String name) {
         String safeName = safeValue(name);
         if (safeName.isBlank()) {
@@ -400,37 +322,6 @@ public class GenerateBarcode {
             throw new IllegalArgumentException(fieldName + " bị thiếu cho order " + order.getId());
         }
         return safeValue;
-    }
-
-    private static byte[] getEacImageBytes() throws IOException {
-        if (eacImageBytes == null) {
-            synchronized (GenerateBarcode.class) {
-                if (eacImageBytes == null) {
-                    eacImageBytes = loadResourceBytes("/com/tuandev/fbsbarcode/services/eac.png");
-                }
-            }
-        }
-        return eacImageBytes;
-    }
-
-    private static byte[] getChestniyZnakImageBytes() throws IOException {
-        if (chestniyZnakImageBytes == null) {
-            synchronized (GenerateBarcode.class) {
-                if (chestniyZnakImageBytes == null) {
-                    chestniyZnakImageBytes = loadResourceBytes("/com/tuandev/fbsbarcode/services/chestniy-znak.png");
-                }
-            }
-        }
-        return chestniyZnakImageBytes;
-    }
-
-    private static byte[] loadResourceBytes(String resourceName) throws IOException {
-        try (InputStream inputStream = GenerateBarcode.class.getResourceAsStream(resourceName)) {
-            if (inputStream == null) {
-                throw new IOException("Không tìm thấy resource: " + resourceName);
-            }
-            return inputStream.readAllBytes();
-        }
     }
 
     private static byte[] generateQR(String text, int size) throws WriterException, IOException {

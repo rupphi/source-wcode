@@ -86,6 +86,19 @@ public class Database {
             )
             """);
 
+            st.execute("""
+            CREATE TABLE IF NOT EXISTS print_templates(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                page_width REAL NOT NULL DEFAULT 164.40944881889766,
+                page_height REAL NOT NULL DEFAULT 113.38582677165356,
+                is_default INTEGER NOT NULL DEFAULT 0,
+                layout_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """);
+
             st.execute("INSERT INTO config (id, type) SELECT 1, 1 WHERE NOT EXISTS (SELECT 1 FROM config WHERE id = 1)");
             WbSchemaSupport.initialize(conn);
         } catch (SQLException e) {

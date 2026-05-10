@@ -14,8 +14,9 @@ import com.tuandev.fbsbarcode.features.kiz.CategoryWorkflow;
 import com.tuandev.fbsbarcode.shared.ConfigService;
 import com.tuandev.fbsbarcode.shared.FxmlViewLoader;
 import com.tuandev.fbsbarcode.features.print.OrderExportWorkflow;
+import com.tuandev.fbsbarcode.features.print.PrintTemplateDesignerService;
+import com.tuandev.fbsbarcode.features.print.PrintTemplateService;
 import com.tuandev.fbsbarcode.features.supply.OrderSortingService;
-import com.tuandev.fbsbarcode.features.print.PrintTypeDialogService;
 import com.tuandev.fbsbarcode.integration.update.UpdateDialogService;
 import com.tuandev.fbsbarcode.integration.update.UpdateInfo;
 import com.tuandev.fbsbarcode.integration.update.UpdateInstallerService;
@@ -48,7 +49,6 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URL;
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
@@ -65,7 +65,8 @@ public class HomeController implements Initializable {
     private final WbSupplyWorkflow wbSupplyWorkflow = new WbSupplyWorkflow();
     private final SupplyLoadWorkflow supplyLoadWorkflow = new SupplyLoadWorkflow();
     private final OrderSortingService orderSortingService = new OrderSortingService();
-    private final PrintTypeDialogService printTypeDialogService = new PrintTypeDialogService();
+    private final PrintTemplateService printTemplateService = new PrintTemplateService();
+    private final PrintTemplateDesignerService printTemplateDesignerService = new PrintTemplateDesignerService();
     private final WorkspaceState state = new WorkspaceState();
     private final WorkspaceActivityTracker activityTracker = new WorkspaceActivityTracker();
     private final UpdateService updateService = new UpdateService();
@@ -88,6 +89,7 @@ public class HomeController implements Initializable {
     @Override
     public void initialize(URL url, ResourceBundle resourceBundle) {
         Database.initDatabase();
+        printTemplateService.ensureDefaultTemplateExists();
 
         fileChooser = new FileChooser();
         fileChooser.setInitialDirectory(new File(System.getProperty("user.home"), "Downloads"));
@@ -221,7 +223,6 @@ public class HomeController implements Initializable {
                                 shop,
                                 state.getDisplayedOrders(),
                                 kizPanelController.getKizCommand(),
-                                ConfigService.getPrintType(),
                                 file,
                                 orderDetailsFile
                         )
@@ -249,7 +250,7 @@ public class HomeController implements Initializable {
     }
 
     public void onSettings(ActionEvent event) {
-        printTypeDialogService.showDialog();
+        printTemplateDesignerService.showDialog();
     }
 
     public void onUpdateShop(ActionEvent actionEvent) {
@@ -687,6 +688,12 @@ public class HomeController implements Initializable {
 
     private void resetLoadedSupply() {
         state.clearLoadedSupply();
+        if (supplyDetailController != null) {
+            supplyDetailController.setLoading(false);
+            supplyDetailController.setStickerLoading(false);
+            supplyDetailController.setSupplyInfo("", "");
+            supplyDetailController.setOrders(List.of());
+        }
         updateExportAvailability();
     }
 

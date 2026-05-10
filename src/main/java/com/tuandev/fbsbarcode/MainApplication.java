@@ -16,7 +16,7 @@ public class MainApplication extends Application {
         FXMLLoader fxmlLoader = new FXMLLoader(MainApplication.class.getResource("home-view.fxml"));
         Scene scene = new Scene(fxmlLoader.load());
         scene.getStylesheets().add(BootstrapFX.bootstrapFXStylesheet());
-        stage.setTitle("FBS Barcode (Zalo: 0335407670)");
+        stage.setTitle("FBS Barcode v" + BuildConfig.getAppVersion() + " (Zalo: 0335407670)");
 
         Image appIcon = new Image(MainApplication.class.getResourceAsStream("logo-fbs.png"));
         stage.getIcons().add(appIcon);
