@@ -8,7 +8,9 @@ jobs:
   release:
     runs-on: windows-latest
     permissions:
-      contents: write
+      contents: read
+    env:
+      PUBLIC_RELEASE_REPO: tuanworlddev/WCode
     steps:
       - uses: actions/checkout@v4
 
@@ -97,13 +99,29 @@ jobs:
           if (Test-Path "out/FBSBarcode-portable.zip") { Remove-Item "out/FBSBarcode-portable.zip" -Force }
           Compress-Archive -Path "out/FBSBarcode/*" -DestinationPath "out/FBSBarcode-portable.zip"
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: "FBSBarcode v${{ env.APP_VERSION }}"
-          files: |
-            out/FBSBarcode.exe
-            out/FBSBarcode.msi
-            out/FBSBarcode-portable.zip
-          generate_release_notes: true
-          draft: false
+      - name: Publish release to public repo
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.WCODE_RELEASE_TOKEN }}
+        run: |
+          TAG="v${APP_VERSION}"
+          TITLE="WCode v${APP_VERSION}"
+          NOTES="Public installer release for WCode / FBS Barcode ${APP_VERSION}."
+          if gh release view "$TAG" -R "$PUBLIC_RELEASE_REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              out/FBSBarcode.exe \
+              out/FBSBarcode.msi \
+              out/FBSBarcode-portable.zip \
+              -R "$PUBLIC_RELEASE_REPO" \
+              --clobber
+            gh release edit "$TAG" -R "$PUBLIC_RELEASE_REPO" --title "$TITLE" --notes "$NOTES"
+          else
+            gh release create "$TAG" \
+              out/FBSBarcode.exe \
+              out/FBSBarcode.msi \
+              out/FBSBarcode-portable.zip \
+              -R "$PUBLIC_RELEASE_REPO" \
+              --target main \
+              --title "$TITLE" \
+              --notes "$NOTES"
+          fi
