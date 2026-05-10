@@ -52,4 +52,16 @@ public class ConfigService {
         setConfigValue("update_last_check", timestamp);
     }
 
+    public static String getPrintAccessToken() {
+        return getConfigValue("print_access_token");
+    }
+
+    public static void setPrintAccessToken(String token) {
+        setConfigValue("print_access_token", token);
+    }
+
+    public static void clearPrintAccessToken() {
+        setConfigValue("print_access_token", "");
+    }
+
 }

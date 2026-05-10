@@ -14,6 +14,7 @@ import com.tuandev.fbsbarcode.features.kiz.CategoryWorkflow;
 import com.tuandev.fbsbarcode.shared.ConfigService;
 import com.tuandev.fbsbarcode.shared.FxmlViewLoader;
 import com.tuandev.fbsbarcode.features.print.OrderExportWorkflow;
+import com.tuandev.fbsbarcode.features.print.PrintAuthorizationDialogService;
 import com.tuandev.fbsbarcode.features.print.PrintTemplateDesignerService;
 import com.tuandev.fbsbarcode.features.print.PrintTemplateService;
 import com.tuandev.fbsbarcode.features.supply.OrderSortingService;
@@ -65,6 +66,7 @@ public class HomeController implements Initializable {
     private final WbSupplyWorkflow wbSupplyWorkflow = new WbSupplyWorkflow();
     private final SupplyLoadWorkflow supplyLoadWorkflow = new SupplyLoadWorkflow();
     private final OrderSortingService orderSortingService = new OrderSortingService();
+    private final PrintAuthorizationDialogService printAuthorizationDialogService = new PrintAuthorizationDialogService();
     private final PrintTemplateService printTemplateService = new PrintTemplateService();
     private final PrintTemplateDesignerService printTemplateDesignerService = new PrintTemplateDesignerService();
     private final WorkspaceState state = new WorkspaceState();
@@ -204,6 +206,9 @@ public class HomeController implements Initializable {
         }
         if (state.getDisplayedOrders().isEmpty()) {
             AlertService.showWarning("Thông báo", "Vui lòng cập nhật đơn hàng", null);
+            return;
+        }
+        if (!printAuthorizationDialogService.ensureAuthorized()) {
             return;
         }
 
