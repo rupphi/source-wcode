@@ -14,6 +14,7 @@ final class WorkspaceState {
     private Integer pendingSelectShopId;
     private String loadedSupplyId;
     private boolean supplyEnriching;
+    private long supplyRequestToken;
 
     List<Shop> getShops() {
         return shops;
@@ -71,6 +72,30 @@ final class WorkspaceState {
         this.supplyEnriching = supplyEnriching;
     }
 
+    long nextSupplyRequestToken() {
+        return ++supplyRequestToken;
+    }
+
+    long getSupplyRequestToken() {
+        return supplyRequestToken;
+    }
+
+    List<Order> getOrders() {
+        return loadedOrdersRaw;
+    }
+
+    void setOrders(List<Order> orders) {
+        this.loadedOrdersRaw = orders == null ? new ArrayList<>() : new ArrayList<>(orders);
+        this.displayedOrders = this.loadedOrdersRaw;
+    }
+
+    void removeShopFromState(int shopId) {
+        shops.removeIf(s -> s.getId() == shopId);
+        if (selectedShop != null && selectedShop.getId() == shopId) {
+            selectedShop = null;
+        }
+    }
+
     void clearWorkspace() {
         selectedShop = null;
         clearLoadedSupply();
@@ -78,6 +103,7 @@ final class WorkspaceState {
     }
 
     void clearLoadedSupply() {
+        supplyRequestToken++;
         loadedSupplyId = null;
         loadedOrdersRaw = new ArrayList<>();
         displayedOrders = new ArrayList<>();

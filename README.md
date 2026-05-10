@@ -63,26 +63,20 @@
 
 | Loại | Link tải |
 |------|----------|
-| **EXE Installer** (khuyên dùng) | [FBSBarcode-1.0.0.exe](https://github.com/tuanworlddev/FBSBarcode/releases/latest/download/FBSBarcode-1.0.0.exe) |
-| **MSI Installer** | [FBSBarcode-1.0.0.msi](https://github.com/tuanworlddev/FBSBarcode/releases/latest/download/FBSBarcode-1.0.0.msi) |
-| **Portable (ZIP)** | [FBSBarcode-1.0.0.zip](https://github.com/tuanworlddev/FBSBarcode/releases/latest/download/FBSBarcode-1.0.0.zip) |
+| **EXE Installer** (khuyên dùng) | [FBSBarcode.exe](https://github.com/tuanworlddev/FBSBarcode/releases/latest/download/FBSBarcode.exe) |
+| **MSI Installer** | [FBSBarcode.msi](https://github.com/tuanworlddev/FBSBarcode/releases/latest/download/FBSBarcode.msi) |
+| **Portable (ZIP)** | [FBSBarcode-portable.zip](https://github.com/tuanworlddev/FBSBarcode/releases/latest/download/FBSBarcode-portable.zip) |
 
 ### macOS 🍎
 
-| Loại | Link tải |
-|------|----------|
-| **DMG Installer** | [FBSBarcode-1.0.0.dmg](https://github.com/tuanworlddev/FBSBarcode/releases/latest/download/FBSBarcode-1.0.0.dmg) |
-| **Portable (tar.gz)** | [FBSBarcode-1.0.0.tar.gz](https://github.com/tuanworlddev/FBSBarcode/releases/latest/download/FBSBarcode-1.0.0.tar.gz) |
+Hiện chưa phát hành bản cài đặt macOS.
 
 ### Linux 🐧
 
-| Loại | Link tải |
-|------|----------|
-| **DEB Package** | [FBSBarcode-1.0.0.deb](https://github.com/tuanworlddev/FBSBarcode/releases/latest/download/FBSBarcode-1.0.0.deb) |
-| **RPM Package** | [FBSBarcode-1.0.0.rpm](https://github.com/tuanworlddev/FBSBarcode/releases/latest/download/FBSBarcode-1.0.0.rpm) |
-| **Portable (tar.gz)** | [FBSBarcode-1.0.0.tar.gz](https://github.com/tuanworlddev/FBSBarcode/releases/latest/download/FBSBarcode-1.0.0.tar.gz) |
+Hiện chưa phát hành bản cài đặt Linux.
 
 > 💡 Xem tất cả phiên bản tại [trang Releases](https://github.com/tuanworlddev/FBSBarcode/releases).
+> Ứng dụng kiểm tra phiên bản mới trực tiếp từ GitHub Releases và trên Windows có thể tải và mở installer cập nhật ngay trong app.
 
 ## Cài đặt từ mã nguồn
 
@@ -112,6 +106,20 @@ build.bat exe      # Tạo file cài đặt EXE
 build.bat msi      # Tạo file cài đặt MSI
 build.bat app-image   # Tạo thư mục portable
 ```
+
+### Phát hành GitHub Release
+
+Workflow [release.yml](.github/workflows/release.yml) sẽ tự chạy khi push tag theo dạng `v*`.
+
+```bash
+git tag v1.0.1
+git push origin main --tags
+```
+
+Release tạo ra 3 asset Windows:
+- `FBSBarcode.exe`
+- `FBSBarcode.msi`
+- `FBSBarcode-portable.zip`
 
 ## Hướng dẫn sử dụng
 

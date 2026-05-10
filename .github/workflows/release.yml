@@ -1,0 +1,109 @@
+name: Create Release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'oracle'
+
+      - name: Extract version from tag
+        shell: bash
+        run: |
+          APP_VERSION=${GITHUB_REF#refs/tags/v}
+          echo "APP_VERSION=$APP_VERSION" >> $GITHUB_ENV
+          echo "Building version $APP_VERSION"
+
+      - name: Build with Maven
+        shell: bash
+        run: ./mvnw.cmd -B package -DskipTests
+
+      - name: Build EXE installer
+        shell: bash
+        run: |
+          jpackage --type exe \
+            --name FBSBarcode \
+            --input target \
+            --main-jar "FBSBarcode-${{ env.APP_VERSION }}.jar" \
+            --main-class com.tuandev.fbsbarcode.Launcher \
+            --dest out \
+            --app-version "${{ env.APP_VERSION }}" \
+            --vendor TuanDev \
+            --icon src/main/resources/com/tuandev/fbsbarcode/logo-fbs.ico \
+            --win-menu \
+            --win-shortcut \
+            --win-per-user-install \
+            --java-options "--enable-native-access=ALL-UNNAMED" \
+            --java-options "--enable-native-access=javafx.graphics" \
+            --jlink-options "--strip-native-commands --strip-debug --no-man-pages --no-header-files --bind-services"
+
+      - name: Rename EXE installer
+        shell: bash
+        run: mv out/FBSBarcode-*.exe "out/FBSBarcode.exe" 2>/dev/null || true
+
+      - name: Build MSI installer
+        shell: bash
+        run: |
+          jpackage --type msi \
+            --name FBSBarcode \
+            --input target \
+            --main-jar "FBSBarcode-${{ env.APP_VERSION }}.jar" \
+            --main-class com.tuandev.fbsbarcode.Launcher \
+            --dest out \
+            --app-version "${{ env.APP_VERSION }}" \
+            --vendor TuanDev \
+            --icon src/main/resources/com/tuandev/fbsbarcode/logo-fbs.ico \
+            --win-menu \
+            --win-shortcut \
+            --win-per-user-install \
+            --java-options "--enable-native-access=ALL-UNNAMED" \
+            --java-options "--enable-native-access=javafx.graphics" \
+            --jlink-options "--strip-native-commands --strip-debug --no-man-pages --no-header-files --bind-services"
+
+      - name: Rename MSI installer
+        shell: bash
+        run: mv out/FBSBarcode-*.msi "out/FBSBarcode.msi" 2>/dev/null || true
+
+      - name: Build portable app image
+        shell: bash
+        run: |
+          jpackage --type app-image \
+            --name FBSBarcode \
+            --input target \
+            --main-jar "FBSBarcode-${{ env.APP_VERSION }}.jar" \
+            --main-class com.tuandev.fbsbarcode.Launcher \
+            --dest out \
+            --app-version "${{ env.APP_VERSION }}" \
+            --vendor TuanDev \
+            --icon src/main/resources/com/tuandev/fbsbarcode/logo-fbs.ico \
+            --java-options "--enable-native-access=ALL-UNNAMED" \
+            --java-options "--enable-native-access=javafx.graphics" \
+            --jlink-options "--strip-native-commands --strip-debug --no-man-pages --no-header-files --bind-services"
+
+      - name: Archive portable app image
+        shell: pwsh
+        run: |
+          if (Test-Path "out/FBSBarcode-portable.zip") { Remove-Item "out/FBSBarcode-portable.zip" -Force }
+          Compress-Archive -Path "out/FBSBarcode/*" -DestinationPath "out/FBSBarcode-portable.zip"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "FBSBarcode v${{ env.APP_VERSION }}"
+          files: |
+            out/FBSBarcode.exe
+            out/FBSBarcode.msi
+            out/FBSBarcode-portable.zip
+          generate_release_notes: true
+          draft: false

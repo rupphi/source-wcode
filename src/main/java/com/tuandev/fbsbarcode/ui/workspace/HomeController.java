@@ -16,6 +16,10 @@ import com.tuandev.fbsbarcode.shared.FxmlViewLoader;
 import com.tuandev.fbsbarcode.features.print.OrderExportWorkflow;
 import com.tuandev.fbsbarcode.features.supply.OrderSortingService;
 import com.tuandev.fbsbarcode.features.print.PrintTypeDialogService;
+import com.tuandev.fbsbarcode.integration.update.UpdateDialogService;
+import com.tuandev.fbsbarcode.integration.update.UpdateInfo;
+import com.tuandev.fbsbarcode.integration.update.UpdateInstallerService;
+import com.tuandev.fbsbarcode.integration.update.UpdateService;
 import com.tuandev.fbsbarcode.features.shop.ShopWorkflow;
 import com.tuandev.fbsbarcode.features.supply.SupplyLoadWorkflow;
 import com.tuandev.fbsbarcode.ui.kiz.KizPanelController;
@@ -27,6 +31,7 @@ import javafx.concurrent.Task;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXMLLoader;
 import javafx.fxml.Initializable;
+import javafx.application.Platform;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
@@ -63,6 +68,8 @@ public class HomeController implements Initializable {
     private final PrintTypeDialogService printTypeDialogService = new PrintTypeDialogService();
     private final WorkspaceState state = new WorkspaceState();
     private final WorkspaceActivityTracker activityTracker = new WorkspaceActivityTracker();
+    private final UpdateService updateService = new UpdateService();
+    private final UpdateInstallerService updateInstallerService = new UpdateInstallerService();
 
     public StackPane sidebarContainer;
     public StackPane headerContainer;
@@ -95,6 +102,68 @@ public class HomeController implements Initializable {
         updateHeaderState();
         updateExportAvailability();
         loadShops();
+        checkForUpdates();
+    }
+
+    private void checkForUpdates() {
+        javafx.concurrent.Task<UpdateInfo> task = new javafx.concurrent.Task<>() {
+            @Override
+            protected UpdateInfo call() {
+                return updateService.checkForUpdate();
+            }
+        };
+        task.setOnSucceeded(e -> {
+            UpdateInfo info = task.getValue();
+            if (info != null) {
+                showUpdateDialog(info);
+            }
+        });
+        task.setOnFailed(e ->
+            LOGGER.warn("Update check failed", task.getException())
+        );
+        AppTaskExecutor.execute(task);
+    }
+
+    private void showUpdateDialog(UpdateInfo info) {
+        UpdateDialogService dialogService = new UpdateDialogService();
+        UpdateDialogService.UpdateChoice choice = dialogService.showDialog(info);
+        switch (choice) {
+            case DOWNLOAD:
+                if (updateInstallerService.supportsInAppInstall(info)) {
+                    startInstallerUpdate(info);
+                } else {
+                    UpdateDialogService.openDownloadUrl(info);
+                }
+                break;
+            case SKIP:
+                ConfigService.setSkippedVersion(info.getVersion());
+                break;
+            case LATER:
+                break;
+        }
+    }
+
+    private void startInstallerUpdate(UpdateInfo info) {
+        Task<java.nio.file.Path> task = new Task<>() {
+            @Override
+            protected java.nio.file.Path call() throws Exception {
+                return updateInstallerService.downloadInstaller(info);
+            }
+        };
+        task.setOnFailed(e -> {
+            LOGGER.error("Không thể tải bản cập nhật {}", info.getVersion(), task.getException());
+            AlertService.showError("Không thể tải bản cập nhật. Vui lòng thử lại sau.");
+        });
+        task.setOnSucceeded(e -> {
+            try {
+                updateInstallerService.launchInstallerAfterExit(task.getValue());
+                Platform.exit();
+            } catch (IOException ex) {
+                LOGGER.error("Không thể khởi chạy installer cập nhật {}", info.getVersion(), ex);
+                AlertService.showError("Đã tải xong nhưng không thể mở installer cập nhật.");
+            }
+        });
+        AppTaskExecutor.execute(task);
     }
 
     public void onAddShop(ActionEvent actionEvent) {
@@ -461,6 +530,8 @@ public class HomeController implements Initializable {
             return;
         }
         resetLoadedSupply();
+        long requestToken = state.nextSupplyRequestToken();
+        state.setLoadedSupplyId(supply.getSupplyId());
         supplyDetailController.setLoading(true);
         supplyDetailController.setStickerLoading(false);
         supplyDetailController.setSupplyInfo("Supply " + supply.getSupplyId(), "");
@@ -472,27 +543,29 @@ public class HomeController implements Initializable {
             }
         };
         localTask.setOnFailed(e -> {
+            if (!isCurrentSupplyRequest(shop.getId(), supply.getSupplyId(), requestToken)) {
+                return;
+            }
             supplyDetailController.setLoading(false);
             LOGGER.error("Không thể mở supply {}", supply.getSupplyId(), localTask.getException());
             supplyDetailController.showEmptyState("", "");
             AlertService.showError(localTask.getException().getMessage());
         });
         localTask.setOnSucceeded(e -> {
-            supplyDetailController.setLoading(false);
-            if (!isCurrentShop(shop.getId())) {
+            if (!isCurrentSupplyRequest(shop.getId(), supply.getSupplyId(), requestToken)) {
                 return;
             }
+            supplyDetailController.setLoading(false);
             state.setLoadedOrdersRaw(localTask.getValue());
-            state.setLoadedSupplyId(supply.getSupplyId());
             supplyDetailController.setSupplyInfo("Supply " + supply.getSupplyId(), "");
             applySortAndDisplayOrders();
             updateExportAvailability();
-            startSupplyRefresh(shop, supply);
+            startSupplyRefresh(shop, supply, requestToken);
         });
         AppTaskExecutor.execute(localTask);
     }
 
-    private void startSupplyRefresh(Shop shop, WbSupplySummary supply) {
+    private void startSupplyRefresh(Shop shop, WbSupplySummary supply, long requestToken) {
         state.setSupplyEnriching(true);
         supplyDetailController.setStickerLoading(true);
         updateExportAvailability();
@@ -504,17 +577,20 @@ public class HomeController implements Initializable {
             }
         };
         refreshTask.setOnFailed(e -> {
+            if (!isCurrentSupplyRequest(shop.getId(), supply.getSupplyId(), requestToken)) {
+                return;
+            }
             state.setSupplyEnriching(false);
             supplyDetailController.setStickerLoading(false);
             updateExportAvailability();
             LOGGER.warn("Không thể refresh supply {} ở nền", supply.getSupplyId(), refreshTask.getException());
         });
         refreshTask.setOnSucceeded(e -> {
-            state.setSupplyEnriching(false);
-            supplyDetailController.setStickerLoading(false);
-            if (!isCurrentShop(shop.getId()) || !Objects.equals(state.getLoadedSupplyId(), supply.getSupplyId())) {
+            if (!isCurrentSupplyRequest(shop.getId(), supply.getSupplyId(), requestToken)) {
                 return;
             }
+            state.setSupplyEnriching(false);
+            supplyDetailController.setStickerLoading(false);
             state.setLoadedOrdersRaw(refreshTask.getValue());
             applySortAndDisplayOrders();
             supplyDetailController.setSupplyInfo("Supply " + supply.getSupplyId(), "");
@@ -622,6 +698,12 @@ public class HomeController implements Initializable {
 
     private boolean isCurrentShop(int shopId) {
         return state.getSelectedShop() != null && state.getSelectedShop().getId() == shopId;
+    }
+
+    private boolean isCurrentSupplyRequest(int shopId, String supplyId, long requestToken) {
+        return isCurrentShop(shopId)
+                && Objects.equals(state.getLoadedSupplyId(), supplyId)
+                && state.getSupplyRequestToken() == requestToken;
     }
 
     private Shop requireSelectedShop() {

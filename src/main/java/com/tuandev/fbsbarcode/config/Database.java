@@ -79,6 +79,13 @@ public class Database {
             )
             """);
 
+            st.execute("""
+            CREATE TABLE IF NOT EXISTS app_config(
+                key   TEXT PRIMARY KEY,
+                value TEXT
+            )
+            """);
+
             st.execute("INSERT INTO config (id, type) SELECT 1, 1 WHERE NOT EXISTS (SELECT 1 FROM config WHERE id = 1)");
             WbSchemaSupport.initialize(conn);
         } catch (SQLException e) {
