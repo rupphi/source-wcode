@@ -33,8 +33,12 @@ public class UpdateApiClient {
         return fetchWithRetry(0);
     }
 
+    public String resolveConfiguredSource() {
+        return normalizeUpdateSource(getEffectiveUpdateUrl());
+    }
+
     private UpdateInfo fetchWithRetry(int attempt) {
-        String sourceUrl = normalizeUpdateSource(getEffectiveUpdateUrl());
+        String sourceUrl = resolveConfiguredSource();
         if (sourceUrl == null || sourceUrl.isBlank()) {
             return null;
         }

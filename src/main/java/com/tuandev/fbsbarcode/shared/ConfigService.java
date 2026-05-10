@@ -52,6 +52,14 @@ public class ConfigService {
         setConfigValue("update_last_check", timestamp);
     }
 
+    public static String getLastUpdateCheckSource() {
+        return getConfigValue("update_last_check_source");
+    }
+
+    public static void setLastUpdateCheckSource(String source) {
+        setConfigValue("update_last_check_source", source);
+    }
+
     public static String getPrintAccessToken() {
         return getConfigValue("print_access_token");
     }

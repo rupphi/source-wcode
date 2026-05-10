@@ -14,6 +14,12 @@ public class UpdateService {
 
     public UpdateInfo checkForUpdate() {
         LocalDate today = LocalDate.now();
+        String currentSource = apiClient.resolveConfiguredSource();
+        String lastSource = ConfigService.getLastUpdateCheckSource();
+        if (currentSource != null && !currentSource.equals(lastSource)) {
+            ConfigService.setLastUpdateCheckSource(currentSource);
+            ConfigService.setLastUpdateCheck("");
+        }
         String lastCheck = ConfigService.getLastUpdateCheck();
         if (today.toString().equals(lastCheck)) {
             return null;
