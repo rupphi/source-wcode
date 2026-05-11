@@ -45,7 +45,7 @@ public class UpdateApiClient {
         boolean githubSource = isGitHubRepoApi(sourceUrl);
         Request request = new Request.Builder()
                 .url(githubSource ? sourceUrl + "/releases/latest" : sourceUrl + "/api/versions/latest")
-                .header("User-Agent", "FBSBarcode/" + BuildConfig.getAppVersion())
+                .header("User-Agent", "WCode/" + BuildConfig.getAppVersion())
                 .header("Accept", githubSource ? "application/vnd.github+json" : "application/json")
                 .header("X-GitHub-Api-Version", "2022-11-28")
                 .get()

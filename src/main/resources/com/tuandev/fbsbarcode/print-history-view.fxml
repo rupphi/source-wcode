@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.TableColumn?>
+<?import javafx.scene.control.TableView?>
+<?import javafx.scene.layout.VBox?>
+
+<VBox spacing="12.0" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.ui.history.PrintHistoryController">
+    <children>
+        <Label styleClass="h2" text="Lịch sử in" />
+        <Label fx:id="emptyStateLabel" styleClass="text-muted" text="Chưa có lịch sử in cho shop này." wrapText="true" />
+        <TableView fx:id="jobsTable" managed="false" prefHeight="260.0" visible="false">
+            <columns>
+                <TableColumn fx:id="printedAtTC" prefWidth="160.0" text="Thời gian in" />
+                <TableColumn fx:id="supplyNameTC" prefWidth="180.0" text="Supply name" />
+                <TableColumn fx:id="supplyIdTC" prefWidth="150.0" text="Supply ID" />
+                <TableColumn fx:id="itemCountTC" prefWidth="110.0" text="Số sản phẩm" />
+                <TableColumn fx:id="statusTC" prefWidth="100.0" text="Trạng thái" />
+                <TableColumn fx:id="actionTC" prefWidth="72.0" text="" />
+            </columns>
+        </TableView>
+    </children>
+    <padding>
+        <Insets bottom="12.0" left="12.0" right="12.0" top="12.0" />
+    </padding>
+</VBox>

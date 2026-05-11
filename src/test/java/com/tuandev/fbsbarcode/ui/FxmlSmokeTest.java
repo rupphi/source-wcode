@@ -36,6 +36,7 @@ class FxmlSmokeTest {
         assertLoads("workspace-header-view.fxml");
         assertLoads("supply-list-view.fxml");
         assertLoads("supply-detail-view.fxml");
+        assertLoads("print-history-view.fxml");
         assertLoads("kiz-panel-view.fxml");
         assertLoads("print-template-designer-view.fxml");
         assertLoads("shop-dialog.fxml");

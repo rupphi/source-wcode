@@ -107,6 +107,7 @@ public class SupplyDetailController {
         stickerTC.setCellValueFactory(new PropertyValueFactory<>("sticker"));
         barcodeTC.setCellValueFactory(new PropertyValueFactory<>("barcode"));
         stickerCodeTC.setCellValueFactory(new PropertyValueFactory<>("stickerCode"));
+        orderTable.setColumnResizePolicy(TableView.UNCONSTRAINED_RESIZE_POLICY);
         centerColumn(idTC);
         centerColumn(nameTC);
         centerColumn(subjectNameTC);

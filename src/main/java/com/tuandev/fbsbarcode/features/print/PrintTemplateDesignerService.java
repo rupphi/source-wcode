@@ -11,6 +11,7 @@ public class PrintTemplateDesignerService {
     public void showDialog() {
         FXMLLoader loader = FxmlViewLoader.loader(PrintTemplateDesignerController.class, "print-template-designer-view.fxml");
         Scene scene = new Scene(FxmlViewLoader.load(loader));
+        scene.getStylesheets().add(java.util.Objects.requireNonNull(com.tuandev.fbsbarcode.MainApplication.class.getResource("css/theme.css")).toExternalForm());
 
         Stage stage = new Stage();
         stage.setTitle("Thiết kế tem 58x40");

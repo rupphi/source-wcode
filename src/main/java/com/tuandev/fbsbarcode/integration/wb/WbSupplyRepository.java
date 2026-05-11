@@ -65,10 +65,21 @@ public class WbSupplyRepository {
     public List<WbSupplySummary> getSupplySummaries(int shopId) {
         List<WbSupplySummary> supplies = new ArrayList<>();
         String sql = """
-                SELECT supply_id, name, done, is_b2b, created_at
-                FROM wb_supplies
-                WHERE shop_id = ?
-                ORDER BY done ASC, created_at DESC, supply_id DESC
+                SELECT s.supply_id,
+                       s.name,
+                       s.done,
+                       s.is_b2b,
+                       s.created_at,
+                       COALESCE(o.item_count, 0) AS item_count
+                FROM wb_supplies s
+                LEFT JOIN (
+                    SELECT shop_id, supply_id, COUNT(*) AS item_count
+                    FROM wb_orders
+                    WHERE supply_id IS NOT NULL AND supply_id <> ''
+                    GROUP BY shop_id, supply_id
+                ) o ON o.shop_id = s.shop_id AND o.supply_id = s.supply_id
+                WHERE s.shop_id = ?
+                ORDER BY s.done ASC, s.created_at DESC, s.supply_id DESC
                 """;
         try (Connection conn = Database.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -80,7 +91,8 @@ public class WbSupplyRepository {
                         rs.getString("name"),
                         rs.getInt("done") == 1,
                         rs.getObject("is_b2b") == null ? null : rs.getInt("is_b2b") == 1,
-                        rs.getString("created_at")
+                        rs.getString("created_at"),
+                        rs.getInt("item_count")
                 ));
             }
             return supplies;
@@ -130,6 +142,22 @@ public class WbSupplyRepository {
                 supplyIds.add(rs.getString("supply_id"));
             }
             return supplyIds;
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public int countOpenSupplies(int shopId) {
+        String sql = """
+                SELECT COUNT(*)
+                FROM wb_supplies
+                WHERE shop_id = ? AND done = 0
+                """;
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, shopId);
+            ResultSet rs = ps.executeQuery();
+            return rs.next() ? rs.getInt(1) : 0;
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }

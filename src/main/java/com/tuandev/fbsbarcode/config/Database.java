@@ -6,6 +6,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 
@@ -99,10 +101,82 @@ public class Database {
             )
             """);
 
+            st.execute("""
+            CREATE TABLE IF NOT EXISTS image_cache(
+                cache_key TEXT PRIMARY KEY,
+                image_url TEXT NOT NULL,
+                image_blob BLOB NOT NULL,
+                content_type TEXT,
+                updated_at TEXT NOT NULL,
+                last_used_at TEXT NOT NULL
+            )
+            """);
+
+            st.execute("""
+            CREATE TABLE IF NOT EXISTS print_jobs(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                shop_id INTEGER NOT NULL,
+                shop_name TEXT,
+                supply_id TEXT,
+                supply_name TEXT,
+                printed_at TEXT NOT NULL,
+                item_count INTEGER NOT NULL,
+                template_id INTEGER,
+                template_name TEXT,
+                template_layout_json TEXT NOT NULL,
+                status TEXT NOT NULL,
+                error_message TEXT,
+                FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
+            )
+            """);
+
+            st.execute("""
+            CREATE TABLE IF NOT EXISTS print_job_items(
+                print_job_id INTEGER NOT NULL,
+                sort_index INTEGER NOT NULL,
+                order_id INTEGER NOT NULL,
+                brand TEXT,
+                name TEXT,
+                subject_name TEXT,
+                size TEXT,
+                color TEXT,
+                article TEXT,
+                barcode TEXT,
+                sticker TEXT,
+                sticker_code TEXT,
+                kiz TEXT,
+                image_cache_key TEXT,
+                PRIMARY KEY (print_job_id, sort_index),
+                FOREIGN KEY (print_job_id) REFERENCES print_jobs(id) ON DELETE CASCADE
+            )
+            """);
+
             st.execute("INSERT INTO config (id, type) SELECT 1, 1 WHERE NOT EXISTS (SELECT 1 FROM config WHERE id = 1)");
+            ensureColumnExists(conn, "print_jobs", "shop_name", "TEXT");
             WbSchemaSupport.initialize(conn);
         } catch (SQLException e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    private static void ensureColumnExists(Connection conn, String tableName, String columnName, String columnDefinition) throws SQLException {
+        if (hasColumn(conn, tableName, columnName)) {
+            return;
+        }
+        try (Statement statement = conn.createStatement()) {
+            statement.execute("ALTER TABLE " + tableName + " ADD COLUMN " + columnName + " " + columnDefinition);
+        }
+    }
+
+    private static boolean hasColumn(Connection conn, String tableName, String columnName) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement("PRAGMA table_info(" + tableName + ")");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                if (columnName.equalsIgnoreCase(rs.getString("name"))) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }

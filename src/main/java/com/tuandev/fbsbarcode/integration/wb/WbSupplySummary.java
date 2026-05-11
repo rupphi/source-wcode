@@ -6,13 +6,15 @@ public class WbSupplySummary {
     private final boolean done;
     private final Boolean b2b;
     private final String createdAt;
+    private final int itemCount;
 
-    public WbSupplySummary(String supplyId, String name, boolean done, Boolean b2b, String createdAt) {
+    public WbSupplySummary(String supplyId, String name, boolean done, Boolean b2b, String createdAt, int itemCount) {
         this.supplyId = supplyId;
         this.name = name;
         this.done = done;
         this.b2b = b2b;
         this.createdAt = createdAt;
+        this.itemCount = itemCount;
     }
 
     public String getSupplyId() {
@@ -35,9 +37,12 @@ public class WbSupplySummary {
         return createdAt;
     }
 
+    public int getItemCount() {
+        return itemCount;
+    }
+
     @Override
     public String toString() {
-        String status = done ? "Đã giao" : "Đang xử lý";
-        return supplyId + " - " + name + " (" + status + ")";
+        return supplyId + " - " + name + " (" + itemCount + ")";
     }
 }

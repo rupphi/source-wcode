@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.Priority?>
+<?import javafx.scene.chart.PieChart?>
+<?import javafx.scene.text.Font?>
+<?import org.kordamp.ikonli.javafx.FontIcon?>
+
+<VBox prefHeight="600.0" prefWidth="900.0" spacing="20.0" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.ui.dashboard.DashboardController">
+    <children>
+        <Label text="Bảng điều khiển" styleClass="h1">
+            <font>
+                <Font name="System Bold" size="24.0" />
+            </font>
+        </Label>
+        <HBox spacing="16.0" prefHeight="120.0">
+            <children>
+                <!-- KPI Card 1 -->
+                <VBox styleClass="card" spacing="8.0" HBox.hgrow="ALWAYS" alignment="CENTER_LEFT">
+                    <padding>
+                        <Insets top="16.0" right="16.0" bottom="16.0" left="16.0"/>
+                    </padding>
+                    <Label text="Tổng đơn hàng FBS" styleClass="text-muted" />
+                    <HBox alignment="CENTER_LEFT" spacing="12.0">
+                        <FontIcon iconLiteral="fth-shopping-bag" iconSize="28" iconColor="#0d6efd" />
+                        <Label fx:id="totalOrdersLabel" styleClass="dashboard-kpi-value" text="0" />
+                    </HBox>
+                </VBox>
+                <!-- KPI Card 2 -->
+                <VBox styleClass="card" spacing="8.0" HBox.hgrow="ALWAYS" alignment="CENTER_LEFT">
+                    <padding>
+                        <Insets top="16.0" right="16.0" bottom="16.0" left="16.0"/>
+                    </padding>
+                    <Label text="Chuyến hàng (Supplies) mở" styleClass="text-muted" />
+                    <HBox alignment="CENTER_LEFT" spacing="12.0">
+                        <FontIcon iconLiteral="fth-package" iconSize="28" iconColor="#10b981" />
+                        <Label fx:id="openSuppliesLabel" styleClass="dashboard-kpi-value" text="0" />
+                    </HBox>
+                </VBox>
+                <!-- KPI Card 3 -->
+                <VBox styleClass="card" spacing="8.0" HBox.hgrow="ALWAYS" alignment="CENTER_LEFT">
+                    <padding>
+                        <Insets top="16.0" right="16.0" bottom="16.0" left="16.0"/>
+                    </padding>
+                    <Label text="Đang đồng bộ" styleClass="text-muted" />
+                    <HBox alignment="CENTER_LEFT" spacing="12.0">
+                        <FontIcon iconLiteral="fth-refresh-cw" iconSize="28" iconColor="#f59e0b" />
+                        <Label fx:id="syncStatusLabel" styleClass="dashboard-sync-value" text="N/A" />
+                    </HBox>
+                </VBox>
+            </children>
+        </HBox>
+        <HBox spacing="16.0" VBox.vgrow="ALWAYS">
+            <children>
+                <VBox styleClass="card" HBox.hgrow="ALWAYS" spacing="12.0">
+                    <padding>
+                        <Insets top="16.0" right="16.0" bottom="16.0" left="16.0"/>
+                    </padding>
+                    <Label text="Thống kê trạng thái đơn hàng" styleClass="h3" />
+                    <PieChart fx:id="orderStatusChart" labelsVisible="true" VBox.vgrow="ALWAYS" />
+                </VBox>
+            </children>
+        </HBox>
+    </children>
+</VBox>

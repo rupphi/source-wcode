@@ -35,7 +35,7 @@ jobs:
         shell: bash
         run: |
           jpackage --type exe \
-            --name FBSBarcode \
+            --name WCode \
             --input target \
             --main-jar "FBSBarcode-${{ env.APP_VERSION }}.jar" \
             --main-class com.tuandev.fbsbarcode.Launcher \
@@ -52,13 +52,13 @@ jobs:
 
       - name: Rename EXE installer
         shell: bash
-        run: mv out/FBSBarcode-*.exe "out/FBSBarcode.exe" 2>/dev/null || true
+        run: mv out/WCode-*.exe "out/WCode.exe" 2>/dev/null || true
 
       - name: Build MSI installer
         shell: bash
         run: |
           jpackage --type msi \
-            --name FBSBarcode \
+            --name WCode \
             --input target \
             --main-jar "FBSBarcode-${{ env.APP_VERSION }}.jar" \
             --main-class com.tuandev.fbsbarcode.Launcher \
@@ -75,13 +75,13 @@ jobs:
 
       - name: Rename MSI installer
         shell: bash
-        run: mv out/FBSBarcode-*.msi "out/FBSBarcode.msi" 2>/dev/null || true
+        run: mv out/WCode-*.msi "out/WCode.msi" 2>/dev/null || true
 
       - name: Build portable app image
         shell: bash
         run: |
           jpackage --type app-image \
-            --name FBSBarcode \
+            --name WCode \
             --input target \
             --main-jar "FBSBarcode-${{ env.APP_VERSION }}.jar" \
             --main-class com.tuandev.fbsbarcode.Launcher \
@@ -96,8 +96,8 @@ jobs:
       - name: Archive portable app image
         shell: pwsh
         run: |
-          if (Test-Path "out/FBSBarcode-portable.zip") { Remove-Item "out/FBSBarcode-portable.zip" -Force }
-          Compress-Archive -Path "out/FBSBarcode/*" -DestinationPath "out/FBSBarcode-portable.zip"
+          if (Test-Path "out/WCode-portable.zip") { Remove-Item "out/WCode-portable.zip" -Force }
+          Compress-Archive -Path "out/WCode/*" -DestinationPath "out/WCode-portable.zip"
 
       - name: Publish release to public repo
         shell: bash
@@ -106,20 +106,20 @@ jobs:
         run: |
           TAG="v${APP_VERSION}"
           TITLE="WCode v${APP_VERSION}"
-          NOTES="Public installer release for WCode / FBS Barcode ${APP_VERSION}."
+          NOTES="Public installer release for WCode ${APP_VERSION}."
           if gh release view "$TAG" -R "$PUBLIC_RELEASE_REPO" >/dev/null 2>&1; then
             gh release upload "$TAG" \
-              out/FBSBarcode.exe \
-              out/FBSBarcode.msi \
-              out/FBSBarcode-portable.zip \
+              out/WCode.exe \
+              out/WCode.msi \
+              out/WCode-portable.zip \
               -R "$PUBLIC_RELEASE_REPO" \
               --clobber
             gh release edit "$TAG" -R "$PUBLIC_RELEASE_REPO" --title "$TITLE" --notes "$NOTES"
           else
             gh release create "$TAG" \
-              out/FBSBarcode.exe \
-              out/FBSBarcode.msi \
-              out/FBSBarcode-portable.zip \
+              out/WCode.exe \
+              out/WCode.msi \
+              out/WCode-portable.zip \
               -R "$PUBLIC_RELEASE_REPO" \
               --target main \
               --title "$TITLE" \

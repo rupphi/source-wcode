@@ -19,15 +19,26 @@ import com.tuandev.fbsbarcode.models.Order;
 
 import java.io.File;
 import java.io.IOException;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 public class OrderDetailsPdfExporter {
+    private static final DateTimeFormatter HEADER_DATE_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
+
     public void export(File file, List<Order> orders) throws IOException {
+        export(file, orders, null);
+    }
+
+    public void export(File file, List<Order> orders, PrintDetailsMetadata metadata) throws IOException {
         PdfWriter pdfWriter = new PdfWriter(file);
         PdfDocument pdfDocument = new PdfDocument(pdfWriter);
         Document document = new Document(pdfDocument, PageSize.A4);
         document.setMargins(20, 20, 20, 20);
         document.setFont(GenerateBarcode.getArialFont());
+
+        addMetadataHeader(document, orders, metadata);
 
         float[] widths = {32, 76, 58, 55, 78, 114, 140};
         Table table = new Table(widths);
@@ -54,6 +65,28 @@ public class OrderDetailsPdfExporter {
 
         document.add(table);
         document.close();
+    }
+
+    private void addMetadataHeader(Document document, List<Order> orders, PrintDetailsMetadata metadata) {
+        if (metadata == null) {
+            return;
+        }
+
+        String supplyId = safe(metadata.supplyId());
+        String supplyName = safe(metadata.supplyName());
+        String shopName = safe(metadata.shopName());
+        int itemCount = metadata.itemCount() > 0 ? metadata.itemCount() : orders.size();
+        String printedAt = formatPrintedAt(metadata.printedAt());
+
+        String supplyLine = "Поставка " + supplyId;
+        if (!supplyName.isBlank()) {
+            supplyLine += " (" + supplyName + ")";
+        }
+
+        document.add(new Paragraph(supplyLine).setBold().setFontSize(13).setMarginBottom(2));
+        document.add(new Paragraph("Магазин: " + shopName).setFontSize(11).setMarginBottom(1));
+        document.add(new Paragraph("Дата: " + printedAt).setFontSize(11).setMarginBottom(1));
+        document.add(new Paragraph("Количество товаров: " + itemCount).setFontSize(11).setMarginBottom(12));
     }
 
     private Cell imageCell(Order order) {
@@ -124,5 +157,29 @@ public class OrderDetailsPdfExporter {
             secondPart = String.format("%04d", Integer.parseInt(secondPart));
         }
         return parts[0] + " " + secondPart;
+    }
+
+    private String safe(String value) {
+        return value == null ? "" : value;
+    }
+
+    private String formatPrintedAt(String printedAt) {
+        if (printedAt == null || printedAt.isBlank()) {
+            return "";
+        }
+        try {
+            return HEADER_DATE_FORMAT.format(Instant.parse(printedAt).atZone(ZoneId.systemDefault()));
+        } catch (Exception ignored) {
+            return printedAt;
+        }
+    }
+
+    public record PrintDetailsMetadata(
+            String supplyId,
+            String supplyName,
+            String shopName,
+            String printedAt,
+            int itemCount
+    ) {
     }
 }

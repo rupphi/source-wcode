@@ -13,6 +13,7 @@ final class WorkspaceState {
     private Shop selectedShop;
     private Integer pendingSelectShopId;
     private String loadedSupplyId;
+    private String loadedSupplyName;
     private boolean supplyEnriching;
     private long supplyRequestToken;
 
@@ -64,6 +65,14 @@ final class WorkspaceState {
         this.loadedSupplyId = loadedSupplyId;
     }
 
+    String getLoadedSupplyName() {
+        return loadedSupplyName;
+    }
+
+    void setLoadedSupplyName(String loadedSupplyName) {
+        this.loadedSupplyName = loadedSupplyName;
+    }
+
     boolean isSupplyEnriching() {
         return supplyEnriching;
     }
@@ -105,6 +114,7 @@ final class WorkspaceState {
     void clearLoadedSupply() {
         supplyRequestToken++;
         loadedSupplyId = null;
+        loadedSupplyName = null;
         loadedOrdersRaw = new ArrayList<>();
         displayedOrders = new ArrayList<>();
         supplyEnriching = false;

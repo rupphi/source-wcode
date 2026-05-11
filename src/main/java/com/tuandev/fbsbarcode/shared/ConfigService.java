@@ -26,13 +26,21 @@ public class ConfigService {
     public static void setConfigValue(String key, String value) {
         String sql = "INSERT INTO app_config (key, value) VALUES (?, ?) " +
                      "ON CONFLICT(key) DO UPDATE SET value = excluded.value";
-        try (Connection conn = Database.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, key);
-            ps.setString(2, value);
-            ps.executeUpdate();
-        } catch (SQLException e) {
-            LOGGER.error("Failed to write config key: " + key, e);
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try (Connection conn = Database.getConnection();
+                 PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setString(1, key);
+                ps.setString(2, value);
+                ps.executeUpdate();
+                return;
+            } catch (SQLException e) {
+                if (attempt < 3 && isBusy(e)) {
+                    sleepQuietly(150L * attempt);
+                    continue;
+                }
+                LOGGER.error("Failed to write config key: " + key, e);
+                return;
+            }
         }
     }
 
@@ -70,6 +78,36 @@ public class ConfigService {
 
     public static void clearPrintAccessToken() {
         setConfigValue("print_access_token", "");
+    }
+
+    public static Integer getLastSelectedShopId() {
+        String value = getConfigValue("last_selected_shop_id");
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException ex) {
+            LOGGER.warn("Invalid last_selected_shop_id value: {}", value);
+            return null;
+        }
+    }
+
+    public static void setLastSelectedShopId(Integer shopId) {
+        setConfigValue("last_selected_shop_id", shopId == null ? "" : String.valueOf(shopId));
+    }
+
+    private static boolean isBusy(SQLException e) {
+        String message = e.getMessage();
+        return message != null && message.toLowerCase().contains("busy");
+    }
+
+    private static void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        }
     }
 
 }

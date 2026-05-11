@@ -34,5 +34,6 @@ class PrintAuthorizationServiceTest {
         assertFalse(service.isAuthorized());
         service.rememberAuthorized();
         assertTrue(service.isAuthorized());
+        assertTrue(new PrintAuthorizationService().isAuthorized());
     }
 }

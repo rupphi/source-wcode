@@ -248,11 +248,10 @@ public class WbOrderRepository {
                                  WHERE pp.shop_id = o.shop_id AND pp.nm_id = o.nm_id
                                  ORDER BY pp.photo_index
                                  LIMIT 1), '') AS image_url
-                FROM wb_supply_orders so
-                JOIN wb_orders o ON o.shop_id = so.shop_id AND o.order_id = so.order_id
+                FROM wb_orders o
                 LEFT JOIN wb_product_cards pc ON pc.shop_id = o.shop_id AND pc.nm_id = o.nm_id
                 LEFT JOIN wb_product_sizes ps ON ps.shop_id = o.shop_id AND ps.chrt_id = o.chrt_id
-                WHERE so.shop_id = ? AND so.supply_id = ?
+                WHERE o.shop_id = ? AND o.supply_id = ?
                 ORDER BY article COLLATE NOCASE, o.order_id
                 """;
         try (Connection conn = Database.getConnection();

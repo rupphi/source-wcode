@@ -3,6 +3,7 @@ package com.tuandev.fbsbarcode.ui.supply;
 import com.tuandev.fbsbarcode.integration.wb.WbSupplySummary;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
+import javafx.scene.control.ListCell;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ProgressIndicator;
 
@@ -21,6 +22,14 @@ public class SupplyListController {
 
     @FXML
     private void initialize() {
+        supplyComboBox.setCellFactory(listView -> new ListCell<>() {
+            @Override
+            protected void updateItem(WbSupplySummary item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty || item == null ? null : formatSupply(item));
+            }
+        });
+        supplyComboBox.setButtonCell(supplyComboBox.getCellFactory().call(null));
         supplyComboBox.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) -> {
             if (!suppressSelectionCallback && newValue != null) {
                 notifySelection(newValue);
@@ -72,5 +81,10 @@ public class SupplyListController {
         if (onSupplySelected != null && supply != null) {
             onSupplySelected.accept(supply);
         }
+    }
+
+    private String formatSupply(WbSupplySummary supply) {
+        String name = supply.getName() == null || supply.getName().isBlank() ? "" : " - " + supply.getName();
+        return supply.getSupplyId() + name + " (" + supply.getItemCount() + ")";
     }
 }

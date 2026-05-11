@@ -23,7 +23,7 @@ if /I not "%PACKAGE_TYPE%"=="app-image" if /I not "%PACKAGE_TYPE%"=="exe" if /I 
     exit /b 1
 )
 
-set APP_NAME=FBSBarcode
+set APP_NAME=WCode
 :: Read app.version from pom.xml using Maven evaluate (reliable)
 for /f "delims=" %%a in ('mvnw.cmd help:evaluate -Dexpression^=app.version -q -DforceStdout 2^>nul') do set APP_VERSION=%%a
 if "%APP_VERSION%"=="" (

@@ -3,6 +3,7 @@
 <?import java.lang.String?>
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.Button?>
+<?import javafx.scene.control.ComboBox?>
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.control.ProgressIndicator?>
 <?import javafx.scene.image.Image?>
@@ -12,47 +13,54 @@
 <?import javafx.scene.layout.Priority?>
 <?import javafx.scene.layout.VBox?>
 <?import javafx.scene.text.Font?>
+<?import org.kordamp.ikonli.javafx.FontIcon?>
 
-<HBox alignment="CENTER_LEFT" fillHeight="true" prefHeight="68.0" prefWidth="738.0" spacing="10.0" style="-fx-background-color: white; -fx-border-color: #e9ecef; -fx-border-width: 0 0 1 0;" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.ui.workspace.WorkspaceHeaderController">
+<HBox alignment="CENTER_LEFT" fillHeight="true" prefHeight="68.0" prefWidth="738.0" spacing="10.0" styleClass="header" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.ui.workspace.WorkspaceHeaderController">
     <children>
         <VBox alignment="CENTER_LEFT" prefWidth="320.0" spacing="2.0">
             <children>
                 <HBox alignment="CENTER_LEFT" minHeight="32.0" spacing="8.0">
                     <children>
-                        <Label fx:id="currentShopLabel" alignment="CENTER_LEFT" prefHeight="32.0" prefWidth="220.0" text="Formela">
-                            <font>
-                                <Font name="System Bold" size="22.0" />
-                            </font>
-                        </Label>
+                        <ComboBox fx:id="shopComboBox" prefHeight="32.0" prefWidth="220.0" promptText="Chọn cửa hàng..." styleClass="combo-box" />
                         <Button fx:id="editShopButton" alignment="CENTER" mnemonicParsing="false" onAction="#onEditShop" prefHeight="32.0" prefWidth="32.0">
+                            <styleClass>
+                                <String fx:value="btn-icon" />
+                            </styleClass>
                             <graphic>
-                                <ImageView fitHeight="16.0" fitWidth="16.0" pickOnBounds="true" preserveRatio="true">
-                                    <image>
-                                        <Image url="@icons8-edit-48.png" />
-                                    </image>
-                                </ImageView>
+                                <FontIcon iconLiteral="fth-edit-2" iconSize="16" iconColor="#949ba4"/>
                             </graphic>
                         </Button>
-                        <Button fx:id="deleteShopButton" alignment="CENTER" mnemonicParsing="false" onAction="#onDeleteShop" prefHeight="32.0" prefWidth="32.0" text="🗑" />
+                        <Button fx:id="deleteShopButton" alignment="CENTER" mnemonicParsing="false" onAction="#onDeleteShop" prefHeight="32.0" prefWidth="32.0">
+                            <styleClass>
+                                <String fx:value="btn-icon" />
+                            </styleClass>
+                            <graphic>
+                                <FontIcon iconLiteral="fth-trash-2" iconSize="16" iconColor="#da373c"/>
+                            </graphic>
+                        </Button>
                     </children>
                 </HBox>
             </children>
         </VBox>
         <Pane HBox.hgrow="ALWAYS" />
         <ProgressIndicator fx:id="syncLoading" maxHeight="22.0" maxWidth="22.0" prefHeight="22.0" prefWidth="22.0" visible="false" />
-        <Button fx:id="syncButton" mnemonicParsing="false" onAction="#onSync" prefHeight="34.0" prefWidth="120.0" text="Đồng bộ WB">
+        <Button fx:id="syncButton" mnemonicParsing="false" onAction="#onSync" prefHeight="34.0" prefWidth="130.0" text=" Đồng bộ WB">
             <styleClass>
-                <String fx:value="btn" />
-                <String fx:value="btn-sm" />
-                <String fx:value="btn-warning" />
+                <String fx:value="button" />
+                <String fx:value="btn-primary" />
             </styleClass>
+            <graphic>
+                <FontIcon iconLiteral="fth-refresh-cw" iconSize="16" iconColor="white"/>
+            </graphic>
         </Button>
-        <Button fx:id="exportButton" disable="true" mnemonicParsing="false" onAction="#onExport" prefHeight="34.0" prefWidth="110.0" text="Print">
+        <Button fx:id="exportButton" disable="true" mnemonicParsing="false" onAction="#onExport" prefHeight="34.0" prefWidth="110.0" text=" Print">
             <styleClass>
-                <String fx:value="btn" />
-                <String fx:value="btn-sm" />
+                <String fx:value="button" />
                 <String fx:value="btn-success" />
             </styleClass>
+            <graphic>
+                <FontIcon iconLiteral="fth-printer" iconSize="16" iconColor="white"/>
+            </graphic>
         </Button>
     </children>
     <padding>

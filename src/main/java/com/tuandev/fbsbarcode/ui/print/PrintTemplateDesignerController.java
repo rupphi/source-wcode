@@ -363,7 +363,7 @@ public class PrintTemplateDesignerController implements Initializable {
         Label label = new Label(previewText(element));
         label.setWrapText(true);
         label.setMouseTransparent(true);
-        label.setStyle("-fx-font-size: 11px;");
+        label.setStyle("-fx-font-size: 11px; -fx-text-fill: -bg-primary;");
         node.getChildren().add(label);
         addResizeHandles(node, element);
 
@@ -763,7 +763,7 @@ public class PrintTemplateDesignerController implements Initializable {
             }
             label.setText(previewText(element));
             double previewFont = Math.max(8d, Math.min(20d, element.getFontSize() <= 0 ? 8d : element.getFontSize() * 1.2d));
-            label.setStyle("-fx-font-size: %.1fpx;".formatted(previewFont));
+            label.setStyle("-fx-font-size: %.1fpx; -fx-text-fill: -bg-primary;".formatted(previewFont));
             return;
         }
     }

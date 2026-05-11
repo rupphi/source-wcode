@@ -8,15 +8,31 @@ public class WbSyncWorkflow {
     private final WbProductSyncService productSyncService = new WbProductSyncService();
     private final WbSupplySyncService supplySyncService = new WbSupplySyncService();
     private final WbOrderSyncService orderSyncService = new WbOrderSyncService();
+    private final WbSyncStateRepository syncStateRepository = new WbSyncStateRepository();
 
     public int syncProducts(Shop shop) throws IOException {
         return productSyncService.sync(shop);
     }
 
     public WbSyncReport syncOverview(Shop shop) throws IOException {
+        WbShopSyncState state = syncStateRepository.getShopSyncState(shop.getId());
+        boolean needsInitialProductSync = state.productsLastSyncedAt() == null || state.productsLastSyncedAt().isBlank();
+        boolean needsInitialSupplySync = state.suppliesLastSyncedAt() == null || state.suppliesLastSyncedAt().isBlank();
+
+        int products = 0;
+        if (needsInitialProductSync) {
+            products = productSyncService.sync(shop);
+        }
+
+        if (needsInitialSupplySync) {
+            int supplies = supplySyncService.syncUntilOpenSuppliesFound(shop);
+            int openSupplyDetails = supplySyncService.syncOpenSupplyDetails(shop);
+            return new WbSyncReport(products, supplies + openSupplyDetails, 0, 0);
+        }
+
         int supplies = supplySyncService.syncIncremental(shop);
         int openSupplyDetails = supplySyncService.syncOpenSupplyDetails(shop);
-        return new WbSyncReport(0, supplies + openSupplyDetails, 0, 0);
+        return new WbSyncReport(products, supplies + openSupplyDetails, 0, 0);
     }
 
     public WbSyncReport syncAll(Shop shop) throws IOException {

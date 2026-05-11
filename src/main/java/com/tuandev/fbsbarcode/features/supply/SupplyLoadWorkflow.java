@@ -16,8 +16,13 @@ public class SupplyLoadWorkflow {
         return wbSupplyWorkflow.loadOrdersForSupplyLocal(shop, supplyId);
     }
 
-    public List<Order> refreshFromWildberries(Shop shop, String supplyId) throws IOException {
+    public List<Order> refreshSupplyData(Shop shop, String supplyId) throws IOException {
         wbSyncWorkflow.syncSupplyOrdersAndStatuses(shop, supplyId);
-        return wbSupplyWorkflow.loadOrdersForSupply(shop, supplyId);
+        return wbSupplyWorkflow.loadOrdersForSupplyLocal(shop, supplyId);
+    }
+
+    public List<Order> enrichStickers(Shop shop, List<Order> orders) throws IOException {
+        wbSupplyWorkflow.enrichOrderStickers(shop, orders);
+        return orders;
     }
 }

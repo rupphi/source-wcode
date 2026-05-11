@@ -21,6 +21,7 @@ public class ShopDialogService {
 
     private Optional<Shop> showDialog(String title, String submitLabel, Shop initialValue) {
         Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.getDialogPane().getStylesheets().add(java.util.Objects.requireNonNull(com.tuandev.fbsbarcode.MainApplication.class.getResource("css/theme.css")).toExternalForm());
         dialog.setTitle(title);
 
         FXMLLoader loader = FxmlViewLoader.loader(ShopDialogController.class, "shop-dialog.fxml");

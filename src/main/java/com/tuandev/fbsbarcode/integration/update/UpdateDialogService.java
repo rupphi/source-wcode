@@ -14,6 +14,7 @@ public class UpdateDialogService {
 
     public UpdateChoice showDialog(UpdateInfo info) {
         Dialog<UpdateChoice> dialog = new Dialog<>();
+        dialog.getDialogPane().getStylesheets().add(java.util.Objects.requireNonNull(com.tuandev.fbsbarcode.MainApplication.class.getResource("css/theme.css")).toExternalForm());
         dialog.setTitle("Co ban cap nhat moi");
         dialog.setHeaderText("Da co phien ban moi cua FBS Barcode!");
 

@@ -17,6 +17,8 @@ import com.tuandev.fbsbarcode.features.print.OrderExportWorkflow;
 import com.tuandev.fbsbarcode.features.print.PrintAuthorizationDialogService;
 import com.tuandev.fbsbarcode.features.print.PrintTemplateDesignerService;
 import com.tuandev.fbsbarcode.features.print.PrintTemplateService;
+import com.tuandev.fbsbarcode.features.print.history.PrintHistoryJobSummary;
+import com.tuandev.fbsbarcode.features.print.history.PrintHistoryService;
 import com.tuandev.fbsbarcode.features.supply.OrderSortingService;
 import com.tuandev.fbsbarcode.integration.update.UpdateDialogService;
 import com.tuandev.fbsbarcode.integration.update.UpdateInfo;
@@ -24,11 +26,14 @@ import com.tuandev.fbsbarcode.integration.update.UpdateInstallerService;
 import com.tuandev.fbsbarcode.integration.update.UpdateService;
 import com.tuandev.fbsbarcode.features.shop.ShopWorkflow;
 import com.tuandev.fbsbarcode.features.supply.SupplyLoadWorkflow;
+import com.tuandev.fbsbarcode.ui.history.PrintHistoryController;
 import com.tuandev.fbsbarcode.ui.kiz.KizPanelController;
 import com.tuandev.fbsbarcode.ui.shop.ShopSidebarController;
 import com.tuandev.fbsbarcode.ui.supply.OrderSortOptions;
 import com.tuandev.fbsbarcode.ui.supply.SupplyDetailController;
 import com.tuandev.fbsbarcode.ui.supply.SupplyListController;
+import com.tuandev.fbsbarcode.ui.supply.SupplyManagementController;
+import com.tuandev.fbsbarcode.ui.dashboard.DashboardController;
 import javafx.concurrent.Task;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXMLLoader;
@@ -69,6 +74,7 @@ public class HomeController implements Initializable {
     private final PrintAuthorizationDialogService printAuthorizationDialogService = new PrintAuthorizationDialogService();
     private final PrintTemplateService printTemplateService = new PrintTemplateService();
     private final PrintTemplateDesignerService printTemplateDesignerService = new PrintTemplateDesignerService();
+    private final PrintHistoryService printHistoryService = new PrintHistoryService();
     private final WorkspaceState state = new WorkspaceState();
     private final WorkspaceActivityTracker activityTracker = new WorkspaceActivityTracker();
     private final UpdateService updateService = new UpdateService();
@@ -77,9 +83,14 @@ public class HomeController implements Initializable {
     public StackPane sidebarContainer;
     public StackPane headerContainer;
     public BorderPane contentPane;
-    public StackPane supplyListContainer;
-    public StackPane supplyDetailContainer;
-    public StackPane kizPanelContainer;
+    public StackPane dynamicContentContainer;
+
+    private BorderPane supplyManagementView;
+    private VBox dashboardView;
+    private VBox printHistoryView;
+    private SupplyManagementController supplyManagementController;
+    private DashboardController dashboardController;
+    private PrintHistoryController printHistoryController;
 
     private FileChooser fileChooser;
     private ShopSidebarController shopSidebarController;
@@ -98,15 +109,107 @@ public class HomeController implements Initializable {
 
         initializeSidebar();
         initializeHeader();
+        loadDynamicViews();
         initializeSupplyViews();
         initializeKizPanel();
 
         contentPane.setVisible(false);
-        kizPanelContainer.setVisible(false);
+        showDashboard();
         updateHeaderState();
         updateExportAvailability();
         loadShops();
         checkForUpdates();
+    }
+
+    private void loadDynamicViews() {
+        FXMLLoader supplyLoader = FxmlViewLoader.loader(SupplyManagementController.class, "supply-management-view.fxml");
+        supplyManagementView = FxmlViewLoader.load(supplyLoader);
+        supplyManagementController = supplyLoader.getController();
+
+        FXMLLoader dashboardLoader = FxmlViewLoader.loader(DashboardController.class, "dashboard-view.fxml");
+        dashboardView = FxmlViewLoader.load(dashboardLoader);
+        dashboardController = dashboardLoader.getController();
+
+        FXMLLoader printHistoryLoader = FxmlViewLoader.loader(PrintHistoryController.class, "print-history-view.fxml");
+        printHistoryView = FxmlViewLoader.load(printHistoryLoader);
+        printHistoryController = printHistoryLoader.getController();
+        printHistoryController.setOnReprint(this::reprintHistoryJob);
+    }
+
+    private void showDashboard() {
+        dynamicContentContainer.getChildren().setAll(dashboardView);
+        refreshDashboardData();
+    }
+
+    private void showSupplies() {
+        dynamicContentContainer.getChildren().setAll(supplyManagementView);
+    }
+
+    private void showPrintHistory() {
+        dynamicContentContainer.getChildren().setAll(printHistoryView);
+        refreshPrintHistory();
+    }
+
+    private void refreshDashboardData() {
+        if (dashboardController != null) {
+            Shop shop = state.getSelectedShop();
+            boolean isSyncing = shop != null && activityTracker.isRunning(shop.getId());
+            dashboardController.updateData(
+                state.getLoadedOrdersRaw(), 
+                shop == null ? List.of() : wbSupplyWorkflow.getSupplies(shop.getId()), 
+                isSyncing
+            );
+        }
+    }
+
+    private void refreshPrintHistory() {
+        if (printHistoryController == null) {
+            return;
+        }
+        Shop shop = state.getSelectedShop();
+        if (shop == null) {
+            printHistoryController.setJobs(List.of());
+            return;
+        }
+        printHistoryController.setJobs(printHistoryService.getJobs(shop.getId()));
+    }
+
+    private void reprintHistoryJob(PrintHistoryJobSummary job) {
+        Shop shop = requireSelectedShop();
+        if (shop == null) {
+            return;
+        }
+        if (!printAuthorizationDialogService.ensureAuthorized()) {
+            return;
+        }
+
+        fileChooser.setTitle("Open PDF File");
+        fileChooser.getExtensionFilters().setAll(new FileChooser.ExtensionFilter("PDF Files", "*.pdf"));
+        File file = fileChooser.showSaveDialog(null);
+        if (file == null) {
+            return;
+        }
+
+        File orderDetailsFile = new File(file.getParent(), "NHAT_HANG-" + file.getName());
+        Task<OrderExportWorkflow.ExportResult> task = new Task<>() {
+            @Override
+            protected OrderExportWorkflow.ExportResult call() throws Exception {
+                return printHistoryService.reprint(job, file, orderDetailsFile);
+            }
+        };
+        task.setOnRunning(e -> markShopRunning(shop.getId(), true));
+        task.setOnFailed(e -> {
+            markShopRunning(shop.getId(), false);
+            LOGGER.error("In lại thất bại cho lịch sử in {}", job.id(), task.getException());
+            AlertService.showError(task.getException().getMessage());
+        });
+        task.setOnSucceeded(e -> {
+            markShopRunning(shop.getId(), false);
+            tryOpenFile(orderDetailsFile);
+            tryOpenFile(file);
+            refreshPrintHistory();
+        });
+        AppTaskExecutor.execute(task);
     }
 
     private void checkForUpdates() {
@@ -226,6 +329,8 @@ public class HomeController implements Initializable {
                 return orderExportWorkflow.export(
                         new OrderExportWorkflow.ExportRequest(
                                 shop,
+                                state.getLoadedSupplyId(),
+                                state.getLoadedSupplyName(),
                                 state.getDisplayedOrders(),
                                 kizPanelController.getKizCommand(),
                                 file,
@@ -249,6 +354,10 @@ public class HomeController implements Initializable {
             loadCategories();
             tryOpenFile(orderDetailsFile);
             tryOpenFile(file);
+            refreshDashboardData();
+            if (isPrintHistoryVisible()) {
+                refreshPrintHistory();
+            }
         });
 
         AppTaskExecutor.execute(task);
@@ -267,7 +376,7 @@ public class HomeController implements Initializable {
             shopWorkflow.updateShop(shop.getId(), updated);
             shop.setName(updated.getName());
             shop.setApiKey(updated.getApiKey());
-            workspaceHeaderController.setCurrentShopName(updated.getName());
+            renderShops();
             loadShops();
         });
     }
@@ -315,6 +424,7 @@ public class HomeController implements Initializable {
             if (isCurrentShop(shopId)) {
                 state.clearWorkspace();
                 clearWorkspaceView();
+                ConfigService.setLastSelectedShopId(null);
             }
             loadShops();
         });
@@ -341,6 +451,7 @@ public class HomeController implements Initializable {
             if (state.getShops().isEmpty()) {
                 state.clearWorkspace();
                 clearWorkspaceView();
+                ConfigService.setLastSelectedShopId(null);
                 return;
             }
             if (state.getPendingSelectShopId() != null) {
@@ -348,6 +459,12 @@ public class HomeController implements Initializable {
                 state.setPendingSelectShopId(null);
             } else if (state.getSelectedShop() != null) {
                 selectShopById(state.getSelectedShop().getId());
+            } else if (ConfigService.getLastSelectedShopId() != null) {
+                if (!selectShopByIdIfExists(ConfigService.getLastSelectedShopId())) {
+                    selectShop(state.getShops().get(0));
+                }
+            } else {
+                selectShop(state.getShops().get(0));
             }
         });
         task.setOnFailed(e -> AlertService.showError(task.getException().getMessage()));
@@ -451,24 +568,33 @@ public class HomeController implements Initializable {
     }
 
     private void selectShopById(int shopId) {
+        selectShopByIdIfExists(shopId);
+    }
+
+    private boolean selectShopByIdIfExists(int shopId) {
         Shop shop = state.getShops().stream()
                 .filter(item -> item.getId() == shopId)
                 .findFirst()
                 .orElse(null);
         if (shop != null) {
             selectShop(shop);
+            return true;
         }
+        return false;
     }
 
     private void selectShop(Shop shop) {
         state.setSelectedShop(shop);
+        ConfigService.setLastSelectedShopId(shop.getId());
         renderShops();
-        workspaceHeaderController.setCurrentShopName(shop.getName());
         loadCategories();
         resetLoadedSupply();
         showWorkspace();
         supplyListController.setLoading(true);
         updateHeaderState();
+        if (isPrintHistoryVisible()) {
+            refreshPrintHistory();
+        }
         startShopSync(shop, false);
     }
 
@@ -477,8 +603,14 @@ public class HomeController implements Initializable {
             return;
         }
         boolean started = activityTracker.markSyncStarted(shop.getId());
+        if (isCurrentShop(shop.getId())) {
+            if (!manual) {
+                supplyListController.setLoading(true);
+            }
+            updateHeaderState();
+            refreshDashboardData();
+        }
         if (!started) {
-            markShopRunning(shop.getId(), true);
             return;
         }
 
@@ -489,26 +621,23 @@ public class HomeController implements Initializable {
             }
         };
         task.setOnRunning(e -> {
-            if (manual) {
-                markShopRunning(shop.getId(), true);
-            } else if (isCurrentShop(shop.getId())) {
+            if (isCurrentShop(shop.getId()) && !manual) {
                 supplyListController.setLoading(true);
             }
         });
         task.setOnFailed(e -> {
-            activityTracker.markRunning(shop.getId(), false);
+            markShopRunning(shop.getId(), false);
             Throwable ex = task.getException();
             LOGGER.error("Đồng bộ WB thất bại cho shop {}", shop.getId(), ex);
             refreshSupplyListIfCurrent(shop.getId());
             if (manual && isCurrentShop(shop.getId())) {
                 AlertService.showError(ex.getMessage());
-            } else {
-                updateHeaderState();
             }
         });
         task.setOnSucceeded(e -> {
-            activityTracker.markRunning(shop.getId(), false);
+            markShopRunning(shop.getId(), false);
             refreshSupplyListIfCurrent(shop.getId());
+            refreshDashboardData();
         });
         AppTaskExecutor.execute(task);
     }
@@ -528,6 +657,7 @@ public class HomeController implements Initializable {
         resetLoadedSupply();
         supplyDetailController.showEmptyState("", "");
         updateHeaderState();
+        refreshDashboardData();
     }
 
     private void loadSupply(WbSupplySummary supply) {
@@ -538,6 +668,7 @@ public class HomeController implements Initializable {
         resetLoadedSupply();
         long requestToken = state.nextSupplyRequestToken();
         state.setLoadedSupplyId(supply.getSupplyId());
+        state.setLoadedSupplyName(supply.getName());
         supplyDetailController.setLoading(true);
         supplyDetailController.setStickerLoading(false);
         supplyDetailController.setSupplyInfo("Supply " + supply.getSupplyId(), "");
@@ -579,7 +710,7 @@ public class HomeController implements Initializable {
         Task<List<Order>> refreshTask = new Task<>() {
             @Override
             protected List<Order> call() throws Exception {
-                return supplyLoadWorkflow.refreshFromWildberries(shop, supply.getSupplyId());
+                return supplyLoadWorkflow.refreshSupplyData(shop, supply.getSupplyId());
             }
         };
         refreshTask.setOnFailed(e -> {
@@ -595,14 +726,43 @@ public class HomeController implements Initializable {
             if (!isCurrentSupplyRequest(shop.getId(), supply.getSupplyId(), requestToken)) {
                 return;
             }
+            state.setLoadedOrdersRaw(refreshTask.getValue());
+            applySortAndDisplayOrders();
+            supplyDetailController.setSupplyInfo("Supply " + supply.getSupplyId(), "");
+            refreshDashboardData();
+            startStickerRefresh(shop, supply, requestToken);
+        });
+        AppTaskExecutor.execute(refreshTask);
+    }
+
+    private void startStickerRefresh(Shop shop, WbSupplySummary supply, long requestToken) {
+        Task<List<Order>> stickerTask = new Task<>() {
+            @Override
+            protected List<Order> call() throws Exception {
+                return supplyLoadWorkflow.enrichStickers(shop, state.getLoadedOrdersRaw());
+            }
+        };
+        stickerTask.setOnFailed(e -> {
+            if (!isCurrentSupplyRequest(shop.getId(), supply.getSupplyId(), requestToken)) {
+                return;
+            }
             state.setSupplyEnriching(false);
             supplyDetailController.setStickerLoading(false);
-            state.setLoadedOrdersRaw(refreshTask.getValue());
+            updateExportAvailability();
+            LOGGER.warn("Không thể lấy sticker cho supply {} ở nền", supply.getSupplyId(), stickerTask.getException());
+        });
+        stickerTask.setOnSucceeded(e -> {
+            if (!isCurrentSupplyRequest(shop.getId(), supply.getSupplyId(), requestToken)) {
+                return;
+            }
+            state.setSupplyEnriching(false);
+            supplyDetailController.setStickerLoading(false);
+            state.setLoadedOrdersRaw(stickerTask.getValue());
             applySortAndDisplayOrders();
             supplyDetailController.setSupplyInfo("Supply " + supply.getSupplyId(), "");
             updateExportAvailability();
         });
-        AppTaskExecutor.execute(refreshTask);
+        AppTaskExecutor.execute(stickerTask);
     }
 
     private void applySortAndDisplayOrders() {
@@ -622,7 +782,9 @@ public class HomeController implements Initializable {
         shopSidebarController = loader.getController();
         shopSidebarController.setOnAddShop(() -> onAddShop(new ActionEvent()));
         shopSidebarController.setOnOpenSettings(() -> onSettings(new ActionEvent()));
-        shopSidebarController.setOnShopSelected(this::selectShop);
+        shopSidebarController.setOnDashboard(this::showDashboard);
+        shopSidebarController.setOnSupplies(this::showSupplies);
+        shopSidebarController.setOnPrintHistory(this::showPrintHistory);
         sidebarContainer.getChildren().setAll(root);
     }
 
@@ -634,6 +796,7 @@ public class HomeController implements Initializable {
         workspaceHeaderController.setOnExport(() -> onExport(new ActionEvent()));
         workspaceHeaderController.setOnEditShop(() -> onUpdateShop(new ActionEvent()));
         workspaceHeaderController.setOnDeleteShop(() -> onDeleteShop(new ActionEvent()));
+        workspaceHeaderController.setOnShopSelected(this::selectShop);
         headerContainer.getChildren().setAll(root);
     }
 
@@ -642,13 +805,13 @@ public class HomeController implements Initializable {
         VBox supplyListRoot = FxmlViewLoader.load(supplyListLoader);
         supplyListController = supplyListLoader.getController();
         supplyListController.setOnSupplySelected(this::loadSupply);
-        supplyListContainer.getChildren().setAll(supplyListRoot);
+        supplyManagementController.supplyListContainer.getChildren().setAll(supplyListRoot);
 
         FXMLLoader supplyDetailLoader = FxmlViewLoader.loader(SupplyDetailController.class, "supply-detail-view.fxml");
         VBox supplyDetailRoot = FxmlViewLoader.load(supplyDetailLoader);
         supplyDetailController = supplyDetailLoader.getController();
         supplyDetailController.setOnSortOptionsChanged(options -> applySortAndDisplayOrders());
-        supplyDetailContainer.getChildren().setAll(supplyDetailRoot);
+        supplyManagementController.supplyDetailContainer.getChildren().setAll(supplyDetailRoot);
     }
 
     private void initializeKizPanel() {
@@ -656,17 +819,15 @@ public class HomeController implements Initializable {
         VBox root = FxmlViewLoader.load(loader);
         kizPanelController = loader.getController();
         kizPanelController.setOnAddCategory(this::onAddCategory);
-        kizPanelContainer.getChildren().setAll(root);
+        supplyManagementController.kizPanelContainer.getChildren().setAll(root);
     }
 
     private void renderShops() {
-        shopSidebarController.setShops(state.getShops(), state.getSelectedShop() == null ? null : state.getSelectedShop().getId());
+        workspaceHeaderController.setShops(state.getShops(), state.getSelectedShop());
     }
 
     private void clearWorkspaceView() {
         contentPane.setVisible(false);
-        kizPanelContainer.setVisible(false);
-        workspaceHeaderController.setCurrentShopName("");
         kizPanelController.clearCategories();
         clearSupplyViews();
         updateHeaderState();
@@ -687,7 +848,6 @@ public class HomeController implements Initializable {
 
     private void showWorkspace() {
         contentPane.setVisible(true);
-        kizPanelContainer.setVisible(true);
         supplyDetailController.showEmptyState("", "");
     }
 
@@ -710,6 +870,10 @@ public class HomeController implements Initializable {
 
     private boolean isCurrentShop(int shopId) {
         return state.getSelectedShop() != null && state.getSelectedShop().getId() == shopId;
+    }
+
+    private boolean isPrintHistoryVisible() {
+        return dynamicContentContainer.getChildren().contains(printHistoryView);
     }
 
     private boolean isCurrentSupplyRequest(int shopId, String supplyId, long requestToken) {

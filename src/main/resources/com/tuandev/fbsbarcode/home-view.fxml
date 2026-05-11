@@ -10,24 +10,17 @@
       <StackPane fx:id="sidebarContainer" BorderPane.alignment="CENTER" />
    </left>
    <center>
-      <BorderPane fx:id="contentPane" prefHeight="200.0" prefWidth="200.0" style="-fx-background-color: #f3f6fb;" BorderPane.alignment="CENTER">
+      <BorderPane fx:id="contentPane" prefHeight="200.0" prefWidth="200.0" style="-fx-background-color: -bg-primary;" BorderPane.alignment="CENTER">
          <top>
             <StackPane fx:id="headerContainer" BorderPane.alignment="CENTER" />
          </top>
          <center>
-            <VBox spacing="12.0" BorderPane.alignment="CENTER">
-               <children>
-                  <StackPane fx:id="supplyListContainer" />
-                  <StackPane fx:id="supplyDetailContainer" VBox.vgrow="ALWAYS" />
-               </children>
+            <StackPane fx:id="dynamicContentContainer" BorderPane.alignment="CENTER">
                <padding>
                   <Insets bottom="12.0" left="12.0" right="12.0" top="12.0" />
                </padding>
-            </VBox>
+            </StackPane>
          </center>
       </BorderPane>
    </center>
-   <right>
-      <StackPane fx:id="kizPanelContainer" prefWidth="290.0" BorderPane.alignment="CENTER" />
-   </right>
 </BorderPane>

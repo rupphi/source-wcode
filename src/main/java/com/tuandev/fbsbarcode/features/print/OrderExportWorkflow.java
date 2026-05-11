@@ -3,6 +3,8 @@ package com.tuandev.fbsbarcode.features.print;
 import com.google.zxing.WriterException;
 import com.tuandev.fbsbarcode.features.kiz.KizCommandParser;
 import com.tuandev.fbsbarcode.features.kiz.KizService;
+import com.tuandev.fbsbarcode.features.print.history.PrintHistoryService;
+import com.tuandev.fbsbarcode.integration.wb.WbSupplyWorkflow;
 import com.tuandev.fbsbarcode.models.Kiz;
 import com.tuandev.fbsbarcode.models.Order;
 import com.tuandev.fbsbarcode.models.Shop;
@@ -11,6 +13,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -19,26 +22,50 @@ public class OrderExportWorkflow {
     private final BarcodePrintService barcodePrintService = new BarcodePrintService();
     private final OrderDetailsPdfExporter orderDetailsPdfExporter = new OrderDetailsPdfExporter();
     private final PrintTemplateService printTemplateService = new PrintTemplateService();
+    private final WbSupplyWorkflow wbSupplyWorkflow = new WbSupplyWorkflow();
+    private final PrintHistoryService printHistoryService = new PrintHistoryService();
 
     public ExportResult export(ExportRequest request) throws IOException, WriterException {
         List<Order> workingOrders = copyOrders(request.orders());
-        List<Kiz> usedKizs = assignKizCodes(
-                workingOrders,
-                request.shop(),
-                request.kizCommand()
-        );
+        List<Kiz> usedKizs = List.of();
+        PrintTemplate template = printTemplateService.getDefaultTemplate();
+        String printedAt = Instant.now().toString();
+        boolean successRecorded = false;
+        try {
+            usedKizs = assignKizCodes(
+                    workingOrders,
+                    request.shop(),
+                    request.kizCommand()
+            );
 
-        exportPdfFiles(request.outputFile(), request.detailsFile(), workingOrders);
+            wbSupplyWorkflow.ensureOrderImages(workingOrders);
+            exportPdfFiles(template, request.outputFile(), request.detailsFile(), request.shop(), request.supplyId(), request.supplyName(), printedAt, workingOrders);
+            printHistoryService.recordSuccessfulJob(request.shop(), request.supplyId(), request.supplyName(), printedAt, template, workingOrders);
+            successRecorded = true;
 
-        if (!usedKizs.isEmpty()) {
-            List<String> failures = attachKizCodes(request.shop(), workingOrders);
-            if (!failures.isEmpty()) {
-                throw new IllegalStateException(String.join(System.lineSeparator(), failures));
+            if (!usedKizs.isEmpty()) {
+                List<String> failures = attachKizCodes(request.shop(), workingOrders);
+                if (!failures.isEmpty()) {
+                    throw new IllegalStateException(String.join(System.lineSeparator(), failures));
+                }
+                KizService.deleteKizs(usedKizs);
             }
-            KizService.deleteKizs(usedKizs);
-        }
 
-        return new ExportResult(workingOrders, usedKizs);
+            return new ExportResult(workingOrders, usedKizs);
+        } catch (IOException | WriterException | RuntimeException ex) {
+            if (!successRecorded) {
+                printHistoryService.recordFailedJob(
+                        request.shop(),
+                        request.supplyId(),
+                        request.supplyName(),
+                        printedAt,
+                        template,
+                        request.orders().size(),
+                        ex.getMessage()
+                );
+            }
+            throw ex;
+        }
     }
 
     private static List<Order> copyOrders(List<Order> orders) {
@@ -97,9 +124,22 @@ public class OrderExportWorkflow {
         return usedKizs;
     }
 
-    private void exportPdfFiles(File outputFile, File detailsFile, List<Order> orders) throws IOException, WriterException {
-        barcodePrintService.export(printTemplateService.getDefaultTemplate(), orders, outputFile);
-        orderDetailsPdfExporter.export(detailsFile, orders);
+    private void exportPdfFiles(PrintTemplate template,
+                                File outputFile,
+                                File detailsFile,
+                                Shop shop,
+                                String supplyId,
+                                String supplyName,
+                                String printedAt,
+                                List<Order> orders) throws IOException, WriterException {
+        barcodePrintService.export(template, orders, outputFile);
+        orderDetailsPdfExporter.export(detailsFile, orders, new OrderDetailsPdfExporter.PrintDetailsMetadata(
+                supplyId,
+                supplyName,
+                shop == null ? null : shop.getName(),
+                printedAt,
+                orders.size()
+        ));
     }
 
     private static List<String> attachKizCodes(Shop shop, List<Order> orders) throws IOException {
@@ -131,6 +171,8 @@ public class OrderExportWorkflow {
 
     public record ExportRequest(
             Shop shop,
+            String supplyId,
+            String supplyName,
             List<Order> orders,
             String kizCommand,
             File outputFile,

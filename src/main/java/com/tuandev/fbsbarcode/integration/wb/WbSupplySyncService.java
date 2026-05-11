@@ -13,6 +13,7 @@ public class WbSupplySyncService {
     private static final int PAGE_LIMIT = 1000;
     private static final int RECENT_SUPPLY_DETAIL_LIMIT = 50;
     private static final int OPEN_SUPPLY_DETAIL_LIMIT = 20;
+    private static final int INITIAL_OPEN_SUPPLY_SCAN_PAGES = 5;
 
     private final WbApiClient apiClient;
     private final WbSupplyRepository supplyRepository;
@@ -36,6 +37,51 @@ public class WbSupplySyncService {
 
     public int syncIncremental(Shop shop) throws IOException {
         return sync(shop, true);
+    }
+
+    public int syncUntilOpenSuppliesFound(Shop shop) throws IOException {
+        WbShopSyncState state = syncStateRepository.getShopSyncState(shop.getId());
+        long runId = syncRunRepository.startSyncRun(shop.getId(), "supplies_bootstrap");
+        int read = 0;
+        int written = 0;
+        long next = Math.max(0L, state.suppliesNext());
+        boolean foundOpenSupplies = supplyRepository.countOpenSupplies(shop.getId()) > 0;
+        try {
+            for (int page = 0; page < INITIAL_OPEN_SUPPLY_SCAN_PAGES; page++) {
+                WbSuppliesResponse response = apiClient.getSupplies(shop.getApiKey(), next, PAGE_LIMIT);
+                if (response == null || response.getSupplies() == null || response.getSupplies().isEmpty()) {
+                    syncStateRepository.updateSuppliesCursor(shop.getId(), next, Instant.now().toString());
+                    syncRunRepository.finishSyncRun(runId, true, read, written, null, null);
+                    return written;
+                }
+
+                supplyRepository.saveSupplies(shop.getId(), response.getSupplies());
+                read += response.getSupplies().size();
+                written += response.getSupplies().size();
+                if (response.getNext() != null) {
+                    next = response.getNext();
+                }
+                syncStateRepository.updateSuppliesCursor(shop.getId(), next, Instant.now().toString());
+
+                boolean pageHasOpen = response.getSupplies().stream().anyMatch(supply -> Boolean.FALSE.equals(supply.getDone()));
+                foundOpenSupplies = foundOpenSupplies || pageHasOpen;
+                if (response.getSupplies().size() < PAGE_LIMIT || response.getNext() == null) {
+                    syncRunRepository.finishSyncRun(runId, true, read, written, null, null);
+                    return written;
+                }
+                if (foundOpenSupplies) {
+                    syncRunRepository.finishSyncRun(runId, true, read, written, null, null);
+                    return written;
+                }
+            }
+            syncRunRepository.finishSyncRun(runId, true, read, written, null, null);
+            return written;
+        } catch (IOException | RuntimeException ex) {
+            LOGGER.error("Bootstrap sync supplies thất bại cho shop {}", shop.getId(), ex);
+            syncStateRepository.saveSyncError(shop.getId(), ex.getMessage());
+            syncRunRepository.finishSyncRun(runId, false, read, written, ex instanceof WbApiException wb ? String.valueOf(wb.getStatusCode()) : "local_error", ex.getMessage());
+            throw ex;
+        }
     }
 
     private int sync(Shop shop, boolean singlePageOnly) throws IOException {
@@ -88,12 +134,23 @@ public class WbSupplySyncService {
             return 0;
         }
         int written = 0;
+        IOException firstError = null;
         for (String supplyId : supplyIds) {
-            WbSupplyDto detail = apiClient.getSupplyDetail(shop.getApiKey(), supplyId);
-            if (detail != null) {
-                supplyRepository.saveSupplies(shop.getId(), List.of(detail));
-                written++;
+            try {
+                WbSupplyDto detail = apiClient.getSupplyDetail(shop.getApiKey(), supplyId);
+                if (detail != null) {
+                    supplyRepository.saveSupplies(shop.getId(), List.of(detail));
+                    written++;
+                }
+            } catch (IOException ex) {
+                LOGGER.warn("Bỏ qua lỗi sync chi tiết supply {} cho shop {}", supplyId, shop.getId(), ex);
+                if (firstError == null) {
+                    firstError = ex;
+                }
             }
+        }
+        if (written == 0 && firstError != null) {
+            throw firstError;
         }
         return written;
     }

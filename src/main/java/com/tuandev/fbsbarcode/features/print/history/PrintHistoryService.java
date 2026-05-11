@@ -1,0 +1,136 @@
+package com.tuandev.fbsbarcode.features.print.history;
+
+import com.google.zxing.WriterException;
+import com.tuandev.fbsbarcode.features.print.BarcodePrintService;
+import com.tuandev.fbsbarcode.features.print.OrderDetailsPdfExporter;
+import com.tuandev.fbsbarcode.features.print.OrderExportWorkflow;
+import com.tuandev.fbsbarcode.features.print.PrintTemplate;
+import com.tuandev.fbsbarcode.features.print.PrintTemplateService;
+import com.tuandev.fbsbarcode.models.Order;
+import com.tuandev.fbsbarcode.models.Shop;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
+public class PrintHistoryService {
+    private final PrintHistoryRepository repository = new PrintHistoryRepository();
+    private final ImageCacheRepository imageCacheRepository = new ImageCacheRepository();
+    private final PrintTemplateService printTemplateService = new PrintTemplateService();
+    private final BarcodePrintService barcodePrintService = new BarcodePrintService();
+    private final OrderDetailsPdfExporter orderDetailsPdfExporter = new OrderDetailsPdfExporter();
+
+    public long recordSuccessfulJob(Shop shop, String supplyId, String supplyName, String printedAt, PrintTemplate template, List<Order> orders) {
+        List<PrintHistoryItem> items = new ArrayList<>(orders.size());
+        for (int index = 0; index < orders.size(); index++) {
+            Order order = orders.get(index);
+            String imageCacheKey = imageCacheKey(order.getImageUrl());
+            if (imageCacheKey != null && order.getImage() != null && order.getImage().length > 0) {
+                imageCacheRepository.saveImage(imageCacheKey, order.getImageUrl(), order.getImage(), "image/png");
+            }
+            items.add(new PrintHistoryItem(
+                    0L,
+                    index,
+                    order.getId() == null ? 0L : order.getId(),
+                    order.getBrand(),
+                    order.getName(),
+                    order.getSubjectName(),
+                    order.getSize(),
+                    order.getColor(),
+                    order.getArticle(),
+                    order.getBarcode(),
+                    order.getSticker(),
+                    order.getStickerCode(),
+                    order.getKiz(),
+                    imageCacheKey
+            ));
+        }
+        return repository.insertSuccessfulJob(
+                shop.getId(),
+                shop.getName(),
+                supplyId,
+                supplyName,
+                printedAt,
+                orders.size(),
+                template.getId(),
+                template.getName(),
+                printTemplateService.toJson(template),
+                items
+        );
+    }
+
+    public long recordFailedJob(Shop shop, String supplyId, String supplyName, String printedAt, PrintTemplate template, int itemCount, String errorMessage) {
+        return repository.insertFailedJob(
+                shop.getId(),
+                shop.getName(),
+                supplyId,
+                supplyName,
+                printedAt,
+                itemCount,
+                template == null ? null : template.getId(),
+                template == null ? null : template.getName(),
+                template == null ? printTemplateService.toJson(printTemplateService.getDefaultTemplate()) : printTemplateService.toJson(template),
+                errorMessage
+        );
+    }
+
+    public List<PrintHistoryJobSummary> getJobs(int shopId) {
+        return repository.findJobsByShop(shopId);
+    }
+
+    public List<PrintHistoryItem> getItems(long printJobId) {
+        return repository.findItems(printJobId);
+    }
+
+    public OrderExportWorkflow.ExportResult reprint(PrintHistoryJobSummary job, File outputFile, File detailsFile) throws IOException, WriterException {
+        PrintTemplate template = printTemplateService.fromJson(job.templateLayoutJson());
+        template.setId(job.templateId());
+        template.setName(job.templateName());
+
+        List<Order> orders = toOrders(repository.findItems(job.id()));
+        barcodePrintService.export(template, orders, outputFile);
+        orderDetailsPdfExporter.export(detailsFile, orders, new OrderDetailsPdfExporter.PrintDetailsMetadata(
+                job.supplyId(),
+                job.supplyName(),
+                job.shopName(),
+                job.printedAt(),
+                job.itemCount()
+        ));
+        return new OrderExportWorkflow.ExportResult(orders, List.of());
+    }
+
+    private List<Order> toOrders(List<PrintHistoryItem> items) {
+        List<Order> orders = new ArrayList<>(items.size());
+        for (PrintHistoryItem item : items) {
+            Order order = new Order(
+                    item.orderId(),
+                    null,
+                    item.brand(),
+                    item.name(),
+                    item.size(),
+                    item.color(),
+                    item.article(),
+                    item.sticker(),
+                    item.barcode()
+            );
+            order.setSubjectName(item.subjectName());
+            order.setStickerCode(item.stickerCode());
+            order.setKiz(item.kiz());
+            order.setImageUrl(item.imageCacheKey());
+            if (item.imageCacheKey() != null && !item.imageCacheKey().isBlank()) {
+                order.setImage(imageCacheRepository.findImage(item.imageCacheKey()));
+            }
+            orders.add(order);
+        }
+        return orders;
+    }
+
+    public static String imageCacheKey(String imageUrl) {
+        if (imageUrl == null) {
+            return null;
+        }
+        String trimmed = imageUrl.trim();
+        return trimmed.isBlank() ? null : trimmed;
+    }
+}

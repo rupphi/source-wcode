@@ -32,11 +32,11 @@ public class UpdateInstallerService {
 
         String extension = guessExtension(url);
         Path tempDir = Files.createTempDirectory("fbsbarcode-update-");
-        Path installerFile = tempDir.resolve("FBSBarcode-update" + extension);
+        Path installerFile = tempDir.resolve("WCode-update" + extension);
 
         Request request = new Request.Builder()
                 .url(url)
-                .header("User-Agent", "FBSBarcode-Updater")
+                .header("User-Agent", "WCode-Updater")
                 .get()
                 .build();
 

@@ -18,15 +18,15 @@
 <?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.VBox?>
 
-<BorderPane prefHeight="760.0" prefWidth="1180.0" style="-fx-background-color: #f8fafc;" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.ui.print.PrintTemplateDesignerController">
+<BorderPane prefHeight="760.0" prefWidth="1180.0" styleClass="root" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.ui.print.PrintTemplateDesignerController">
     <top>
         <VBox spacing="10.0" BorderPane.alignment="CENTER">
             <padding>
                 <Insets bottom="12.0" left="16.0" right="16.0" top="16.0" />
             </padding>
             <HBox alignment="CENTER_LEFT" spacing="10.0">
-                <Label style="-fx-font-size: 18px; -fx-font-weight: 700;" text="Thiết kế tem 58x40" />
-                <Label fx:id="templateMetaLabel" style="-fx-text-fill: #64748b;" text="58x40 mm" />
+                <Label styleClass="h3" text="Thiết kế tem 58x40" />
+                <Label fx:id="templateMetaLabel" styleClass="text-muted" text="58x40 mm" />
             </HBox>
             <HBox alignment="CENTER_LEFT" spacing="8.0">
                 <ComboBox fx:id="templateComboBox" prefWidth="250.0" />
@@ -36,7 +36,7 @@
                 <Button mnemonicParsing="false" onAction="#onDeleteTemplate" text="Xóa" />
                 <Button mnemonicParsing="false" onAction="#onSetDefaultTemplate" text="Đặt mặc định" />
                 <Button mnemonicParsing="false" onAction="#onResetTemplate" text="Reset" />
-                <Button mnemonicParsing="false" onAction="#onSaveTemplate" style="-fx-background-color: #0d6efd; -fx-text-fill: white; -fx-font-weight: 700;" text="Lưu template" />
+                <Button mnemonicParsing="false" onAction="#onSaveTemplate" styleClass="btn-primary" text="Lưu template" />
             </HBox>
         </VBox>
     </top>
@@ -47,7 +47,7 @@
                     <padding>
                         <Insets bottom="16.0" left="16.0" right="12.0" top="6.0" />
                     </padding>
-                    <Label style="-fx-font-size: 14px; -fx-font-weight: 700;" text="Thành phần" />
+                    <Label styleClass="text-bold" text="Thành phần" />
                     <HBox spacing="8.0">
                         <ComboBox fx:id="addElementComboBox" prefWidth="180.0" />
                         <Button mnemonicParsing="false" onAction="#onAddElement" text="Thêm" />
@@ -58,18 +58,18 @@
                     <padding>
                         <Insets bottom="16.0" left="12.0" right="12.0" top="6.0" />
                     </padding>
-                    <Label style="-fx-font-size: 14px; -fx-font-weight: 700;" text="Canvas preview" />
+                    <Label styleClass="text-bold" text="Canvas preview" />
                     <HBox alignment="CENTER_LEFT" spacing="8.0">
                         <VBox alignment="TOP_CENTER" spacing="0.0">
                             <children>
-                                <Label style="-fx-font-size: 10px; -fx-text-fill: #64748b;" text="mm" />
+                                <Label style="-fx-font-size: 10px;" styleClass="text-muted" text="mm" />
                                 <VBox fx:id="leftRulerBox" prefWidth="22.0" spacing="0.0" />
                             </children>
                         </VBox>
                         <VBox alignment="TOP_LEFT" spacing="4.0">
                             <children>
                                 <HBox fx:id="topRulerBox" alignment="CENTER_LEFT" spacing="0.0" />
-                                <StackPane style="-fx-background-color: white; -fx-border-color: #cbd5e1; -fx-border-radius: 10; -fx-background-radius: 10; -fx-padding: 20;">
+                                <StackPane style="-fx-background-color: -bg-tertiary; -fx-border-color: -border-color; -fx-border-radius: 10; -fx-background-radius: 10; -fx-padding: 20;">
                                     <children>
                                         <AnchorPane fx:id="previewPane" style="-fx-background-color: white; -fx-border-color: #0f172a; -fx-border-width: 1;">
                                             <children>
@@ -89,7 +89,7 @@
                             <padding>
                                 <Insets bottom="16.0" left="12.0" right="16.0" top="6.0" />
                             </padding>
-                            <Label style="-fx-font-size: 14px; -fx-font-weight: 700;" text="Thuộc tính" />
+                            <Label styleClass="text-bold" text="Thuộc tính" />
                             <GridPane hgap="10.0" vgap="10.0">
                                 <children>
                                     <Label text="Nhãn" GridPane.columnIndex="0" GridPane.rowIndex="0" />
@@ -110,7 +110,7 @@
                                     <ComboBox fx:id="alignComboBox" prefWidth="160.0" GridPane.columnIndex="1" GridPane.rowIndex="7" />
                                 </children>
                             </GridPane>
-                            <Label fx:id="fieldValidationLabel" managed="false" style="-fx-text-fill: #dc2626; -fx-font-size: 11px;" text="" visible="false" />
+                            <Label fx:id="fieldValidationLabel" managed="false" styleClass="text-danger" text="" visible="false" />
                             <CheckBox fx:id="snapToGridCheckBox" mnemonicParsing="false" selected="true" text="Snap theo lưới 1 mm" />
                             <CheckBox fx:id="visibleCheckBox" mnemonicParsing="false" text="Hiển thị" />
                             <CheckBox fx:id="boldCheckBox" mnemonicParsing="false" text="Chữ đậm" />
@@ -122,7 +122,7 @@
                                     <Button fx:id="pasteElementButton" mnemonicParsing="false" onAction="#onPasteElement" text="Paste" />
                                 </children>
                             </HBox>
-                            <Button fx:id="deleteElementButton" mnemonicParsing="false" onAction="#onDeleteElement" style="-fx-background-color: #dc2626; -fx-text-fill: white;" text="Xóa thành phần đang chọn" />
+                            <Button fx:id="deleteElementButton" mnemonicParsing="false" onAction="#onDeleteElement" styleClass="btn-danger" text="Xóa thành phần đang chọn" />
                         </VBox>
                     </content>
                 </ScrollPane>

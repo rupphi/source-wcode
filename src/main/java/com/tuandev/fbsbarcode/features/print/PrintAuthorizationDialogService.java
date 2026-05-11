@@ -20,8 +20,11 @@ public class PrintAuthorizationDialogService {
         }
 
         Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.getDialogPane().getStylesheets().add(java.util.Objects.requireNonNull(com.tuandev.fbsbarcode.MainApplication.class.getResource("css/theme.css")).toExternalForm());
         dialog.setTitle("Xác thực in");
-        dialog.setHeaderText("Nhập mã xác thực để sử dụng chức năng Print");
+        dialog.setHeaderText(null);
+        dialog.getDialogPane().setPadding(new Insets(18));
+        dialog.getDialogPane().setMinWidth(420);
 
         ButtonType confirmButton = new ButtonType("Xác thực", ButtonBar.ButtonData.OK_DONE);
         ButtonType cancelButton = new ButtonType("Hủy", ButtonBar.ButtonData.CANCEL_CLOSE);
@@ -37,12 +40,12 @@ public class PrintAuthorizationDialogService {
         errorLabel.setVisible(false);
 
         VBox content = new VBox(10,
-                new Label("Mã xác thực"),
+                new Label("Nhập mã xác thực"),
                 passwordField,
                 rememberCheckBox,
                 errorLabel
         );
-        content.setPadding(new Insets(8, 0, 0, 0));
+        content.setPadding(new Insets(4, 0, 0, 0));
         dialog.getDialogPane().setContent(content);
 
         javafx.scene.Node okButton = dialog.getDialogPane().lookupButton(confirmButton);
@@ -58,8 +61,12 @@ public class PrintAuthorizationDialogService {
             }
             if (rememberCheckBox.isSelected()) {
                 authorizationService.rememberAuthorized();
-            } else {
-                authorizationService.clearRememberedAuthorization();
+                if (!authorizationService.isAuthorized()) {
+                    errorLabel.setText("Không thể lưu mã xác thực. Vui lòng thử lại.");
+                    errorLabel.setManaged(true);
+                    errorLabel.setVisible(true);
+                    event.consume();
+                }
             }
         });
 
