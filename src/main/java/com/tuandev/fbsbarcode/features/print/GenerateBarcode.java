@@ -293,7 +293,7 @@ public class GenerateBarcode {
         stickerPathA.setFixedPosition(WIDTH - 16, 36, 51);
         document.add(stickerPathA);
 
-        Paragraph stickerPathB = new Paragraph(StickerText.secondPartOrFirst(order.getSticker()))
+        Paragraph stickerPathB = new Paragraph(normalizeStickerTail(StickerText.secondPartOrFirst(order.getSticker())))
                 .setFontSize(14)
                 .setBold()
                 .setRotationAngle(Math.toRadians(90))
