@@ -10,11 +10,11 @@
 <?import javafx.scene.text.Font?>
 <?import org.kordamp.ikonli.javafx.FontIcon?>
 
-<VBox prefHeight="666.0" prefWidth="340.0" spacing="10.0" style="-fx-background-color: -bg-secondary; -fx-border-color: -border-color; -fx-border-width: 0 0 0 1px;" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.ui.kiz.KizPanelController">
+<VBox prefHeight="666.0" prefWidth="390.0" spacing="10.0" style="-fx-background-color: -bg-secondary; -fx-border-color: -border-color; -fx-border-width: 0 0 0 1px;" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.ui.kiz.KizPanelController">
     <children>
         <Label text="KIZ (ID:FROM-TO)" styleClass="h3" />
         <Label styleClass="text-muted" text="Nhập yêu cầu phân bổ KIZ cho đơn đang hiển thị" wrapText="true" />
-        <TextArea fx:id="kizCommand" prefHeight="180.0" prefWidth="240.0" promptText="ID:FROM-TO">
+        <TextArea fx:id="kizCommand" prefHeight="180.0" prefWidth="340.0" promptText="ID:FROM-TO">
             <font>
                 <Font size="15.0" />
             </font>
@@ -28,9 +28,9 @@
                 <FontIcon iconLiteral="fth-plus" iconSize="14" iconColor="white"/>
             </graphic>
         </Button>
-        <ScrollPane fitToWidth="true" hbarPolicy="NEVER" prefHeight="376.0" prefWidth="290.0">
+        <ScrollPane fitToWidth="true" hbarPolicy="NEVER" prefHeight="376.0" prefWidth="340.0">
             <content>
-                <VBox fx:id="categoryVBox" prefWidth="300.0" spacing="6.0" />
+                <VBox fx:id="categoryVBox" prefWidth="350.0" spacing="6.0" />
             </content>
         </ScrollPane>
     </children>

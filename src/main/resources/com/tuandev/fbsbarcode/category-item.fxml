@@ -9,11 +9,11 @@
 <?import javafx.scene.layout.HBox?>
 <?import org.kordamp.ikonli.javafx.FontIcon?>
 
-<HBox fx:id="root" alignment="CENTER_LEFT" minHeight="40.0" prefWidth="300.0" spacing="6.0" styleClass="card" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.ui.kiz.CategoryItemController">
+<HBox fx:id="root" alignment="CENTER_LEFT" minHeight="40.0" prefWidth="350.0" spacing="8.0" styleClass="card" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.ui.kiz.CategoryItemController">
     <children>
-        <Label fx:id="idLabel" prefWidth="46.0" text="ID: 0" styleClass="text-muted" />
-        <Label fx:id="nameLabel" prefWidth="126.0" text="Category" styleClass="text-bold" />
-        <TextField fx:id="countKizsField" alignment="CENTER" editable="false" prefWidth="64.0" text="0" />
+        <Label fx:id="idLabel" prefWidth="56.0" text="ID: 0" styleClass="text-muted" />
+        <Label fx:id="nameLabel" prefWidth="170.0" text="Category" styleClass="text-bold" />
+        <TextField fx:id="countKizsField" alignment="CENTER" editable="false" prefWidth="72.0" text="0" />
         <Button fx:id="addKizBtn" mnemonicParsing="false">
             <styleClass>
                 <String fx:value="btn-icon" />
