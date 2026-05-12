@@ -21,6 +21,7 @@ public class Launcher {
             Files.createDirectories(tempDir);
             System.setProperty("org.sqlite.tmpdir", tempDir.toString());
             System.setProperty("java.io.tmpdir", tempDir.toString());
+            System.setProperty("javafx.cachedir", tempDir.resolve("openjfx-cache").toString());
 
             Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> writeStartupLog(thread.getName(), throwable));
         } catch (Exception ignored) {
@@ -43,6 +44,7 @@ public class Launcher {
                     APPDATA=%s
                     java.io.tmpdir=%s
                     org.sqlite.tmpdir=%s
+                    javafx.cachedir=%s
                     %s
 
                     """.formatted(
@@ -53,6 +55,7 @@ public class Launcher {
                     System.getenv("APPDATA"),
                     System.getProperty("java.io.tmpdir"),
                     System.getProperty("org.sqlite.tmpdir"),
+                    System.getProperty("javafx.cachedir"),
                     stack
             );
 
