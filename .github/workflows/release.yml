@@ -29,7 +29,7 @@ jobs:
 
       - name: Build with Maven
         shell: bash
-        run: ./mvnw.cmd -B package -DskipTests
+        run: ./mvnw.cmd -B clean package -DskipTests
 
       - name: Resolve built JAR
         shell: bash
@@ -43,12 +43,20 @@ jobs:
           echo "APP_JAR=$APP_JAR" >> $GITHUB_ENV
           echo "Using built JAR $APP_JAR"
 
+      - name: Prepare jpackage input
+        shell: bash
+        run: |
+          rm -rf target/jpackage-input
+          mkdir -p target/jpackage-input/lib
+          cp "target/${APP_JAR}" "target/jpackage-input/${APP_JAR}"
+          cp -R target/lib/. target/jpackage-input/lib/
+
       - name: Build EXE installer
         shell: bash
         run: |
           jpackage --type exe \
             --name WCode \
-            --input target \
+            --input target/jpackage-input \
             --main-jar "${{ env.APP_JAR }}" \
             --main-class com.tuandev.fbsbarcode.Launcher \
             --dest out \
@@ -59,7 +67,9 @@ jobs:
             --win-shortcut \
             --win-per-user-install \
             --java-options "--enable-native-access=ALL-UNNAMED" \
-            --java-options "--enable-native-access=javafx.graphics" \
+            --java-options "-Djavafx.cachedir=C:\\ProgramData\\WCode\\openjfx-cache" \
+            --java-options "-Djava.io.tmpdir=C:\\ProgramData\\WCode\\tmp" \
+            --java-options "-Dorg.sqlite.tmpdir=C:\\ProgramData\\WCode\\tmp" \
             --jlink-options "--strip-native-commands --strip-debug --no-man-pages --no-header-files --bind-services"
 
       - name: Rename EXE installer
@@ -71,7 +81,7 @@ jobs:
         run: |
           jpackage --type msi \
             --name WCode \
-            --input target \
+            --input target/jpackage-input \
             --main-jar "${{ env.APP_JAR }}" \
             --main-class com.tuandev.fbsbarcode.Launcher \
             --dest out \
@@ -82,7 +92,9 @@ jobs:
             --win-shortcut \
             --win-per-user-install \
             --java-options "--enable-native-access=ALL-UNNAMED" \
-            --java-options "--enable-native-access=javafx.graphics" \
+            --java-options "-Djavafx.cachedir=C:\\ProgramData\\WCode\\openjfx-cache" \
+            --java-options "-Djava.io.tmpdir=C:\\ProgramData\\WCode\\tmp" \
+            --java-options "-Dorg.sqlite.tmpdir=C:\\ProgramData\\WCode\\tmp" \
             --jlink-options "--strip-native-commands --strip-debug --no-man-pages --no-header-files --bind-services"
 
       - name: Rename MSI installer
@@ -94,7 +106,7 @@ jobs:
         run: |
           jpackage --type app-image \
             --name WCode \
-            --input target \
+            --input target/jpackage-input \
             --main-jar "${{ env.APP_JAR }}" \
             --main-class com.tuandev.fbsbarcode.Launcher \
             --dest out \
@@ -102,8 +114,14 @@ jobs:
             --vendor TuanDev \
             --icon src/main/resources/com/tuandev/fbsbarcode/logo-fbs.ico \
             --java-options "--enable-native-access=ALL-UNNAMED" \
-            --java-options "--enable-native-access=javafx.graphics" \
+            --java-options "-Djavafx.cachedir=C:\\ProgramData\\WCode\\openjfx-cache" \
+            --java-options "-Djava.io.tmpdir=C:\\ProgramData\\WCode\\tmp" \
+            --java-options "-Dorg.sqlite.tmpdir=C:\\ProgramData\\WCode\\tmp" \
             --jlink-options "--strip-native-commands --strip-debug --no-man-pages --no-header-files --bind-services"
+
+      - name: Add portable diagnostics helper
+        shell: bash
+        run: cp check-portable.bat out/WCode/check-portable.bat
 
       - name: Archive portable app image
         shell: pwsh

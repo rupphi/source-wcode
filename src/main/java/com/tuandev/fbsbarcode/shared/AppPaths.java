@@ -25,10 +25,17 @@ public final class AppPaths {
         return appDataDir().resolve("logs");
     }
 
+    public static Path javaFxCacheDir() {
+        return safeSystemDir().resolve("openjfx-cache");
+    }
+
+    public static Path safeUserHomeDir() {
+        return safeSystemDir().resolve("home");
+    }
+
     public static Path nativeTempDir() {
         List<Path> candidates = List.of(
-                windowsProgramData().map(path -> path.resolve(APP_DIR_NAME).resolve("tmp")).orElse(null),
-                windowsTemp().map(path -> path.resolve(APP_DIR_NAME)).orElse(null),
+                safeSystemDir().resolve("tmp"),
                 appDataDir().resolve("tmp")
         );
 
@@ -49,8 +56,8 @@ public final class AppPaths {
 
     public static File preferredFileChooserDirectory() {
         List<Path> candidates = List.of(
-                pathsFromBase(Paths.get(System.getProperty("user.home", ".")), "Downloads"),
                 pathsFromBase(appDataDir(), "exports"),
+                pathsFromBase(windowsUserProfile().orElse(null), "Downloads"),
                 appDataDir(),
                 Paths.get(System.getProperty("user.dir", "."))
         );
@@ -104,6 +111,18 @@ public final class AppPaths {
         return Optional.of(Paths.get("C:\\ProgramData"));
     }
 
+    private static Optional<Path> windowsUserProfile() {
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        if (!os.contains("win")) {
+            return Optional.empty();
+        }
+        String userProfile = System.getenv("USERPROFILE");
+        if (userProfile != null && !userProfile.isBlank()) {
+            return Optional.of(Paths.get(userProfile));
+        }
+        return Optional.empty();
+    }
+
     private static Optional<Path> windowsTemp() {
         String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
         if (!os.contains("win")) {
@@ -114,5 +133,13 @@ public final class AppPaths {
             return Optional.of(Paths.get(systemRoot, "Temp"));
         }
         return Optional.of(Paths.get("C:\\Windows\\Temp"));
+    }
+
+    private static Path safeSystemDir() {
+        return windowsProgramData()
+                .map(path -> path.resolve(APP_DIR_NAME))
+                .orElseGet(() -> windowsTemp()
+                        .map(path -> path.resolve(APP_DIR_NAME))
+                        .orElseGet(() -> Paths.get(System.getProperty("java.io.tmpdir", "."), APP_DIR_NAME)));
     }
 }

@@ -60,6 +60,14 @@ if exist "%APP_DIR%runtime\bin" (
 )
 echo.
 
+echo [5.1] Launcher config
+if exist "%APP_DIR%app\WCode.cfg" (
+  type "%APP_DIR%app\WCode.cfg"
+) else (
+  echo WARNING: app\WCode.cfg not found
+)
+echo.
+
 echo [6] Try launching app and capture console output
 pushd "%APP_DIR%"
 "%APP_DIR%WCode.exe" 1>"%APP_DIR%portable-stdout.txt" 2>"%APP_DIR%portable-stderr.txt"

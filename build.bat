@@ -35,12 +35,13 @@ echo Building version: %APP_VERSION%
 set MAIN_JAR=FBSBarcode-%APP_VERSION%.jar
 set MAIN_CLASS=com.tuandev.fbsbarcode.Launcher
 set VENDOR=TuanDev
+set JPACKAGE_INPUT=target\jpackage-input
 set INSTALLER_OPTIONS=
 if /I "%PACKAGE_TYPE%"=="exe" set INSTALLER_OPTIONS=--win-menu --win-shortcut --win-per-user-install
 if /I "%PACKAGE_TYPE%"=="msi" set INSTALLER_OPTIONS=--win-menu --win-shortcut --win-per-user-install
 
 echo Packaging with Maven...
-call mvnw.cmd -q package
+call mvnw.cmd -q clean package
 if errorlevel 1 exit /b 1
 
 if not exist "target\%MAIN_JAR%" (
@@ -49,12 +50,20 @@ if not exist "target\%MAIN_JAR%" (
 )
 
 if exist out rmdir /s /q out
+if exist "%JPACKAGE_INPUT%" rmdir /s /q "%JPACKAGE_INPUT%"
+mkdir "%JPACKAGE_INPUT%"
+copy /y "target\%MAIN_JAR%" "%JPACKAGE_INPUT%\%MAIN_JAR%" >nul
+xcopy /e /i /y "target\lib" "%JPACKAGE_INPUT%\lib" >nul
 
-set JPACKAGE_COMMON=--name %APP_NAME% --input target --main-jar %MAIN_JAR% --main-class %MAIN_CLASS% --dest out --app-version %APP_VERSION% --vendor %VENDOR% --icon app.ico %INSTALLER_OPTIONS% --java-options "--enable-native-access=ALL-UNNAMED" --java-options "--enable-native-access=javafx.graphics" --jlink-options "--strip-native-commands --strip-debug --no-man-pages --no-header-files --bind-services"
+set JPACKAGE_COMMON=--name %APP_NAME% --input %JPACKAGE_INPUT% --main-jar %MAIN_JAR% --main-class %MAIN_CLASS% --dest out --app-version %APP_VERSION% --vendor %VENDOR% --icon app.ico %INSTALLER_OPTIONS% --java-options "--enable-native-access=ALL-UNNAMED" --java-options "-Djavafx.cachedir=C:\ProgramData\WCode\openjfx-cache" --java-options "-Djava.io.tmpdir=C:\ProgramData\WCode\tmp" --java-options "-Dorg.sqlite.tmpdir=C:\ProgramData\WCode\tmp" --jlink-options "--strip-native-commands --strip-debug --no-man-pages --no-header-files --bind-services"
 
 echo Building %PACKAGE_TYPE% package...
 jpackage --type %PACKAGE_TYPE% %JPACKAGE_COMMON%
 if errorlevel 1 exit /b 1
+
+if /I "%PACKAGE_TYPE%"=="app-image" (
+    if exist "check-portable.bat" copy /y "check-portable.bat" "out\%APP_NAME%\check-portable.bat" >nul
+)
 
 echo Done. Output is in the out folder.
 endlocal

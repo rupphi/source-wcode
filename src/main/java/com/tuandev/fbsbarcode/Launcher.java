@@ -18,14 +18,27 @@ public class Launcher {
     private static void configureStartupEnvironment() {
         try {
             Path tempDir = AppPaths.nativeTempDir();
+            Path javafxCacheDir = AppPaths.javaFxCacheDir();
+            Path safeUserHomeDir = AppPaths.safeUserHomeDir();
             Files.createDirectories(tempDir);
+            Files.createDirectories(javafxCacheDir);
+            Files.createDirectories(safeUserHomeDir);
+
+            String currentUserHome = System.getProperty("user.home", "");
+            if (!isAsciiOnly(currentUserHome)) {
+                System.setProperty("user.home", safeUserHomeDir.toString());
+            }
             System.setProperty("org.sqlite.tmpdir", tempDir.toString());
             System.setProperty("java.io.tmpdir", tempDir.toString());
-            System.setProperty("javafx.cachedir", tempDir.resolve("openjfx-cache").toString());
+            System.setProperty("javafx.cachedir", javafxCacheDir.toString());
 
             Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> writeStartupLog(thread.getName(), throwable));
         } catch (Exception ignored) {
         }
+    }
+
+    private static boolean isAsciiOnly(String value) {
+        return value != null && value.chars().allMatch(ch -> ch >= 32 && ch <= 126);
     }
 
     private static void writeStartupLog(String threadName, Throwable throwable) {
