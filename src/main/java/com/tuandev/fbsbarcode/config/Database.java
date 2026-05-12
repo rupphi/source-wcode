@@ -1,9 +1,12 @@
 package com.tuandev.fbsbarcode.config;
 
+import com.tuandev.fbsbarcode.shared.AppPaths;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -14,14 +17,12 @@ import java.sql.Statement;
 import com.tuandev.fbsbarcode.integration.wb.WbSchemaSupport;
 
 public class Database {
-
-    private static final String DB_DIR =
-            System.getProperty("user.home") + "/fbsbarcode";
+    private static final Logger LOGGER = LoggerFactory.getLogger(Database.class);
     private static final String DB_NAME = "database.db";
 
     public static Connection getConnection() {
         try {
-            Path dir = Paths.get(DB_DIR);
+            Path dir = AppPaths.appDataDir();
 
             if (!Files.exists(dir)) {
                 Files.createDirectories(dir);
@@ -41,6 +42,7 @@ public class Database {
             return connection;
 
         } catch (IOException | SQLException e) {
+            LOGGER.error("Không thể mở database tại thư mục ứng dụng {}", AppPaths.appDataDir(), e);
             throw new RuntimeException(e);
         }
     }

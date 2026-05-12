@@ -13,6 +13,7 @@ import com.tuandev.fbsbarcode.shared.AppTaskExecutor;
 import com.tuandev.fbsbarcode.features.kiz.CategoryWorkflow;
 import com.tuandev.fbsbarcode.shared.ConfigService;
 import com.tuandev.fbsbarcode.shared.FxmlViewLoader;
+import com.tuandev.fbsbarcode.shared.AppPaths;
 import com.tuandev.fbsbarcode.features.print.OrderExportWorkflow;
 import com.tuandev.fbsbarcode.features.print.PrintAuthorizationDialogService;
 import com.tuandev.fbsbarcode.features.print.PrintTemplateDesignerService;
@@ -105,7 +106,10 @@ public class HomeController implements Initializable {
         printTemplateService.ensureDefaultTemplateExists();
 
         fileChooser = new FileChooser();
-        fileChooser.setInitialDirectory(new File(System.getProperty("user.home"), "Downloads"));
+        File initialDirectory = AppPaths.preferredFileChooserDirectory();
+        if (initialDirectory != null) {
+            fileChooser.setInitialDirectory(initialDirectory);
+        }
 
         initializeSidebar();
         initializeHeader();
