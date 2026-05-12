@@ -31,13 +31,25 @@ jobs:
         shell: bash
         run: ./mvnw.cmd -B package -DskipTests
 
+      - name: Resolve built JAR
+        shell: bash
+        run: |
+          APP_JAR=$(find target -maxdepth 1 -type f -name 'FBSBarcode-*.jar' | head -n 1)
+          if [ -z "$APP_JAR" ]; then
+            echo "No built application JAR found in target/"
+            exit 1
+          fi
+          APP_JAR=$(basename "$APP_JAR")
+          echo "APP_JAR=$APP_JAR" >> $GITHUB_ENV
+          echo "Using built JAR $APP_JAR"
+
       - name: Build EXE installer
         shell: bash
         run: |
           jpackage --type exe \
             --name WCode \
             --input target \
-            --main-jar "FBSBarcode-${{ env.APP_VERSION }}.jar" \
+            --main-jar "${{ env.APP_JAR }}" \
             --main-class com.tuandev.fbsbarcode.Launcher \
             --dest out \
             --app-version "${{ env.APP_VERSION }}" \
@@ -60,7 +72,7 @@ jobs:
           jpackage --type msi \
             --name WCode \
             --input target \
-            --main-jar "FBSBarcode-${{ env.APP_VERSION }}.jar" \
+            --main-jar "${{ env.APP_JAR }}" \
             --main-class com.tuandev.fbsbarcode.Launcher \
             --dest out \
             --app-version "${{ env.APP_VERSION }}" \
@@ -83,7 +95,7 @@ jobs:
           jpackage --type app-image \
             --name WCode \
             --input target \
-            --main-jar "FBSBarcode-${{ env.APP_VERSION }}.jar" \
+            --main-jar "${{ env.APP_JAR }}" \
             --main-class com.tuandev.fbsbarcode.Launcher \
             --dest out \
             --app-version "${{ env.APP_VERSION }}" \
