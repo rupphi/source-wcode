@@ -1,11 +1,13 @@
 package com.tuandev.fbsbarcode.shared;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 public final class AppPaths {
     private static final String APP_DIR_NAME = "WCode";
@@ -17,6 +19,32 @@ public final class AppPaths {
         Path base = windowsLocalAppData()
                 .orElseGet(() -> Paths.get(System.getProperty("user.home", ".")));
         return base.resolve(APP_DIR_NAME);
+    }
+
+    public static Path logsDir() {
+        return appDataDir().resolve("logs");
+    }
+
+    public static Path nativeTempDir() {
+        List<Path> candidates = List.of(
+                windowsProgramData().map(path -> path.resolve(APP_DIR_NAME).resolve("tmp")).orElse(null),
+                windowsTemp().map(path -> path.resolve(APP_DIR_NAME)).orElse(null),
+                appDataDir().resolve("tmp")
+        );
+
+        for (Path candidate : candidates) {
+            if (candidate == null) {
+                continue;
+            }
+            try {
+                Files.createDirectories(candidate);
+                if (Files.isDirectory(candidate)) {
+                    return candidate;
+                }
+            } catch (IOException ignored) {
+            }
+        }
+        return Paths.get(System.getProperty("java.io.tmpdir", "."));
     }
 
     public static File preferredFileChooserDirectory() {
@@ -46,21 +74,45 @@ public final class AppPaths {
         return base == null ? null : base.resolve(child);
     }
 
-    private static java.util.Optional<Path> windowsLocalAppData() {
+    private static Optional<Path> windowsLocalAppData() {
         String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
         if (!os.contains("win")) {
-            return java.util.Optional.empty();
+            return Optional.empty();
         }
 
         String localAppData = System.getenv("LOCALAPPDATA");
         if (localAppData != null && !localAppData.isBlank()) {
-            return java.util.Optional.of(Paths.get(localAppData));
+            return Optional.of(Paths.get(localAppData));
         }
 
         String appData = System.getenv("APPDATA");
         if (appData != null && !appData.isBlank()) {
-            return java.util.Optional.of(Paths.get(appData));
+            return Optional.of(Paths.get(appData));
         }
-        return java.util.Optional.empty();
+        return Optional.empty();
+    }
+
+    private static Optional<Path> windowsProgramData() {
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        if (!os.contains("win")) {
+            return Optional.empty();
+        }
+        String programData = System.getenv("ProgramData");
+        if (programData != null && !programData.isBlank()) {
+            return Optional.of(Paths.get(programData));
+        }
+        return Optional.of(Paths.get("C:\\ProgramData"));
+    }
+
+    private static Optional<Path> windowsTemp() {
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        if (!os.contains("win")) {
+            return Optional.empty();
+        }
+        String systemRoot = System.getenv("SystemRoot");
+        if (systemRoot != null && !systemRoot.isBlank()) {
+            return Optional.of(Paths.get(systemRoot, "Temp"));
+        }
+        return Optional.of(Paths.get("C:\\Windows\\Temp"));
     }
 }

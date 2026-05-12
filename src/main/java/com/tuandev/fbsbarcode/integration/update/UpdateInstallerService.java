@@ -1,5 +1,6 @@
 package com.tuandev.fbsbarcode.integration.update;
 
+import com.tuandev.fbsbarcode.shared.AppPaths;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -31,7 +32,9 @@ public class UpdateInstallerService {
         }
 
         String extension = guessExtension(url);
-        Path tempDir = Files.createTempDirectory("fbsbarcode-update-");
+        Path tempBase = AppPaths.nativeTempDir();
+        Files.createDirectories(tempBase);
+        Path tempDir = Files.createTempDirectory(tempBase, "wcode-update-");
         Path installerFile = tempDir.resolve("WCode-update" + extension);
 
         Request request = new Request.Builder()
