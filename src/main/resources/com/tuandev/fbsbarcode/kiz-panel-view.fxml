@@ -13,13 +13,13 @@
 <VBox prefHeight="666.0" prefWidth="390.0" spacing="10.0" style="-fx-background-color: -bg-secondary; -fx-border-color: -border-color; -fx-border-width: 0 0 0 1px;" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.ui.kiz.KizPanelController">
     <children>
         <Label text="KIZ (ID:FROM-TO)" styleClass="h3" />
-        <Label styleClass="text-muted" text="Nhập yêu cầu phân bổ KIZ cho đơn đang hiển thị" wrapText="true" />
+        <Label styleClass="text-muted" text="Введите правила распределения KIZ для текущих заказов" wrapText="true" />
         <TextArea fx:id="kizCommand" prefHeight="180.0" prefWidth="340.0" promptText="ID:FROM-TO">
             <font>
                 <Font size="15.0" />
             </font>
         </TextArea>
-        <Button mnemonicParsing="false" onAction="#onAddCategory" text=" Thêm mặt hàng">
+        <Button mnemonicParsing="false" onAction="#onAddCategory" text=" Добавить товар">
             <styleClass>
                 <String fx:value="button" />
                 <String fx:value="btn-primary" />

@@ -1,10 +1,13 @@
 package com.tuandev.fbsbarcode.integration.wb;
 
 import com.tuandev.fbsbarcode.models.Shop;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 
 public class WbSyncWorkflow {
+    private static final Logger LOGGER = LoggerFactory.getLogger(WbSyncWorkflow.class);
     private final WbProductSyncService productSyncService = new WbProductSyncService();
     private final WbSupplySyncService supplySyncService = new WbSupplySyncService();
     private final WbOrderSyncService orderSyncService = new WbOrderSyncService();
@@ -21,22 +24,24 @@ public class WbSyncWorkflow {
 
         int products = 0;
         if (needsInitialProductSync) {
-            products = productSyncService.sync(shop);
+            products = syncProductsIfAvailable(shop);
         }
 
         if (needsInitialSupplySync) {
             int supplies = supplySyncService.syncUntilOpenSuppliesFound(shop);
             int openSupplyDetails = supplySyncService.syncOpenSupplyDetails(shop);
-            return new WbSyncReport(products, supplies + openSupplyDetails, 0, 0);
+            int openSupplyCounts = supplySyncService.syncOpenSupplyCounts(shop);
+            return new WbSyncReport(products, supplies + openSupplyDetails + openSupplyCounts, 0, 0);
         }
 
         int supplies = supplySyncService.syncIncremental(shop);
         int openSupplyDetails = supplySyncService.syncOpenSupplyDetails(shop);
-        return new WbSyncReport(products, supplies + openSupplyDetails, 0, 0);
+        int openSupplyCounts = supplySyncService.syncOpenSupplyCounts(shop);
+        return new WbSyncReport(products, supplies + openSupplyDetails + openSupplyCounts, 0, 0);
     }
 
     public WbSyncReport syncAll(Shop shop) throws IOException {
-        int products = productSyncService.sync(shop);
+        int products = syncProductsIfAvailable(shop);
         int supplies = supplySyncService.sync(shop);
         int newOrders = orderSyncService.syncNewOrders(shop);
         int orderWindow = orderSyncService.syncOrdersWindow(shop);
@@ -44,10 +49,29 @@ public class WbSyncWorkflow {
         return new WbSyncReport(products, supplies + supplyDetails, newOrders + orderWindow, 0);
     }
 
+    public WbSyncReport refetchSupplies(Shop shop) throws IOException {
+        int supplies = supplySyncService.refreshOpenSuppliesFromStart(shop);
+        int openSupplyDetails = supplySyncService.syncOpenSupplyDetails(shop);
+        int openSupplyCounts = supplySyncService.syncOpenSupplyCounts(shop);
+        return new WbSyncReport(0, supplies + openSupplyDetails + openSupplyCounts, 0, 0);
+    }
+
     public int syncSupplyOrdersAndStatuses(Shop shop, String supplyId) throws IOException {
         orderSyncService.syncOrdersWindow(shop);
         int supplyOrders = orderSyncService.syncSupplyOrders(shop, supplyId);
         int statuses = orderSyncService.syncOrderStatusesForSupply(shop, supplyId);
         return supplyOrders + statuses;
+    }
+
+    private int syncProductsIfAvailable(Shop shop) throws IOException {
+        try {
+            return productSyncService.sync(shop);
+        } catch (WbApiException ex) {
+            if (ex.getStatusCode() == 401 || ex.getStatusCode() == 403) {
+                LOGGER.warn("Bỏ qua sync products cho shop {} vì token không có quyền Content: {}", shop.getId(), ex.getMessage());
+                return 0;
+            }
+            throw ex;
+        }
     }
 }

@@ -30,7 +30,7 @@
                 </Label>
             </children>
         </HBox>
-        <Button alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onSettings" prefHeight="34.0" prefWidth="190.0" text=" Thiết kế tem">
+        <Button alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onSettings" prefHeight="34.0" prefWidth="190.0" text=" Дизайн шаблона">
             <styleClass>
                 <String fx:value="button" />
                 <String fx:value="btn-warning" />
@@ -39,7 +39,7 @@
                 <FontIcon iconLiteral="fth-edit" iconSize="16" iconColor="white"/>
             </graphic>
         </Button>
-        <Button alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onAddShop" prefHeight="34.0" prefWidth="190.0" text=" Thêm cửa hàng">
+        <Button alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onAddShop" prefHeight="34.0" prefWidth="190.0" text=" Добавить магазин">
             <styleClass>
                 <String fx:value="button" />
                 <String fx:value="btn-primary" />
@@ -49,7 +49,7 @@
             </graphic>
         </Button>
         <Label alignment="CENTER" maxWidth="1.7976931348623157E308" styleClass="text-muted text-bold" text="-" textAlignment="CENTER" />
-        <Button fx:id="btnDashboard" alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onDashboard" prefHeight="34.0" prefWidth="190.0" text=" Bảng điều khiển">
+        <Button fx:id="btnDashboard" alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onDashboard" prefHeight="34.0" prefWidth="190.0" text=" Панель управления">
             <styleClass>
                 <String fx:value="button" />
                 <String fx:value="btn-primary" />
@@ -58,7 +58,7 @@
                 <FontIcon iconLiteral="fth-pie-chart" iconSize="16" iconColor="white"/>
             </graphic>
         </Button>
-        <Button fx:id="btnSupplies" alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onSupplies" prefHeight="34.0" prefWidth="190.0" text=" Đơn hàng &amp; Chuyến">
+        <Button fx:id="btnSupplies" alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onSupplies" prefHeight="34.0" prefWidth="190.0" text=" Заказы и поставки">
             <styleClass>
                 <String fx:value="button" />
                 <String fx:value="btn-secondary" />
@@ -67,7 +67,7 @@
                 <FontIcon iconLiteral="fth-package" iconSize="16" iconColor="white"/>
             </graphic>
         </Button>
-        <Button fx:id="btnPrintHistory" alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onPrintHistory" prefHeight="34.0" prefWidth="190.0" text=" Lịch sử in">
+        <Button fx:id="btnPrintHistory" alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onPrintHistory" prefHeight="34.0" prefWidth="190.0" text=" История печати">
             <styleClass>
                 <String fx:value="button" />
                 <String fx:value="btn-secondary" />

@@ -2,6 +2,7 @@
 
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.ComboBox?>
+<?import javafx.scene.control.Button?>
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.control.ProgressIndicator?>
 <?import javafx.scene.layout.HBox?>
@@ -12,11 +13,13 @@
     <children>
         <HBox alignment="CENTER_LEFT" spacing="8.0">
             <children>
-                <Label text="Supply" styleClass="h3" />
+                <Label text="Поставки" styleClass="h3" />
                 <ProgressIndicator fx:id="supplyLoading" maxHeight="20.0" maxWidth="20.0" prefHeight="20.0" prefWidth="20.0" visible="false" />
+                <Button fx:id="refetchButton" mnemonicParsing="false" onAction="#onRefetch" text="Обновить" />
             </children>
         </HBox>
-        <ComboBox fx:id="supplyComboBox" prefWidth="460.0" promptText="Chọn supply" />
+        <ComboBox fx:id="supplyComboBox" prefWidth="460.0" promptText="Выберите поставку" />
+        <Label fx:id="emptyStateLabel" managed="false" styleClass="text-muted" text="Нет активных поставок." visible="false" wrapText="true" />
     </children>
     <padding>
         <Insets bottom="16.0" left="16.0" right="16.0" top="16.0" />

@@ -21,7 +21,7 @@
             <children>
                 <HBox alignment="CENTER_LEFT" minHeight="32.0" spacing="8.0">
                     <children>
-                        <ComboBox fx:id="shopComboBox" prefHeight="32.0" prefWidth="220.0" promptText="Chọn cửa hàng..." styleClass="combo-box" />
+                        <ComboBox fx:id="shopComboBox" prefHeight="32.0" prefWidth="220.0" promptText="Выберите магазин..." styleClass="combo-box" />
                         <Button fx:id="editShopButton" alignment="CENTER" mnemonicParsing="false" onAction="#onEditShop" prefHeight="32.0" prefWidth="32.0">
                             <styleClass>
                                 <String fx:value="btn-icon" />
@@ -44,7 +44,7 @@
         </VBox>
         <Pane HBox.hgrow="ALWAYS" />
         <ProgressIndicator fx:id="syncLoading" maxHeight="22.0" maxWidth="22.0" prefHeight="22.0" prefWidth="22.0" visible="false" />
-        <Button fx:id="syncButton" mnemonicParsing="false" onAction="#onSync" prefHeight="34.0" prefWidth="130.0" text=" Đồng bộ WB">
+        <Button fx:id="syncButton" mnemonicParsing="false" onAction="#onSync" prefHeight="34.0" prefWidth="130.0" text=" Синхронизировать WB">
             <styleClass>
                 <String fx:value="button" />
                 <String fx:value="btn-primary" />

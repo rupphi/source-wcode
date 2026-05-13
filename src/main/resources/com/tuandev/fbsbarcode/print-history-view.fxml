@@ -8,15 +8,15 @@
 
 <VBox spacing="12.0" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.ui.history.PrintHistoryController">
     <children>
-        <Label styleClass="h2" text="Lịch sử in" />
-        <Label fx:id="emptyStateLabel" styleClass="text-muted" text="Chưa có lịch sử in cho shop này." wrapText="true" />
+        <Label styleClass="h2" text="История печати" />
+        <Label fx:id="emptyStateLabel" styleClass="text-muted" text="Для этого магазина пока нет истории печати." wrapText="true" />
         <TableView fx:id="jobsTable" managed="false" prefHeight="260.0" visible="false">
             <columns>
-                <TableColumn fx:id="printedAtTC" prefWidth="160.0" text="Thời gian in" />
-                <TableColumn fx:id="supplyNameTC" prefWidth="180.0" text="Supply name" />
-                <TableColumn fx:id="supplyIdTC" prefWidth="150.0" text="Supply ID" />
-                <TableColumn fx:id="itemCountTC" prefWidth="110.0" text="Số sản phẩm" />
-                <TableColumn fx:id="statusTC" prefWidth="100.0" text="Trạng thái" />
+                <TableColumn fx:id="printedAtTC" prefWidth="160.0" text="Дата печати" />
+                <TableColumn fx:id="supplyNameTC" prefWidth="180.0" text="Название поставки" />
+                <TableColumn fx:id="supplyIdTC" prefWidth="150.0" text="ID поставки" />
+                <TableColumn fx:id="itemCountTC" prefWidth="110.0" text="Кол-во товаров" />
+                <TableColumn fx:id="statusTC" prefWidth="100.0" text="Статус" />
                 <TableColumn fx:id="actionTC" prefWidth="72.0" text="" />
             </columns>
         </TableView>

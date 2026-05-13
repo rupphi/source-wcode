@@ -48,10 +48,7 @@
                         <Insets bottom="16.0" left="16.0" right="12.0" top="6.0" />
                     </padding>
                     <Label styleClass="text-bold" text="Thành phần" />
-                    <HBox spacing="8.0">
-                        <ComboBox fx:id="addElementComboBox" prefWidth="180.0" />
-                        <Button mnemonicParsing="false" onAction="#onAddElement" text="Thêm" />
-                    </HBox>
+                    <ComboBox fx:id="addElementComboBox" prefWidth="220.0" promptText="Chọn để thêm thành phần" />
                     <ListView fx:id="elementListView" prefHeight="560.0" />
                 </VBox>
                 <VBox alignment="TOP_CENTER" spacing="12.0">
@@ -96,18 +93,20 @@
                                     <TextField fx:id="labelField" GridPane.columnIndex="1" GridPane.rowIndex="0" />
                                     <Label text="Tiền tố" GridPane.columnIndex="0" GridPane.rowIndex="1" />
                                     <TextField fx:id="prefixField" promptText="Ví dụ: Раз" GridPane.columnIndex="1" GridPane.rowIndex="1" />
-                                    <Label text="X" GridPane.columnIndex="0" GridPane.rowIndex="2" />
-                                    <TextField fx:id="xField" GridPane.columnIndex="1" GridPane.rowIndex="2" />
-                                    <Label text="Y" GridPane.columnIndex="0" GridPane.rowIndex="3" />
-                                    <TextField fx:id="yField" GridPane.columnIndex="1" GridPane.rowIndex="3" />
-                                    <Label text="Rộng" GridPane.columnIndex="0" GridPane.rowIndex="4" />
-                                    <TextField fx:id="widthField" GridPane.columnIndex="1" GridPane.rowIndex="4" />
-                                    <Label text="Cao" GridPane.columnIndex="0" GridPane.rowIndex="5" />
-                                    <TextField fx:id="heightField" GridPane.columnIndex="1" GridPane.rowIndex="5" />
-                                    <Label text="Font" GridPane.columnIndex="0" GridPane.rowIndex="6" />
-                                    <TextField fx:id="fontSizeField" GridPane.columnIndex="1" GridPane.rowIndex="6" />
-                                    <Label text="Canh chữ" GridPane.columnIndex="0" GridPane.rowIndex="7" />
-                                    <ComboBox fx:id="alignComboBox" prefWidth="160.0" GridPane.columnIndex="1" GridPane.rowIndex="7" />
+                                    <Label fx:id="contentLabel" managed="false" text="Nội dung" visible="false" GridPane.columnIndex="0" GridPane.rowIndex="2" />
+                                    <TextField fx:id="contentField" managed="false" promptText="Ví dụ: Duong Duong Branch" visible="false" GridPane.columnIndex="1" GridPane.rowIndex="2" />
+                                    <Label text="X" GridPane.columnIndex="0" GridPane.rowIndex="3" />
+                                    <TextField fx:id="xField" GridPane.columnIndex="1" GridPane.rowIndex="3" />
+                                    <Label text="Y" GridPane.columnIndex="0" GridPane.rowIndex="4" />
+                                    <TextField fx:id="yField" GridPane.columnIndex="1" GridPane.rowIndex="4" />
+                                    <Label text="Rộng" GridPane.columnIndex="0" GridPane.rowIndex="5" />
+                                    <TextField fx:id="widthField" GridPane.columnIndex="1" GridPane.rowIndex="5" />
+                                    <Label text="Cao" GridPane.columnIndex="0" GridPane.rowIndex="6" />
+                                    <TextField fx:id="heightField" GridPane.columnIndex="1" GridPane.rowIndex="6" />
+                                    <Label text="Font" GridPane.columnIndex="0" GridPane.rowIndex="7" />
+                                    <TextField fx:id="fontSizeField" GridPane.columnIndex="1" GridPane.rowIndex="7" />
+                                    <Label text="Canh chữ" GridPane.columnIndex="0" GridPane.rowIndex="8" />
+                                    <ComboBox fx:id="alignComboBox" prefWidth="160.0" GridPane.columnIndex="1" GridPane.rowIndex="8" />
                                 </children>
                             </GridPane>
                             <Label fx:id="fieldValidationLabel" managed="false" styleClass="text-danger" text="" visible="false" />

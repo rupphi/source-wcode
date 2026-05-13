@@ -105,6 +105,7 @@ public class GenerateBarcode {
                 case KIZ_DATAMATRIX -> renderKiz(order, element, document, renderContext);
                 case BARCODE_CODE128 -> renderBarcode(order, element, document, renderContext);
                 case TEXT_FIELD -> renderTextField(order, element, document);
+                case STATIC_TEXT -> renderStaticText(element, document);
                 case STICKER_TAIL -> renderStickerTail(order, element, document);
                 case SEPARATOR_LINE -> renderSeparatorLine(element, pdfDocument);
             }
@@ -152,6 +153,17 @@ public class GenerateBarcode {
     private static void renderTextField(Order order, PrintTemplateElement element, Document document) {
         String value = resolveFieldValue(order, element.getFieldKey());
         String output = withPrefix(element.getPrefix(), value);
+        if (output.isBlank() || element.getWidth() <= 0 || element.getHeight() <= 0 || element.getFontSize() <= 0f) {
+            return;
+        }
+
+        Paragraph paragraph = baseParagraph(output, element)
+                .setFixedPosition((float) element.getX(), toBottomY(element), (float) element.getWidth());
+        document.add(paragraph);
+    }
+
+    private static void renderStaticText(PrintTemplateElement element, Document document) {
+        String output = withPrefix(element.getPrefix(), safeValue(element.getContent()));
         if (output.isBlank() || element.getWidth() <= 0 || element.getHeight() <= 0 || element.getFontSize() <= 0f) {
             return;
         }

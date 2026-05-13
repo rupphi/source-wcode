@@ -115,10 +115,10 @@ public class WorkspaceHeaderController {
         syncLoading.setVisible(busy);
     }
 
-    public void setControls(boolean hasShop, boolean busy, boolean exportEnabled) {
-        syncButton.setDisable(!hasShop || busy);
+    public void setControls(boolean hasShop, boolean busy, boolean exportEnabled, boolean tokenValid) {
+        syncButton.setDisable(!hasShop || busy || !tokenValid);
         editShopButton.setDisable(!hasShop || busy);
-        deleteShopButton.setDisable(!hasShop || busy);
-        exportButton.setDisable(!exportEnabled || busy);
+        deleteShopButton.setDisable(!hasShop || busy || !tokenValid);
+        exportButton.setDisable(!exportEnabled || busy || !tokenValid);
     }
 }

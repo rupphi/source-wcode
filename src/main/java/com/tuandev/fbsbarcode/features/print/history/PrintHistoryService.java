@@ -84,9 +84,7 @@ public class PrintHistoryService {
     }
 
     public OrderExportWorkflow.ExportResult reprint(PrintHistoryJobSummary job, File outputFile, File detailsFile) throws IOException, WriterException {
-        PrintTemplate template = printTemplateService.fromJson(job.templateLayoutJson());
-        template.setId(job.templateId());
-        template.setName(job.templateName());
+        PrintTemplate template = printTemplateService.getDefaultTemplate();
 
         List<Order> orders = toOrders(repository.findItems(job.id()));
         barcodePrintService.export(template, orders, outputFile);

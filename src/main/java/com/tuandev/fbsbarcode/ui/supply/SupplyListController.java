@@ -5,6 +5,8 @@ import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
 import javafx.scene.control.ProgressIndicator;
 
 import java.util.List;
@@ -17,7 +19,14 @@ public class SupplyListController {
     @FXML
     private ProgressIndicator supplyLoading;
 
+    @FXML
+    private Button refetchButton;
+
+    @FXML
+    private Label emptyStateLabel;
+
     private Consumer<WbSupplySummary> onSupplySelected;
+    private Runnable onRefetchRequested;
     private boolean suppressSelectionCallback;
 
     @FXML
@@ -43,6 +52,31 @@ public class SupplyListController {
         supplyComboBox.setItems(FXCollections.observableArrayList(supplies));
         supplyComboBox.getSelectionModel().clearSelection();
         suppressSelectionCallback = false;
+        updateEmptyState();
+    }
+
+    public void refreshSupplies(List<WbSupplySummary> supplies, String selectedSupplyId) {
+        suppressSelectionCallback = true;
+        supplyComboBox.setItems(FXCollections.observableArrayList(supplies));
+        if (selectedSupplyId == null || selectedSupplyId.isBlank()) {
+            supplyComboBox.getSelectionModel().clearSelection();
+        } else {
+            WbSupplySummary selected = null;
+            for (WbSupplySummary item : supplyComboBox.getItems()) {
+                if (selectedSupplyId.equals(item.getSupplyId())) {
+                    selected = item;
+                    break;
+                }
+            }
+            if (selected != null) {
+                supplyComboBox.getSelectionModel().select(selected);
+            } else {
+                supplyComboBox.getSelectionModel().clearSelection();
+            }
+        }
+        supplyComboBox.requestLayout();
+        suppressSelectionCallback = false;
+        updateEmptyState();
     }
 
     public void selectSupply(String supplyId) {
@@ -71,10 +105,29 @@ public class SupplyListController {
     public void setLoading(boolean loading) {
         supplyLoading.setVisible(loading);
         supplyComboBox.setDisable(loading);
+        refetchButton.setDisable(loading);
+        updateEmptyState();
+    }
+
+    public void setRefetchEnabled(boolean enabled) {
+        if (!supplyLoading.isVisible()) {
+            refetchButton.setDisable(!enabled);
+        }
     }
 
     public void setOnSupplySelected(Consumer<WbSupplySummary> onSupplySelected) {
         this.onSupplySelected = onSupplySelected;
+    }
+
+    public void setOnRefetchRequested(Runnable onRefetchRequested) {
+        this.onRefetchRequested = onRefetchRequested;
+    }
+
+    @FXML
+    private void onRefetch() {
+        if (onRefetchRequested != null) {
+            onRefetchRequested.run();
+        }
     }
 
     private void notifySelection(WbSupplySummary supply) {
@@ -86,5 +139,11 @@ public class SupplyListController {
     private String formatSupply(WbSupplySummary supply) {
         String name = supply.getName() == null || supply.getName().isBlank() ? "" : " - " + supply.getName();
         return supply.getSupplyId() + name + " (" + supply.getItemCount() + ")";
+    }
+
+    private void updateEmptyState() {
+        boolean show = !supplyLoading.isVisible() && supplyComboBox.getItems().isEmpty();
+        emptyStateLabel.setVisible(show);
+        emptyStateLabel.setManaged(show);
     }
 }

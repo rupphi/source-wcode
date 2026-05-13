@@ -8,6 +8,8 @@ import com.tuandev.fbsbarcode.models.Sticker;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -28,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 public class WbSupplyWorkflow {
+    private static final Logger LOGGER = LoggerFactory.getLogger(WbSupplyWorkflow.class);
     private static final OkHttpClient HTTP_CLIENT = new OkHttpClient.Builder()
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
@@ -60,18 +63,29 @@ public class WbSupplyWorkflow {
     }
 
     public List<Order> loadOrdersForSupplyLocal(Shop shop, String supplyId) {
-        return orderRepository.getOrdersForSupply(shop.getId(), supplyId);
+        List<Order> orders = orderRepository.getOrdersForSupply(shop.getId(), supplyId);
+        populateCachedOrderImages(orders);
+        return orders;
     }
 
     public List<Order> loadOrdersForSupply(Shop shop, String supplyId) throws IOException {
         if (orderRepository.hasMissingProductsForSupply(shop.getId(), supplyId)) {
-            productSyncService.sync(shop);
+            try {
+                productSyncService.sync(shop);
+            } catch (WbApiException ex) {
+                if (ex.getStatusCode() != 401 && ex.getStatusCode() != 403) {
+                    throw ex;
+                }
+                LOGGER.warn("Không thể đồng bộ products cho supply {} của shop {} vì token thiếu quyền Content: {}",
+                        supplyId, shop.getId(), ex.getMessage());
+            }
         }
         List<Order> orders = orderRepository.getOrdersForSupply(shop.getId(), supplyId);
         if (orders.isEmpty()) {
             return orders;
         }
 
+        populateCachedOrderImages(orders);
         enrichOrders(shop, orders);
         return orders;
     }
@@ -104,6 +118,35 @@ public class WbSupplyWorkflow {
             return;
         }
         populateOrderImages(orders);
+    }
+
+    private void populateCachedOrderImages(List<Order> orders) {
+        if (orders == null || orders.isEmpty()) {
+            return;
+        }
+        for (Order order : orders) {
+            if (order.getImage() != null) {
+                continue;
+            }
+            String imageUrl = order.getImageUrl();
+            if (imageUrl == null || imageUrl.isBlank()) {
+                continue;
+            }
+            String cacheKey = PrintHistoryService.imageCacheKey(imageUrl);
+            if (cacheKey == null) {
+                continue;
+            }
+            byte[] image = IMAGE_CACHE.get(cacheKey);
+            if (image == null) {
+                image = imageCacheRepository.findImage(cacheKey);
+                if (image != null) {
+                    IMAGE_CACHE.put(cacheKey, image);
+                }
+            }
+            if (image != null) {
+                order.setImage(image);
+            }
+        }
     }
 
     private void populateOrderImages(List<Order> orders) {

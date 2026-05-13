@@ -4,6 +4,7 @@ import com.tuandev.fbsbarcode.models.Order;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
 import javafx.geometry.Pos;
+import javafx.beans.property.SimpleObjectProperty;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressIndicator;
@@ -11,8 +12,12 @@ import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.cell.PropertyValueFactory;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.StackPane;
 
+import java.io.ByteArrayInputStream;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -49,6 +54,9 @@ public class SupplyDetailController {
 
     @FXML
     private TableColumn<Order, Long> idTC;
+
+    @FXML
+    private TableColumn<Order, byte[]> imageTC;
 
     @FXML
     private TableColumn<Order, String> nameTC;
@@ -99,6 +107,7 @@ public class SupplyDetailController {
             }
         });
         idTC.setCellValueFactory(new PropertyValueFactory<>("id"));
+        imageTC.setCellValueFactory(cell -> new SimpleObjectProperty<>(cell.getValue().getImage()));
         nameTC.setCellValueFactory(new PropertyValueFactory<>("name"));
         subjectNameTC.setCellValueFactory(new PropertyValueFactory<>("subjectName"));
         articleTC.setCellValueFactory(new PropertyValueFactory<>("article"));
@@ -109,6 +118,7 @@ public class SupplyDetailController {
         stickerCodeTC.setCellValueFactory(new PropertyValueFactory<>("stickerCode"));
         orderTable.setColumnResizePolicy(TableView.UNCONSTRAINED_RESIZE_POLICY);
         centerColumn(idTC);
+        configureImageColumn();
         centerColumn(nameTC);
         centerColumn(subjectNameTC);
         centerColumn(articleTC);
@@ -141,6 +151,10 @@ public class SupplyDetailController {
         sortOptionsBox.setManaged(hasOrders);
         emptyStateLabel.setVisible(false);
         emptyStateLabel.setManaged(false);
+        orderTable.refresh();
+    }
+
+    public void refreshOrders() {
         orderTable.refresh();
     }
 
@@ -203,6 +217,47 @@ public class SupplyDetailController {
                 super.updateItem(item, empty);
                 setText(empty || item == null ? null : String.valueOf(item));
                 setAlignment(Pos.CENTER_LEFT);
+            }
+        });
+    }
+
+    private void configureImageColumn() {
+        imageTC.setCellFactory(column -> new TableCell<>() {
+            private final ImageView imageView = new ImageView();
+            private final StackPane placeholder = new StackPane();
+
+            {
+                imageView.setFitWidth(36);
+                imageView.setFitHeight(48);
+                imageView.setPreserveRatio(true);
+                placeholder.getStyleClass().add("image-placeholder");
+                placeholder.setPrefSize(36, 48);
+                placeholder.setMinSize(36, 48);
+                placeholder.setMaxSize(36, 48);
+                setAlignment(Pos.CENTER_LEFT);
+            }
+
+            @Override
+            protected void updateItem(byte[] item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty) {
+                    setGraphic(null);
+                    setText(null);
+                    return;
+                }
+                if (item == null || item.length == 0) {
+                    setGraphic(placeholder);
+                    setText(null);
+                    return;
+                }
+                try {
+                    imageView.setImage(new Image(new ByteArrayInputStream(item)));
+                    setGraphic(imageView);
+                    setText(null);
+                } catch (Exception ex) {
+                    setGraphic(placeholder);
+                    setText(null);
+                }
             }
         });
     }

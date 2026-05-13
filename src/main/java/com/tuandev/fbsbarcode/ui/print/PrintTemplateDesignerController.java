@@ -68,6 +68,10 @@ public class PrintTemplateDesignerController implements Initializable {
     @FXML
     private TextField prefixField;
     @FXML
+    private Label contentLabel;
+    @FXML
+    private TextField contentField;
+    @FXML
     private CheckBox visibleCheckBox;
     @FXML
     private TextField xField;
@@ -144,7 +148,7 @@ public class PrintTemplateDesignerController implements Initializable {
                 });
         addElementComboBox.setButtonCell(addElementComboBox.getCellFactory().call(null));
         addElementComboBox.getItems().setAll(paletteItems);
-        addElementComboBox.getSelectionModel().selectFirst();
+        addElementComboBox.setPromptText("Chọn để thêm thành phần");
 
         elementListView.setCellFactory(list -> new ListCell<>() {
             @Override
@@ -165,6 +169,12 @@ public class PrintTemplateDesignerController implements Initializable {
                 workingTemplate = copyTemplate(newValue);
                 selectedElement = null;
                 refreshTemplateView();
+            }
+        });
+        addElementComboBox.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) -> {
+            if (newValue != null) {
+                addSelectedPaletteElement(newValue);
+                addElementComboBox.getSelectionModel().clearSelection();
             }
         });
 
@@ -261,9 +271,7 @@ public class PrintTemplateDesignerController implements Initializable {
         if (paletteElement == null) {
             return;
         }
-        workingTemplate.getElements().add(templateService.createElementFromPalette(paletteElement, workingTemplate.getElements().size() + 1));
-        refreshTemplateView();
-        elementListView.getSelectionModel().selectLast();
+        addSelectedPaletteElement(paletteElement);
     }
 
     @FXML
@@ -312,6 +320,15 @@ public class PrintTemplateDesignerController implements Initializable {
                     .orElse(templates.getFirst());
             templateComboBox.getSelectionModel().select(preferred);
         }
+    }
+
+    private void addSelectedPaletteElement(PrintTemplateService.ElementPaletteItem paletteElement) {
+        if (workingTemplate == null || paletteElement == null) {
+            return;
+        }
+        workingTemplate.getElements().add(templateService.createElementFromPalette(paletteElement, workingTemplate.getElements().size() + 1));
+        refreshTemplateView();
+        elementListView.getSelectionModel().selectLast();
     }
 
     private void selectTemplate(int templateId) {
@@ -380,13 +397,15 @@ public class PrintTemplateDesignerController implements Initializable {
             double dy = (event.getSceneY() - start[1]) / PREVIEW_SCALE;
             start[0] = event.getSceneX();
             start[1] = event.getSceneY();
-            element.setX(clampAndSnapX(element.getX() + dx, element.getWidth()));
-            element.setY(clampAndSnapY(element.getY() + dy, element.getHeight()));
+            element.setX(clamp(element.getX() + dx, 0, PrintTemplateService.PAGE_WIDTH - element.getWidth()));
+            element.setY(clamp(element.getY() + dy, 0, PrintTemplateService.PAGE_HEIGHT - element.getHeight()));
             updateNodeGeometry(node, element);
-            syncSelectedFieldsForGeometry(element);
             event.consume();
         });
         node.setOnMouseReleased(event -> {
+            snapElementToGridIfEnabled(element);
+            updateNodeGeometry(node, element);
+            syncSelectedFieldsForGeometry(element);
             refreshNodeStyles();
             event.consume();
         });
@@ -431,10 +450,12 @@ public class PrintTemplateDesignerController implements Initializable {
             start[1] = event.getSceneY();
             resizeElement(element, dx, dy, position);
             updateNodeGeometry(owner, element);
-            syncSelectedFieldsForGeometry(element);
             event.consume();
         });
         handle.setOnMouseReleased(event -> {
+            snapElementToGridIfEnabled(element);
+            updateNodeGeometry(owner, element);
+            syncSelectedFieldsForGeometry(element);
             refreshNodeStyles();
             event.consume();
         });
@@ -479,11 +500,6 @@ public class PrintTemplateDesignerController implements Initializable {
             height = 0;
         }
 
-        x = snapIfEnabled(x);
-        y = snapIfEnabled(y);
-        width = snapIfEnabled(width);
-        height = snapIfEnabled(height);
-
         x = clamp(x, 0, PrintTemplateService.PAGE_WIDTH);
         y = clamp(y, 0, PrintTemplateService.PAGE_HEIGHT);
         width = clamp(width, 0, PrintTemplateService.PAGE_WIDTH - x);
@@ -507,6 +523,7 @@ public class PrintTemplateDesignerController implements Initializable {
                 case STICKER_TAIL -> "#fee2e2";
                 case SEPARATOR_LINE -> "#e2e8f0";
                 case TEXT_FIELD -> "#dbeafe";
+                case STATIC_TEXT -> "#f5d0fe";
             };
         }
         node.setStyle("-fx-background-color: " + fill + "; -fx-border-color: " + border + "; -fx-border-width: 1.2; -fx-background-radius: 4; -fx-border-radius: 4;");
@@ -546,8 +563,14 @@ public class PrintTemplateDesignerController implements Initializable {
     private void updatePropertyEditor(PrintTemplateElement element) {
         updatingFields = true;
         boolean hasElement = element != null;
-        labelField.setDisable(!hasElement);
+        boolean isStaticText = hasElement && element.getType() == PrintElementType.STATIC_TEXT;
+        labelField.setDisable(!hasElement || isStaticText);
         prefixField.setDisable(!hasElement || !supportsPrefix(element));
+        contentField.setDisable(!isStaticText);
+        contentField.setVisible(isStaticText);
+        contentField.setManaged(isStaticText);
+        contentLabel.setVisible(isStaticText);
+        contentLabel.setManaged(isStaticText);
         visibleCheckBox.setDisable(!hasElement);
         xField.setDisable(!hasElement);
         yField.setDisable(!hasElement);
@@ -563,6 +586,7 @@ public class PrintTemplateDesignerController implements Initializable {
 
         labelField.setText(hasElement ? element.getLabel() : "");
         prefixField.setText(hasElement ? safeText(element.getPrefix()) : "");
+        contentField.setText(isStaticText ? safeText(element.getContent()) : "");
         visibleCheckBox.setSelected(hasElement && element.isVisible());
         xField.setText(hasElement ? format(element.getX()) : "");
         yField.setText(hasElement ? format(element.getY()) : "");
@@ -585,7 +609,7 @@ public class PrintTemplateDesignerController implements Initializable {
         labelField.textProperty().addListener((obs, oldValue, newValue) -> {
             if (!updatingFields) {
                 mutateSelected(element -> {
-                    if (newValue != null && !newValue.isBlank()) {
+                    if (element.getType() != PrintElementType.STATIC_TEXT && newValue != null && !newValue.isBlank()) {
                         element.setLabel(newValue.trim());
                     }
                 });
@@ -600,40 +624,46 @@ public class PrintTemplateDesignerController implements Initializable {
                 });
             }
         });
+        contentField.textProperty().addListener((obs, oldValue, newValue) -> {
+            if (!updatingFields) {
+                mutateSelected(element -> {
+                    if (element.getType() == PrintElementType.STATIC_TEXT) {
+                        String trimmed = newValue == null ? "" : newValue.trim();
+                        element.setContent(trimmed);
+                        element.setLabel(trimmed.isBlank() ? "Text cố định" : trimmed);
+                    }
+                });
+            }
+        });
         bindNumericField(
                 xField,
                 "X",
                 (element, value) -> element.setX(clamp(value, 0, PrintTemplateService.PAGE_WIDTH - element.getWidth())),
-                value -> value >= 0 && value <= PrintTemplateService.PAGE_WIDTH,
-                () -> selectedElement == null ? 0d : selectedElement.getX()
+                value -> value >= 0 && value <= PrintTemplateService.PAGE_WIDTH
         );
         bindNumericField(
                 yField,
                 "Y",
                 (element, value) -> element.setY(clamp(value, 0, PrintTemplateService.PAGE_HEIGHT - element.getHeight())),
-                value -> value >= 0 && value <= PrintTemplateService.PAGE_HEIGHT,
-                () -> selectedElement == null ? 0d : selectedElement.getY()
+                value -> value >= 0 && value <= PrintTemplateService.PAGE_HEIGHT
         );
         bindNumericField(
                 widthField,
                 "Rộng",
                 (element, value) -> element.setWidth(clamp(value, 0, PrintTemplateService.PAGE_WIDTH - element.getX())),
-                value -> value >= 0 && value <= PrintTemplateService.PAGE_WIDTH,
-                () -> selectedElement == null ? 0d : selectedElement.getWidth()
+                value -> value >= 0 && value <= PrintTemplateService.PAGE_WIDTH
         );
         bindNumericField(
                 heightField,
                 "Cao",
                 (element, value) -> element.setHeight(clamp(value, 0, PrintTemplateService.PAGE_HEIGHT - element.getY())),
-                value -> value >= 0 && value <= PrintTemplateService.PAGE_HEIGHT,
-                () -> selectedElement == null ? 0d : selectedElement.getHeight()
+                value -> value >= 0 && value <= PrintTemplateService.PAGE_HEIGHT
         );
         bindNumericField(
                 fontSizeField,
                 "Font",
                 (element, value) -> element.setFontSize((float) value),
-                value -> value >= 0 && value <= 200,
-                () -> selectedElement == null ? 0d : selectedElement.getFontSize()
+                value -> value >= 0 && value <= 200
         );
     }
 
@@ -641,37 +671,36 @@ public class PrintTemplateDesignerController implements Initializable {
             TextField field,
             String label,
             NumericMutator mutator,
-            NumericValidator validator,
-            CurrentValueSupplier currentValueSupplier
+            NumericValidator validator
     ) {
         field.textProperty().addListener((obs, oldValue, newValue) -> {
-            if (!updatingFields && field.isFocused()) {
-                liveApplyIfValid(field, mutator, validator);
+            if (!updatingFields) {
+                applyFieldImmediately(field, label, mutator, validator);
             }
         });
         field.focusedProperty().addListener((obs, oldValue, newValue) -> {
             if (!newValue && !updatingFields) {
-                validateAndApplyField(field, label, mutator, validator, currentValueSupplier);
-            } else if (newValue) {
-                clearFieldError(field);
+                formatFieldIfValid(field, validator);
             }
         });
     }
 
-    private void validateAndApplyField(
+    private void applyFieldImmediately(
             TextField field,
             String label,
             NumericMutator mutator,
-            NumericValidator validator,
-            CurrentValueSupplier currentValueSupplier
+            NumericValidator validator
     ) {
         if (selectedElement == null) {
             return;
         }
 
         String raw = field.getText() == null ? "" : field.getText().trim();
-        if (raw.isBlank()) {
-            showFieldError(field, label + " không được để trống");
+        if (raw.isBlank() || "-".equals(raw) || ".".equals(raw) || "-.".equals(raw)) {
+            clearFieldError(field);
+            fieldValidationLabel.setText("");
+            fieldValidationLabel.setVisible(false);
+            fieldValidationLabel.setManaged(false);
             return;
         }
 
@@ -689,36 +718,9 @@ public class PrintTemplateDesignerController implements Initializable {
         }
 
         clearValidationState();
-        mutateSelected(element -> mutator.apply(element, snapIfEnabled(value)));
-        updatingFields = true;
-        field.setText(format(currentValueSupplier.get()));
-        updatingFields = false;
-    }
-
-    private void liveApplyIfValid(
-            TextField field,
-            NumericMutator mutator,
-            NumericValidator validator
-    ) {
-        if (selectedElement == null) {
-            return;
-        }
-
-        String raw = field.getText() == null ? "" : field.getText().trim();
-        if (raw.isBlank() || "-".equals(raw) || ".".equals(raw) || "-.".equals(raw)) {
-            return;
-        }
-
-        try {
-            double value = Double.parseDouble(raw);
-            if (!validator.isValid(value)) {
-                return;
-            }
-            mutator.apply(selectedElement, snapIfEnabled(value));
-            updatePreviewForSelection();
-            clearFieldError(field);
-        } catch (NumberFormatException ignored) {
-        }
+        mutator.apply(selectedElement, value);
+        updatePreviewForSelection();
+        elementListView.refresh();
     }
 
     private void mutateSelected(ElementMutator mutator) {
@@ -726,7 +728,9 @@ public class PrintTemplateDesignerController implements Initializable {
             return;
         }
         mutator.apply(selectedElement);
-        refreshTemplateView();
+        updatePreviewForSelection();
+        elementListView.refresh();
+        refreshNodeStyles();
     }
 
     private void updatePreviewForSelection() {
@@ -778,6 +782,33 @@ public class PrintTemplateDesignerController implements Initializable {
         widthField.setText(format(element.getWidth()));
         heightField.setText(format(element.getHeight()));
         updatingFields = false;
+    }
+
+    private void snapElementToGridIfEnabled(PrintTemplateElement element) {
+        if (element == null || snapToGridCheckBox == null || !snapToGridCheckBox.isSelected()) {
+            return;
+        }
+        element.setX(clampAndSnapX(element.getX(), element.getWidth()));
+        element.setY(clampAndSnapY(element.getY(), element.getHeight()));
+        element.setWidth(clamp(snapIfEnabled(element.getWidth()), 0, PrintTemplateService.PAGE_WIDTH - element.getX()));
+        element.setHeight(clamp(snapIfEnabled(element.getHeight()), 0, PrintTemplateService.PAGE_HEIGHT - element.getY()));
+    }
+
+    private void formatFieldIfValid(TextField field, NumericValidator validator) {
+        String raw = field.getText() == null ? "" : field.getText().trim();
+        if (raw.isBlank() || "-".equals(raw) || ".".equals(raw) || "-.".equals(raw)) {
+            return;
+        }
+        try {
+            double value = Double.parseDouble(raw);
+            if (!validator.isValid(value)) {
+                return;
+            }
+            updatingFields = true;
+            field.setText(format(value));
+            updatingFields = false;
+        } catch (NumberFormatException ignored) {
+        }
     }
 
     private PrintTemplate copyTemplate(PrintTemplate template) {
@@ -917,6 +948,7 @@ public class PrintTemplateDesignerController implements Initializable {
         copy.setFieldKey(element.getFieldKey());
         copy.setLabel(element.getLabel());
         copy.setPrefix(element.getPrefix());
+        copy.setContent(element.getContent());
         copy.setX(element.getX());
         copy.setY(element.getY());
         copy.setWidth(element.getWidth());
@@ -949,18 +981,30 @@ public class PrintTemplateDesignerController implements Initializable {
     }
 
     private boolean supportsPrefix(PrintTemplateElement element) {
-        return element != null && (element.getType() == PrintElementType.TEXT_FIELD || element.getType() == PrintElementType.STICKER_TAIL);
+        return element != null && (element.getType() == PrintElementType.TEXT_FIELD || element.getType() == PrintElementType.STATIC_TEXT || element.getType() == PrintElementType.STICKER_TAIL);
     }
 
     private String previewText(PrintTemplateElement element) {
         if (element == null) {
             return "";
         }
+        if (element.getType() == PrintElementType.STATIC_TEXT) {
+            return withPrefix(element.getPrefix(), safeText(element.getContent()));
+        }
         String prefix = safeText(element.getPrefix()).trim();
         if (supportsPrefix(element) && !prefix.isBlank()) {
             return prefix + ":";
         }
         return safeText(element.getLabel());
+    }
+
+    private String withPrefix(String prefix, String value) {
+        String safeValue = safeText(value).trim();
+        if (safeValue.isBlank()) {
+            return "";
+        }
+        String safePrefix = safeText(prefix).trim();
+        return safePrefix.isBlank() ? safeValue : safePrefix + ": " + safeValue;
     }
 
     private static String safeText(String value) {
@@ -1023,11 +1067,6 @@ public class PrintTemplateDesignerController implements Initializable {
     @FunctionalInterface
     private interface NumericValidator {
         boolean isValid(double value);
-    }
-
-    @FunctionalInterface
-    private interface CurrentValueSupplier {
-        double get();
     }
 
     @FunctionalInterface

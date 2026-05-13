@@ -14,7 +14,7 @@
     <children>
         <HBox alignment="CENTER_LEFT" spacing="8.0">
             <children>
-                <Label fx:id="supplyTitleLabel" text="Chưa chọn supply" styleClass="h3" />
+                <Label fx:id="supplyTitleLabel" text="Поставка не выбрана" styleClass="h3" />
                 <ProgressIndicator fx:id="orderLoading" maxHeight="20.0" maxWidth="20.0" prefHeight="20.0" prefWidth="20.0" visible="false" />
             </children>
         </HBox>
@@ -22,14 +22,14 @@
         <HBox fx:id="stickerLoadingBox" alignment="CENTER_LEFT" managed="false" spacing="8.0" visible="false">
             <children>
                 <ProgressIndicator fx:id="stickerLoading" maxHeight="18.0" maxWidth="18.0" prefHeight="18.0" prefWidth="18.0" visible="false" />
-                <Label fx:id="stickerLoadingLabel" style="-fx-text-fill: #6c757d;" text="Đang lấy mã vận đơn..." />
+                <Label fx:id="stickerLoadingLabel" style="-fx-text-fill: #6c757d;" text="Загрузка стикеров WB..." />
             </children>
         </HBox>
         <HBox fx:id="sortOptionsBox" alignment="CENTER_LEFT" managed="false" spacing="14.0" visible="false">
             <children>
-                <CheckBox fx:id="sortBySubjectCheckBox" mnemonicParsing="false" selected="true" text="Danh mục" />
+                <CheckBox fx:id="sortBySubjectCheckBox" mnemonicParsing="false" selected="true" text="Категория" />
                 <CheckBox fx:id="sortByArticleCheckBox" mnemonicParsing="false" selected="true" text="Article" />
-                <CheckBox fx:id="sortByColorCheckBox" mnemonicParsing="false" selected="true" text="Màu" />
+                <CheckBox fx:id="sortByColorCheckBox" mnemonicParsing="false" selected="true" text="Цвет" />
                 <CheckBox fx:id="sortBySizeCheckBox" mnemonicParsing="false" selected="true" text="Size" />
             </children>
         </HBox>
@@ -38,6 +38,7 @@
             <columns>
                 <TableColumn fx:id="noTC" prefWidth="54.0" text="No" />
                 <TableColumn fx:id="idTC" prefWidth="85.0" text="№ задания" />
+                <TableColumn fx:id="imageTC" prefWidth="58.0" text="Ảnh" />
                 <TableColumn fx:id="nameTC" prefWidth="180.0" text="Наименование" />
                 <TableColumn fx:id="subjectNameTC" prefWidth="128.0" text="Категория" />
                 <TableColumn fx:id="articleTC" prefWidth="128.0" text="Артикул продавца" />

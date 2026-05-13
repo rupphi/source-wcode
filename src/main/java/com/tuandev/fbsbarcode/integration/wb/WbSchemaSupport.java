@@ -105,6 +105,7 @@ public final class WbSchemaSupport {
                     supply_id TEXT NOT NULL,
                     is_b2b INTEGER,
                     done INTEGER,
+                    order_count INTEGER,
                     created_at TEXT,
                     closed_at TEXT,
                     scan_dt TEXT,
@@ -250,6 +251,7 @@ public final class WbSchemaSupport {
         ensureColumn(conn, "wb_product_sizes", "wb_size", "TEXT");
         ensureColumn(conn, "wb_supplies", "reject_dt", "TEXT");
         ensureColumn(conn, "wb_supplies", "recommended_wh_id", "INTEGER");
+        ensureColumn(conn, "wb_supplies", "order_count", "INTEGER");
         ensureColumn(conn, "wb_orders", "user_id", "INTEGER");
         ensureColumn(conn, "wb_orders", "is_cancellable", "INTEGER");
     }

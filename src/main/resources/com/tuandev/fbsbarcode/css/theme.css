@@ -319,6 +319,14 @@
     -fx-alignment: CENTER_LEFT;
     -fx-padding: 0 12px;
 }
+
+.image-placeholder {
+    -fx-background-color: rgba(255, 255, 255, 0.06);
+    -fx-background-radius: 6px;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 6px;
+    -fx-border-width: 1px;
+}
 .table-view .table-row-cell {
     -fx-background-color: -bg-secondary;
     -fx-border-color: transparent;

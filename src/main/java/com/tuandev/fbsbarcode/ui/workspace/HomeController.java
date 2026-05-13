@@ -5,6 +5,7 @@ import com.tuandev.fbsbarcode.integration.wb.WbSupplySummary;
 import com.tuandev.fbsbarcode.integration.wb.WbSupplyWorkflow;
 import com.tuandev.fbsbarcode.integration.wb.WbSyncReport;
 import com.tuandev.fbsbarcode.integration.wb.WbSyncWorkflow;
+import com.tuandev.fbsbarcode.integration.wb.WbTokenInspector;
 import com.tuandev.fbsbarcode.models.Category;
 import com.tuandev.fbsbarcode.models.Order;
 import com.tuandev.fbsbarcode.models.Shop;
@@ -438,6 +439,10 @@ public class HomeController implements Initializable {
     public void onSyncWildberries(ActionEvent actionEvent) {
         Shop shop = requireSelectedShop();
         if (shop != null) {
+            if (!state.isSelectedShopTokenValid()) {
+                AlertService.showWarning("Token WB hết hạn", "Không thể đồng bộ", state.getSelectedShopTokenMessage());
+                return;
+            }
             startShopSync(shop, true);
         }
     }
@@ -591,19 +596,30 @@ public class HomeController implements Initializable {
         state.setSelectedShop(shop);
         ConfigService.setLastSelectedShopId(shop.getId());
         renderShops();
+        boolean tokenValid = applySelectedShopTokenState(shop, true);
         loadCategories();
         resetLoadedSupply();
         showWorkspace();
-        supplyListController.setLoading(true);
         updateHeaderState();
         if (isPrintHistoryVisible()) {
             refreshPrintHistory();
         }
+        refreshSupplyList();
+        if (!tokenValid) {
+            return;
+        }
+        supplyListController.setLoading(true);
         startShopSync(shop, false);
     }
 
     private void startShopSync(Shop shop, boolean manual) {
         if (shop == null) {
+            return;
+        }
+        if (!state.isSelectedShopTokenValid()) {
+            if (manual) {
+                AlertService.showWarning("Token WB hết hạn", "Không thể đồng bộ", state.getSelectedShopTokenMessage());
+            }
             return;
         }
         boolean started = activityTracker.markSyncStarted(shop.getId());
@@ -647,6 +663,14 @@ public class HomeController implements Initializable {
     }
 
     private void refreshSupplyList() {
+        refreshSupplyList(state.getLoadedSupplyId(), true);
+    }
+
+    private void refreshSupplyList(String supplyIdToRestore) {
+        refreshSupplyList(supplyIdToRestore, true);
+    }
+
+    private void refreshSupplyList(String supplyIdToRestore, boolean notifySelection) {
         Shop shop = state.getSelectedShop();
         if (shop == null) {
             clearSupplyViews();
@@ -657,9 +681,19 @@ public class HomeController implements Initializable {
         List<WbSupplySummary> supplies = wbSupplyWorkflow.getSupplies(shop.getId()).stream()
                 .filter(supply -> !supply.isDone())
                 .toList();
-        supplyListController.setSupplies(supplies);
-        resetLoadedSupply();
-        supplyDetailController.showEmptyState("", "");
+        if (notifySelection) {
+            supplyListController.setSupplies(supplies);
+        } else {
+            supplyListController.refreshSupplies(supplies, supplyIdToRestore);
+        }
+        if (supplyIdToRestore != null && supplies.stream().anyMatch(supply -> supplyIdToRestore.equals(supply.getSupplyId()))) {
+            if (notifySelection) {
+                supplyListController.selectSupply(supplyIdToRestore);
+            }
+        } else {
+            resetLoadedSupply();
+            supplyDetailController.showEmptyState("", "");
+        }
         updateHeaderState();
         refreshDashboardData();
     }
@@ -733,10 +767,39 @@ public class HomeController implements Initializable {
             state.setLoadedOrdersRaw(refreshTask.getValue());
             applySortAndDisplayOrders();
             supplyDetailController.setSupplyInfo("Supply " + supply.getSupplyId(), "");
+            refreshSupplyCountsIfCurrent(shop.getId(), supply.getSupplyId());
             refreshDashboardData();
+            startSilentImageWarmup(shop, supply, requestToken);
             startStickerRefresh(shop, supply, requestToken);
         });
         AppTaskExecutor.execute(refreshTask);
+    }
+
+    private void startSilentImageWarmup(Shop shop, WbSupplySummary supply, long requestToken) {
+        List<Order> orders = state.getLoadedOrdersRaw();
+        if (orders == null || orders.isEmpty()) {
+            return;
+        }
+        Task<Void> imageTask = new Task<>() {
+            @Override
+            protected Void call() {
+                supplyLoadWorkflow.ensureImages(orders);
+                return null;
+            }
+        };
+        imageTask.setOnFailed(e -> {
+            if (!isCurrentSupplyRequest(shop.getId(), supply.getSupplyId(), requestToken)) {
+                return;
+            }
+            LOGGER.debug("Không thể nạp ảnh nền cho supply {}", supply.getSupplyId(), imageTask.getException());
+        });
+        imageTask.setOnSucceeded(e -> {
+            if (!isCurrentSupplyRequest(shop.getId(), supply.getSupplyId(), requestToken)) {
+                return;
+            }
+            supplyDetailController.refreshOrders();
+        });
+        AppTaskExecutor.execute(imageTask);
     }
 
     private void startStickerRefresh(Shop shop, WbSupplySummary supply, long requestToken) {
@@ -809,6 +872,7 @@ public class HomeController implements Initializable {
         VBox supplyListRoot = FxmlViewLoader.load(supplyListLoader);
         supplyListController = supplyListLoader.getController();
         supplyListController.setOnSupplySelected(this::loadSupply);
+        supplyListController.setOnRefetchRequested(this::onRefetchSupplies);
         supplyManagementController.supplyListContainer.getChildren().setAll(supplyListRoot);
 
         FXMLLoader supplyDetailLoader = FxmlViewLoader.loader(SupplyDetailController.class, "supply-detail-view.fxml");
@@ -872,6 +936,64 @@ public class HomeController implements Initializable {
         }
     }
 
+    private void refreshSupplyCountsIfCurrent(int shopId, String selectedSupplyId) {
+        if (isCurrentShop(shopId)) {
+            refreshSupplyList(selectedSupplyId, false);
+        }
+    }
+
+    private void onRefetchSupplies() {
+        Shop shop = requireSelectedShop();
+        if (shop == null) {
+            return;
+        }
+        if (!state.isSelectedShopTokenValid()) {
+            AlertService.showWarning("Token WB hết hạn", "Không thể refetch supply", state.getSelectedShopTokenMessage());
+            return;
+        }
+        startSupplyListRefetch(shop);
+    }
+
+    private void startSupplyListRefetch(Shop shop) {
+        if (shop == null) {
+            return;
+        }
+        boolean started = activityTracker.markSyncStarted(shop.getId());
+        if (isCurrentShop(shop.getId())) {
+            supplyListController.setLoading(true);
+            updateHeaderState();
+            refreshDashboardData();
+        }
+        if (!started) {
+            return;
+        }
+
+        String selectedSupplyId = state.getLoadedSupplyId();
+        Task<WbSyncReport> task = new Task<>() {
+            @Override
+            protected WbSyncReport call() throws Exception {
+                return wbSyncWorkflow.refetchSupplies(shop);
+            }
+        };
+        task.setOnFailed(e -> {
+            markShopRunning(shop.getId(), false);
+            Throwable ex = task.getException();
+            LOGGER.error("Refetch supply thất bại cho shop {}", shop.getId(), ex);
+            if (isCurrentShop(shop.getId())) {
+                refreshSupplyList(selectedSupplyId);
+                AlertService.showError(ex.getMessage());
+            }
+        });
+        task.setOnSucceeded(e -> {
+            markShopRunning(shop.getId(), false);
+            if (isCurrentShop(shop.getId())) {
+                refreshSupplyList(selectedSupplyId);
+            }
+            refreshDashboardData();
+        });
+        AppTaskExecutor.execute(task);
+    }
+
     private boolean isCurrentShop(int shopId) {
         return state.getSelectedShop() != null && state.getSelectedShop().getId() == shopId;
     }
@@ -894,6 +1016,16 @@ public class HomeController implements Initializable {
         return state.getSelectedShop();
     }
 
+    private boolean applySelectedShopTokenState(Shop shop, boolean showWarning) {
+        WbTokenInspector.TokenStatus status = WbTokenInspector.inspect(shop);
+        state.setSelectedShopTokenValid(status.valid());
+        state.setSelectedShopTokenMessage(status.message());
+        if (!status.valid() && showWarning && status.message() != null && !status.message().isBlank()) {
+            AlertService.showWarning("Token WB hết hạn", "Cần cập nhật lại token cửa hàng", status.message());
+        }
+        return status.valid();
+    }
+
     private void markShopRunning(int shopId, boolean running) {
         activityTracker.markRunning(shopId, running);
         if (isCurrentShop(shopId)) {
@@ -906,7 +1038,11 @@ public class HomeController implements Initializable {
         boolean hasShop = selectedShop != null;
         boolean running = hasShop && activityTracker.isRunning(selectedShop.getId());
         workspaceHeaderController.setBusy(running);
-        workspaceHeaderController.setControls(hasShop, running, canExport());
+        boolean tokenValid = !hasShop || state.isSelectedShopTokenValid();
+        workspaceHeaderController.setControls(hasShop, running, canExport(), tokenValid);
+        if (supplyListController != null) {
+            supplyListController.setRefetchEnabled(hasShop && tokenValid);
+        }
     }
 
     private void updateExportAvailability() {
@@ -920,6 +1056,7 @@ public class HomeController implements Initializable {
                 && state.getLoadedSupplyId() != null
                 && !state.getDisplayedOrders().isEmpty()
                 && !running
+                && state.isSelectedShopTokenValid()
                 && !state.isSupplyEnriching();
     }
 

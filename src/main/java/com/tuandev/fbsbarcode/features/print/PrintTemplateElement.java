@@ -8,6 +8,7 @@ public class PrintTemplateElement {
     private PrintFieldKey fieldKey;
     private String label;
     private String prefix;
+    private String content;
     private double x;
     private double y;
     private double width;
@@ -69,6 +70,14 @@ public class PrintTemplateElement {
 
     public void setPrefix(String prefix) {
         this.prefix = prefix;
+    }
+
+    public String getContent() {
+        return content;
+    }
+
+    public void setContent(String content) {
+        this.content = content;
     }
 
     public double getX() {

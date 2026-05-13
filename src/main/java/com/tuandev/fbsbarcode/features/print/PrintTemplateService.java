@@ -155,6 +155,7 @@ public class PrintTemplateService {
                 new ElementPaletteItem("Màu", PrintElementType.TEXT_FIELD, PrintFieldKey.COLOR),
                 new ElementPaletteItem("Article", PrintElementType.TEXT_FIELD, PrintFieldKey.ARTICLE),
                 new ElementPaletteItem("Size", PrintElementType.TEXT_FIELD, PrintFieldKey.SIZE),
+                new ElementPaletteItem("Text cố định", PrintElementType.STATIC_TEXT, null),
                 new ElementPaletteItem("Mã barcode", PrintElementType.TEXT_FIELD, PrintFieldKey.BARCODE),
                 new ElementPaletteItem("Sticker tail", PrintElementType.STICKER_TAIL, null),
                 new ElementPaletteItem("Đường phân cách", PrintElementType.SEPARATOR_LINE, null)
@@ -182,6 +183,14 @@ public class PrintTemplateService {
             PrintTemplateElement element = PrintTemplateElement.create(item.type(), item.label(), 134, 99, 20, 8);
             element.setFontSize(8);
             element.setAlign(PrintTextAlign.RIGHT);
+            element.setZIndex(zIndex);
+            return element;
+        }
+        if (item.type() == PrintElementType.STATIC_TEXT) {
+            PrintTemplateElement element = PrintTemplateElement.create(item.type(), item.label(), 10, 10, 84, 10);
+            element.setContent("Текст");
+            element.setFontSize(8);
+            element.setAlign(PrintTextAlign.LEFT);
             element.setZIndex(zIndex);
             return element;
         }
@@ -266,9 +275,14 @@ public class PrintTemplateService {
                 hasStickerTail = true;
             } else if (element.getType() == PrintElementType.TEXT_FIELD && element.getFieldKey() == null) {
                 throw new IllegalArgumentException("Text field phải có fieldKey");
+            } else if (element.getType() == PrintElementType.STATIC_TEXT && safeTrim(element.getContent()).isBlank()) {
+                throw new IllegalArgumentException("Text cố định không được để trống");
             }
             if (element.getPrefix() != null) {
                 element.setPrefix(element.getPrefix().trim());
+            }
+            if (element.getContent() != null) {
+                element.setContent(element.getContent().trim());
             }
         }
         if (!hasKiz || !hasBarcode || !hasStickerTail) {
@@ -320,6 +334,10 @@ public class PrintTemplateService {
             case SUBJECT_NAME -> "Кат";
             default -> null;
         };
+    }
+
+    private static String safeTrim(String value) {
+        return value == null ? "" : value.trim();
     }
 
     public record ElementPaletteItem(String label, PrintElementType type, PrintFieldKey fieldKey) {

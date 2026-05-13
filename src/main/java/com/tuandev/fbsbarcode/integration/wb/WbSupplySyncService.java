@@ -129,6 +129,47 @@ public class WbSupplySyncService {
         return syncSupplyDetails(shop, supplyIds);
     }
 
+    public int syncOpenSupplyCounts(Shop shop) throws IOException {
+        List<String> supplyIds = supplyRepository.getOpenSupplyIds(shop.getId(), OPEN_SUPPLY_DETAIL_LIMIT);
+        return syncSupplyCounts(shop, supplyIds);
+    }
+
+    public int refreshOpenSuppliesFromStart(Shop shop) throws IOException {
+        long runId = syncRunRepository.startSyncRun(shop.getId(), "supplies_refetch");
+        int read = 0;
+        int written = 0;
+        long next = 0L;
+        try {
+            boolean foundOpenSupplies = supplyRepository.countOpenSupplies(shop.getId()) > 0;
+            for (int page = 0; page < INITIAL_OPEN_SUPPLY_SCAN_PAGES; page++) {
+                WbSuppliesResponse response = apiClient.getSupplies(shop.getApiKey(), next, PAGE_LIMIT);
+                if (response == null || response.getSupplies() == null || response.getSupplies().isEmpty()) {
+                    syncRunRepository.finishSyncRun(runId, true, read, written, null, null);
+                    return written;
+                }
+
+                supplyRepository.saveSupplies(shop.getId(), response.getSupplies());
+                read += response.getSupplies().size();
+                written += response.getSupplies().size();
+                boolean pageHasOpen = response.getSupplies().stream().anyMatch(supply -> Boolean.FALSE.equals(supply.getDone()));
+                foundOpenSupplies = foundOpenSupplies || pageHasOpen;
+
+                if (response.getSupplies().size() < PAGE_LIMIT || response.getNext() == null || foundOpenSupplies) {
+                    syncRunRepository.finishSyncRun(runId, true, read, written, null, null);
+                    return written;
+                }
+                next = response.getNext();
+            }
+            syncRunRepository.finishSyncRun(runId, true, read, written, null, null);
+            return written;
+        } catch (IOException | RuntimeException ex) {
+            LOGGER.error("Refetch supplies thất bại cho shop {}", shop.getId(), ex);
+            syncStateRepository.saveSyncError(shop.getId(), ex.getMessage());
+            syncRunRepository.finishSyncRun(runId, false, read, written, ex instanceof WbApiException wb ? String.valueOf(wb.getStatusCode()) : "local_error", ex.getMessage());
+            throw ex;
+        }
+    }
+
     private int syncSupplyDetails(Shop shop, List<String> supplyIds) throws IOException {
         if (supplyIds.isEmpty()) {
             return 0;
@@ -144,6 +185,31 @@ public class WbSupplySyncService {
                 }
             } catch (IOException ex) {
                 LOGGER.warn("Bỏ qua lỗi sync chi tiết supply {} cho shop {}", supplyId, shop.getId(), ex);
+                if (firstError == null) {
+                    firstError = ex;
+                }
+            }
+        }
+        if (written == 0 && firstError != null) {
+            throw firstError;
+        }
+        return written;
+    }
+
+    private int syncSupplyCounts(Shop shop, List<String> supplyIds) throws IOException {
+        if (supplyIds.isEmpty()) {
+            return 0;
+        }
+        int written = 0;
+        IOException firstError = null;
+        for (String supplyId : supplyIds) {
+            try {
+                WbSupplyOrderIdsResponse response = apiClient.getSupplyOrderIds(shop.getApiKey(), supplyId);
+                int count = response == null || response.getOrderIds() == null ? 0 : response.getOrderIds().size();
+                supplyRepository.updateSupplyOrderCount(shop.getId(), supplyId, count);
+                written++;
+            } catch (IOException ex) {
+                LOGGER.warn("Bỏ qua lỗi sync số lượng supply {} cho shop {}", supplyId, shop.getId(), ex);
                 if (firstError == null) {
                     firstError = ex;
                 }

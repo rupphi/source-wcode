@@ -18,11 +18,15 @@ public class SupplyLoadWorkflow {
 
     public List<Order> refreshSupplyData(Shop shop, String supplyId) throws IOException {
         wbSyncWorkflow.syncSupplyOrdersAndStatuses(shop, supplyId);
-        return wbSupplyWorkflow.loadOrdersForSupplyLocal(shop, supplyId);
+        return wbSupplyWorkflow.loadOrdersForSupply(shop, supplyId);
     }
 
     public List<Order> enrichStickers(Shop shop, List<Order> orders) throws IOException {
         wbSupplyWorkflow.enrichOrderStickers(shop, orders);
         return orders;
+    }
+
+    public void ensureImages(List<Order> orders) {
+        wbSupplyWorkflow.ensureOrderImages(orders);
     }
 }

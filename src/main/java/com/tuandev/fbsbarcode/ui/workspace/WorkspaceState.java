@@ -15,6 +15,8 @@ final class WorkspaceState {
     private String loadedSupplyId;
     private String loadedSupplyName;
     private boolean supplyEnriching;
+    private boolean selectedShopTokenValid = true;
+    private String selectedShopTokenMessage;
     private long supplyRequestToken;
 
     List<Shop> getShops() {
@@ -81,6 +83,22 @@ final class WorkspaceState {
         this.supplyEnriching = supplyEnriching;
     }
 
+    boolean isSelectedShopTokenValid() {
+        return selectedShopTokenValid;
+    }
+
+    void setSelectedShopTokenValid(boolean selectedShopTokenValid) {
+        this.selectedShopTokenValid = selectedShopTokenValid;
+    }
+
+    String getSelectedShopTokenMessage() {
+        return selectedShopTokenMessage;
+    }
+
+    void setSelectedShopTokenMessage(String selectedShopTokenMessage) {
+        this.selectedShopTokenMessage = selectedShopTokenMessage;
+    }
+
     long nextSupplyRequestToken() {
         return ++supplyRequestToken;
     }
@@ -107,6 +125,8 @@ final class WorkspaceState {
 
     void clearWorkspace() {
         selectedShop = null;
+        selectedShopTokenValid = true;
+        selectedShopTokenMessage = null;
         clearLoadedSupply();
         displayedOrders.clear();
     }

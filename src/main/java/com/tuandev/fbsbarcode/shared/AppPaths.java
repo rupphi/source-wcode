@@ -16,6 +16,10 @@ public final class AppPaths {
     }
 
     public static Path appDataDir() {
+        String override = System.getProperty("wcode.appdata.dir");
+        if (override != null && !override.isBlank()) {
+            return Paths.get(override);
+        }
         Path base = windowsLocalAppData()
                 .orElseGet(() -> Paths.get(System.getProperty("user.home", ".")));
         return base.resolve(APP_DIR_NAME);

@@ -5,15 +5,22 @@ import com.tuandev.fbsbarcode.shared.ConfigService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PrintAuthorizationServiceTest {
+    @TempDir
+    Path tempDir;
+
     private final PrintAuthorizationService service = new PrintAuthorizationService();
 
     @BeforeEach
     void setup() {
+        System.setProperty("wcode.appdata.dir", tempDir.toString());
         Database.initDatabase();
         ConfigService.clearPrintAccessToken();
     }
@@ -21,6 +28,7 @@ class PrintAuthorizationServiceTest {
     @AfterEach
     void cleanup() {
         ConfigService.clearPrintAccessToken();
+        System.clearProperty("wcode.appdata.dir");
     }
 
     @Test

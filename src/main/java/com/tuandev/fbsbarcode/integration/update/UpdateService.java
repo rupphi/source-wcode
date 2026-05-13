@@ -5,27 +5,12 @@ import com.tuandev.fbsbarcode.shared.ConfigService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.LocalDate;
-
 public class UpdateService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(UpdateService.class);
     private final UpdateApiClient apiClient = new UpdateApiClient();
 
     public UpdateInfo checkForUpdate() {
-        LocalDate today = LocalDate.now();
-        String currentSource = apiClient.resolveConfiguredSource();
-        String lastSource = ConfigService.getLastUpdateCheckSource();
-        if (currentSource != null && !currentSource.equals(lastSource)) {
-            ConfigService.setLastUpdateCheckSource(currentSource);
-            ConfigService.setLastUpdateCheck("");
-        }
-        String lastCheck = ConfigService.getLastUpdateCheck();
-        if (today.toString().equals(lastCheck)) {
-            return null;
-        }
-        ConfigService.setLastUpdateCheck(today.toString());
-
         try {
             UpdateInfo info = apiClient.fetchLatestVersion();
             if (info == null || info.getVersion() == null) return null;

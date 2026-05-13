@@ -8,6 +8,7 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import okhttp3.HttpUrl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -107,7 +108,7 @@ public class WbApiClient {
         try (Response response = CLIENT.newCall(request).execute()) {
             String body = response.body() == null ? "" : response.body().string();
             if (!response.isSuccessful()) {
-                String message = extractErrorMessage(body);
+                String message = extractErrorMessage(request.url(), response.code(), body);
                 LOGGER.warn("WB API request failed: {} {} -> {} {}", request.method(), request.url(), response.code(), message);
                 throw new WbApiException(message, response.code(), body);
             }
@@ -115,7 +116,13 @@ public class WbApiClient {
         }
     }
 
-    private String extractErrorMessage(String body) {
+    private String extractErrorMessage(HttpUrl url, int statusCode, String body) {
+        if (isContentApiUnauthorized(url, statusCode)) {
+            if (body == null || body.isBlank()) {
+                return "Token không có quyền Content trên WB API";
+            }
+            return "Token không có quyền Content trên WB API (" + body + ")";
+        }
         if (body == null || body.isBlank()) {
             return "WB API request failed";
         }
@@ -134,5 +141,12 @@ public class WbApiClient {
             // fall back to raw body
         }
         return body;
+    }
+
+    private boolean isContentApiUnauthorized(HttpUrl url, int statusCode) {
+        if (url == null || (statusCode != 401 && statusCode != 403)) {
+            return false;
+        }
+        return "content-api.wildberries.ru".equalsIgnoreCase(url.host());
     }
 }

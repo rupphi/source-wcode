@@ -17,16 +17,18 @@ public class WbOrderSyncService {
 
     private final WbApiClient apiClient;
     private final WbOrderRepository orderRepository;
+    private final WbSupplyRepository supplyRepository;
     private final WbSyncStateRepository syncStateRepository;
     private final WbSyncRunRepository syncRunRepository;
 
     public WbOrderSyncService() {
-        this(new WbApiClient(), new WbOrderRepository(), new WbSyncStateRepository(), new WbSyncRunRepository());
+        this(new WbApiClient(), new WbOrderRepository(), new WbSupplyRepository(), new WbSyncStateRepository(), new WbSyncRunRepository());
     }
 
-    WbOrderSyncService(WbApiClient apiClient, WbOrderRepository orderRepository, WbSyncStateRepository syncStateRepository, WbSyncRunRepository syncRunRepository) {
+    WbOrderSyncService(WbApiClient apiClient, WbOrderRepository orderRepository, WbSupplyRepository supplyRepository, WbSyncStateRepository syncStateRepository, WbSyncRunRepository syncRunRepository) {
         this.apiClient = apiClient;
         this.orderRepository = orderRepository;
+        this.supplyRepository = supplyRepository;
         this.syncStateRepository = syncStateRepository;
         this.syncRunRepository = syncRunRepository;
     }
@@ -117,6 +119,7 @@ public class WbOrderSyncService {
             WbSupplyOrderIdsResponse response = apiClient.getSupplyOrderIds(shop.getApiKey(), supplyId);
             List<Long> orderIds = response == null || response.getOrderIds() == null ? List.of() : new ArrayList<>(response.getOrderIds());
             orderRepository.replaceSupplyOrders(shop.getId(), supplyId, orderIds);
+            supplyRepository.updateSupplyOrderCount(shop.getId(), supplyId, orderIds.size());
             syncRunRepository.finishSyncRun(runId, true, orderIds.size(), orderIds.size(), null, null);
             return orderIds.size();
         } catch (IOException | RuntimeException ex) {

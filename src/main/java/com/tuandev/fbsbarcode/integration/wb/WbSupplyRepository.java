@@ -21,11 +21,12 @@ public class WbSupplyRepository {
         String now = Instant.now().toString();
         String sql = """
                 INSERT INTO wb_supplies (
-                    shop_id, supply_id, is_b2b, done, created_at, closed_at, scan_dt, reject_dt, name, cargo_type, cross_border_type, destination_office_id, recommended_wh_id, synced_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    shop_id, supply_id, is_b2b, done, order_count, created_at, closed_at, scan_dt, reject_dt, name, cargo_type, cross_border_type, destination_office_id, recommended_wh_id, synced_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(shop_id, supply_id) DO UPDATE SET
                     is_b2b = excluded.is_b2b,
                     done = excluded.done,
+                    order_count = COALESCE(wb_supplies.order_count, excluded.order_count),
                     created_at = excluded.created_at,
                     closed_at = excluded.closed_at,
                     scan_dt = excluded.scan_dt,
@@ -44,16 +45,17 @@ public class WbSupplyRepository {
                 ps.setString(2, supply.getId());
                 setNullableBoolean(ps, 3, supply.getIsB2b());
                 setNullableBoolean(ps, 4, supply.getDone());
-                ps.setString(5, supply.getCreatedAt());
-                ps.setString(6, supply.getClosedAt());
-                ps.setString(7, supply.getScanDt());
-                ps.setString(8, supply.getRejectDt());
-                ps.setString(9, supply.getName());
-                setNullableInteger(ps, 10, supply.getCargoType());
-                setNullableInteger(ps, 11, supply.getCrossBorderType());
-                setNullableInteger(ps, 12, supply.getDestinationOfficeId());
-                setNullableInteger(ps, 13, supply.getRecommendedWhId());
-                ps.setString(14, now);
+                ps.setObject(5, null);
+                ps.setString(6, supply.getCreatedAt());
+                ps.setString(7, supply.getClosedAt());
+                ps.setString(8, supply.getScanDt());
+                ps.setString(9, supply.getRejectDt());
+                ps.setString(10, supply.getName());
+                setNullableInteger(ps, 11, supply.getCargoType());
+                setNullableInteger(ps, 12, supply.getCrossBorderType());
+                setNullableInteger(ps, 13, supply.getDestinationOfficeId());
+                setNullableInteger(ps, 14, supply.getRecommendedWhId());
+                ps.setString(15, now);
                 ps.addBatch();
             }
             ps.executeBatch();
@@ -70,7 +72,7 @@ public class WbSupplyRepository {
                        s.done,
                        s.is_b2b,
                        s.created_at,
-                       COALESCE(o.item_count, 0) AS item_count
+                       COALESCE(s.order_count, o.item_count, 0) AS item_count
                 FROM wb_supplies s
                 LEFT JOIN (
                     SELECT shop_id, supply_id, COUNT(*) AS item_count
@@ -158,6 +160,24 @@ public class WbSupplyRepository {
             ps.setInt(1, shopId);
             ResultSet rs = ps.executeQuery();
             return rs.next() ? rs.getInt(1) : 0;
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void updateSupplyOrderCount(int shopId, String supplyId, int orderCount) {
+        String sql = """
+                UPDATE wb_supplies
+                SET order_count = ?, synced_at = ?
+                WHERE shop_id = ? AND supply_id = ?
+                """;
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, Math.max(0, orderCount));
+            ps.setString(2, Instant.now().toString());
+            ps.setInt(3, shopId);
+            ps.setString(4, supplyId);
+            ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
