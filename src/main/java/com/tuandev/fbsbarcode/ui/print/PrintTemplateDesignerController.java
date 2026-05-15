@@ -42,6 +42,7 @@ import java.util.UUID;
 
 public class PrintTemplateDesignerController implements Initializable {
     private static final double PREVIEW_SCALE = 3d;
+    private static final double DRAG_THRESHOLD_PX = 3d;
 
     private final PrintTemplateService templateService = new PrintTemplateService();
     private final List<PrintTemplateService.ElementPaletteItem> paletteItems = templateService.getPaletteItems();
@@ -399,9 +400,11 @@ public class PrintTemplateDesignerController implements Initializable {
         addResizeHandles(node, element);
 
         final double[] start = new double[2];
+        final boolean[] dragged = new boolean[1];
         node.setOnMousePressed(event -> {
             start[0] = event.getSceneX();
             start[1] = event.getSceneY();
+            dragged[0] = false;
             selectElement(element);
             previewPane.requestFocus();
             event.consume();
@@ -409,6 +412,13 @@ public class PrintTemplateDesignerController implements Initializable {
         node.setOnMouseDragged(event -> {
             double dx = (event.getSceneX() - start[0]) / PREVIEW_SCALE;
             double dy = (event.getSceneY() - start[1]) / PREVIEW_SCALE;
+            if (!dragged[0]
+                    && Math.abs(event.getSceneX() - start[0]) < DRAG_THRESHOLD_PX
+                    && Math.abs(event.getSceneY() - start[1]) < DRAG_THRESHOLD_PX) {
+                event.consume();
+                return;
+            }
+            dragged[0] = true;
             start[0] = event.getSceneX();
             start[1] = event.getSceneY();
             element.setX(clamp(element.getX() + dx, 0, PrintTemplateService.PAGE_WIDTH - element.getWidth()));
@@ -417,10 +427,12 @@ public class PrintTemplateDesignerController implements Initializable {
             event.consume();
         });
         node.setOnMouseReleased(event -> {
-            snapElementToGridIfEnabled(element);
-            updateNodeGeometry(node, element);
-            syncSelectedFieldsForGeometry(element);
-            refreshNodeStyles();
+            if (dragged[0]) {
+                snapElementToGridIfEnabled(element);
+                updateNodeGeometry(node, element);
+                syncSelectedFieldsForGeometry(element);
+                refreshNodeStyles();
+            }
             event.consume();
         });
         node.addEventHandler(MouseEvent.MOUSE_CLICKED, event -> {
@@ -450,9 +462,11 @@ public class PrintTemplateDesignerController implements Initializable {
         StackPane.setAlignment(handle, position.alignment);
 
         final double[] start = new double[2];
+        final boolean[] resized = new boolean[1];
         handle.setOnMousePressed(event -> {
             start[0] = event.getSceneX();
             start[1] = event.getSceneY();
+            resized[0] = false;
             selectElement(element);
             previewPane.requestFocus();
             event.consume();
@@ -460,6 +474,13 @@ public class PrintTemplateDesignerController implements Initializable {
         handle.setOnMouseDragged(event -> {
             double dx = (event.getSceneX() - start[0]) / PREVIEW_SCALE;
             double dy = (event.getSceneY() - start[1]) / PREVIEW_SCALE;
+            if (!resized[0]
+                    && Math.abs(event.getSceneX() - start[0]) < DRAG_THRESHOLD_PX
+                    && Math.abs(event.getSceneY() - start[1]) < DRAG_THRESHOLD_PX) {
+                event.consume();
+                return;
+            }
+            resized[0] = true;
             start[0] = event.getSceneX();
             start[1] = event.getSceneY();
             resizeElement(element, dx, dy, position);
@@ -467,10 +488,12 @@ public class PrintTemplateDesignerController implements Initializable {
             event.consume();
         });
         handle.setOnMouseReleased(event -> {
-            snapElementToGridIfEnabled(element);
-            updateNodeGeometry(owner, element);
-            syncSelectedFieldsForGeometry(element);
-            refreshNodeStyles();
+            if (resized[0]) {
+                snapElementToGridIfEnabled(element);
+                updateNodeGeometry(owner, element);
+                syncSelectedFieldsForGeometry(element);
+                refreshNodeStyles();
+            }
             event.consume();
         });
         return handle;

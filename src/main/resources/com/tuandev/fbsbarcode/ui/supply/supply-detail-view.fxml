@@ -10,6 +10,7 @@
 <?import javafx.scene.control.TableView?>
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.Pane?>
+<?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.VBox?>
 <?import javafx.scene.text.Font?>
 <?import org.kordamp.ikonli.javafx.FontIcon?>
@@ -27,8 +28,6 @@
                     </graphic>
                 </Button>
                 <Label fx:id="supplyTitleLabel" text="Поставка не выбрана" styleClass="h3" />
-                <Label fx:id="supplyStatusLabel" styleClass="badge" text="" visible="false" managed="false" />
-                <ProgressIndicator fx:id="orderLoading" maxHeight="20.0" maxWidth="20.0" prefHeight="20.0" prefWidth="20.0" visible="false" />
                 <Pane HBox.hgrow="ALWAYS" />
                 <Button fx:id="printButton" disable="true" mnemonicParsing="false" onAction="#onPrint" prefHeight="32.0" text="Печать">
                     <styleClass>
@@ -51,12 +50,6 @@
             </children>
         </HBox>
         <Label fx:id="supplyMetaLabel" managed="false" style="-fx-text-fill: #6c757d;" text="" visible="false" />
-        <HBox fx:id="orderLoadingBox" alignment="CENTER_LEFT" managed="false" spacing="8.0" visible="false">
-            <children>
-                <ProgressIndicator fx:id="orderLoadingInline" maxHeight="18.0" maxWidth="18.0" prefHeight="18.0" prefWidth="18.0" visible="false" />
-                <Label fx:id="orderLoadingLabel" style="-fx-text-fill: #6c757d;" text="Загрузка заказов и данных поставки..." />
-            </children>
-        </HBox>
         <HBox fx:id="stickerLoadingBox" alignment="CENTER_LEFT" managed="false" spacing="8.0" visible="false">
             <children>
                 <ProgressIndicator fx:id="stickerLoading" maxHeight="18.0" maxWidth="18.0" prefHeight="18.0" prefWidth="18.0" visible="false" />
@@ -71,22 +64,32 @@
                 <CheckBox fx:id="sortBySizeCheckBox" mnemonicParsing="false" selected="true" text="Size" />
             </children>
         </HBox>
-        <Label fx:id="emptyStateLabel" managed="false" style="-fx-text-fill: #6c757d;" text="" visible="false" wrapText="true" />
-        <TableView fx:id="orderTable" managed="false" prefHeight="520.0" prefWidth="900.0" visible="false">
-            <columns>
-                <TableColumn fx:id="noTC" prefWidth="54.0" text="No" />
-                <TableColumn fx:id="idTC" prefWidth="85.0" text="№ задания" />
-                <TableColumn fx:id="imageTC" prefWidth="58.0" text="Фото" />
-                <TableColumn fx:id="nameTC" prefWidth="180.0" text="Наименование" />
-                <TableColumn fx:id="subjectNameTC" prefWidth="128.0" text="Категория" />
-                <TableColumn fx:id="articleTC" prefWidth="128.0" text="Артикул продавца" />
-                <TableColumn fx:id="colorTC" prefWidth="70.0" text="Цвет" />
-                <TableColumn fx:id="sizeTC" prefWidth="74.0" text="Размер" />
-                <TableColumn fx:id="stickerTC" prefWidth="90.0" text="Стикер" />
-                <TableColumn fx:id="barcodeTC" prefWidth="95.0" text="Баркод" />
-                <TableColumn fx:id="stickerCodeTC" prefWidth="100.0" text="Стикер Code" />
-            </columns>
-        </TableView>
+        <StackPane prefHeight="520.0" VBox.vgrow="ALWAYS">
+            <children>
+                <TableView fx:id="orderTable" managed="false" prefHeight="520.0" prefWidth="900.0" visible="false">
+                    <columns>
+                        <TableColumn fx:id="noTC" prefWidth="54.0" text="No" />
+                        <TableColumn fx:id="idTC" prefWidth="85.0" text="№ задания" />
+                        <TableColumn fx:id="imageTC" prefWidth="58.0" text="Фото" />
+                        <TableColumn fx:id="nameTC" prefWidth="180.0" text="Наименование" />
+                        <TableColumn fx:id="subjectNameTC" prefWidth="128.0" text="Категория" />
+                        <TableColumn fx:id="articleTC" prefWidth="128.0" text="Артикул продавца" />
+                        <TableColumn fx:id="colorTC" prefWidth="70.0" text="Цвет" />
+                        <TableColumn fx:id="sizeTC" prefWidth="74.0" text="Размер" />
+                        <TableColumn fx:id="stickerTC" prefWidth="90.0" text="Стикер" />
+                        <TableColumn fx:id="barcodeTC" prefWidth="95.0" text="Баркод" />
+                        <TableColumn fx:id="stickerCodeTC" prefWidth="100.0" text="Стикер Code" />
+                    </columns>
+                </TableView>
+                <Label fx:id="emptyStateLabel" managed="false" style="-fx-text-fill: #6c757d;" text="" visible="false" wrapText="true" />
+                <VBox fx:id="orderLoadingBox" alignment="CENTER" managed="false" spacing="10.0" visible="false">
+                    <children>
+                        <ProgressIndicator fx:id="orderLoadingInline" maxHeight="28.0" maxWidth="28.0" prefHeight="28.0" prefWidth="28.0" visible="false" />
+                        <Label fx:id="orderLoadingLabel" style="-fx-text-fill: #6c757d;" text="Загрузка заказов и данных поставки..." />
+                    </children>
+                </VBox>
+            </children>
+        </StackPane>
     </children>
     <padding>
         <Insets bottom="16.0" left="16.0" right="16.0" top="16.0" />

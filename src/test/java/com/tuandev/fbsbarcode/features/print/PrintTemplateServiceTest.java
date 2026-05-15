@@ -76,7 +76,7 @@ class PrintTemplateServiceTest {
         PrintTemplateElement element = service.createElementFromPalette(paletteItem, 5);
 
         assertEquals(PrintElementType.STATIC_TEXT, element.getType());
-        assertEquals("Текст", element.getContent());
+        assertEquals(com.tuandev.fbsbarcode.shared.I18nService.getInstance().tr("template.static_text_default"), element.getContent());
         assertEquals(5, element.getZIndex());
     }
 }

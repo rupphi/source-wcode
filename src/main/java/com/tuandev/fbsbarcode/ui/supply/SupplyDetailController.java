@@ -17,6 +17,7 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 
 import java.io.ByteArrayInputStream;
 import java.util.List;
@@ -32,19 +33,13 @@ public class SupplyDetailController {
     private Label supplyMetaLabel;
 
     @FXML
-    private Label supplyStatusLabel;
-
-    @FXML
     private Label emptyStateLabel;
-
-    @FXML
-    private ProgressIndicator orderLoading;
 
     @FXML
     private ProgressIndicator orderLoadingInline;
 
     @FXML
-    private HBox orderLoadingBox;
+    private VBox orderLoadingBox;
 
     @FXML
     private Label orderLoadingLabel;
@@ -162,7 +157,6 @@ public class SupplyDetailController {
         setOrders(List.of());
         setPrintEnabled(false);
         setDeliverEnabled(false);
-        setSupplyStatus("");
     }
 
     @FXML
@@ -218,7 +212,6 @@ public class SupplyDetailController {
     }
 
     public void setLoading(boolean loading) {
-        orderLoading.setVisible(loading);
         if (orderLoadingInline != null) {
             orderLoadingInline.setVisible(loading);
         }
@@ -228,6 +221,14 @@ public class SupplyDetailController {
         }
         if (orderLoadingLabel != null) {
             orderLoadingLabel.setText(I18nService.getInstance().tr("supply.loading_orders"));
+        }
+        if (loading) {
+            orderTable.setVisible(false);
+            orderTable.setManaged(false);
+            sortOptionsBox.setVisible(false);
+            sortOptionsBox.setManaged(false);
+            emptyStateLabel.setVisible(false);
+            emptyStateLabel.setManaged(false);
         }
         orderTable.setDisable(loading);
         sortOptionsBox.setDisable(loading);
@@ -293,13 +294,6 @@ public class SupplyDetailController {
 
     public void setDeliverEnabled(boolean enabled) {
         deliverButton.setDisable(!enabled);
-    }
-
-    public void setSupplyStatus(String status) {
-        boolean visible = status != null && !status.isBlank();
-        supplyStatusLabel.setText(visible ? status : "");
-        supplyStatusLabel.setVisible(visible);
-        supplyStatusLabel.setManaged(visible);
     }
 
     public OrderSortOptions getSortOptions() {

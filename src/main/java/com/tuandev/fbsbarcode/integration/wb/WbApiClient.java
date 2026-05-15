@@ -157,16 +157,27 @@ public class WbApiClient {
 
     private String extractErrorMessage(HttpUrl url, int statusCode, String body) {
         if (isContentApiUnauthorized(url, statusCode)) {
-            if (body == null || body.isBlank()) {
-                return "Token không có quyền Content trên WB API";
-            }
-            return "Token không có quyền Content trên WB API (" + body + ")";
+            String code = extractJsonField(body, "code");
+            String requestId = extractJsonField(body, "requestId");
+            return compactMessage(
+                    "WB Content API permission denied",
+                    statusCode,
+                    code,
+                    requestId,
+                    null
+            );
         }
         if (isContentApiRateLimited(url, statusCode)) {
-            if (body == null || body.isBlank()) {
-                return "WB Content API đang giới hạn tần suất gọi. Vui lòng thử lại sau.";
-            }
-            return "WB Content API đang giới hạn tần suất gọi. " + body;
+            String code = extractJsonField(body, "code");
+            String requestId = extractJsonField(body, "requestId");
+            String detail = extractJsonField(body, "detail");
+            return compactMessage(
+                    "WB Content API rate limited",
+                    statusCode,
+                    code,
+                    requestId,
+                    detail
+            );
         }
         if (body == null || body.isBlank()) {
             return "WB API request failed";
@@ -186,6 +197,35 @@ public class WbApiClient {
             // fall back to raw body
         }
         return body;
+    }
+
+    private String extractJsonField(String body, String fieldName) {
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        try {
+            JsonObject object = JsonParser.parseString(body).getAsJsonObject();
+            if (!object.has(fieldName) || object.get(fieldName).isJsonNull()) {
+                return null;
+            }
+            return object.get(fieldName).getAsString();
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String compactMessage(String prefix, int statusCode, String code, String requestId, String detail) {
+        StringBuilder message = new StringBuilder(prefix).append(" (HTTP ").append(statusCode).append(')');
+        if (code != null && !code.isBlank()) {
+            message.append(", code=").append(code);
+        }
+        if (requestId != null && !requestId.isBlank()) {
+            message.append(", requestId=").append(requestId);
+        }
+        if (detail != null && !detail.isBlank()) {
+            message.append(", detail=").append(detail);
+        }
+        return message.toString();
     }
 
     private boolean isContentApiUnauthorized(HttpUrl url, int statusCode) {

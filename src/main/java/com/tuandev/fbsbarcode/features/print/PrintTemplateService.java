@@ -26,7 +26,109 @@ public class PrintTemplateService {
             PrintTemplate template = createSystemDefaultTemplate(i18n.tr("template.default_name"));
             saveTemplate(template);
             repository.setDefault(template.getId());
+            return;
         }
+        repository.findDefault()
+                .map(this::fromRecord)
+                .filter(this::upgradeLegacySystemDefaultTemplate)
+                .ifPresent(this::saveTemplate);
+    }
+
+    private static double snapToMillimeterGrid(double value) {
+        return Math.round(value / POINTS_PER_MM) * POINTS_PER_MM;
+    }
+
+    private static double mm(double value) {
+        return value * POINTS_PER_MM;
+    }
+
+    private boolean upgradeLegacySystemDefaultTemplate(PrintTemplate template) {
+        if (template == null || !template.isDefaultTemplate() || template.getElements() == null || template.getElements().isEmpty()) {
+            return false;
+        }
+        PrintTemplateElement brand = findField(template, PrintFieldKey.BRAND);
+        PrintTemplateElement name = findField(template, PrintFieldKey.NAME);
+        PrintTemplateElement color = findField(template, PrintFieldKey.COLOR);
+        PrintTemplateElement article = findField(template, PrintFieldKey.ARTICLE);
+        PrintTemplateElement size = findField(template, PrintFieldKey.SIZE);
+        PrintTemplateElement barcodeText = findField(template, PrintFieldKey.BARCODE);
+        PrintTemplateElement separator = findElementByType(template, PrintElementType.SEPARATOR_LINE);
+        PrintTemplateElement barcode = findElementByType(template, PrintElementType.BARCODE_CODE128);
+        PrintTemplateElement stickerTail = findElementByType(template, PrintElementType.STICKER_TAIL);
+        if (brand == null || name == null || color == null || article == null || size == null
+                || barcodeText == null || separator == null || barcode == null || stickerTail == null) {
+            return false;
+        }
+        boolean legacyLayout = approximately(brand.getX(), 70d)
+                && approximately(brand.getY(), 8d)
+                && approximately(brand.getWidth(), 84d)
+                && approximately(name.getX(), 70d)
+                && approximately(name.getY(), 20d)
+                && approximately(name.getWidth(), 84d)
+                && approximately(name.getHeight(), 14d)
+                && approximately(color.getX(), 70d)
+                && approximately(color.getY(), 35d)
+                && approximately(article.getX(), 70d)
+                && approximately(article.getY(), 47d)
+                && approximately(size.getX(), 70d)
+                && approximately(size.getY(), 59d)
+                && approximately(separator.getX(), 10d)
+                && approximately(separator.getY(), 67d)
+                && approximately(separator.getWidth(), 144d)
+                && approximately(barcode.getX(), 12d)
+                && approximately(barcode.getY(), 72d)
+                && approximately(barcodeText.getY(), 99d)
+                && approximately(stickerTail.getX(), 134d)
+                && approximately(stickerTail.getY(), 99d);
+        boolean snappedSystemDefaultV1 = approximately(brand.getX(), mm(25))
+                && approximately(brand.getY(), mm(3))
+                && approximately(brand.getWidth(), mm(30))
+                && approximately(brand.getHeight(), 10d)
+                && approximately(name.getX(), mm(25))
+                && approximately(name.getY(), mm(7))
+                && approximately(name.getHeight(), 12d)
+                && approximately(color.getX(), mm(25))
+                && approximately(color.getY(), mm(12))
+                && approximately(color.getHeight(), 12d)
+                && approximately(article.getX(), mm(25))
+                && approximately(article.getY(), mm(17))
+                && approximately(article.getHeight(), 12d)
+                && approximately(size.getX(), mm(25))
+                && approximately(size.getY(), mm(21))
+                && approximately(size.getHeight(), 12d)
+                && approximately(separator.getX(), mm(4))
+                && approximately(separator.getY(), mm(25))
+                && approximately(barcode.getX(), mm(4))
+                && approximately(barcode.getY(), mm(27))
+                && approximately(barcode.getHeight(), 25d)
+                && approximately(barcodeText.getY(), mm(36))
+                && approximately(stickerTail.getX(), mm(47))
+                && approximately(stickerTail.getY(), mm(36));
+        if (!legacyLayout && !snappedSystemDefaultV1) {
+            return false;
+        }
+        PrintTemplate systemDefault = createSystemDefaultTemplate(template.getName());
+        template.setElements(systemDefault.getElements());
+        return true;
+    }
+
+    private static PrintTemplateElement findField(PrintTemplate template, PrintFieldKey key) {
+        return template.getElements().stream()
+                .filter(element -> element.getType() == PrintElementType.TEXT_FIELD)
+                .filter(element -> element.getFieldKey() == key)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static PrintTemplateElement findElementByType(PrintTemplate template, PrintElementType type) {
+        return template.getElements().stream()
+                .filter(element -> element.getType() == type)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static boolean approximately(double actual, double expected) {
+        return Math.abs(actual - expected) < 0.25d;
     }
 
     public List<PrintTemplate> loadTemplates() {
@@ -115,29 +217,36 @@ public class PrintTemplateService {
         template.setPageHeight(PAGE_HEIGHT);
         List<PrintTemplateElement> elements = new ArrayList<>();
 
-        PrintTemplateElement kiz = PrintTemplateElement.create(PrintElementType.KIZ_DATAMATRIX, i18n.tr("template.palette.kiz"), 10, 10, 52, 52);
+        PrintTemplateElement kiz = PrintTemplateElement.create(
+                PrintElementType.KIZ_DATAMATRIX,
+                i18n.tr("template.palette.kiz"),
+                mm(4),
+                mm(4),
+                mm(18),
+                mm(18)
+        );
         kiz.setZIndex(1);
         elements.add(kiz);
 
-        PrintTemplateElement brand = textField(i18n.tr("template.palette.brand"), PrintFieldKey.BRAND, 70, 8, 84, 10, 9, true, PrintTextAlign.CENTER, 2);
+        PrintTemplateElement brand = textField(i18n.tr("template.palette.brand"), PrintFieldKey.BRAND, mm(25), mm(3), mm(30), 12, 9, true, PrintTextAlign.CENTER, 2);
         elements.add(brand);
-        elements.add(textField(i18n.tr("template.palette.name"), PrintFieldKey.NAME, 70, 20, 84, 14, 8, false, PrintTextAlign.LEFT, 3));
-        elements.add(textField(i18n.tr("template.palette.color"), PrintFieldKey.COLOR, i18n.tr("template.prefix.color"), 70, 35, 84, 10, 8, false, PrintTextAlign.LEFT, 4));
-        elements.add(textField(i18n.tr("template.palette.article"), PrintFieldKey.ARTICLE, i18n.tr("template.prefix.article"), 70, 47, 84, 10, 8, false, PrintTextAlign.LEFT, 5));
-        elements.add(textField(i18n.tr("template.palette.size"), PrintFieldKey.SIZE, i18n.tr("template.prefix.size"), 70, 59, 84, 10, 9, false, PrintTextAlign.LEFT, 6));
+        elements.add(textField(i18n.tr("template.palette.name"), PrintFieldKey.NAME, mm(25), mm(7), mm(30), 12, 8, false, PrintTextAlign.LEFT, 3));
+        elements.add(textField(i18n.tr("template.palette.color"), PrintFieldKey.COLOR, i18n.tr("template.prefix.color"), mm(25), mm(11), mm(30), 12, 8, false, PrintTextAlign.LEFT, 4));
+        elements.add(textField(i18n.tr("template.palette.article"), PrintFieldKey.ARTICLE, i18n.tr("template.prefix.article"), mm(25), mm(16), mm(30), 12, 8, false, PrintTextAlign.LEFT, 5));
+        elements.add(textField(i18n.tr("template.palette.size"), PrintFieldKey.SIZE, i18n.tr("template.prefix.size"), mm(25), mm(21), mm(30), 12, 9, false, PrintTextAlign.LEFT, 6));
 
-        PrintTemplateElement separator = PrintTemplateElement.create(PrintElementType.SEPARATOR_LINE, i18n.tr("template.palette.separator"), 10, 67, 144, 1);
+        PrintTemplateElement separator = PrintTemplateElement.create(PrintElementType.SEPARATOR_LINE, i18n.tr("template.palette.separator"), mm(4), mm(25), mm(51), 1);
         separator.setZIndex(7);
         elements.add(separator);
 
-        PrintTemplateElement barcode = PrintTemplateElement.create(PrintElementType.BARCODE_CODE128, i18n.tr("template.palette.barcode"), 12, 72, 140, 25);
+        PrintTemplateElement barcode = PrintTemplateElement.create(PrintElementType.BARCODE_CODE128, i18n.tr("template.palette.barcode"), mm(4), mm(27), mm(49), 23);
         barcode.setShowHumanReadable(false);
         barcode.setZIndex(8);
         elements.add(barcode);
 
-        elements.add(textField(i18n.tr("template.palette.barcode_text"), PrintFieldKey.BARCODE, null, 8, 99, 120, 8, 8, false, PrintTextAlign.CENTER, 9));
+        elements.add(textField(i18n.tr("template.palette.barcode_text"), PrintFieldKey.BARCODE, null, snapToMillimeterGrid(8d), mm(36), mm(42), 8, 8, false, PrintTextAlign.CENTER, 9));
 
-        PrintTemplateElement stickerTail = PrintTemplateElement.create(PrintElementType.STICKER_TAIL, i18n.tr("template.palette.sticker_tail"), 134, 99, 20, 8);
+        PrintTemplateElement stickerTail = PrintTemplateElement.create(PrintElementType.STICKER_TAIL, i18n.tr("template.palette.sticker_tail"), mm(47), mm(36), mm(7), 8);
         stickerTail.setFontSize(8);
         stickerTail.setAlign(PrintTextAlign.RIGHT);
         stickerTail.setZIndex(10);
@@ -166,37 +275,37 @@ public class PrintTemplateService {
 
     public PrintTemplateElement createElementFromPalette(ElementPaletteItem item, int zIndex) {
         if (item.type() == PrintElementType.KIZ_DATAMATRIX) {
-            PrintTemplateElement element = PrintTemplateElement.create(item.type(), item.label(), 10, 10, 52, 52);
+            PrintTemplateElement element = PrintTemplateElement.create(item.type(), item.label(), mm(4), mm(4), mm(18), mm(18));
             element.setZIndex(zIndex);
             return element;
         }
         if (item.type() == PrintElementType.BARCODE_CODE128) {
-            PrintTemplateElement element = PrintTemplateElement.create(item.type(), item.label(), 12, 72, 140, 25);
+            PrintTemplateElement element = PrintTemplateElement.create(item.type(), item.label(), mm(4), mm(27), mm(49), 23);
             element.setShowHumanReadable(false);
             element.setZIndex(zIndex);
             return element;
         }
         if (item.type() == PrintElementType.SEPARATOR_LINE) {
-            PrintTemplateElement element = PrintTemplateElement.create(item.type(), item.label(), 10, 67, 144, 1);
+            PrintTemplateElement element = PrintTemplateElement.create(item.type(), item.label(), mm(4), mm(25), mm(51), 1);
             element.setZIndex(zIndex);
             return element;
         }
         if (item.type() == PrintElementType.STICKER_TAIL) {
-            PrintTemplateElement element = PrintTemplateElement.create(item.type(), item.label(), 134, 99, 20, 8);
+            PrintTemplateElement element = PrintTemplateElement.create(item.type(), item.label(), mm(47), mm(36), mm(7), 8);
             element.setFontSize(8);
             element.setAlign(PrintTextAlign.RIGHT);
             element.setZIndex(zIndex);
             return element;
         }
         if (item.type() == PrintElementType.STATIC_TEXT) {
-            PrintTemplateElement element = PrintTemplateElement.create(item.type(), item.label(), 10, 10, 84, 10);
+            PrintTemplateElement element = PrintTemplateElement.create(item.type(), item.label(), mm(25), mm(11), mm(30), 12);
             element.setContent(i18n.tr("template.static_text_default"));
             element.setFontSize(8);
             element.setAlign(PrintTextAlign.LEFT);
             element.setZIndex(zIndex);
             return element;
         }
-        PrintTemplateElement element = PrintTemplateElement.create(item.type(), item.label(), 10, 10, 84, 10);
+        PrintTemplateElement element = PrintTemplateElement.create(item.type(), item.label(), mm(25), mm(11), mm(30), 12);
         element.setFieldKey(item.fieldKey());
         element.setPrefix(defaultPrefix(item.fieldKey()));
         element.setFontSize(8);

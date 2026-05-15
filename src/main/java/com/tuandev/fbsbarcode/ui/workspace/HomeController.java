@@ -829,10 +829,9 @@ public class HomeController implements Initializable {
         long requestToken = state.nextSupplyRequestToken();
         state.setLoadedSupplyId(supply.getSupplyId());
         state.setLoadedSupplyName(supply.getName());
-            supplyDetailController.setLoading(true);
+        supplyDetailController.setLoading(true);
         refreshCurrentKizAttachmentProgress();
         supplyDetailController.setSupplyInfo(formatSupplyTitle(supply), "");
-        supplyDetailController.setSupplyStatus(formatSupplyStatus(supply));
 
         Task<List<Order>> localTask = new Task<>() {
             @Override
@@ -853,11 +852,10 @@ public class HomeController implements Initializable {
             if (!isCurrentSupplyRequest(shop.getId(), supply.getSupplyId(), requestToken)) {
                 return;
             }
-            supplyDetailController.setLoading(false);
             state.setLoadedOrdersRaw(localTask.getValue());
             supplyDetailController.setSupplyInfo(formatSupplyTitle(supply), "");
-            supplyDetailController.setSupplyStatus(formatSupplyStatus(supply));
             applySortAndDisplayOrders();
+            supplyDetailController.setLoading(false);
             updateExportAvailability();
             refreshCurrentKizAttachmentProgress();
             startSupplyRefresh(shop, supply, requestToken);
@@ -886,7 +884,6 @@ public class HomeController implements Initializable {
             state.setLoadedOrdersRaw(refreshTask.getValue());
             applySortAndDisplayOrders();
             supplyDetailController.setSupplyInfo(formatSupplyTitle(supply), "");
-            supplyDetailController.setSupplyStatus(formatSupplyStatus(supply));
             if (supplyListController != null) {
                 supplyListController.updateSupplySummary(new WbSupplySummary(
                         supply.getSupplyId(),
@@ -1069,7 +1066,6 @@ public class HomeController implements Initializable {
             supplyDetailController.setLoading(false);
             refreshCurrentKizAttachmentProgress();
             supplyDetailController.setSupplyInfo("", "");
-            supplyDetailController.setSupplyStatus("");
             supplyDetailController.setDeliverEnabled(false);
             supplyDetailController.setOrders(List.of());
         }
@@ -1341,13 +1337,6 @@ public class HomeController implements Initializable {
             showPacking();
         });
         AppTaskExecutor.execute(task);
-    }
-
-    private static String formatSupplyStatus(WbSupplySummary supply) {
-        if (supply == null) {
-            return "";
-        }
-        return I18nService.getInstance().tr(supply.isDone() ? "packing.status.dispatch" : "packing.status.preparation");
     }
 
     private String formatSupplyTitle(WbSupplySummary supply) {
