@@ -6,6 +6,7 @@ import com.tuandev.fbsbarcode.models.Order;
 import com.tuandev.fbsbarcode.models.Shop;
 import com.tuandev.fbsbarcode.shared.AlertService;
 import com.tuandev.fbsbarcode.shared.AppTaskExecutor;
+import com.tuandev.fbsbarcode.shared.I18nService;
 import javafx.beans.property.ReadOnlyObjectWrapper;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.concurrent.Task;
@@ -41,6 +42,7 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.text.MessageFormat;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -55,8 +57,6 @@ import java.util.function.Consumer;
 public class PackingController {
     private static final Logger LOGGER = LoggerFactory.getLogger(PackingController.class);
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
-    private static final String ALL_CATEGORIES = "Все категории";
-
     private final PackingWorkflow packingWorkflow = new PackingWorkflow();
     private final Set<Long> selectedOrderIds = new LinkedHashSet<>();
     private final Set<String> selectedCategories = new LinkedHashSet<>();
@@ -66,8 +66,12 @@ public class PackingController {
 
     @FXML private ProgressIndicator refreshLoading;
     @FXML private Button refreshButton;
+    @FXML private Label titleLabel;
+    @FXML private Button clearFiltersButton;
     @FXML private TabPane packingTabPane;
     @FXML private Tab newOrdersTab;
+    @FXML private Tab preparationTab;
+    @FXML private Tab dispatchTab;
     @FXML private HBox selectionActionBar;
     @FXML private Label selectedCountLabel;
     @FXML private Label emptyNewOrdersLabel;
@@ -104,6 +108,7 @@ public class PackingController {
         setupNewOrderFilters();
         setupSupplyTables();
         setupTabs();
+        applyTranslations();
         updateSelectionState();
     }
 
@@ -152,9 +157,10 @@ public class PackingController {
         }
         List<Long> orderIds = selectedOrderIds.stream().toList();
         TextInputDialog dialog = new TextInputDialog(packingWorkflow.defaultShipmentName());
-        dialog.setTitle("Новая поставка");
-        dialog.setHeaderText("Введите название поставки");
-        dialog.setContentText("Название");
+        I18nService i18n = I18nService.getInstance();
+        dialog.setTitle(i18n.tr("packing.dialog.new_shipment.title"));
+        dialog.setHeaderText(i18n.tr("packing.dialog.new_shipment.header"));
+        dialog.setContentText(i18n.tr("packing.dialog.new_shipment.content"));
         Optional<String> result = dialog.showAndWait();
         result.map(String::trim)
                 .filter(name -> !name.isBlank())
@@ -168,13 +174,15 @@ public class PackingController {
         }
         List<WbSupplySummary> supplies = preparationTable.getItems();
         if (supplies.isEmpty()) {
-            AlertService.showWarning("Поставка", "Нет активных поставок", null);
+            I18nService i18n = I18nService.getInstance();
+            AlertService.showWarning(i18n.tr("packing.warning.supply.title"), i18n.tr("packing.warning.supply.header"), null);
             return;
         }
         ChoiceDialog<WbSupplySummary> dialog = new ChoiceDialog<>(supplies.get(0), supplies);
-        dialog.setTitle("Добавить в поставку");
-        dialog.setHeaderText("Выберите активную поставку");
-        dialog.setContentText("Поставка");
+        I18nService i18n = I18nService.getInstance();
+        dialog.setTitle(i18n.tr("packing.dialog.add_to_shipment.title"));
+        dialog.setHeaderText(i18n.tr("packing.dialog.add_to_shipment.header"));
+        dialog.setContentText(i18n.tr("packing.dialog.add_to_shipment.content"));
         dialog.showAndWait().ifPresent(supply -> runWriteTask(() ->
                 packingWorkflow.addOrdersToSupply(shop, supply.getSupplyId(), selectedOrderIds.stream().toList())));
     }
@@ -253,17 +261,53 @@ public class PackingController {
         updateSelectionState();
     }
 
+    public void applyTranslations() {
+        I18nService i18n = I18nService.getInstance();
+        titleLabel.setText(i18n.tr("packing.title"));
+        refreshButton.setText(i18n.tr("packing.refresh"));
+        newOrdersTab.setText(i18n.tr("packing.tab.new"));
+        preparationTab.setText(i18n.tr("packing.tab.preparation"));
+        dispatchTab.setText(i18n.tr("packing.tab.dispatch"));
+        newOrderSearchField.setPromptText(i18n.tr("packing.search_prompt"));
+        emptyNewOrdersLabel.setText(i18n.tr("packing.empty"));
+        newShipmentButton.setText(i18n.tr("packing.new_shipment"));
+        addToShipmentButton.setText(i18n.tr("packing.add_to_shipment"));
+        orderIdTC.setText(i18n.tr("packing.col.order_id"));
+        orderDateTC.setText(i18n.tr("packing.col.date"));
+        imageTC.setText(i18n.tr("packing.col.photo"));
+        productTC.setText(i18n.tr("packing.col.product"));
+        priceTC.setText(i18n.tr("packing.col.price"));
+        preparationSupplyTC.setText(i18n.tr("packing.col.supply"));
+        preparationStatusTC.setText(i18n.tr("packing.col.status"));
+        preparationCountTC.setText(i18n.tr("packing.col.items"));
+        preparationCreatedTC.setText(i18n.tr("packing.col.date"));
+        dispatchSupplyTC.setText(i18n.tr("packing.col.supply"));
+        dispatchStatusTC.setText(i18n.tr("packing.col.status"));
+        dispatchCountTC.setText(i18n.tr("packing.col.items"));
+        dispatchCreatedTC.setText(i18n.tr("packing.col.date"));
+        updateCategoryFilterOptions();
+        updateSelectionState();
+    }
+
     private boolean ensureCanWrite() {
         if (shop == null) {
-            AlertService.showError("Выберите магазин");
+            AlertService.showError(I18nService.getInstance().tr("packing.error.select_shop"));
             return false;
         }
         if (!tokenValid) {
-            AlertService.showWarning("Token WB", "Token истек", "Обновите token магазина.");
+            AlertService.showWarning(
+                    I18nService.getInstance().tr("wb.token.title"),
+                    I18nService.getInstance().tr("packing.token_expired.header"),
+                    I18nService.getInstance().tr("packing.token_expired.content")
+            );
             return false;
         }
         if (selectedOrderIds.isEmpty()) {
-            AlertService.showWarning("Заказы", "Выберите заказы", null);
+            AlertService.showWarning(
+                    I18nService.getInstance().tr("packing.orders.title"),
+                    I18nService.getInstance().tr("packing.orders.select"),
+                    null
+            );
             return false;
         }
         return true;
@@ -271,7 +315,7 @@ public class PackingController {
 
     private void updateSelectionState() {
         int count = selectedOrderIds.size();
-        selectedCountLabel.setText(count + " selected");
+        selectedCountLabel.setText(MessageFormat.format(I18nService.getInstance().tr("packing.selected_count"), count));
         newShipmentButton.setDisable(count == 0 || !tokenValid);
         addToShipmentButton.setDisable(count == 0 || !tokenValid);
         selectAllCheckBox.setSelected(!newOrdersTable.getItems().isEmpty() && visibleOrderIdsSelected());
@@ -335,7 +379,7 @@ public class PackingController {
     }
 
     private void setupNewOrderFilters() {
-        categoryFilterMenuButton.setText(ALL_CATEGORIES);
+        categoryFilterMenuButton.setText(I18nService.getInstance().tr("packing.all_categories"));
         newOrderSearchField.textProperty().addListener((obs, oldValue, newValue) -> applyNewOrderFilters());
     }
 
@@ -372,7 +416,8 @@ public class PackingController {
                 .filter(categories::contains)
                 .forEach(selectedCategories::add);
         categoryFilterMenuButton.getItems().clear();
-        CheckMenuItem allItem = new CheckMenuItem(ALL_CATEGORIES);
+        String allCategoriesText = I18nService.getInstance().tr("packing.all_categories");
+        CheckMenuItem allItem = new CheckMenuItem(allCategoriesText);
         allItem.setOnAction(event -> {
             if (updatingCategoryMenu) {
                 return;
@@ -507,9 +552,9 @@ public class PackingController {
             return;
         }
         FileChooser chooser = new FileChooser();
-        chooser.setTitle("Сохранить QR поставки");
+        chooser.setTitle(I18nService.getInstance().tr("packing.save_qr.title"));
         chooser.setInitialFileName("SUPPLY-" + supply.getSupplyId() + ".png");
-        chooser.getExtensionFilters().setAll(new FileChooser.ExtensionFilter("PNG", "*.png"));
+        chooser.getExtensionFilters().setAll(new FileChooser.ExtensionFilter(I18nService.getInstance().tr("filechooser.png"), "*.png"));
         File file = chooser.showSaveDialog(null);
         if (file == null) {
             return;
@@ -550,7 +595,9 @@ public class PackingController {
         if (supply == null) {
             return "";
         }
-        return supply.isDone() ? "Доставка" : "Сборка";
+        return supply.isDone()
+                ? I18nService.getInstance().tr("packing.status.dispatch")
+                : I18nService.getInstance().tr("packing.status.preparation");
     }
 
     private static String formatOrderDate(String value) {
@@ -595,7 +642,7 @@ public class PackingController {
         try {
             for (javafx.scene.control.MenuItem menuItem : categoryFilterMenuButton.getItems()) {
                 if (menuItem instanceof CheckMenuItem item) {
-                    if (ALL_CATEGORIES.equals(item.getText())) {
+                    if (I18nService.getInstance().tr("packing.all_categories").equals(item.getText())) {
                         item.setSelected(selectedCategories.isEmpty());
                     } else {
                         item.setSelected(selectedCategories.contains(item.getText()));
@@ -609,11 +656,11 @@ public class PackingController {
 
     private void updateCategoryFilterText() {
         if (selectedCategories.isEmpty()) {
-            categoryFilterMenuButton.setText(ALL_CATEGORIES);
+            categoryFilterMenuButton.setText(I18nService.getInstance().tr("packing.all_categories"));
         } else if (selectedCategories.size() == 1) {
             categoryFilterMenuButton.setText(selectedCategories.iterator().next());
         } else {
-            categoryFilterMenuButton.setText(selectedCategories.size() + " категории");
+            categoryFilterMenuButton.setText(MessageFormat.format(I18nService.getInstance().tr("packing.categories_selected"), selectedCategories.size()));
         }
     }
 

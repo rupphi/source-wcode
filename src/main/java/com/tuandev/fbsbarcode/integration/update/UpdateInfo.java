@@ -1,6 +1,5 @@
 package com.tuandev.fbsbarcode.integration.update;
 
-import com.google.gson.annotations.SerializedName;
 import java.util.Map;
 
 public class UpdateInfo {
@@ -28,9 +27,18 @@ public class UpdateInfo {
         if (os.contains("win") && downloadUrls != null) {
             String exe = downloadUrls.get("exe");
             if (exe != null && !exe.isBlank()) return exe;
+            String msi = downloadUrls.get("msi");
+            if (msi != null && !msi.isBlank()) return msi;
         }
         return downloadUrls != null && !downloadUrls.isEmpty()
                 ? downloadUrls.values().iterator().next()
                 : null;
+    }
+
+    public String getDisplayChangelog() {
+        if (changelog == null || changelog.isBlank()) {
+            return com.tuandev.fbsbarcode.shared.I18nService.getInstance().tr("update.dialog.no_changelog");
+        }
+        return changelog.replace("\r\n", "\n").trim();
     }
 }

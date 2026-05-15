@@ -11,8 +11,8 @@ public final class AlertService {
 
     public static void showError(String message) {
         Alert alert = new Alert(Alert.AlertType.ERROR);
-        alert.setTitle("Lỗi hệ thống");
-        alert.setHeaderText("Có lỗi xảy ra");
+        alert.setTitle(I18nService.getInstance().tr("alert.error.title"));
+        alert.setHeaderText(I18nService.getInstance().tr("alert.error.header"));
         alert.setContentText(message);
         alert.showAndWait();
     }

@@ -1,6 +1,7 @@
 package com.tuandev.fbsbarcode.features.print;
 
 import com.tuandev.fbsbarcode.shared.FxmlViewLoader;
+import com.tuandev.fbsbarcode.shared.I18nService;
 import com.tuandev.fbsbarcode.ui.print.PrintTemplateDesignerController;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
@@ -14,7 +15,7 @@ public class PrintTemplateDesignerService {
         scene.getStylesheets().add(java.util.Objects.requireNonNull(com.tuandev.fbsbarcode.MainApplication.class.getResource("/com/tuandev/fbsbarcode/styles/theme.css")).toExternalForm());
 
         Stage stage = new Stage();
-        stage.setTitle("Thiết kế tem 58x40");
+        stage.setTitle(I18nService.getInstance().tr("template.window_title"));
         stage.initModality(Modality.APPLICATION_MODAL);
         stage.setScene(scene);
         stage.setMinWidth(1180);

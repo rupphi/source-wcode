@@ -22,7 +22,7 @@
     <children>
         <HBox alignment="CENTER_LEFT" spacing="10.0">
             <children>
-                <Label styleClass="h2" text="Упаковка WB" />
+                <Label fx:id="titleLabel" styleClass="h2" text="Упаковка WB" />
                 <ProgressIndicator fx:id="refreshLoading" maxHeight="18.0" maxWidth="18.0" prefHeight="18.0" prefWidth="18.0" visible="false" />
                 <Button fx:id="refreshButton" mnemonicParsing="false" onAction="#onRefresh" prefHeight="28.0" text="Обновить заказы">
                     <graphic>
@@ -41,7 +41,7 @@
                                     <children>
                                         <TextField fx:id="newOrderSearchField" prefHeight="28.0" prefWidth="320.0" promptText="Поиск по заказу, товару, артикулу..." />
                                         <MenuButton fx:id="categoryFilterMenuButton" prefHeight="28.0" prefWidth="200.0" text="Все категории" />
-                                        <Button alignment="CENTER" mnemonicParsing="false" onAction="#onClearNewOrderFilters" prefHeight="28.0" prefWidth="28.0">
+                                        <Button fx:id="clearFiltersButton" alignment="CENTER" mnemonicParsing="false" onAction="#onClearNewOrderFilters" prefHeight="28.0" prefWidth="28.0">
                                             <styleClass>
                                                 <String fx:value="btn-icon" />
                                             </styleClass>
@@ -83,7 +83,7 @@
                         </VBox>
                     </content>
                 </Tab>
-                <Tab text="Сборка">
+                <Tab fx:id="preparationTab" text="Сборка">
                     <content>
                         <VBox spacing="10.0">
                             <children>
@@ -99,7 +99,7 @@
                         </VBox>
                     </content>
                 </Tab>
-                <Tab text="Доставка">
+                <Tab fx:id="dispatchTab" text="Доставка">
                     <content>
                         <TableView fx:id="dispatchTable">
                             <columns>

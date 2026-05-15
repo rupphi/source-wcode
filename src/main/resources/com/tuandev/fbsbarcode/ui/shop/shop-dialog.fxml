@@ -11,9 +11,9 @@
         <Insets bottom="20.0" left="20.0" right="20.0" top="20.0" />
     </padding>
     <children>
-        <Label text="Tên cửa hàng *" />
+        <Label text="%shop_dialog.name" />
         <TextField fx:id="nameField" />
-        <Label text="API Key *" />
+        <Label text="%shop_dialog.api_key" />
         <PasswordField fx:id="apiKeyField" />
     </children>
 </VBox>

@@ -18,6 +18,9 @@ public class ConfigService {
             ResultSet rs = ps.executeQuery();
             if (rs.next()) return rs.getString("value");
         } catch (SQLException e) {
+            if (isMissingAppConfigTable(e)) {
+                return null;
+            }
             LOGGER.error("Failed to read config key: " + key, e);
         }
         return null;
@@ -97,9 +100,22 @@ public class ConfigService {
         setConfigValue("last_selected_shop_id", shopId == null ? "" : String.valueOf(shopId));
     }
 
+    public static String getAppLanguage() {
+        return getConfigValue("app_language");
+    }
+
+    public static void setAppLanguage(String languageCode) {
+        setConfigValue("app_language", languageCode == null ? "" : languageCode);
+    }
+
     private static boolean isBusy(SQLException e) {
         String message = e.getMessage();
         return message != null && message.toLowerCase().contains("busy");
+    }
+
+    private static boolean isMissingAppConfigTable(SQLException e) {
+        String message = e.getMessage();
+        return message != null && message.toLowerCase().contains("no such table: app_config");
     }
 
     private static void sleepQuietly(long millis) {

@@ -10,9 +10,9 @@
         <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
     </padding>
     <children>
-        <Label text="ID (number) *" />
-        <TextField fx:id="idField" promptText="Id là số" />
-        <Label text="Tên danh mục *" />
-        <TextField fx:id="nameField" promptText="Tên danh mục" />
+        <Label text="%category_dialog.id" />
+        <TextField fx:id="idField" promptText="%category_dialog.id_prompt" />
+        <Label text="%category_dialog.name" />
+        <TextField fx:id="nameField" promptText="%category_dialog.name_prompt" />
     </children>
 </VBox>

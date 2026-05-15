@@ -1,8 +1,12 @@
 package com.tuandev.fbsbarcode;
 
+import com.tuandev.fbsbarcode.features.kiz.PdfDataMatrixReader;
 import com.tuandev.fbsbarcode.features.print.KizAttachmentCoordinator;
+import com.tuandev.fbsbarcode.integration.wb.WbSupplyWorkflow;
 import com.tuandev.fbsbarcode.shared.AlertService;
 import com.tuandev.fbsbarcode.shared.AppTaskExecutor;
+import com.tuandev.fbsbarcode.shared.I18nService;
+import com.tuandev.fbsbarcode.ui.workspace.HomeController;
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
@@ -13,10 +17,13 @@ import javafx.stage.Stage;
 import java.io.IOException;
 
 public class MainApplication extends Application {
+    private HomeController homeController;
+
     @Override
     public void start(Stage stage) throws IOException {
         FXMLLoader fxmlLoader = new FXMLLoader(MainApplication.class.getResource("/com/tuandev/fbsbarcode/ui/workspace/home-view.fxml"));
         Scene scene = new Scene(fxmlLoader.load());
+        homeController = fxmlLoader.getController();
         scene.getStylesheets().add(MainApplication.class.getResource("/com/tuandev/fbsbarcode/styles/theme.css").toExternalForm());
         stage.setTitle("WCode v" + BuildConfig.getAppVersion() + " (Zalo: 0335407670)");
 
@@ -26,10 +33,11 @@ public class MainApplication extends Application {
             boolean hasBackgroundWork = AppTaskExecutor.hasRunningTasks() || KizAttachmentCoordinator.getInstance().hasActiveJobs();
             if (hasBackgroundWork) {
                 event.consume();
+                I18nService i18n = I18nService.getInstance();
                 AlertService.showWarning(
-                        "Ứng dụng đang xử lý",
-                        "Không thể thoát ứng dụng lúc này",
-                        "Hệ thống vẫn đang đồng bộ dữ liệu hoặc gửi KIZ lên Wildberries ở nền. Vui lòng chờ tiến trình hoàn tất rồi mới tắt app."
+                        i18n.tr("app.busy.title"),
+                        i18n.tr("app.busy.header"),
+                        i18n.tr("app.busy.content")
                 );
             }
         });
@@ -40,6 +48,11 @@ public class MainApplication extends Application {
 
     @Override
     public void stop() {
+        if (homeController != null) {
+            homeController.dispose();
+        }
+        PdfDataMatrixReader.shutdown();
+        WbSupplyWorkflow.shutdownImageLoader();
         AppTaskExecutor.shutdown();
     }
 }

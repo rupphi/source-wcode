@@ -3,6 +3,7 @@
 <?import java.lang.String?>
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.Button?>
+<?import javafx.scene.control.ComboBox?>
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.image.Image?>
 <?import javafx.scene.image.ImageView?>
@@ -30,7 +31,7 @@
                 </Label>
             </children>
         </HBox>
-        <Button alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onSettings" prefHeight="30.0" prefWidth="190.0" text=" Дизайн шаблона">
+        <Button fx:id="templateButton" alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onSettings" prefHeight="30.0" prefWidth="190.0" text=" Дизайн шаблона">
             <styleClass>
                 <String fx:value="button" />
                 <String fx:value="btn-warning" />
@@ -39,7 +40,7 @@
                 <FontIcon iconLiteral="fth-edit" iconSize="16" iconColor="white"/>
             </graphic>
         </Button>
-        <Button alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onAddShop" prefHeight="30.0" prefWidth="190.0" text=" Добавить магазин">
+        <Button fx:id="addShopButton" alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onAddShop" prefHeight="30.0" prefWidth="190.0" text=" Добавить магазин">
             <styleClass>
                 <String fx:value="button" />
                 <String fx:value="btn-primary" />
@@ -49,7 +50,7 @@
             </graphic>
         </Button>
         <Label alignment="CENTER" maxWidth="1.7976931348623157E308" styleClass="text-muted text-bold" text="-" textAlignment="CENTER" />
-        <Button alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onPacking" prefHeight="30.0" prefWidth="190.0" text=" Упаковка WB">
+        <Button fx:id="packingButton" alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onPacking" prefHeight="30.0" prefWidth="190.0" text=" Упаковка WB">
             <styleClass>
                 <String fx:value="button" />
                 <String fx:value="btn-primary" />
@@ -68,6 +69,12 @@
             </graphic>
         </Button>
         <Pane VBox.vgrow="ALWAYS" />
+        <VBox alignment="CENTER_LEFT" spacing="6.0">
+            <children>
+                <Label fx:id="languageLabel" styleClass="text-muted text-bold" text="Язык" />
+                <ComboBox fx:id="languageComboBox" prefHeight="30.0" prefWidth="190.0" />
+            </children>
+        </VBox>
     </children>
     <padding>
         <Insets bottom="8.0" left="8.0" right="8.0" top="8.0" />

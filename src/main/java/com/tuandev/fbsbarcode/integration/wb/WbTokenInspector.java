@@ -3,6 +3,7 @@ package com.tuandev.fbsbarcode.integration.wb;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.tuandev.fbsbarcode.models.Shop;
+import com.tuandev.fbsbarcode.shared.I18nService;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -18,13 +19,14 @@ public final class WbTokenInspector {
     }
 
     public static TokenStatus inspect(Shop shop) {
+        I18nService i18n = I18nService.getInstance();
         if (shop == null || shop.getApiKey() == null || shop.getApiKey().isBlank()) {
-            return TokenStatus.invalidToken("Token WB không hợp lệ hoặc đang để trống");
+            return TokenStatus.invalidToken(i18n.tr("wb.token.invalid_or_empty"));
         }
         try {
             String[] parts = shop.getApiKey().trim().split("\\.");
             if (parts.length < 2) {
-                return TokenStatus.invalidToken("Token WB không đúng định dạng JWT");
+                return TokenStatus.invalidToken(i18n.tr("wb.token.invalid_format"));
             }
 
             byte[] payloadBytes = Base64.getUrlDecoder().decode(parts[1]);
@@ -40,9 +42,9 @@ public final class WbTokenInspector {
             }
 
             String formatted = LocalDateTime.ofInstant(expiresAt, ZoneId.systemDefault()).format(FORMATTER);
-            return TokenStatus.expiredToken("Token WB của cửa hàng đã hết hạn lúc " + formatted + ". Vui lòng cập nhật lại token.");
+            return TokenStatus.expiredToken(java.text.MessageFormat.format(i18n.tr("wb.token.expired_at"), formatted));
         } catch (Exception ex) {
-            return TokenStatus.invalidToken("Không thể đọc hạn token WB. Vui lòng kiểm tra lại token.");
+            return TokenStatus.invalidToken(i18n.tr("wb.token.unreadable"));
         }
     }
 

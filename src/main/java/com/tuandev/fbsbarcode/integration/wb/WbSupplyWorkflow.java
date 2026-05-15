@@ -289,4 +289,9 @@ public class WbSupplyWorkflow {
         IMAGE_CACHE.clear();
         FAILED_IMAGE_URLS.clear();
     }
+
+    public static void shutdownImageLoader() {
+        IMAGE_EXECUTOR.shutdownNow();
+        clearImageCache();
+    }
 }

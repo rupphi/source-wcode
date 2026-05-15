@@ -13,7 +13,7 @@
     <children>
         <HBox alignment="CENTER_LEFT" spacing="8.0">
             <children>
-                <Label text="Поставки" styleClass="h3" />
+                <Label fx:id="titleLabel" text="Поставки" styleClass="h3" />
                 <ProgressIndicator fx:id="supplyLoading" maxHeight="20.0" maxWidth="20.0" prefHeight="20.0" prefWidth="20.0" visible="false" />
                 <Button fx:id="refetchButton" mnemonicParsing="false" onAction="#onRefetch" text="Обновить" />
             </children>

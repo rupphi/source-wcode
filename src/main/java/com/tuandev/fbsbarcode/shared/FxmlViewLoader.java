@@ -20,7 +20,9 @@ public final class FxmlViewLoader {
         if (resource == null) {
             throw new IllegalStateException("Không tìm thấy FXML: " + resourceName);
         }
-        return new FXMLLoader(resource);
+        FXMLLoader loader = new FXMLLoader(resource);
+        loader.setResources(I18nService.getInstance().getBundle());
+        return loader;
     }
 
     public static <T> T load(FXMLLoader loader) {

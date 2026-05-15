@@ -85,4 +85,8 @@ public class PdfDataMatrixReader {
             return null;
         }
     }
+
+    public static void shutdown() {
+        DECODE_EXECUTOR.shutdownNow();
+    }
 }

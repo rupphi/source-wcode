@@ -1,6 +1,7 @@
 package com.tuandev.fbsbarcode.integration.update;
 
 import com.tuandev.fbsbarcode.shared.AppPaths;
+import com.tuandev.fbsbarcode.shared.I18nService;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -22,13 +23,15 @@ public class UpdateInstallerService {
     public boolean supportsInAppInstall(UpdateInfo info) {
         String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
         String url = info == null ? null : info.getBestDownloadUrl();
-        return os.contains("win") && url != null && url.toLowerCase(Locale.ROOT).endsWith(".exe");
+        return os.contains("win")
+                && url != null
+                && (url.toLowerCase(Locale.ROOT).endsWith(".exe") || url.toLowerCase(Locale.ROOT).endsWith(".msi"));
     }
 
-    public Path downloadInstaller(UpdateInfo info) throws IOException {
+    public Path downloadInstaller(UpdateInfo info, ProgressListener progressListener) throws IOException {
         String url = info.getBestDownloadUrl();
         if (url == null || url.isBlank()) {
-            throw new IOException("Không tìm thấy link tải bản cập nhật");
+            throw new IOException(I18nService.getInstance().tr("update.error.missing_url"));
         }
 
         String extension = guessExtension(url);
@@ -45,11 +48,24 @@ public class UpdateInstallerService {
 
         try (Response response = CLIENT.newCall(request).execute()) {
             if (!response.isSuccessful() || response.body() == null) {
-                throw new IOException("Tải bản cập nhật thất bại: HTTP " + response.code());
+                throw new IOException(I18nService.getInstance().tr("update.error.download_failed") + " HTTP " + response.code());
+            }
+            long totalBytes = response.body().contentLength();
+            if (progressListener != null) {
+                progressListener.onProgress(0L, totalBytes);
             }
             try (InputStream input = response.body().byteStream();
                  OutputStream output = Files.newOutputStream(installerFile)) {
-                input.transferTo(output);
+                byte[] buffer = new byte[8192];
+                long downloadedBytes = 0L;
+                int read;
+                while ((read = input.read(buffer)) != -1) {
+                    output.write(buffer, 0, read);
+                    downloadedBytes += read;
+                    if (progressListener != null) {
+                        progressListener.onProgress(downloadedBytes, totalBytes);
+                    }
+                }
             }
         }
 
@@ -57,15 +73,15 @@ public class UpdateInstallerService {
     }
 
     public void launchInstallerAfterExit(Path installerFile) throws IOException {
-        Path script = installerFile.getParent().resolve("run-update.cmd");
-        String scriptContent = """
-                @echo off
-                timeout /t 2 /nobreak > nul
-                start "" "%s"
-                del "%%~f0"
-                """.formatted(installerFile.toAbsolutePath());
-        Files.writeString(script, scriptContent);
-        new ProcessBuilder("cmd", "/c", "start", "", script.toAbsolutePath().toString()).start();
+        String escapedInstaller = installerFile.toAbsolutePath().toString().replace("'", "''");
+        String command = "Start-Sleep -Seconds 2; Start-Process -FilePath '" + escapedInstaller + "'";
+        new ProcessBuilder(
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy", "Bypass",
+                "-WindowStyle", "Hidden",
+                "-Command", command
+        ).start();
     }
 
     private String guessExtension(String url) {
@@ -73,5 +89,10 @@ public class UpdateInstallerService {
         if (lower.endsWith(".msi")) return ".msi";
         if (lower.endsWith(".zip")) return ".zip";
         return ".exe";
+    }
+
+    @FunctionalInterface
+    public interface ProgressListener {
+        void onProgress(long downloadedBytes, long totalBytes);
     }
 }

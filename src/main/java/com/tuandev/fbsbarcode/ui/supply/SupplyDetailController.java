@@ -1,6 +1,7 @@
 package com.tuandev.fbsbarcode.ui.supply;
 
 import com.tuandev.fbsbarcode.models.Order;
+import com.tuandev.fbsbarcode.shared.I18nService;
 import javafx.fxml.FXML;
 import javafx.geometry.Pos;
 import javafx.beans.property.SimpleObjectProperty;
@@ -22,7 +23,6 @@ import java.util.List;
 import java.util.function.Consumer;
 
 public class SupplyDetailController {
-    private static final String DEFAULT_STICKER_LOADING_TEXT = "Загрузка стикеров WB...";
     private boolean updatingSortControls;
 
     @FXML
@@ -156,7 +156,8 @@ public class SupplyDetailController {
         centerColumn(stickerCodeTC);
         disableColumnSorting();
         bindSortCheckboxes();
-        setSupplyInfo("Chưa chọn supply", "Chọn một supply để xem đơn hàng");
+        applyTranslations();
+        setSupplyInfo(I18nService.getInstance().tr("supply.not_selected"), I18nService.getInstance().tr("supply.select_prompt"));
         setStickerLoading(false);
         setOrders(List.of());
         setPrintEnabled(false);
@@ -226,21 +227,21 @@ public class SupplyDetailController {
             orderLoadingBox.setManaged(loading);
         }
         if (orderLoadingLabel != null) {
-            orderLoadingLabel.setText("Загрузка заказов и данных поставки...");
+            orderLoadingLabel.setText(I18nService.getInstance().tr("supply.loading_orders"));
         }
         orderTable.setDisable(loading);
         sortOptionsBox.setDisable(loading);
     }
 
     public void setStickerLoading(boolean loading) {
-        setStickerLoading(loading, DEFAULT_STICKER_LOADING_TEXT);
+        setStickerLoading(loading, I18nService.getInstance().tr("supply.loading_stickers"));
     }
 
     public void setStickerLoading(boolean loading, String message) {
         stickerLoading.setVisible(loading);
         stickerLoadingBox.setVisible(loading);
         stickerLoadingBox.setManaged(loading);
-        stickerLoadingLabel.setText(message == null || message.isBlank() ? DEFAULT_STICKER_LOADING_TEXT : message);
+        stickerLoadingLabel.setText(message == null || message.isBlank() ? I18nService.getInstance().tr("supply.loading_stickers") : message);
     }
 
     public void setOnSortOptionsChanged(Consumer<OrderSortOptions> onSortOptionsChanged) {
@@ -257,6 +258,33 @@ public class SupplyDetailController {
 
     public void setOnDeliver(Runnable onDeliver) {
         this.onDeliver = onDeliver;
+    }
+
+    public void applyTranslations() {
+        I18nService i18n = I18nService.getInstance();
+        printButton.setText(i18n.tr("supply.print"));
+        deliverButton.setText(i18n.tr("supply.deliver"));
+        sortBySubjectCheckBox.setText(i18n.tr("supply.sort.subject"));
+        sortByArticleCheckBox.setText(i18n.tr("supply.sort.article"));
+        sortByColorCheckBox.setText(i18n.tr("supply.sort.color"));
+        sortBySizeCheckBox.setText(i18n.tr("supply.sort.size"));
+        noTC.setText(i18n.tr("supply.col.no"));
+        idTC.setText(i18n.tr("supply.col.task_number"));
+        imageTC.setText(i18n.tr("supply.col.photo"));
+        nameTC.setText(i18n.tr("supply.col.name"));
+        subjectNameTC.setText(i18n.tr("supply.col.category"));
+        articleTC.setText(i18n.tr("supply.col.article"));
+        colorTC.setText(i18n.tr("supply.col.color"));
+        sizeTC.setText(i18n.tr("supply.col.size"));
+        stickerTC.setText(i18n.tr("supply.col.sticker"));
+        barcodeTC.setText(i18n.tr("supply.col.barcode"));
+        stickerCodeTC.setText(i18n.tr("supply.col.sticker_code"));
+        if (orderLoadingLabel != null) {
+            orderLoadingLabel.setText(i18n.tr("supply.loading_orders"));
+        }
+        if (stickerLoadingLabel != null && !stickerLoadingBox.isVisible()) {
+            stickerLoadingLabel.setText(i18n.tr("supply.loading_stickers"));
+        }
     }
 
     public void setPrintEnabled(boolean enabled) {

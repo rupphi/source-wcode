@@ -6,6 +6,7 @@ import com.tuandev.fbsbarcode.features.print.PrintTemplateElement;
 import com.tuandev.fbsbarcode.features.print.PrintTemplateService;
 import com.tuandev.fbsbarcode.features.print.PrintTextAlign;
 import com.tuandev.fbsbarcode.shared.AlertService;
+import com.tuandev.fbsbarcode.shared.I18nService;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.geometry.Insets;
@@ -44,6 +45,7 @@ public class PrintTemplateDesignerController implements Initializable {
 
     private final PrintTemplateService templateService = new PrintTemplateService();
     private final List<PrintTemplateService.ElementPaletteItem> paletteItems = templateService.getPaletteItems();
+    private final I18nService i18n = I18nService.getInstance();
 
     @FXML
     private ComboBox<PrintTemplate> templateComboBox;
@@ -134,7 +136,7 @@ public class PrintTemplateDesignerController implements Initializable {
                     setText(null);
                     return;
                 }
-                setText(item.getName() + (item.isDefaultTemplate() ? " (mặc định)" : ""));
+                setText(item.getName() + (item.isDefaultTemplate() ? " (" + i18n.tr("template.default_suffix") + ")" : ""));
             }
         });
         templateComboBox.setButtonCell(templateComboBox.getCellFactory().call(null));
@@ -148,7 +150,7 @@ public class PrintTemplateDesignerController implements Initializable {
                 });
         addElementComboBox.setButtonCell(addElementComboBox.getCellFactory().call(null));
         addElementComboBox.getItems().setAll(paletteItems);
-        addElementComboBox.setPromptText("Chọn để thêm thành phần");
+        addElementComboBox.setPromptText(i18n.tr("template.add_element_prompt"));
 
         elementListView.setCellFactory(list -> new ListCell<>() {
             @Override
@@ -184,7 +186,11 @@ public class PrintTemplateDesignerController implements Initializable {
 
     @FXML
     private void onCreateTemplate() {
-        promptTemplateName("Tên template mới", "Template mới", "Template", name -> {
+        promptTemplateName(
+                i18n.tr("template.dialog.create.title"),
+                i18n.tr("template.dialog.create.header"),
+                i18n.tr("template.dialog.create.initial"),
+                name -> {
             PrintTemplate template = templateService.createTemplate(name);
             reloadTemplates();
             selectTemplate(template.getId());
@@ -196,7 +202,11 @@ public class PrintTemplateDesignerController implements Initializable {
         if (workingTemplate == null) {
             return;
         }
-        promptTemplateName("Nhân bản template", "Tên template mới", workingTemplate.getName() + " Copy", name -> {
+        promptTemplateName(
+                i18n.tr("template.dialog.duplicate.title"),
+                i18n.tr("template.dialog.duplicate.header"),
+                workingTemplate.getName() + " " + i18n.tr("template.dialog.duplicate.suffix"),
+                name -> {
             PrintTemplate template = templateService.duplicateTemplate(workingTemplate.getId(), name);
             reloadTemplates();
             selectTemplate(template.getId());
@@ -208,7 +218,11 @@ public class PrintTemplateDesignerController implements Initializable {
         if (workingTemplate == null) {
             return;
         }
-        promptTemplateName("Đổi tên template", "Tên mới", workingTemplate.getName(), name -> {
+        promptTemplateName(
+                i18n.tr("template.dialog.rename.title"),
+                i18n.tr("template.dialog.rename.header"),
+                workingTemplate.getName(),
+                name -> {
             templateService.renameTemplate(workingTemplate.getId(), name);
             reloadTemplates();
             selectTemplate(workingTemplate.getId());
@@ -345,7 +359,7 @@ public class PrintTemplateDesignerController implements Initializable {
         workingTemplate.getElements().sort(Comparator.comparingInt(PrintTemplateElement::getZIndex));
         elementListView.getItems().setAll(workingTemplate.getElements());
         designPane.getChildren().clear();
-        templateMetaLabel.setText(String.format("58x40 mm | %.2f x %.2f pt | %d thành phần",
+        templateMetaLabel.setText(String.format(i18n.tr("template.meta"),
                 workingTemplate.getPageWidth(),
                 workingTemplate.getPageHeight(),
                 workingTemplate.getElements().size()));
@@ -630,38 +644,38 @@ public class PrintTemplateDesignerController implements Initializable {
                     if (element.getType() == PrintElementType.STATIC_TEXT) {
                         String trimmed = newValue == null ? "" : newValue.trim();
                         element.setContent(trimmed);
-                        element.setLabel(trimmed.isBlank() ? "Text cố định" : trimmed);
+                        element.setLabel(trimmed.isBlank() ? i18n.tr("template.palette.static_text") : trimmed);
                     }
                 });
             }
         });
         bindNumericField(
                 xField,
-                "X",
+                i18n.tr("template.field.x"),
                 (element, value) -> element.setX(clamp(value, 0, PrintTemplateService.PAGE_WIDTH - element.getWidth())),
                 value -> value >= 0 && value <= PrintTemplateService.PAGE_WIDTH
         );
         bindNumericField(
                 yField,
-                "Y",
+                i18n.tr("template.field.y"),
                 (element, value) -> element.setY(clamp(value, 0, PrintTemplateService.PAGE_HEIGHT - element.getHeight())),
                 value -> value >= 0 && value <= PrintTemplateService.PAGE_HEIGHT
         );
         bindNumericField(
                 widthField,
-                "Rộng",
+                i18n.tr("template.field.width"),
                 (element, value) -> element.setWidth(clamp(value, 0, PrintTemplateService.PAGE_WIDTH - element.getX())),
                 value -> value >= 0 && value <= PrintTemplateService.PAGE_WIDTH
         );
         bindNumericField(
                 heightField,
-                "Cao",
+                i18n.tr("template.field.height"),
                 (element, value) -> element.setHeight(clamp(value, 0, PrintTemplateService.PAGE_HEIGHT - element.getY())),
                 value -> value >= 0 && value <= PrintTemplateService.PAGE_HEIGHT
         );
         bindNumericField(
                 fontSizeField,
-                "Font",
+                i18n.tr("template.field.font"),
                 (element, value) -> element.setFontSize((float) value),
                 value -> value >= 0 && value <= 200
         );
@@ -708,12 +722,12 @@ public class PrintTemplateDesignerController implements Initializable {
         try {
             value = Double.parseDouble(raw);
         } catch (NumberFormatException ex) {
-            showFieldError(field, label + " phải là số hợp lệ");
+            showFieldError(field, java.text.MessageFormat.format(i18n.tr("template.validation.number"), label));
             return;
         }
 
         if (!validator.isValid(value)) {
-            showFieldError(field, label + " phải từ 0 trở lên và nằm trong giới hạn của tem");
+            showFieldError(field, java.text.MessageFormat.format(i18n.tr("template.validation.range"), label));
             return;
         }
 
@@ -851,7 +865,7 @@ public class PrintTemplateDesignerController implements Initializable {
         TextInputDialog dialog = new TextInputDialog(initialValue);
         dialog.setTitle(title);
         dialog.setHeaderText(header);
-        dialog.setContentText("Tên:");
+        dialog.setContentText(i18n.tr("template.dialog.name"));
         Optional<String> result = dialog.showAndWait();
         result.map(String::trim)
                 .filter(value -> !value.isBlank())

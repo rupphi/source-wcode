@@ -1,6 +1,7 @@
 package com.tuandev.fbsbarcode.ui.supply;
 
 import com.tuandev.fbsbarcode.integration.wb.WbSupplySummary;
+import com.tuandev.fbsbarcode.shared.I18nService;
 import javafx.fxml.FXML;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ComboBox;
@@ -12,6 +13,9 @@ import java.util.List;
 import java.util.function.Consumer;
 
 public class SupplyListController {
+    @FXML
+    private Label titleLabel;
+
     @FXML
     private ComboBox<WbSupplySummary> supplyComboBox;
 
@@ -43,6 +47,7 @@ public class SupplyListController {
                 notifySelection(newValue);
             }
         });
+        applyTranslations();
         setSupplies(List.of());
     }
 
@@ -163,5 +168,13 @@ public class SupplyListController {
         boolean show = !supplyLoading.isVisible() && supplyComboBox.getItems().isEmpty();
         emptyStateLabel.setVisible(show);
         emptyStateLabel.setManaged(show);
+    }
+
+    public void applyTranslations() {
+        I18nService i18n = I18nService.getInstance();
+        titleLabel.setText(i18n.tr("supply_list.title"));
+        refetchButton.setText(i18n.tr("supply_list.refetch"));
+        supplyComboBox.setPromptText(i18n.tr("supply_list.prompt"));
+        emptyStateLabel.setText(i18n.tr("supply_list.empty"));
     }
 }

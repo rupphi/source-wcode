@@ -16,6 +16,7 @@ import com.tuandev.fbsbarcode.features.kiz.CategoryWorkflow;
 import com.tuandev.fbsbarcode.shared.ConfigService;
 import com.tuandev.fbsbarcode.shared.FxmlViewLoader;
 import com.tuandev.fbsbarcode.shared.AppPaths;
+import com.tuandev.fbsbarcode.shared.I18nService;
 import com.tuandev.fbsbarcode.features.print.KizAttachmentCoordinator;
 import com.tuandev.fbsbarcode.features.print.PrintJobOptions;
 import com.tuandev.fbsbarcode.features.print.PrintOptionsDialogService;
@@ -64,12 +65,14 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URL;
 import java.sql.SQLException;
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.ResourceBundle;
+import java.util.function.Consumer;
 
 public class HomeController implements Initializable {
     private static final Logger LOGGER = LoggerFactory.getLogger(HomeController.class);
@@ -93,6 +96,7 @@ public class HomeController implements Initializable {
     private final WorkspaceActivityTracker activityTracker = new WorkspaceActivityTracker();
     private final UpdateService updateService = new UpdateService();
     private final UpdateInstallerService updateInstallerService = new UpdateInstallerService();
+    private final I18nService i18nService = I18nService.getInstance();
 
     public StackPane sidebarContainer;
     public StackPane headerContainer;
@@ -113,6 +117,11 @@ public class HomeController implements Initializable {
     private SupplyDetailController supplyDetailController;
     private KizPanelController kizPanelController;
     private WbSupplySummary loadedSupplySummary;
+    private final Consumer<com.tuandev.fbsbarcode.shared.AppLanguage> languageListener =
+            language -> Platform.runLater(this::applyTranslations);
+    private final Consumer<KizAttachmentCoordinator.KizAttachmentProgress> kizProgressListener =
+            progress -> Platform.runLater(() -> onKizAttachmentProgress(progress));
+    private boolean disposed;
 
     @Override
     public void initialize(URL url, ResourceBundle resourceBundle) {
@@ -131,6 +140,7 @@ public class HomeController implements Initializable {
         initializeSupplyViews();
         initializeKizPanel();
         initializeBackgroundKizProgress();
+        i18nService.addListener(languageListener);
 
         contentPane.setVisible(false);
         showPacking();
@@ -149,11 +159,13 @@ public class HomeController implements Initializable {
         printHistoryView = FxmlViewLoader.load(printHistoryLoader);
         printHistoryController = printHistoryLoader.getController();
         printHistoryController.setOnReprint(this::reprintHistoryJob);
+        printHistoryController.applyTranslations();
 
         FXMLLoader packingLoader = FxmlViewLoader.loader(PackingController.class, "packing-view.fxml");
         packingView = FxmlViewLoader.load(packingLoader);
         packingController = packingLoader.getController();
         packingController.setOnPrintSupply(this::openSupplyForPrint);
+        packingController.applyTranslations();
     }
 
     private void showPrintHistory() {
@@ -267,8 +279,8 @@ public class HomeController implements Initializable {
     }
 
     private void preparePdfSaveChooser() {
-        fileChooser.setTitle("Save PDF File");
-        fileChooser.getExtensionFilters().setAll(new FileChooser.ExtensionFilter("PDF Files", "*.pdf"));
+        fileChooser.setTitle(i18nService.tr("filechooser.save_pdf"));
+        fileChooser.getExtensionFilters().setAll(new FileChooser.ExtensionFilter(i18nService.tr("filechooser.pdf"), "*.pdf"));
         File downloadsDirectory = AppPaths.preferredDownloadsDirectory();
         if (downloadsDirectory != null) {
             fileChooser.setInitialDirectory(downloadsDirectory);
@@ -295,26 +307,59 @@ public class HomeController implements Initializable {
     }
 
     private void startInstallerUpdate(UpdateInfo info) {
+        UpdateDialogService dialogService = new UpdateDialogService();
         Task<java.nio.file.Path> task = new Task<>() {
             @Override
             protected java.nio.file.Path call() throws Exception {
-                return updateInstallerService.downloadInstaller(info);
+                updateMessage(i18nService.tr("update.progress.connecting"));
+                updateProgress(-1, 1);
+                return updateInstallerService.downloadInstaller(info, (downloadedBytes, totalBytes) -> {
+                    if (totalBytes > 0) {
+                        updateProgress(downloadedBytes, totalBytes);
+                        updateMessage(String.format(i18nService.tr("update.progress.downloaded"),
+                                formatBytes(downloadedBytes),
+                                formatBytes(totalBytes)));
+                    } else {
+                        updateProgress(-1, 1);
+                        updateMessage(i18nService.tr("update.progress.downloading"));
+                    }
+                });
             }
         };
+        var progressDialog = dialogService.showDownloadProgressDialog(info, task);
         task.setOnFailed(e -> {
+            progressDialog.close();
             LOGGER.error("Không thể tải bản cập nhật {}", info.getVersion(), task.getException());
-            AlertService.showError("Không thể tải bản cập nhật. Vui lòng thử lại sau.");
+            AlertService.showError(i18nService.tr("update.error.download_generic"));
         });
         task.setOnSucceeded(e -> {
+            progressDialog.close();
             try {
                 updateInstallerService.launchInstallerAfterExit(task.getValue());
                 Platform.exit();
             } catch (IOException ex) {
                 LOGGER.error("Không thể khởi chạy installer cập nhật {}", info.getVersion(), ex);
-                AlertService.showError("Đã tải xong nhưng không thể mở installer cập nhật.");
+                AlertService.showError(i18nService.tr("update.error.launch_failed"));
             }
         });
+        progressDialog.show();
         AppTaskExecutor.execute(task);
+    }
+
+    private String formatBytes(long bytes) {
+        if (bytes < 1024) {
+            return bytes + " B";
+        }
+        double kb = bytes / 1024.0;
+        if (kb < 1024) {
+            return String.format("%.1f KB", kb);
+        }
+        double mb = kb / 1024.0;
+        if (mb < 1024) {
+            return String.format("%.1f MB", mb);
+        }
+        double gb = mb / 1024.0;
+        return String.format("%.2f GB", gb);
     }
 
     public void onAddShop(ActionEvent actionEvent) {
@@ -352,7 +397,11 @@ public class HomeController implements Initializable {
             return;
         }
         if (state.getDisplayedOrders().isEmpty()) {
-            AlertService.showWarning("Thông báo", "Vui lòng cập nhật đơn hàng", null);
+            AlertService.showWarning(
+                    i18nService.tr("common.notice"),
+                    i18nService.tr("workspace.warning.refresh_orders.title"),
+                    null
+            );
             return;
         }
         if (!printAuthorizationDialogService.ensureAuthorized()) {
@@ -396,7 +445,7 @@ public class HomeController implements Initializable {
         task.setOnRunning(e -> {
             markShopRunning(shop.getId(), true);
             if (supplyDetailController != null) {
-                supplyDetailController.setStickerLoading(true, "Подготовка PDF и стикеров WB...");
+                supplyDetailController.setStickerLoading(true, i18nService.tr("supply.preparing_pdf"));
             }
         });
         task.setOnFailed(e -> {
@@ -456,17 +505,17 @@ public class HomeController implements Initializable {
         int shopId = shop.getId();
         if (activityTracker.isSyncing(shopId) || kizAttachmentCoordinator.hasActiveJobForShop(shopId)) {
             AlertService.showWarning(
-                    "Đang xử lý",
-                    "Không thể xóa cửa hàng lúc này",
-                    "Cửa hàng " + shop.getName() + " đang đồng bộ dữ liệu WB hoặc gửi KIZ lên Wildberries. Vui lòng chờ hoàn tất rồi thử lại."
+                    i18nService.tr("workspace.delete_shop.busy.title"),
+                    i18nService.tr("workspace.delete_shop.busy.header"),
+                    MessageFormat.format(i18nService.tr("workspace.delete_shop.busy.content"), shop.getName())
             );
             return;
         }
 
         Optional<ButtonType> result = AlertService.showConfirmation(
-                "Xóa cửa hàng",
-                "Xóa cửa hàng " + shop.getName() + "?",
-                "Toàn bộ dữ liệu KIZ và dữ liệu đồng bộ WB của shop này sẽ bị xóa."
+                i18nService.tr("workspace.delete_shop.confirm.title"),
+                MessageFormat.format(i18nService.tr("workspace.delete_shop.confirm.header"), shop.getName()),
+                i18nService.tr("workspace.delete_shop.confirm.content")
         );
         if (result.isEmpty() || result.get() != ButtonType.OK) {
             return;
@@ -502,7 +551,11 @@ public class HomeController implements Initializable {
         Shop shop = requireSelectedShop();
         if (shop != null) {
             if (!state.isSelectedShopTokenValid()) {
-                AlertService.showWarning("Token WB hết hạn", "Không thể đồng bộ", state.getSelectedShopTokenMessage());
+                AlertService.showWarning(
+                        i18nService.tr("wb.token.title"),
+                        i18nService.tr("workspace.sync.token_invalid"),
+                        state.getSelectedShopTokenMessage()
+                );
                 return;
             }
             startShopSync(shop, true);
@@ -570,8 +623,8 @@ public class HomeController implements Initializable {
         if (shop == null || category == null) {
             return;
         }
-        fileChooser.setTitle("Open PDF File");
-        fileChooser.getExtensionFilters().setAll(new FileChooser.ExtensionFilter("PDF Files", "*.pdf"));
+        fileChooser.setTitle(i18nService.tr("filechooser.open_pdf"));
+        fileChooser.getExtensionFilters().setAll(new FileChooser.ExtensionFilter(i18nService.tr("filechooser.pdf"), "*.pdf"));
         File file = fileChooser.showOpenDialog(null);
         if (file == null) {
             return;
@@ -604,10 +657,10 @@ public class HomeController implements Initializable {
         }
 
         Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.setTitle("Xóa danh mục");
-        alert.setHeaderText("Bạn chắc chắn muốn xóa danh mục " + category.getName() + " không?");
-        ButtonType buttonTypeConfirm = new ButtonType("Xóa", ButtonBar.ButtonData.YES);
-        ButtonType buttonTypeCancel = new ButtonType("Hủy", ButtonBar.ButtonData.CANCEL_CLOSE);
+        alert.setTitle(i18nService.tr("category.delete.title"));
+        alert.setHeaderText(MessageFormat.format(i18nService.tr("category.delete.header"), category.getName()));
+        ButtonType buttonTypeConfirm = new ButtonType(i18nService.tr("common.delete"), ButtonBar.ButtonData.YES);
+        ButtonType buttonTypeCancel = new ButtonType(i18nService.tr("common.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
         alert.getButtonTypes().setAll(buttonTypeConfirm, buttonTypeCancel);
 
         Optional<ButtonType> result = alert.showAndWait();
@@ -631,10 +684,10 @@ public class HomeController implements Initializable {
                 }
             }
         } catch (NumberFormatException e) {
-            AlertService.showError("Id là số nguyên");
+            AlertService.showError(i18nService.tr("category.error.id_number"));
         } catch (SQLException e) {
             LOGGER.error("Không thể thêm category", e);
-            AlertService.showError("ID đã tồn tại! Vui lòng nhập ID khác");
+            AlertService.showError(i18nService.tr("category.error.id_exists"));
         }
     }
 
@@ -681,7 +734,11 @@ public class HomeController implements Initializable {
         }
         if (!state.isSelectedShopTokenValid()) {
             if (manual) {
-                AlertService.showWarning("Token WB hết hạn", "Không thể đồng bộ", state.getSelectedShopTokenMessage());
+                AlertService.showWarning(
+                        i18nService.tr("wb.token.title"),
+                        i18nService.tr("workspace.sync.token_invalid"),
+                        state.getSelectedShopTokenMessage()
+                );
             }
             return;
         }
@@ -772,9 +829,9 @@ public class HomeController implements Initializable {
         long requestToken = state.nextSupplyRequestToken();
         state.setLoadedSupplyId(supply.getSupplyId());
         state.setLoadedSupplyName(supply.getName());
-        supplyDetailController.setLoading(true);
+            supplyDetailController.setLoading(true);
         refreshCurrentKizAttachmentProgress();
-        supplyDetailController.setSupplyInfo("Supply " + supply.getSupplyId(), "");
+        supplyDetailController.setSupplyInfo(formatSupplyTitle(supply), "");
         supplyDetailController.setSupplyStatus(formatSupplyStatus(supply));
 
         Task<List<Order>> localTask = new Task<>() {
@@ -798,7 +855,7 @@ public class HomeController implements Initializable {
             }
             supplyDetailController.setLoading(false);
             state.setLoadedOrdersRaw(localTask.getValue());
-            supplyDetailController.setSupplyInfo("Supply " + supply.getSupplyId(), "");
+            supplyDetailController.setSupplyInfo(formatSupplyTitle(supply), "");
             supplyDetailController.setSupplyStatus(formatSupplyStatus(supply));
             applySortAndDisplayOrders();
             updateExportAvailability();
@@ -828,7 +885,7 @@ public class HomeController implements Initializable {
             }
             state.setLoadedOrdersRaw(refreshTask.getValue());
             applySortAndDisplayOrders();
-            supplyDetailController.setSupplyInfo("Supply " + supply.getSupplyId(), "");
+            supplyDetailController.setSupplyInfo(formatSupplyTitle(supply), "");
             supplyDetailController.setSupplyStatus(formatSupplyStatus(supply));
             if (supplyListController != null) {
                 supplyListController.updateSupplySummary(new WbSupplySummary(
@@ -891,6 +948,9 @@ public class HomeController implements Initializable {
         shopSidebarController.setOnOpenSettings(() -> onSettings(new ActionEvent()));
         shopSidebarController.setOnPacking(this::showPacking);
         shopSidebarController.setOnPrintHistory(this::showPrintHistory);
+        shopSidebarController.setOnLanguageChanged(i18nService::setLanguage);
+        shopSidebarController.setSelectedLanguage(i18nService.getCurrentLanguage());
+        shopSidebarController.applyTranslations();
         sidebarContainer.getChildren().setAll(root);
     }
 
@@ -902,6 +962,7 @@ public class HomeController implements Initializable {
         workspaceHeaderController.setOnEditShop(() -> onUpdateShop(new ActionEvent()));
         workspaceHeaderController.setOnDeleteShop(() -> onDeleteShop(new ActionEvent()));
         workspaceHeaderController.setOnShopSelected(this::selectShop);
+        workspaceHeaderController.applyTranslations();
         headerContainer.getChildren().setAll(root);
     }
 
@@ -911,6 +972,7 @@ public class HomeController implements Initializable {
         supplyListController = supplyListLoader.getController();
         supplyListController.setOnSupplySelected(this::loadSupply);
         supplyListController.setOnRefetchRequested(this::onRefetchSupplies);
+        supplyListController.applyTranslations();
         supplyManagementController.supplyListContainer.getChildren().setAll(supplyListRoot);
 
         FXMLLoader supplyDetailLoader = FxmlViewLoader.loader(SupplyDetailController.class, "supply-detail-view.fxml");
@@ -924,6 +986,7 @@ public class HomeController implements Initializable {
         supplyDetailController.setOnPrint(() -> onExport(new ActionEvent()));
         supplyDetailController.setOnBack(this::showPacking);
         supplyDetailController.setOnDeliver(this::deliverLoadedSupply);
+        supplyDetailController.applyTranslations();
         supplyManagementController.supplyDetailContainer.getChildren().setAll(supplyDetailRoot);
     }
 
@@ -937,6 +1000,37 @@ public class HomeController implements Initializable {
 
     private void renderShops() {
         workspaceHeaderController.setShops(state.getShops(), state.getSelectedShop());
+    }
+
+    private void applyTranslations() {
+        if (disposed) {
+            return;
+        }
+        if (shopSidebarController != null) {
+            shopSidebarController.setSelectedLanguage(i18nService.getCurrentLanguage());
+            shopSidebarController.applyTranslations();
+        }
+        if (workspaceHeaderController != null) {
+            workspaceHeaderController.applyTranslations();
+        }
+        if (packingController != null) {
+            packingController.applyTranslations();
+        }
+        if (printHistoryController != null) {
+            printHistoryController.applyTranslations();
+        }
+        if (supplyListController != null) {
+            supplyListController.applyTranslations();
+        }
+        if (supplyDetailController != null) {
+            supplyDetailController.applyTranslations();
+            if (state.getLoadedSupplyId() == null) {
+                supplyDetailController.setSupplyInfo(
+                        i18nService.tr("supply.not_selected"),
+                        i18nService.tr("supply.select_prompt")
+                );
+            }
+        }
     }
 
     private void clearWorkspaceView() {
@@ -995,7 +1089,11 @@ public class HomeController implements Initializable {
             return;
         }
         if (!state.isSelectedShopTokenValid()) {
-            AlertService.showWarning("Token WB hết hạn", "Không thể refetch supply", state.getSelectedShopTokenMessage());
+            AlertService.showWarning(
+                    i18nService.tr("wb.token.title"),
+                    i18nService.tr("workspace.refetch.token_invalid"),
+                    state.getSelectedShopTokenMessage()
+            );
             return;
         }
         startSupplyListRefetch(shop);
@@ -1062,7 +1160,7 @@ public class HomeController implements Initializable {
 
     private Shop requireSelectedShop() {
         if (state.getSelectedShop() == null) {
-            AlertService.showError("Vui lòng chọn cửa hàng");
+            AlertService.showError(i18nService.tr("workspace.error.select_shop"));
             return null;
         }
         return state.getSelectedShop();
@@ -1073,7 +1171,11 @@ public class HomeController implements Initializable {
         state.setSelectedShopTokenValid(status.valid());
         state.setSelectedShopTokenMessage(status.message());
         if (!status.valid() && showWarning && status.message() != null && !status.message().isBlank()) {
-            AlertService.showWarning("Token WB hết hạn", "Cần cập nhật lại token cửa hàng", status.message());
+            AlertService.showWarning(
+                    i18nService.tr("wb.token.title"),
+                    i18nService.tr("workspace.token.update_required"),
+                    status.message()
+            );
         }
         return status.valid();
     }
@@ -1127,10 +1229,13 @@ public class HomeController implements Initializable {
     }
 
     private void initializeBackgroundKizProgress() {
-        kizAttachmentCoordinator.addListener(progress -> Platform.runLater(() -> onKizAttachmentProgress(progress)));
+        kizAttachmentCoordinator.addListener(kizProgressListener);
     }
 
     private void onKizAttachmentProgress(KizAttachmentCoordinator.KizAttachmentProgress progress) {
+        if (disposed) {
+            return;
+        }
         if (progress == null) {
             return;
         }
@@ -1145,7 +1250,7 @@ public class HomeController implements Initializable {
         if (!progress.active()) {
             if (!progress.failures().isEmpty() && isCurrentShop(progress.shopId())) {
                 AlertService.showWarning(
-                        "Gửi KIZ chưa hoàn tất",
+                        i18nService.tr("workspace.kiz_incomplete.title"),
                         progress.message(),
                         String.join(System.lineSeparator(), progress.failures())
                 );
@@ -1207,12 +1312,12 @@ public class HomeController implements Initializable {
         if (shop == null || supply == null || !state.isSelectedShopTokenValid()) {
             return;
         }
-        ButtonType deliver = new ButtonType("В доставку", ButtonBar.ButtonData.OK_DONE);
+        ButtonType deliver = new ButtonType(i18nService.tr("supply.deliver"), ButtonBar.ButtonData.OK_DONE);
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
-                "Перевести поставку " + supply.getSupplyId() + " в доставку?",
+                MessageFormat.format(i18nService.tr("workspace.deliver.confirm.content"), supply.getSupplyId()),
                 deliver,
                 ButtonType.CANCEL);
-        confirm.setHeaderText("Подтвердите действие");
+        confirm.setHeaderText(i18nService.tr("workspace.deliver.confirm.header"));
         Optional<ButtonType> choice = confirm.showAndWait();
         if (choice.isEmpty() || choice.get() != deliver) {
             return;
@@ -1242,7 +1347,11 @@ public class HomeController implements Initializable {
         if (supply == null) {
             return "";
         }
-        return supply.isDone() ? "Доставка" : "Сборка";
+        return I18nService.getInstance().tr(supply.isDone() ? "packing.status.dispatch" : "packing.status.preparation");
+    }
+
+    private String formatSupplyTitle(WbSupplySummary supply) {
+        return MessageFormat.format(i18nService.tr("supply.title"), supply.getSupplyId());
     }
 
     private void tryOpenFile(File file) {
@@ -1251,5 +1360,14 @@ public class HomeController implements Initializable {
         } catch (IOException ex) {
             LOGGER.error("Không thể mở file {}", file, ex);
         }
+    }
+
+    public void dispose() {
+        if (disposed) {
+            return;
+        }
+        disposed = true;
+        i18nService.removeListener(languageListener);
+        kizAttachmentCoordinator.removeListener(kizProgressListener);
     }
 }

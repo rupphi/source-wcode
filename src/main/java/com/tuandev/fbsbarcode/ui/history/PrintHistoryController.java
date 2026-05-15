@@ -2,6 +2,7 @@ package com.tuandev.fbsbarcode.ui.history;
 
 import com.tuandev.fbsbarcode.features.print.history.PrintHistoryItem;
 import com.tuandev.fbsbarcode.features.print.history.PrintHistoryJobSummary;
+import com.tuandev.fbsbarcode.shared.I18nService;
 import javafx.beans.property.ReadOnlyObjectWrapper;
 import javafx.beans.property.ReadOnlyStringWrapper;
 import javafx.fxml.FXML;
@@ -18,6 +19,8 @@ import java.util.List;
 import java.util.function.Consumer;
 
 public class PrintHistoryController {
+    @FXML
+    private Label titleLabel;
     @FXML
     private Label emptyStateLabel;
     @FXML
@@ -72,6 +75,7 @@ public class PrintHistoryController {
                 }
             }
         });
+        applyTranslations();
     }
 
     public void setJobs(List<PrintHistoryJobSummary> jobs) {
@@ -85,6 +89,17 @@ public class PrintHistoryController {
 
     public void setOnReprint(Consumer<PrintHistoryJobSummary> onReprint) {
         this.onReprint = onReprint;
+    }
+
+    public void applyTranslations() {
+        I18nService i18n = I18nService.getInstance();
+        titleLabel.setText(i18n.tr("history.title"));
+        emptyStateLabel.setText(i18n.tr("history.empty"));
+        printedAtTC.setText(i18n.tr("history.col.printed_at"));
+        supplyNameTC.setText(i18n.tr("history.col.supply_name"));
+        supplyIdTC.setText(i18n.tr("history.col.supply_id"));
+        itemCountTC.setText(i18n.tr("history.col.item_count"));
+        statusTC.setText(i18n.tr("history.col.status"));
     }
 
     private String formatTimestamp(String value) {

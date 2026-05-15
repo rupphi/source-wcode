@@ -2,6 +2,7 @@ package com.tuandev.fbsbarcode.features.print;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.tuandev.fbsbarcode.shared.I18nService;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -17,11 +18,12 @@ public class PrintTemplateService {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private final PrintTemplateRepository repository = new PrintTemplateRepository();
+    private final I18nService i18n = I18nService.getInstance();
 
     public void ensureDefaultTemplateExists() {
         repository.normalizePageSize(PAGE_WIDTH, PAGE_HEIGHT);
         if (repository.count() == 0) {
-            PrintTemplate template = createSystemDefaultTemplate("Mặc định");
+            PrintTemplate template = createSystemDefaultTemplate(i18n.tr("template.default_name"));
             saveTemplate(template);
             repository.setDefault(template.getId());
         }
@@ -57,7 +59,7 @@ public class PrintTemplateService {
 
     public PrintTemplate duplicateTemplate(int templateId, String name) {
         validateName(name, templateId);
-        PrintTemplate source = findById(templateId).orElseThrow(() -> new IllegalArgumentException("Không tìm thấy template"));
+        PrintTemplate source = findById(templateId).orElseThrow(() -> new IllegalArgumentException(i18n.tr("template.error.not_found")));
         PrintTemplate duplicate = fromJson(toJson(source));
         duplicate.setId(null);
         duplicate.setName(name);
@@ -74,7 +76,7 @@ public class PrintTemplateService {
     public void deleteTemplate(int templateId) {
         List<PrintTemplate> templates = loadTemplates();
         if (templates.size() <= 1) {
-            throw new IllegalStateException("Phải giữ lại ít nhất một template");
+            throw new IllegalStateException(i18n.tr("template.error.keep_one"));
         }
         boolean deletingDefault = templates.stream().anyMatch(t -> t.getId() == templateId && t.isDefaultTemplate());
         repository.delete(templateId);
@@ -88,7 +90,7 @@ public class PrintTemplateService {
     }
 
     public void resetTemplateToSystemDefault(int templateId) {
-        PrintTemplate current = findById(templateId).orElseThrow(() -> new IllegalArgumentException("Không tìm thấy template"));
+        PrintTemplate current = findById(templateId).orElseThrow(() -> new IllegalArgumentException(i18n.tr("template.error.not_found")));
         PrintTemplate reset = createSystemDefaultTemplate(current.getName());
         reset.setId(templateId);
         reset.setDefaultTemplate(current.isDefaultTemplate());
@@ -113,29 +115,29 @@ public class PrintTemplateService {
         template.setPageHeight(PAGE_HEIGHT);
         List<PrintTemplateElement> elements = new ArrayList<>();
 
-        PrintTemplateElement kiz = PrintTemplateElement.create(PrintElementType.KIZ_DATAMATRIX, "KIZ", 10, 10, 52, 52);
+        PrintTemplateElement kiz = PrintTemplateElement.create(PrintElementType.KIZ_DATAMATRIX, i18n.tr("template.palette.kiz"), 10, 10, 52, 52);
         kiz.setZIndex(1);
         elements.add(kiz);
 
-        PrintTemplateElement brand = textField("Brand", PrintFieldKey.BRAND, 70, 8, 84, 10, 9, true, PrintTextAlign.CENTER, 2);
+        PrintTemplateElement brand = textField(i18n.tr("template.palette.brand"), PrintFieldKey.BRAND, 70, 8, 84, 10, 9, true, PrintTextAlign.CENTER, 2);
         elements.add(brand);
-        elements.add(textField("Tên sản phẩm", PrintFieldKey.NAME, 70, 20, 84, 14, 8, false, PrintTextAlign.LEFT, 3));
-        elements.add(textField("Màu", PrintFieldKey.COLOR, "Цвет", 70, 35, 84, 10, 8, false, PrintTextAlign.LEFT, 4));
-        elements.add(textField("Article", PrintFieldKey.ARTICLE, "Арт", 70, 47, 84, 10, 8, false, PrintTextAlign.LEFT, 5));
-        elements.add(textField("Size", PrintFieldKey.SIZE, "Раз", 70, 59, 84, 10, 9, false, PrintTextAlign.LEFT, 6));
+        elements.add(textField(i18n.tr("template.palette.name"), PrintFieldKey.NAME, 70, 20, 84, 14, 8, false, PrintTextAlign.LEFT, 3));
+        elements.add(textField(i18n.tr("template.palette.color"), PrintFieldKey.COLOR, i18n.tr("template.prefix.color"), 70, 35, 84, 10, 8, false, PrintTextAlign.LEFT, 4));
+        elements.add(textField(i18n.tr("template.palette.article"), PrintFieldKey.ARTICLE, i18n.tr("template.prefix.article"), 70, 47, 84, 10, 8, false, PrintTextAlign.LEFT, 5));
+        elements.add(textField(i18n.tr("template.palette.size"), PrintFieldKey.SIZE, i18n.tr("template.prefix.size"), 70, 59, 84, 10, 9, false, PrintTextAlign.LEFT, 6));
 
-        PrintTemplateElement separator = PrintTemplateElement.create(PrintElementType.SEPARATOR_LINE, "Đường phân cách", 10, 67, 144, 1);
+        PrintTemplateElement separator = PrintTemplateElement.create(PrintElementType.SEPARATOR_LINE, i18n.tr("template.palette.separator"), 10, 67, 144, 1);
         separator.setZIndex(7);
         elements.add(separator);
 
-        PrintTemplateElement barcode = PrintTemplateElement.create(PrintElementType.BARCODE_CODE128, "Barcode", 12, 72, 140, 25);
+        PrintTemplateElement barcode = PrintTemplateElement.create(PrintElementType.BARCODE_CODE128, i18n.tr("template.palette.barcode"), 12, 72, 140, 25);
         barcode.setShowHumanReadable(false);
         barcode.setZIndex(8);
         elements.add(barcode);
 
-        elements.add(textField("Mã barcode", PrintFieldKey.BARCODE, null, 8, 99, 120, 8, 8, false, PrintTextAlign.CENTER, 9));
+        elements.add(textField(i18n.tr("template.palette.barcode_text"), PrintFieldKey.BARCODE, null, 8, 99, 120, 8, 8, false, PrintTextAlign.CENTER, 9));
 
-        PrintTemplateElement stickerTail = PrintTemplateElement.create(PrintElementType.STICKER_TAIL, "Sticker tail", 134, 99, 20, 8);
+        PrintTemplateElement stickerTail = PrintTemplateElement.create(PrintElementType.STICKER_TAIL, i18n.tr("template.palette.sticker_tail"), 134, 99, 20, 8);
         stickerTail.setFontSize(8);
         stickerTail.setAlign(PrintTextAlign.RIGHT);
         stickerTail.setZIndex(10);
@@ -147,18 +149,18 @@ public class PrintTemplateService {
 
     public List<ElementPaletteItem> getPaletteItems() {
         return List.of(
-                new ElementPaletteItem("KIZ", PrintElementType.KIZ_DATAMATRIX, null),
-                new ElementPaletteItem("Barcode", PrintElementType.BARCODE_CODE128, null),
-                new ElementPaletteItem("Brand", PrintElementType.TEXT_FIELD, PrintFieldKey.BRAND),
-                new ElementPaletteItem("Tên sản phẩm", PrintElementType.TEXT_FIELD, PrintFieldKey.NAME),
-                new ElementPaletteItem("Danh mục", PrintElementType.TEXT_FIELD, PrintFieldKey.SUBJECT_NAME),
-                new ElementPaletteItem("Màu", PrintElementType.TEXT_FIELD, PrintFieldKey.COLOR),
-                new ElementPaletteItem("Article", PrintElementType.TEXT_FIELD, PrintFieldKey.ARTICLE),
-                new ElementPaletteItem("Size", PrintElementType.TEXT_FIELD, PrintFieldKey.SIZE),
-                new ElementPaletteItem("Text cố định", PrintElementType.STATIC_TEXT, null),
-                new ElementPaletteItem("Mã barcode", PrintElementType.TEXT_FIELD, PrintFieldKey.BARCODE),
-                new ElementPaletteItem("Sticker tail", PrintElementType.STICKER_TAIL, null),
-                new ElementPaletteItem("Đường phân cách", PrintElementType.SEPARATOR_LINE, null)
+                new ElementPaletteItem(i18n.tr("template.palette.kiz"), PrintElementType.KIZ_DATAMATRIX, null),
+                new ElementPaletteItem(i18n.tr("template.palette.barcode"), PrintElementType.BARCODE_CODE128, null),
+                new ElementPaletteItem(i18n.tr("template.palette.brand"), PrintElementType.TEXT_FIELD, PrintFieldKey.BRAND),
+                new ElementPaletteItem(i18n.tr("template.palette.name"), PrintElementType.TEXT_FIELD, PrintFieldKey.NAME),
+                new ElementPaletteItem(i18n.tr("template.palette.subject"), PrintElementType.TEXT_FIELD, PrintFieldKey.SUBJECT_NAME),
+                new ElementPaletteItem(i18n.tr("template.palette.color"), PrintElementType.TEXT_FIELD, PrintFieldKey.COLOR),
+                new ElementPaletteItem(i18n.tr("template.palette.article"), PrintElementType.TEXT_FIELD, PrintFieldKey.ARTICLE),
+                new ElementPaletteItem(i18n.tr("template.palette.size"), PrintElementType.TEXT_FIELD, PrintFieldKey.SIZE),
+                new ElementPaletteItem(i18n.tr("template.palette.static_text"), PrintElementType.STATIC_TEXT, null),
+                new ElementPaletteItem(i18n.tr("template.palette.barcode_text"), PrintElementType.TEXT_FIELD, PrintFieldKey.BARCODE),
+                new ElementPaletteItem(i18n.tr("template.palette.sticker_tail"), PrintElementType.STICKER_TAIL, null),
+                new ElementPaletteItem(i18n.tr("template.palette.separator"), PrintElementType.SEPARATOR_LINE, null)
         );
     }
 
@@ -188,7 +190,7 @@ public class PrintTemplateService {
         }
         if (item.type() == PrintElementType.STATIC_TEXT) {
             PrintTemplateElement element = PrintTemplateElement.create(item.type(), item.label(), 10, 10, 84, 10);
-            element.setContent("Текст");
+            element.setContent(i18n.tr("template.static_text_default"));
             element.setFontSize(8);
             element.setAlign(PrintTextAlign.LEFT);
             element.setZIndex(zIndex);
@@ -236,23 +238,23 @@ public class PrintTemplateService {
     private void validateName(String name, Integer currentId) {
         String safeName = name == null ? "" : name.trim();
         if (safeName.isBlank()) {
-            throw new IllegalArgumentException("Tên template không được để trống");
+            throw new IllegalArgumentException(i18n.tr("template.error.name_blank"));
         }
         boolean exists = repository.findAll().stream()
                 .anyMatch(template -> safeName.equalsIgnoreCase(template.name())
                         && (currentId == null || template.id() != currentId));
         if (exists) {
-            throw new IllegalArgumentException("Tên template đã tồn tại");
+            throw new IllegalArgumentException(i18n.tr("template.error.name_exists"));
         }
     }
 
     private void validateTemplate(PrintTemplate template) {
         if (template == null) {
-            throw new IllegalArgumentException("Template không hợp lệ");
+            throw new IllegalArgumentException(i18n.tr("template.error.invalid"));
         }
         validateName(template.getName(), template.getId());
         if (template.getElements() == null || template.getElements().isEmpty()) {
-            throw new IllegalArgumentException("Template phải có ít nhất một phần tử");
+            throw new IllegalArgumentException(i18n.tr("template.error.empty_elements"));
         }
 
         boolean hasKiz = false;
@@ -263,7 +265,7 @@ public class PrintTemplateService {
         for (int index = 0; index < elements.size(); index++) {
             PrintTemplateElement element = elements.get(index);
             if (element.getId() == null || element.getId().isBlank()) {
-                throw new IllegalArgumentException("Mỗi phần tử phải có id");
+                throw new IllegalArgumentException(i18n.tr("template.error.element_id"));
             }
             clampToPage(element);
             element.setZIndex(index + 1);
@@ -274,9 +276,9 @@ public class PrintTemplateService {
             } else if (element.getType() == PrintElementType.STICKER_TAIL) {
                 hasStickerTail = true;
             } else if (element.getType() == PrintElementType.TEXT_FIELD && element.getFieldKey() == null) {
-                throw new IllegalArgumentException("Text field phải có fieldKey");
+                throw new IllegalArgumentException(i18n.tr("template.error.field_key"));
             } else if (element.getType() == PrintElementType.STATIC_TEXT && safeTrim(element.getContent()).isBlank()) {
-                throw new IllegalArgumentException("Text cố định không được để trống");
+                throw new IllegalArgumentException(i18n.tr("template.error.static_text_blank"));
             }
             if (element.getPrefix() != null) {
                 element.setPrefix(element.getPrefix().trim());
@@ -286,7 +288,7 @@ public class PrintTemplateService {
             }
         }
         if (!hasKiz || !hasBarcode || !hasStickerTail) {
-            throw new IllegalArgumentException("Template bắt buộc phải có KIZ, barcode và sticker tail");
+            throw new IllegalArgumentException(i18n.tr("template.error.required_elements"));
         }
     }
 
@@ -328,10 +330,10 @@ public class PrintTemplateService {
             return null;
         }
         return switch (fieldKey) {
-            case COLOR -> "Цвет";
-            case ARTICLE -> "Арт";
-            case SIZE -> "Раз";
-            case SUBJECT_NAME -> "Кат";
+            case COLOR -> I18nService.getInstance().tr("template.prefix.color");
+            case ARTICLE -> I18nService.getInstance().tr("template.prefix.article");
+            case SIZE -> I18nService.getInstance().tr("template.prefix.size");
+            case SUBJECT_NAME -> I18nService.getInstance().tr("template.prefix.subject");
             default -> null;
         };
     }

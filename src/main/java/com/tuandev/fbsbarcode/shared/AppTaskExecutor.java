@@ -4,6 +4,7 @@ import javafx.concurrent.Task;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -24,14 +25,21 @@ public final class AppTaskExecutor {
     }
 
     public static void execute(Task<?> task) {
+        if (EXECUTOR.isShutdown()) {
+            return;
+        }
         ACTIVE_TASK_COUNT.incrementAndGet();
-        EXECUTOR.execute(() -> {
-            try {
-                task.run();
-            } finally {
-                ACTIVE_TASK_COUNT.updateAndGet(current -> Math.max(0, current - 1));
-            }
-        });
+        try {
+            EXECUTOR.execute(() -> {
+                try {
+                    task.run();
+                } finally {
+                    ACTIVE_TASK_COUNT.updateAndGet(current -> Math.max(0, current - 1));
+                }
+            });
+        } catch (RejectedExecutionException ex) {
+            ACTIVE_TASK_COUNT.updateAndGet(current -> Math.max(0, current - 1));
+        }
     }
 
     public static boolean hasRunningTasks() {

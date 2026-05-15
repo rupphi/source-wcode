@@ -25,18 +25,18 @@
                 <Insets bottom="12.0" left="16.0" right="16.0" top="16.0" />
             </padding>
             <HBox alignment="CENTER_LEFT" spacing="10.0">
-                <Label styleClass="h3" text="Thiết kế tem 58x40" />
+                <Label styleClass="h3" text="%template.title" />
                 <Label fx:id="templateMetaLabel" styleClass="text-muted" text="58x40 mm" />
             </HBox>
             <HBox alignment="CENTER_LEFT" spacing="8.0">
                 <ComboBox fx:id="templateComboBox" prefWidth="250.0" />
-                <Button mnemonicParsing="false" onAction="#onCreateTemplate" text="Tạo" />
-                <Button mnemonicParsing="false" onAction="#onDuplicateTemplate" text="Nhân bản" />
-                <Button mnemonicParsing="false" onAction="#onRenameTemplate" text="Đổi tên" />
-                <Button mnemonicParsing="false" onAction="#onDeleteTemplate" text="Xóa" />
-                <Button mnemonicParsing="false" onAction="#onSetDefaultTemplate" text="Đặt mặc định" />
-                <Button mnemonicParsing="false" onAction="#onResetTemplate" text="Reset" />
-                <Button mnemonicParsing="false" onAction="#onSaveTemplate" styleClass="btn-primary" text="Lưu template" />
+                <Button mnemonicParsing="false" onAction="#onCreateTemplate" text="%template.create" />
+                <Button mnemonicParsing="false" onAction="#onDuplicateTemplate" text="%template.duplicate" />
+                <Button mnemonicParsing="false" onAction="#onRenameTemplate" text="%template.rename" />
+                <Button mnemonicParsing="false" onAction="#onDeleteTemplate" text="%template.delete" />
+                <Button mnemonicParsing="false" onAction="#onSetDefaultTemplate" text="%template.set_default" />
+                <Button mnemonicParsing="false" onAction="#onResetTemplate" text="%template.reset" />
+                <Button mnemonicParsing="false" onAction="#onSaveTemplate" styleClass="btn-primary" text="%template.save" />
             </HBox>
         </VBox>
     </top>
@@ -47,15 +47,15 @@
                     <padding>
                         <Insets bottom="16.0" left="16.0" right="12.0" top="6.0" />
                     </padding>
-                    <Label styleClass="text-bold" text="Thành phần" />
-                    <ComboBox fx:id="addElementComboBox" prefWidth="220.0" promptText="Chọn để thêm thành phần" />
+                    <Label styleClass="text-bold" text="%template.elements" />
+                    <ComboBox fx:id="addElementComboBox" prefWidth="220.0" promptText="%template.add_element_prompt" />
                     <ListView fx:id="elementListView" prefHeight="560.0" />
                 </VBox>
                 <VBox alignment="TOP_CENTER" spacing="12.0">
                     <padding>
                         <Insets bottom="16.0" left="12.0" right="12.0" top="6.0" />
                     </padding>
-                    <Label styleClass="text-bold" text="Canvas preview" />
+                    <Label styleClass="text-bold" text="%template.preview" />
                     <HBox alignment="CENTER_LEFT" spacing="8.0">
                         <VBox alignment="TOP_CENTER" spacing="0.0">
                             <children>
@@ -86,42 +86,42 @@
                             <padding>
                                 <Insets bottom="16.0" left="12.0" right="16.0" top="6.0" />
                             </padding>
-                            <Label styleClass="text-bold" text="Thuộc tính" />
+                            <Label styleClass="text-bold" text="%template.properties" />
                             <GridPane hgap="10.0" vgap="10.0">
                                 <children>
-                                    <Label text="Nhãn" GridPane.columnIndex="0" GridPane.rowIndex="0" />
+                                    <Label text="%template.field.label" GridPane.columnIndex="0" GridPane.rowIndex="0" />
                                     <TextField fx:id="labelField" GridPane.columnIndex="1" GridPane.rowIndex="0" />
-                                    <Label text="Tiền tố" GridPane.columnIndex="0" GridPane.rowIndex="1" />
-                                    <TextField fx:id="prefixField" promptText="Ví dụ: Раз" GridPane.columnIndex="1" GridPane.rowIndex="1" />
-                                    <Label fx:id="contentLabel" managed="false" text="Nội dung" visible="false" GridPane.columnIndex="0" GridPane.rowIndex="2" />
-                                    <TextField fx:id="contentField" managed="false" promptText="Ví dụ: Duong Duong Branch" visible="false" GridPane.columnIndex="1" GridPane.rowIndex="2" />
-                                    <Label text="X" GridPane.columnIndex="0" GridPane.rowIndex="3" />
+                                    <Label text="%template.field.prefix" GridPane.columnIndex="0" GridPane.rowIndex="1" />
+                                    <TextField fx:id="prefixField" promptText="%template.field.prefix_prompt" GridPane.columnIndex="1" GridPane.rowIndex="1" />
+                                    <Label fx:id="contentLabel" managed="false" text="%template.field.content" visible="false" GridPane.columnIndex="0" GridPane.rowIndex="2" />
+                                    <TextField fx:id="contentField" managed="false" promptText="%template.field.content_prompt" visible="false" GridPane.columnIndex="1" GridPane.rowIndex="2" />
+                                    <Label text="%template.field.x" GridPane.columnIndex="0" GridPane.rowIndex="3" />
                                     <TextField fx:id="xField" GridPane.columnIndex="1" GridPane.rowIndex="3" />
-                                    <Label text="Y" GridPane.columnIndex="0" GridPane.rowIndex="4" />
+                                    <Label text="%template.field.y" GridPane.columnIndex="0" GridPane.rowIndex="4" />
                                     <TextField fx:id="yField" GridPane.columnIndex="1" GridPane.rowIndex="4" />
-                                    <Label text="Rộng" GridPane.columnIndex="0" GridPane.rowIndex="5" />
+                                    <Label text="%template.field.width" GridPane.columnIndex="0" GridPane.rowIndex="5" />
                                     <TextField fx:id="widthField" GridPane.columnIndex="1" GridPane.rowIndex="5" />
-                                    <Label text="Cao" GridPane.columnIndex="0" GridPane.rowIndex="6" />
+                                    <Label text="%template.field.height" GridPane.columnIndex="0" GridPane.rowIndex="6" />
                                     <TextField fx:id="heightField" GridPane.columnIndex="1" GridPane.rowIndex="6" />
-                                    <Label text="Font" GridPane.columnIndex="0" GridPane.rowIndex="7" />
+                                    <Label text="%template.field.font" GridPane.columnIndex="0" GridPane.rowIndex="7" />
                                     <TextField fx:id="fontSizeField" GridPane.columnIndex="1" GridPane.rowIndex="7" />
-                                    <Label text="Canh chữ" GridPane.columnIndex="0" GridPane.rowIndex="8" />
+                                    <Label text="%template.field.align" GridPane.columnIndex="0" GridPane.rowIndex="8" />
                                     <ComboBox fx:id="alignComboBox" prefWidth="160.0" GridPane.columnIndex="1" GridPane.rowIndex="8" />
                                 </children>
                             </GridPane>
                             <Label fx:id="fieldValidationLabel" managed="false" styleClass="text-danger" text="" visible="false" />
-                            <CheckBox fx:id="snapToGridCheckBox" mnemonicParsing="false" selected="true" text="Snap theo lưới 1 mm" />
-                            <CheckBox fx:id="visibleCheckBox" mnemonicParsing="false" text="Hiển thị" />
-                            <CheckBox fx:id="boldCheckBox" mnemonicParsing="false" text="Chữ đậm" />
-                            <CheckBox fx:id="humanReadableCheckBox" mnemonicParsing="false" text="Hiện barcode text trong block mã" />
+                            <CheckBox fx:id="snapToGridCheckBox" mnemonicParsing="false" selected="true" text="%template.snap_grid" />
+                            <CheckBox fx:id="visibleCheckBox" mnemonicParsing="false" text="%template.visible" />
+                            <CheckBox fx:id="boldCheckBox" mnemonicParsing="false" text="%template.bold" />
+                            <CheckBox fx:id="humanReadableCheckBox" mnemonicParsing="false" text="%template.human_readable" />
                             <Separator />
                             <HBox spacing="8.0">
                                 <children>
-                                    <Button fx:id="copyElementButton" mnemonicParsing="false" onAction="#onCopyElement" text="Copy" />
-                                    <Button fx:id="pasteElementButton" mnemonicParsing="false" onAction="#onPasteElement" text="Paste" />
+                                    <Button fx:id="copyElementButton" mnemonicParsing="false" onAction="#onCopyElement" text="%template.copy" />
+                                    <Button fx:id="pasteElementButton" mnemonicParsing="false" onAction="#onPasteElement" text="%template.paste" />
                                 </children>
                             </HBox>
-                            <Button fx:id="deleteElementButton" mnemonicParsing="false" onAction="#onDeleteElement" styleClass="btn-danger" text="Xóa thành phần đang chọn" />
+                            <Button fx:id="deleteElementButton" mnemonicParsing="false" onAction="#onDeleteElement" styleClass="btn-danger" text="%template.delete_selected" />
                         </VBox>
                     </content>
                 </ScrollPane>

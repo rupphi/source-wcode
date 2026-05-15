@@ -2,6 +2,7 @@ package com.tuandev.fbsbarcode.features.shop;
 
 import com.tuandev.fbsbarcode.models.Shop;
 import com.tuandev.fbsbarcode.shared.FxmlViewLoader;
+import com.tuandev.fbsbarcode.shared.I18nService;
 import com.tuandev.fbsbarcode.ui.shop.ShopDialogController;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.control.ButtonBar;
@@ -12,11 +13,13 @@ import java.util.Optional;
 
 public class ShopDialogService {
     public Optional<Shop> showCreateDialog() {
-        return showDialog("Thêm cửa hàng", "Thêm", new Shop());
+        I18nService i18n = I18nService.getInstance();
+        return showDialog(i18n.tr("shop_dialog.create_title"), i18n.tr("common.add"), new Shop());
     }
 
     public Optional<Shop> showUpdateDialog(Shop shop) {
-        return showDialog("Cập nhật cửa hàng", "Lưu", shop);
+        I18nService i18n = I18nService.getInstance();
+        return showDialog(i18n.tr("shop_dialog.update_title"), i18n.tr("common.save"), shop);
     }
 
     private Optional<Shop> showDialog(String title, String submitLabel, Shop initialValue) {
@@ -30,7 +33,7 @@ public class ShopDialogService {
         controller.setShop(initialValue);
 
         ButtonType submitBtn = new ButtonType(submitLabel, ButtonBar.ButtonData.OK_DONE);
-        ButtonType cancelBtn = new ButtonType("Hủy", ButtonBar.ButtonData.CANCEL_CLOSE);
+        ButtonType cancelBtn = new ButtonType(I18nService.getInstance().tr("common.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
         dialog.getDialogPane().getButtonTypes().addAll(cancelBtn, submitBtn);
 
         Optional<ButtonType> result = dialog.showAndWait();

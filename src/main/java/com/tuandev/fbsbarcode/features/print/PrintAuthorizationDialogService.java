@@ -8,6 +8,7 @@ import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
 import javafx.scene.layout.VBox;
+import com.tuandev.fbsbarcode.shared.I18nService;
 
 import java.util.Optional;
 
@@ -21,26 +22,27 @@ public class PrintAuthorizationDialogService {
 
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.getDialogPane().getStylesheets().add(java.util.Objects.requireNonNull(com.tuandev.fbsbarcode.MainApplication.class.getResource("/com/tuandev/fbsbarcode/styles/theme.css")).toExternalForm());
-        dialog.setTitle("Xác thực in");
+        I18nService i18n = I18nService.getInstance();
+        dialog.setTitle(i18n.tr("print_auth.title"));
         dialog.setHeaderText(null);
         dialog.getDialogPane().setPadding(new Insets(18));
         dialog.getDialogPane().setMinWidth(420);
 
-        ButtonType confirmButton = new ButtonType("Xác thực", ButtonBar.ButtonData.OK_DONE);
-        ButtonType cancelButton = new ButtonType("Hủy", ButtonBar.ButtonData.CANCEL_CLOSE);
+        ButtonType confirmButton = new ButtonType(i18n.tr("print_auth.confirm"), ButtonBar.ButtonData.OK_DONE);
+        ButtonType cancelButton = new ButtonType(i18n.tr("common.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
         dialog.getDialogPane().getButtonTypes().addAll(confirmButton, cancelButton);
 
         PasswordField passwordField = new PasswordField();
-        passwordField.setPromptText("Nhập mã xác thực");
+        passwordField.setPromptText(i18n.tr("print_auth.prompt"));
 
-        CheckBox rememberCheckBox = new CheckBox("Lưu để lần sau không cần nhập lại");
+        CheckBox rememberCheckBox = new CheckBox(i18n.tr("print_auth.remember"));
         Label errorLabel = new Label();
         errorLabel.setStyle("-fx-text-fill: #dc2626; -fx-font-size: 11px;");
         errorLabel.setManaged(false);
         errorLabel.setVisible(false);
 
         VBox content = new VBox(10,
-                new Label("Nhập mã xác thực"),
+                new Label(i18n.tr("print_auth.label")),
                 passwordField,
                 rememberCheckBox,
                 errorLabel
@@ -51,7 +53,7 @@ public class PrintAuthorizationDialogService {
         javafx.scene.Node okButton = dialog.getDialogPane().lookupButton(confirmButton);
         okButton.addEventFilter(javafx.event.ActionEvent.ACTION, event -> {
             if (!authorizationService.matches(passwordField.getText())) {
-                errorLabel.setText("Mã xác thực không đúng");
+                errorLabel.setText(i18n.tr("print_auth.invalid"));
                 errorLabel.setManaged(true);
                 errorLabel.setVisible(true);
                 passwordField.requestFocus();
@@ -62,7 +64,7 @@ public class PrintAuthorizationDialogService {
             if (rememberCheckBox.isSelected()) {
                 authorizationService.rememberAuthorized();
                 if (!authorizationService.isAuthorized()) {
-                    errorLabel.setText("Không thể lưu mã xác thực. Vui lòng thử lại.");
+                    errorLabel.setText(i18n.tr("print_auth.remember_failed"));
                     errorLabel.setManaged(true);
                     errorLabel.setVisible(true);
                     event.consume();

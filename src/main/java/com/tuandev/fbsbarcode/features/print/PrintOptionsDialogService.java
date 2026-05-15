@@ -1,6 +1,7 @@
 package com.tuandev.fbsbarcode.features.print;
 
 import com.tuandev.fbsbarcode.MainApplication;
+import com.tuandev.fbsbarcode.shared.I18nService;
 import javafx.geometry.Insets;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
@@ -21,13 +22,14 @@ public class PrintOptionsDialogService {
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.getDialogPane().getStylesheets().add(java.util.Objects.requireNonNull(
                 MainApplication.class.getResource("/com/tuandev/fbsbarcode/styles/theme.css")).toExternalForm());
-        dialog.setTitle("Параметры печати");
+        I18nService i18n = I18nService.getInstance();
+        dialog.setTitle(i18n.tr("print_options.title"));
         dialog.setHeaderText(null);
         dialog.getDialogPane().setPadding(new Insets(18));
         dialog.getDialogPane().setMinWidth(460);
 
-        ButtonType confirmButton = new ButtonType("Печать", ButtonBar.ButtonData.OK_DONE);
-        ButtonType cancelButton = new ButtonType("Отмена", ButtonBar.ButtonData.CANCEL_CLOSE);
+        ButtonType confirmButton = new ButtonType(i18n.tr("print_options.confirm"), ButtonBar.ButtonData.OK_DONE);
+        ButtonType cancelButton = new ButtonType(i18n.tr("common.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
         dialog.getDialogPane().getButtonTypes().addAll(confirmButton, cancelButton);
 
         ComboBox<PrintPageOrder> pageOrderComboBox = new ComboBox<>();
@@ -44,9 +46,9 @@ public class PrintOptionsDialogService {
         errorLabel.setVisible(false);
 
         VBox content = new VBox(10,
-                new Label("Порядок страниц"),
+                new Label(i18n.tr("print_options.page_order")),
                 pageOrderComboBox,
-                new Label("Сколько barcode печатать на каждый товар"),
+                new Label(i18n.tr("print_options.barcode_copies")),
                 barcodeCopiesField,
                 errorLabel
         );
@@ -57,7 +59,7 @@ public class PrintOptionsDialogService {
         okButton.addEventFilter(javafx.event.ActionEvent.ACTION, event -> {
             PrintJobOptions options = parseOptions(pageOrderComboBox.getValue(), barcodeCopiesField.getText());
             if (options == null) {
-                errorLabel.setText("Введите корректное количество barcode: 1 или больше");
+                errorLabel.setText(i18n.tr("print_options.invalid_copies"));
                 errorLabel.setManaged(true);
                 errorLabel.setVisible(true);
                 barcodeCopiesField.requestFocus();

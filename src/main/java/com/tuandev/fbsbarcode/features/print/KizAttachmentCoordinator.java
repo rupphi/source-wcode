@@ -38,6 +38,12 @@ public final class KizAttachmentCoordinator {
         }
     }
 
+    public void removeListener(Consumer<KizAttachmentProgress> listener) {
+        if (listener != null) {
+            listeners.remove(listener);
+        }
+    }
+
     public boolean hasActiveJobs() {
         return !activeJobs.isEmpty();
     }

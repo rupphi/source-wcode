@@ -1,5 +1,6 @@
 package com.tuandev.fbsbarcode.ui.workspace;
 
+import com.tuandev.fbsbarcode.shared.I18nService;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
@@ -98,5 +99,11 @@ public class WorkspaceHeaderController {
         syncButton.setDisable(!hasShop || busy || !tokenValid);
         editShopButton.setDisable(!hasShop || busy);
         deleteShopButton.setDisable(!hasShop || busy || !tokenValid);
+    }
+
+    public void applyTranslations() {
+        I18nService i18n = I18nService.getInstance();
+        shopComboBox.setPromptText(i18n.tr("header.shop_prompt"));
+        syncButton.setText(" " + i18n.tr("header.sync"));
     }
 }

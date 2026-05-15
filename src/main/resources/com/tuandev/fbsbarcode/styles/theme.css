@@ -497,6 +497,78 @@
     -fx-font-weight: bold;
 }
 
+.muted-label {
+    -fx-text-fill: -text-secondary;
+}
+
+.section-title {
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+}
+
+.info-banner {
+    -fx-background-color: rgba(88, 101, 242, 0.14);
+    -fx-background-radius: 10px;
+    -fx-border-color: rgba(105, 118, 244, 0.45);
+    -fx-border-radius: 10px;
+    -fx-border-width: 1px;
+    -fx-padding: 12px 14px;
+    -fx-text-fill: -text-primary;
+}
+
+.update-version-label {
+    -fx-text-fill: -text-primary;
+    -fx-font-weight: bold;
+    -fx-font-size: 14px;
+}
+
+.update-data-note {
+    -fx-line-spacing: 1px;
+}
+
+.update-changelog-area {
+    -fx-background-color: -bg-secondary;
+    -fx-control-inner-background: -bg-secondary;
+    -fx-text-fill: -text-primary;
+    -fx-highlight-fill: #6976f4;
+    -fx-highlight-text-fill: white;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 10px;
+    -fx-background-radius: 10px;
+}
+
+.update-changelog-area .content,
+.update-changelog-area .viewport {
+    -fx-background-color: -bg-secondary;
+}
+
+.update-changelog-area .text {
+    -fx-fill: -text-primary;
+}
+
+.update-progress-bar {
+    -fx-accent: #6976f4;
+}
+
+.update-progress-bar > .track {
+    -fx-background-color: -bg-secondary;
+    -fx-background-radius: 999px;
+    -fx-pref-height: 14px;
+}
+
+.update-progress-bar > .bar {
+    -fx-background-color: linear-gradient(to right, #6976f4, #7d88ff);
+    -fx-background-radius: 999px;
+    -fx-background-insets: 0;
+}
+
+.update-progress-percent {
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+}
+
 /* Shop Sidebar Items */
 .shop-item {
     -fx-background-color: transparent;
