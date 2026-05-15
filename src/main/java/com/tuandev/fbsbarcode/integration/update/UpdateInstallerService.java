@@ -1,6 +1,7 @@
 package com.tuandev.fbsbarcode.integration.update;
 
 import com.tuandev.fbsbarcode.shared.AppPaths;
+import com.tuandev.fbsbarcode.shared.AppDataRecoveryService;
 import com.tuandev.fbsbarcode.shared.I18nService;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -73,6 +74,7 @@ public class UpdateInstallerService {
     }
 
     public void launchInstallerAfterExit(Path installerFile) throws IOException {
+        AppDataRecoveryService.prepareBackupForUpdate();
         String escapedInstaller = installerFile.toAbsolutePath().toString().replace("'", "''");
         String command = "Start-Sleep -Seconds 2; Start-Process -FilePath '" + escapedInstaller + "'";
         new ProcessBuilder(

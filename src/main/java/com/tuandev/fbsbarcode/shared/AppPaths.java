@@ -8,6 +8,7 @@ import java.nio.file.Paths;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 public final class AppPaths {
     private static final String APP_DIR_NAME = "WCode";
@@ -25,12 +26,26 @@ public final class AppPaths {
         return base.resolve(APP_DIR_NAME);
     }
 
+    public static List<Path> legacyAppDataDirs() {
+        Path base = windowsLocalAppData()
+                .orElseGet(() -> Paths.get(System.getProperty("user.home", ".")));
+        return Stream.of(
+                        base.resolve("FBSBarcode")
+                )
+                .filter(path -> !path.equals(appDataDir()))
+                .toList();
+    }
+
     public static Path logsDir() {
         return appDataDir().resolve("logs");
     }
 
     public static Path javaFxCacheDir() {
         return safeSystemDir().resolve("openjfx-cache");
+    }
+
+    public static Path updateBackupDir() {
+        return safeSystemDir().resolve("update-backup");
     }
 
     public static Path safeUserHomeDir() {

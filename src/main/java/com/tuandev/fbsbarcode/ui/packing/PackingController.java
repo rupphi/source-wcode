@@ -6,6 +6,7 @@ import com.tuandev.fbsbarcode.models.Order;
 import com.tuandev.fbsbarcode.models.Shop;
 import com.tuandev.fbsbarcode.shared.AlertService;
 import com.tuandev.fbsbarcode.shared.AppTaskExecutor;
+import com.tuandev.fbsbarcode.shared.AppPaths;
 import com.tuandev.fbsbarcode.shared.I18nService;
 import javafx.beans.property.ReadOnlyObjectWrapper;
 import javafx.beans.property.SimpleStringProperty;
@@ -553,8 +554,12 @@ public class PackingController {
         }
         FileChooser chooser = new FileChooser();
         chooser.setTitle(I18nService.getInstance().tr("packing.save_qr.title"));
-        chooser.setInitialFileName("SUPPLY-" + supply.getSupplyId() + ".png");
-        chooser.getExtensionFilters().setAll(new FileChooser.ExtensionFilter(I18nService.getInstance().tr("filechooser.png"), "*.png"));
+        chooser.setInitialFileName("SUPPLY-" + supply.getSupplyId() + ".pdf");
+        File initialDirectory = AppPaths.preferredDownloadsDirectory();
+        if (initialDirectory != null) {
+            chooser.setInitialDirectory(initialDirectory);
+        }
+        chooser.getExtensionFilters().setAll(new FileChooser.ExtensionFilter(I18nService.getInstance().tr("filechooser.pdf"), "*.pdf"));
         File file = chooser.showSaveDialog(null);
         if (file == null) {
             return;
@@ -562,7 +567,7 @@ public class PackingController {
         Task<byte[]> task = new Task<>() {
             @Override
             protected byte[] call() throws Exception {
-                return packingWorkflow.getSupplyBarcode(shop, supply);
+                return packingWorkflow.getSupplyBarcodePdf(shop, supply);
             }
         };
         task.setOnSucceeded(e -> {

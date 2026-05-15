@@ -1,6 +1,7 @@
 package com.tuandev.fbsbarcode;
 
 import com.tuandev.fbsbarcode.shared.AppPaths;
+import com.tuandev.fbsbarcode.shared.AppDataRecoveryService;
 import javafx.application.Application;
 
 import java.io.PrintWriter;
@@ -12,6 +13,7 @@ import java.time.LocalDateTime;
 public class Launcher {
     public static void main(String[] args) {
         configureStartupEnvironment();
+        AppDataRecoveryService.recoverIfNeededOnStartup();
         Application.launch(MainApplication.class, args);
     }
 

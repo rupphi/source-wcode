@@ -1,5 +1,6 @@
 package com.tuandev.fbsbarcode.features.packing;
 
+import com.tuandev.fbsbarcode.features.print.SupplyBarcodePdfExporter;
 import com.tuandev.fbsbarcode.features.print.history.PrintHistoryService;
 import com.tuandev.fbsbarcode.integration.wb.WbActionLogRepository;
 import com.tuandev.fbsbarcode.integration.wb.WbApiClient;
@@ -121,6 +122,11 @@ public class PackingWorkflow {
             actionLogRepository.record(shop.getId(), "GET_SUPPLY_BARCODE", supply.getSupplyId(), List.of(), "failed", null, null, ex.getMessage());
             throw ex;
         }
+    }
+
+    public byte[] getSupplyBarcodePdf(Shop shop, WbSupplySummary supply) throws IOException {
+        byte[] imageBytes = getSupplyBarcode(shop, supply);
+        return SupplyBarcodePdfExporter.exportSingleLabel(imageBytes);
     }
 
     public boolean canDeliver(int shopId, WbSupplySummary supply) {
