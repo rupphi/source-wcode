@@ -1,6 +1,18 @@
 package com.tuandev.fbsbarcode.ui;
 
 import com.tuandev.fbsbarcode.shared.FxmlViewLoader;
+import com.tuandev.fbsbarcode.ui.history.PrintHistoryController;
+import com.tuandev.fbsbarcode.ui.kiz.CategoryDialogController;
+import com.tuandev.fbsbarcode.ui.kiz.CategoryItemController;
+import com.tuandev.fbsbarcode.ui.kiz.KizPanelController;
+import com.tuandev.fbsbarcode.ui.packing.PackingController;
+import com.tuandev.fbsbarcode.ui.print.PrintTemplateDesignerController;
+import com.tuandev.fbsbarcode.ui.shop.ShopDialogController;
+import com.tuandev.fbsbarcode.ui.shop.ShopSidebarController;
+import com.tuandev.fbsbarcode.ui.supply.SupplyDetailController;
+import com.tuandev.fbsbarcode.ui.supply.SupplyListController;
+import com.tuandev.fbsbarcode.ui.workspace.HomeController;
+import com.tuandev.fbsbarcode.ui.workspace.WorkspaceHeaderController;
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import org.junit.jupiter.api.BeforeAll;
@@ -31,27 +43,28 @@ class FxmlSmokeTest {
 
     @Test
     void shouldLoadAllPrimaryViews() throws Exception {
-        assertLoads("home-view.fxml");
-        assertLoads("shop-sidebar-view.fxml");
-        assertLoads("workspace-header-view.fxml");
-        assertLoads("supply-list-view.fxml");
-        assertLoads("supply-detail-view.fxml");
-        assertLoads("print-history-view.fxml");
-        assertLoads("kiz-panel-view.fxml");
-        assertLoads("print-template-designer-view.fxml");
-        assertLoads("shop-dialog.fxml");
-        assertLoads("category-dialog.fxml");
-        assertLoads("category-item.fxml");
+        assertLoads(HomeController.class, "home-view.fxml");
+        assertLoads(ShopSidebarController.class, "shop-sidebar-view.fxml");
+        assertLoads(WorkspaceHeaderController.class, "workspace-header-view.fxml");
+        assertLoads(SupplyListController.class, "supply-list-view.fxml");
+        assertLoads(SupplyDetailController.class, "supply-detail-view.fxml");
+        assertLoads(PackingController.class, "packing-view.fxml");
+        assertLoads(PrintHistoryController.class, "print-history-view.fxml");
+        assertLoads(KizPanelController.class, "kiz-panel-view.fxml");
+        assertLoads(PrintTemplateDesignerController.class, "print-template-designer-view.fxml");
+        assertLoads(ShopDialogController.class, "shop-dialog.fxml");
+        assertLoads(CategoryDialogController.class, "category-dialog.fxml");
+        assertLoads(CategoryItemController.class, "category-item.fxml");
     }
 
-    private void assertLoads(String resourceName) throws Exception {
+    private void assertLoads(Class<?> resourceOwner, String resourceName) throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
         AtomicBoolean loaded = new AtomicBoolean(false);
         AtomicBoolean failed = new AtomicBoolean(false);
 
         Platform.runLater(() -> {
             try {
-                FXMLLoader loader = FxmlViewLoader.loader(FxmlSmokeTest.class, resourceName);
+                FXMLLoader loader = FxmlViewLoader.loader(resourceOwner, resourceName);
                 Object root = FxmlViewLoader.load(loader);
                 assertNotNull(root);
                 loaded.set(true);
@@ -64,6 +77,6 @@ class FxmlSmokeTest {
         });
 
         assertTrue(latch.await(5, TimeUnit.SECONDS));
-        assertTrue(loaded.get() && !failed.get(), "Failed to load " + resourceName);
+        assertTrue(loaded.get() && !failed.get(), "Failed to load " + resourceOwner.getSimpleName() + "/" + resourceName);
     }
 }

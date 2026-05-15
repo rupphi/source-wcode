@@ -72,14 +72,8 @@ public class WbSupplyRepository {
                        s.done,
                        s.is_b2b,
                        s.created_at,
-                       COALESCE(s.order_count, o.item_count, 0) AS item_count
+                       COALESCE(s.order_count, 0) AS item_count
                 FROM wb_supplies s
-                LEFT JOIN (
-                    SELECT shop_id, supply_id, COUNT(*) AS item_count
-                    FROM wb_orders
-                    WHERE supply_id IS NOT NULL AND supply_id <> ''
-                    GROUP BY shop_id, supply_id
-                ) o ON o.shop_id = s.shop_id AND o.supply_id = s.supply_id
                 WHERE s.shop_id = ?
                 ORDER BY s.done ASC, s.created_at DESC, s.supply_id DESC
                 """;
@@ -175,6 +169,49 @@ public class WbSupplyRepository {
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, Math.max(0, orderCount));
             ps.setString(2, Instant.now().toString());
+            ps.setInt(3, shopId);
+            ps.setString(4, supplyId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void saveCreatedSupply(int shopId, String supplyId, String name) {
+        String sql = """
+                INSERT INTO wb_supplies(
+                    shop_id, supply_id, is_b2b, done, order_count, created_at, name, synced_at
+                ) VALUES (?, ?, 0, 0, 0, ?, ?, ?)
+                ON CONFLICT(shop_id, supply_id) DO UPDATE SET
+                    done = 0,
+                    name = excluded.name,
+                    synced_at = excluded.synced_at
+                """;
+        String now = Instant.now().toString();
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, shopId);
+            ps.setString(2, supplyId);
+            ps.setString(3, now);
+            ps.setString(4, name);
+            ps.setString(5, now);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void markSupplyDelivered(int shopId, String supplyId) {
+        String sql = """
+                UPDATE wb_supplies
+                SET done = 1, closed_at = COALESCE(closed_at, ?), synced_at = ?
+                WHERE shop_id = ? AND supply_id = ?
+                """;
+        String now = Instant.now().toString();
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, now);
+            ps.setString(2, now);
             ps.setInt(3, shopId);
             ps.setString(4, supplyId);
             ps.executeUpdate();

@@ -20,7 +20,7 @@
             <children>
                 <ImageView fitHeight="40.0" fitWidth="40.0" pickOnBounds="true" preserveRatio="true">
                     <image>
-                        <Image url="@logo-fbs.png" />
+                        <Image url="@/com/tuandev/fbsbarcode/assets/images/logo.png" />
                     </image>
                 </ImageView>
                 <Label alignment="CENTER_LEFT" text="WCode" textAlignment="LEFT" styleClass="h2">
@@ -30,7 +30,7 @@
                 </Label>
             </children>
         </HBox>
-        <Button alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onSettings" prefHeight="34.0" prefWidth="190.0" text=" Дизайн шаблона">
+        <Button alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onSettings" prefHeight="30.0" prefWidth="190.0" text=" Дизайн шаблона">
             <styleClass>
                 <String fx:value="button" />
                 <String fx:value="btn-warning" />
@@ -39,7 +39,7 @@
                 <FontIcon iconLiteral="fth-edit" iconSize="16" iconColor="white"/>
             </graphic>
         </Button>
-        <Button alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onAddShop" prefHeight="34.0" prefWidth="190.0" text=" Добавить магазин">
+        <Button alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onAddShop" prefHeight="30.0" prefWidth="190.0" text=" Добавить магазин">
             <styleClass>
                 <String fx:value="button" />
                 <String fx:value="btn-primary" />
@@ -49,25 +49,16 @@
             </graphic>
         </Button>
         <Label alignment="CENTER" maxWidth="1.7976931348623157E308" styleClass="text-muted text-bold" text="-" textAlignment="CENTER" />
-        <Button fx:id="btnDashboard" alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onDashboard" prefHeight="34.0" prefWidth="190.0" text=" Панель управления">
+        <Button alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onPacking" prefHeight="30.0" prefWidth="190.0" text=" Упаковка WB">
             <styleClass>
                 <String fx:value="button" />
                 <String fx:value="btn-primary" />
             </styleClass>
             <graphic>
-                <FontIcon iconLiteral="fth-pie-chart" iconSize="16" iconColor="white"/>
+                <FontIcon iconLiteral="fth-truck" iconSize="16" iconColor="white"/>
             </graphic>
         </Button>
-        <Button fx:id="btnSupplies" alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onSupplies" prefHeight="34.0" prefWidth="190.0" text=" Заказы и поставки">
-            <styleClass>
-                <String fx:value="button" />
-                <String fx:value="btn-secondary" />
-            </styleClass>
-            <graphic>
-                <FontIcon iconLiteral="fth-package" iconSize="16" iconColor="white"/>
-            </graphic>
-        </Button>
-        <Button fx:id="btnPrintHistory" alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onPrintHistory" prefHeight="34.0" prefWidth="190.0" text=" История печати">
+        <Button fx:id="btnPrintHistory" alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onPrintHistory" prefHeight="30.0" prefWidth="190.0" text=" История печати">
             <styleClass>
                 <String fx:value="button" />
                 <String fx:value="btn-secondary" />

@@ -13,7 +13,7 @@ import java.util.Optional;
 public class CategoryDialogService {
     public Optional<Category> showCreateDialog() {
         Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.getDialogPane().getStylesheets().add(java.util.Objects.requireNonNull(com.tuandev.fbsbarcode.MainApplication.class.getResource("css/theme.css")).toExternalForm());
+        dialog.getDialogPane().getStylesheets().add(java.util.Objects.requireNonNull(com.tuandev.fbsbarcode.MainApplication.class.getResource("/com/tuandev/fbsbarcode/styles/theme.css")).toExternalForm());
         dialog.setTitle("Thêm danh mục sản phẩm");
 
         ButtonType okBtnType = new ButtonType("Thêm", ButtonBar.ButtonData.OK_DONE);

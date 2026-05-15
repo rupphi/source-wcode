@@ -39,19 +39,10 @@ public class OrderExportWorkflow {
             );
 
             wbSupplyWorkflow.ensureOrderImages(workingOrders);
-            exportPdfFiles(template, request.outputFile(), request.detailsFile(), request.shop(), request.supplyId(), request.supplyName(), printedAt, workingOrders);
-            printHistoryService.recordSuccessfulJob(request.shop(), request.supplyId(), request.supplyName(), printedAt, template, workingOrders);
+            exportPdfFiles(template, request.outputFile(), request.detailsFile(), request.shop(), request.supplyId(), request.supplyName(), printedAt, workingOrders, request.printOptions());
+            long printJobId = printHistoryService.recordSuccessfulJob(request.shop(), request.supplyId(), request.supplyName(), printedAt, template, workingOrders);
             successRecorded = true;
-
-            if (!usedKizs.isEmpty()) {
-                List<String> failures = attachKizCodes(request.shop(), workingOrders);
-                if (!failures.isEmpty()) {
-                    throw new IllegalStateException(String.join(System.lineSeparator(), failures));
-                }
-                KizService.deleteKizs(usedKizs);
-            }
-
-            return new ExportResult(workingOrders, usedKizs);
+            return new ExportResult(workingOrders, usedKizs, printJobId, buildKizAttachmentAssignments(workingOrders, usedKizs));
         } catch (IOException | WriterException | RuntimeException ex) {
             if (!successRecorded) {
                 printHistoryService.recordFailedJob(
@@ -86,6 +77,10 @@ public class OrderExportWorkflow {
             copy.setStickerCode(order.getStickerCode());
             copy.setImageUrl(order.getImageUrl());
             copy.setSubjectName(order.getSubjectName());
+            copy.setCreatedAt(order.getCreatedAt());
+            copy.setPrice(order.getPrice());
+            copy.setSupplierStatus(order.getSupplierStatus());
+            copy.setWbStatus(order.getWbStatus());
             copies.add(copy);
         }
         return copies;
@@ -131,8 +126,9 @@ public class OrderExportWorkflow {
                                 String supplyId,
                                 String supplyName,
                                 String printedAt,
-                                List<Order> orders) throws IOException, WriterException {
-        barcodePrintService.export(template, orders, outputFile);
+                                List<Order> orders,
+                                PrintJobOptions printOptions) throws IOException, WriterException {
+        barcodePrintService.export(template, orders, outputFile, printOptions);
         orderDetailsPdfExporter.export(detailsFile, orders, new OrderDetailsPdfExporter.PrintDetailsMetadata(
                 supplyId,
                 supplyName,
@@ -142,31 +138,25 @@ public class OrderExportWorkflow {
         ));
     }
 
-    private static List<String> attachKizCodes(Shop shop, List<Order> orders) throws IOException {
-        List<String> failures = new ArrayList<>();
-
+    private static List<KizAttachmentAssignment> buildKizAttachmentAssignments(List<Order> orders, List<Kiz> usedKizs) {
+        if (orders == null || orders.isEmpty() || usedKizs == null || usedKizs.isEmpty()) {
+            return List.of();
+        }
+        java.util.Map<String, Kiz> kizByCode = usedKizs.stream()
+                .collect(java.util.stream.Collectors.toMap(Kiz::getCode, value -> value, (left, right) -> left));
+        List<KizAttachmentAssignment> assignments = new ArrayList<>();
         for (Order order : orders) {
-            if (order.getKiz() == null || order.getKiz().isBlank()) {
+            if (order.getId() == null || order.getKiz() == null || order.getKiz().isBlank()) {
                 continue;
             }
-
-            KizService.AttachCodeResult result = KizService.addDataMatrixCodeToOrder(
-                    shop.getApiKey(),
-                    order.getId(),
-                    order.getKiz()
-            );
-
-            if (!result.success()) {
-                String message = "Gắn KIZ thất bại cho order " + order.getId() + " (HTTP " + result.statusCode() + ")";
-                if (!result.responseBody().isBlank()) {
-                    message += ": " + result.responseBody();
-                }
-                failures.add(message);
-                LOGGER.warn("Attach KIZ failed for order {} with status {} and body {}", order.getId(), result.statusCode(), result.responseBody());
+            Kiz sourceKiz = kizByCode.get(order.getKiz());
+            if (sourceKiz == null) {
+                LOGGER.warn("Không tìm thấy KIZ nguồn để enqueue background attach cho order {}", order.getId());
+                continue;
             }
+            assignments.add(new KizAttachmentAssignment(order.getId(), order.getKiz(), sourceKiz));
         }
-
-        return failures;
+        return assignments;
     }
 
     public record ExportRequest(
@@ -175,11 +165,20 @@ public class OrderExportWorkflow {
             String supplyName,
             List<Order> orders,
             String kizCommand,
+            PrintJobOptions printOptions,
             File outputFile,
             File detailsFile
     ) {
     }
 
-    public record ExportResult(List<Order> exportedOrders, List<Kiz> consumedKizs) {
+    public record ExportResult(
+            List<Order> exportedOrders,
+            List<Kiz> consumedKizs,
+            long printJobId,
+            List<KizAttachmentAssignment> kizAttachments
+    ) {
+    }
+
+    public record KizAttachmentAssignment(Long orderId, String kizCode, Kiz sourceKiz) {
     }
 }

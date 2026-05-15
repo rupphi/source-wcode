@@ -6,7 +6,6 @@ on:
     paths-ignore:
       - 'README.md'
       - '.gitignore'
-      - 'website/**'
   pull_request:
     branches: [main]
 
@@ -36,5 +35,5 @@ jobs:
       - name: Upload JAR artifact
         uses: actions/upload-artifact@v4
         with:
-          name: FBSBarcode-JAR
+          name: WCode-JAR
           path: target/*.jar

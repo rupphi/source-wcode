@@ -5,30 +5,19 @@ import javafx.scene.control.Button;
 
 public class ShopSidebarController {
     @FXML
-    private Button btnDashboard;
-    
-    @FXML
-    private Button btnSupplies;
-
-    @FXML
     private Button btnPrintHistory;
 
-    private Runnable onDashboard;
-    private Runnable onSupplies;
+    private Runnable onPacking;
     private Runnable onPrintHistory;
     private Runnable onAddShop;
     private Runnable onOpenSettings;
 
-    public void setOnDashboard(Runnable onDashboard) {
-        this.onDashboard = onDashboard;
-    }
-
-    public void setOnSupplies(Runnable onSupplies) {
-        this.onSupplies = onSupplies;
-    }
-
     public void setOnPrintHistory(Runnable onPrintHistory) {
         this.onPrintHistory = onPrintHistory;
+    }
+
+    public void setOnPacking(Runnable onPacking) {
+        this.onPacking = onPacking;
     }
 
     public void setOnAddShop(Runnable onAddShop) {
@@ -40,16 +29,9 @@ public class ShopSidebarController {
     }
 
     @FXML
-    private void onDashboard() {
-        if (onDashboard != null) {
-            onDashboard.run();
-        }
-    }
-
-    @FXML
-    private void onSupplies() {
-        if (onSupplies != null) {
-            onSupplies.run();
+    private void onPacking() {
+        if (onPacking != null) {
+            onPacking.run();
         }
     }
 

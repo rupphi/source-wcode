@@ -13,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -85,6 +86,31 @@ public class WbApiClient {
         return getJson(apiKey, url, WbSupplyDto.class);
     }
 
+    public WbCreateSupplyResponse createSupply(String apiKey, String name) throws IOException {
+        String url = "https://marketplace-api.wildberries.ru/api/v3/supplies";
+        return postJson(apiKey, url, Map.of("name", name), WbCreateSupplyResponse.class);
+    }
+
+    public void addOrdersToSupply(String apiKey, String supplyId, List<Long> orderIds) throws IOException {
+        String url = "https://marketplace-api.wildberries.ru/api/marketplace/v3/supplies/" + supplyId + "/orders";
+        patchJson(apiKey, url, Map.of("orders", orderIds));
+    }
+
+    public void deliverSupply(String apiKey, String supplyId) throws IOException {
+        String url = "https://marketplace-api.wildberries.ru/api/v3/supplies/" + supplyId + "/deliver";
+        patchJson(apiKey, url, Map.of());
+    }
+
+    public byte[] getSupplyBarcode(String apiKey, String supplyId, String type) throws IOException {
+        String safeType = type == null || type.isBlank() ? "png" : type;
+        String url = "https://marketplace-api.wildberries.ru/api/v3/supplies/" + supplyId + "/barcode?type=" + safeType;
+        WbSupplyBarcodeResponse response = getJson(apiKey, url, WbSupplyBarcodeResponse.class);
+        if (response == null || response.getFile() == null || response.getFile().isBlank()) {
+            return new byte[0];
+        }
+        return Base64.getDecoder().decode(response.getFile());
+    }
+
     private <T> T getJson(String apiKey, String url, Class<T> type) throws IOException {
         Request request = new Request.Builder()
                 .url(url)
@@ -104,6 +130,16 @@ public class WbApiClient {
         return execute(request, type);
     }
 
+    private void patchJson(String apiKey, String url, Object payload) throws IOException {
+        RequestBody body = RequestBody.create(GSON.toJson(payload), JSON);
+        Request request = new Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer " + apiKey)
+                .patch(body)
+                .build();
+        execute(request, Void.class);
+    }
+
     private <T> T execute(Request request, Class<T> type) throws IOException {
         try (Response response = CLIENT.newCall(request).execute()) {
             String body = response.body() == null ? "" : response.body().string();
@@ -111,6 +147,9 @@ public class WbApiClient {
                 String message = extractErrorMessage(request.url(), response.code(), body);
                 LOGGER.warn("WB API request failed: {} {} -> {} {}", request.method(), request.url(), response.code(), message);
                 throw new WbApiException(message, response.code(), body);
+            }
+            if (type == Void.class) {
+                return null;
             }
             return GSON.fromJson(body, type);
         }
@@ -122,6 +161,12 @@ public class WbApiClient {
                 return "Token không có quyền Content trên WB API";
             }
             return "Token không có quyền Content trên WB API (" + body + ")";
+        }
+        if (isContentApiRateLimited(url, statusCode)) {
+            if (body == null || body.isBlank()) {
+                return "WB Content API đang giới hạn tần suất gọi. Vui lòng thử lại sau.";
+            }
+            return "WB Content API đang giới hạn tần suất gọi. " + body;
         }
         if (body == null || body.isBlank()) {
             return "WB API request failed";
@@ -148,5 +193,11 @@ public class WbApiClient {
             return false;
         }
         return "content-api.wildberries.ru".equalsIgnoreCase(url.host());
+    }
+
+    private boolean isContentApiRateLimited(HttpUrl url, int statusCode) {
+        return url != null
+                && statusCode == 429
+                && "content-api.wildberries.ru".equalsIgnoreCase(url.host());
     }
 }

@@ -6,9 +6,9 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 
-import static com.tuandev.fbsbarcode.integration.wb.WbRepositorySupport.deleteByKey;
 import static com.tuandev.fbsbarcode.integration.wb.WbRepositorySupport.safeLong;
 import static com.tuandev.fbsbarcode.integration.wb.WbRepositorySupport.setNullableBoolean;
 import static com.tuandev.fbsbarcode.integration.wb.WbRepositorySupport.setNullableDouble;
@@ -16,6 +16,8 @@ import static com.tuandev.fbsbarcode.integration.wb.WbRepositorySupport.setNulla
 import static com.tuandev.fbsbarcode.integration.wb.WbRepositorySupport.setNullableLong;
 
 public class WbProductRepository {
+    private static final int IN_CLAUSE_BATCH_SIZE = 250;
+
     public void saveProductBatch(int shopId, List<WbProductCard> cards) {
         if (cards == null || cards.isEmpty()) {
             return;
@@ -102,110 +104,153 @@ public class WbProductRepository {
             }
             psCard.executeBatch();
         }
+        List<Long> nmIds = cards.stream()
+                .map(WbProductCard::getNmID)
+                .map(WbRepositorySupport::safeLong)
+                .filter(nmId -> nmId > 0)
+                .distinct()
+                .toList();
+        deleteProductChildren(conn, shopId, nmIds);
+        insertProductChildren(conn, shopId, cards);
+    }
 
-        for (WbProductCard card : cards) {
-            long nmId = safeLong(card.getNmID());
-            deleteProductChildren(conn, shopId, nmId);
-            insertPhotos(conn, shopId, nmId, card.getPhotos());
-            insertSizes(conn, shopId, nmId, card.getSizes());
-            insertCharacteristics(conn, shopId, nmId, card.getCharacteristics());
-            insertTags(conn, shopId, nmId, card.getTags());
+    private void deleteProductChildren(Connection conn, int shopId, List<Long> nmIds) throws SQLException {
+        if (nmIds == null || nmIds.isEmpty()) {
+            return;
+        }
+        for (int start = 0; start < nmIds.size(); start += IN_CLAUSE_BATCH_SIZE) {
+            List<Long> batch = nmIds.subList(start, Math.min(start + IN_CLAUSE_BATCH_SIZE, nmIds.size()));
+            String placeholders = String.join(", ", Collections.nCopies(batch.size(), "?"));
+            executeDeleteByNmBatch(conn, "DELETE FROM wb_product_photos WHERE shop_id = ? AND nm_id IN (" + placeholders + ")", shopId, batch);
+            executeDeleteSizeSkusByNmBatch(conn, shopId, batch, placeholders);
+            executeDeleteByNmBatch(conn, "DELETE FROM wb_product_sizes WHERE shop_id = ? AND nm_id IN (" + placeholders + ")", shopId, batch);
+            executeDeleteByNmBatch(conn, "DELETE FROM wb_product_characteristics WHERE shop_id = ? AND nm_id IN (" + placeholders + ")", shopId, batch);
+            executeDeleteByNmBatch(conn, "DELETE FROM wb_product_tags WHERE shop_id = ? AND nm_id IN (" + placeholders + ")", shopId, batch);
         }
     }
 
-    private void deleteProductChildren(Connection conn, int shopId, long nmId) throws SQLException {
-        deleteByKey(conn, "DELETE FROM wb_product_photos WHERE shop_id = ? AND nm_id = ?", shopId, nmId);
-        deleteByKey(conn, "DELETE FROM wb_product_size_skus WHERE shop_id = ? AND chrt_id IN (SELECT chrt_id FROM wb_product_sizes WHERE shop_id = ? AND nm_id = ?)", shopId, shopId, nmId);
-        deleteByKey(conn, "DELETE FROM wb_product_sizes WHERE shop_id = ? AND nm_id = ?", shopId, nmId);
-        deleteByKey(conn, "DELETE FROM wb_product_characteristics WHERE shop_id = ? AND nm_id = ?", shopId, nmId);
-        deleteByKey(conn, "DELETE FROM wb_product_tags WHERE shop_id = ? AND nm_id = ?", shopId, nmId);
+    private void executeDeleteByNmBatch(Connection conn, String sql, int shopId, List<Long> nmIds) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, shopId);
+            int index = 2;
+            for (Long nmId : nmIds) {
+                ps.setLong(index++, nmId);
+            }
+            ps.executeUpdate();
+        }
     }
 
-    private void insertPhotos(Connection conn, int shopId, long nmId, List<WbProductCard.Photo> photos) throws SQLException {
+    private void executeDeleteSizeSkusByNmBatch(Connection conn, int shopId, List<Long> nmIds, String placeholders) throws SQLException {
+        String sql = "DELETE FROM wb_product_size_skus WHERE shop_id = ? AND chrt_id IN (" +
+                "SELECT chrt_id FROM wb_product_sizes WHERE shop_id = ? AND nm_id IN (" + placeholders + "))";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, shopId);
+            ps.setInt(2, shopId);
+            int index = 3;
+            for (Long nmId : nmIds) {
+                ps.setLong(index++, nmId);
+            }
+            ps.executeUpdate();
+        }
+    }
+
+    private void insertProductChildren(Connection conn, int shopId, List<WbProductCard> cards) throws SQLException {
+        String photosSql = "INSERT INTO wb_product_photos (shop_id, nm_id, photo_index, big_url, c246x328_url, c516x688_url, hq_url, square_url, tm_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String sizesSql = "INSERT INTO wb_product_sizes (shop_id, chrt_id, nm_id, tech_size, wb_size) VALUES (?, ?, ?, ?, ?)";
+        String skusSql = "INSERT INTO wb_product_size_skus (shop_id, chrt_id, sku) VALUES (?, ?, ?)";
+        String characteristicsSql = "INSERT INTO wb_product_characteristics (shop_id, nm_id, characteristic_id, name, value_json) VALUES (?, ?, ?, ?, ?)";
+        String tagsSql = "INSERT INTO wb_product_tags (shop_id, nm_id, tag_id, name, color) VALUES (?, ?, ?, ?, ?)";
+        try (PreparedStatement photosPs = conn.prepareStatement(photosSql);
+             PreparedStatement sizesPs = conn.prepareStatement(sizesSql);
+             PreparedStatement skusPs = conn.prepareStatement(skusSql);
+             PreparedStatement characteristicsPs = conn.prepareStatement(characteristicsSql);
+             PreparedStatement tagsPs = conn.prepareStatement(tagsSql)) {
+            for (WbProductCard card : cards) {
+                long nmId = safeLong(card.getNmID());
+                if (nmId <= 0) {
+                    continue;
+                }
+                addPhotosBatch(photosPs, shopId, nmId, card.getPhotos());
+                addSizesBatch(sizesPs, skusPs, shopId, nmId, card.getSizes());
+                addCharacteristicsBatch(characteristicsPs, shopId, nmId, card.getCharacteristics());
+                addTagsBatch(tagsPs, shopId, nmId, card.getTags());
+            }
+            photosPs.executeBatch();
+            sizesPs.executeBatch();
+            skusPs.executeBatch();
+            characteristicsPs.executeBatch();
+            tagsPs.executeBatch();
+        }
+    }
+
+    private void addPhotosBatch(PreparedStatement ps, int shopId, long nmId, List<WbProductCard.Photo> photos) throws SQLException {
         if (photos == null || photos.isEmpty()) {
             return;
         }
-        String sql = "INSERT INTO wb_product_photos (shop_id, nm_id, photo_index, big_url, c246x328_url, c516x688_url, hq_url, square_url, tm_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            for (int i = 0; i < photos.size(); i++) {
-                WbProductCard.Photo photo = photos.get(i);
-                ps.setInt(1, shopId);
-                ps.setLong(2, nmId);
-                ps.setInt(3, i);
-                ps.setString(4, photo.getBig());
-                ps.setString(5, photo.getC246x328());
-                ps.setString(6, photo.getC516x688());
-                ps.setString(7, photo.getHq());
-                ps.setString(8, photo.getSquare());
-                ps.setString(9, photo.getTm());
-                ps.addBatch();
-            }
-            ps.executeBatch();
+        for (int i = 0; i < photos.size(); i++) {
+            WbProductCard.Photo photo = photos.get(i);
+            ps.setInt(1, shopId);
+            ps.setLong(2, nmId);
+            ps.setInt(3, i);
+            ps.setString(4, photo.getBig());
+            ps.setString(5, photo.getC246x328());
+            ps.setString(6, photo.getC516x688());
+            ps.setString(7, photo.getHq());
+            ps.setString(8, photo.getSquare());
+            ps.setString(9, photo.getTm());
+            ps.addBatch();
         }
     }
 
-    private void insertSizes(Connection conn, int shopId, long nmId, List<WbProductCard.Size> sizes) throws SQLException {
+    private void addSizesBatch(PreparedStatement psSize, PreparedStatement psSku, int shopId, long nmId, List<WbProductCard.Size> sizes) throws SQLException {
         if (sizes == null || sizes.isEmpty()) {
             return;
         }
-        try (PreparedStatement psSize = conn.prepareStatement("INSERT INTO wb_product_sizes (shop_id, chrt_id, nm_id, tech_size, wb_size) VALUES (?, ?, ?, ?, ?)");
-             PreparedStatement psSku = conn.prepareStatement("INSERT INTO wb_product_size_skus (shop_id, chrt_id, sku) VALUES (?, ?, ?)")) {
-            for (WbProductCard.Size size : sizes) {
-                long chrtId = safeLong(size.getChrtID());
-                psSize.setInt(1, shopId);
-                psSize.setLong(2, chrtId);
-                psSize.setLong(3, nmId);
-                psSize.setString(4, size.getTechSize());
-                psSize.setString(5, size.getWbSize());
-                psSize.addBatch();
+        for (WbProductCard.Size size : sizes) {
+            long chrtId = safeLong(size.getChrtID());
+            psSize.setInt(1, shopId);
+            psSize.setLong(2, chrtId);
+            psSize.setLong(3, nmId);
+            psSize.setString(4, size.getTechSize());
+            psSize.setString(5, size.getWbSize());
+            psSize.addBatch();
 
-                if (size.getSkus() != null) {
-                    for (String sku : size.getSkus()) {
-                        psSku.setInt(1, shopId);
-                        psSku.setLong(2, chrtId);
-                        psSku.setString(3, sku);
-                        psSku.addBatch();
-                    }
+            if (size.getSkus() != null) {
+                for (String sku : size.getSkus()) {
+                    psSku.setInt(1, shopId);
+                    psSku.setLong(2, chrtId);
+                    psSku.setString(3, sku);
+                    psSku.addBatch();
                 }
             }
-            psSize.executeBatch();
-            psSku.executeBatch();
         }
     }
 
-    private void insertCharacteristics(Connection conn, int shopId, long nmId, List<WbProductCard.Characteristic> characteristics) throws SQLException {
+    private void addCharacteristicsBatch(PreparedStatement ps, int shopId, long nmId, List<WbProductCard.Characteristic> characteristics) throws SQLException {
         if (characteristics == null || characteristics.isEmpty()) {
             return;
         }
-        String sql = "INSERT INTO wb_product_characteristics (shop_id, nm_id, characteristic_id, name, value_json) VALUES (?, ?, ?, ?, ?)";
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            for (WbProductCard.Characteristic characteristic : characteristics) {
-                ps.setInt(1, shopId);
-                ps.setLong(2, nmId);
-                ps.setInt(3, characteristic.getId());
-                ps.setString(4, characteristic.getName());
-                ps.setString(5, WbJson.GSON.toJson(characteristic.getValue()));
-                ps.addBatch();
-            }
-            ps.executeBatch();
+        for (WbProductCard.Characteristic characteristic : characteristics) {
+            ps.setInt(1, shopId);
+            ps.setLong(2, nmId);
+            ps.setInt(3, characteristic.getId());
+            ps.setString(4, characteristic.getName());
+            ps.setString(5, WbJson.GSON.toJson(characteristic.getValue()));
+            ps.addBatch();
         }
     }
 
-    private void insertTags(Connection conn, int shopId, long nmId, List<WbProductCard.Tag> tags) throws SQLException {
+    private void addTagsBatch(PreparedStatement ps, int shopId, long nmId, List<WbProductCard.Tag> tags) throws SQLException {
         if (tags == null || tags.isEmpty()) {
             return;
         }
-        String sql = "INSERT INTO wb_product_tags (shop_id, nm_id, tag_id, name, color) VALUES (?, ?, ?, ?, ?)";
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            for (WbProductCard.Tag tag : tags) {
-                ps.setInt(1, shopId);
-                ps.setLong(2, nmId);
-                ps.setInt(3, tag.getId());
-                ps.setString(4, tag.getName());
-                ps.setString(5, tag.getColor());
-                ps.addBatch();
-            }
-            ps.executeBatch();
+        for (WbProductCard.Tag tag : tags) {
+            ps.setInt(1, shopId);
+            ps.setLong(2, nmId);
+            ps.setInt(3, tag.getId());
+            ps.setString(4, tag.getName());
+            ps.setString(5, tag.getColor());
+            ps.addBatch();
         }
     }
 }

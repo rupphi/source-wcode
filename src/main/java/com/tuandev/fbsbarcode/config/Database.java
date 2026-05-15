@@ -155,6 +155,13 @@ public class Database {
 
             st.execute("INSERT INTO config (id, type) SELECT 1, 1 WHERE NOT EXISTS (SELECT 1 FROM config WHERE id = 1)");
             ensureColumnExists(conn, "print_jobs", "shop_name", "TEXT");
+            createIndexIfNotExists(conn, "idx_print_jobs_shop_id", "print_jobs", "shop_id");
+            createIndexIfNotExists(conn, "idx_print_jobs_shop_supply_status", "print_jobs", "shop_id, supply_id, status");
+            createIndexIfNotExists(conn, "idx_print_jobs_shop_printed_at", "print_jobs", "shop_id, printed_at DESC");
+            createIndexIfNotExists(conn, "idx_print_job_items_print_job_id", "print_job_items", "print_job_id");
+            createIndexIfNotExists(conn, "idx_print_job_items_order_id", "print_job_items", "order_id");
+            createIndexIfNotExists(conn, "idx_kizs_shop_category_id", "kizs", "shop_id, category_id");
+            createIndexIfNotExists(conn, "idx_image_cache_last_used_at", "image_cache", "last_used_at");
             WbSchemaSupport.initialize(conn);
         } catch (SQLException e) {
             throw new RuntimeException(e);
@@ -179,6 +186,12 @@ public class Database {
                 }
             }
             return false;
+        }
+    }
+
+    private static void createIndexIfNotExists(Connection conn, String indexName, String tableName, String columns) throws SQLException {
+        try (Statement statement = conn.createStatement()) {
+            statement.execute("CREATE INDEX IF NOT EXISTS " + indexName + " ON " + tableName + "(" + columns + ")");
         }
     }
 }

@@ -4,7 +4,6 @@ import com.tuandev.fbsbarcode.features.print.history.PrintHistoryItem;
 import com.tuandev.fbsbarcode.features.print.history.PrintHistoryJobSummary;
 import javafx.beans.property.ReadOnlyObjectWrapper;
 import javafx.beans.property.ReadOnlyStringWrapper;
-import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -76,7 +75,7 @@ public class PrintHistoryController {
     }
 
     public void setJobs(List<PrintHistoryJobSummary> jobs) {
-        jobsTable.setItems(FXCollections.observableArrayList(jobs));
+        jobsTable.getItems().setAll(jobs == null ? List.of() : jobs);
         boolean hasJobs = jobs != null && !jobs.isEmpty();
         emptyStateLabel.setVisible(!hasJobs);
         emptyStateLabel.setManaged(!hasJobs);

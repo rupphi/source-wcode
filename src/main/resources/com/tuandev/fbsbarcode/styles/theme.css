@@ -80,18 +80,6 @@
     -fx-padding: 16px;
 }
 
-.dashboard-kpi-value {
-    -fx-font-size: 28px;
-    -fx-font-weight: bold;
-    -fx-text-fill: #F5F7FA;
-}
-
-.dashboard-sync-value {
-    -fx-font-size: 20px;
-    -fx-font-weight: bold;
-    -fx-text-fill: #F5F7FA;
-}
-
 .chart-pie-label {
     -fx-fill: #F5F7FA;
 }
@@ -110,6 +98,46 @@
     -fx-border-color: -border-color;
     -fx-border-radius: 6px;
     -fx-padding: 12px;
+}
+
+.filter-bar,
+.selection-action-bar {
+    -fx-padding: 5px 8px;
+}
+
+/* Packing pipeline */
+.packing-tabs {
+    -fx-background-color: transparent;
+    -fx-tab-min-height: 32px;
+}
+.packing-tabs > .tab-header-area {
+    -fx-padding: 0 0 8px 0;
+}
+.packing-tabs > .tab-header-area > .tab-header-background {
+    -fx-background-color: -bg-tertiary;
+    -fx-background-radius: 10px;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 10px;
+}
+.packing-tabs > .tab-header-area > .headers-region > .tab {
+    -fx-background-color: transparent;
+    -fx-background-radius: 8px;
+    -fx-border-width: 0;
+    -fx-padding: 5px 16px;
+    -fx-cursor: hand;
+}
+.packing-tabs > .tab-header-area > .headers-region > .tab:selected {
+    -fx-background-color: linear-gradient(to bottom, #6976f4, #5865F2);
+}
+.packing-tabs > .tab-header-area > .headers-region > .tab .tab-label {
+    -fx-text-fill: -text-secondary;
+    -fx-font-weight: bold;
+}
+.packing-tabs > .tab-header-area > .headers-region > .tab:selected .tab-label {
+    -fx-text-fill: white;
+}
+.packing-tabs > .tab-content-area {
+    -fx-background-color: transparent;
 }
 
 /* SplitPane Overrides */
@@ -134,7 +162,7 @@
     -fx-border-radius: 6px;
     -fx-border-width: 1px;
     -fx-cursor: hand;
-    -fx-padding: 6px 16px;
+    -fx-padding: 5px 14px;
     -fx-alignment: CENTER;
 }
 
@@ -183,7 +211,7 @@
 .btn-icon {
     -fx-background-color: transparent;
     -fx-border-width: 0;
-    -fx-padding: 6px;
+    -fx-padding: 4px;
     -fx-background-radius: 6px;
 }
 .btn-icon:hover {
@@ -194,19 +222,71 @@
 }
 
 /* Form Inputs (TextField, PasswordField, TextArea, ComboBox) */
-.text-input, .combo-box {
+.text-input, .combo-box, .menu-button {
     -fx-background-color: -bg-secondary;
     -fx-border-color: -border-color;
     -fx-border-radius: 6px;
     -fx-background-radius: 6px;
     -fx-text-fill: -text-primary;
     -fx-prompt-text-fill: -text-muted;
+    -fx-padding: 5px 10px;
+}
+
+.text-input:focused, .combo-box:focused, .menu-button:focused {
+    -fx-border-color: -accent;
+    -fx-background-color: -bg-secondary;
+}
+
+.menu-button .label {
+    -fx-text-fill: -text-primary;
+}
+
+.menu-button > .arrow-button {
+    -fx-background-color: transparent;
+    -fx-padding: 0 4px 0 6px;
+}
+
+.filter-bar .text-field,
+.filter-bar .menu-button,
+.filter-bar .button {
+    -fx-min-height: 28px;
+    -fx-pref-height: 28px;
+    -fx-max-height: 28px;
+}
+
+.filter-bar .menu-button {
+    -fx-min-width: 0;
+}
+
+.context-menu {
+    -fx-background-color: -bg-secondary;
+    -fx-background-radius: 8px;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 8px;
+    -fx-padding: 4px;
+}
+
+.context-menu .menu-item {
+    -fx-background-color: transparent;
+    -fx-background-radius: 6px;
     -fx-padding: 6px 10px;
 }
 
-.text-input:focused, .combo-box:focused {
-    -fx-border-color: -accent;
-    -fx-background-color: -bg-secondary;
+.context-menu .menu-item .label {
+    -fx-text-fill: -text-primary;
+}
+
+.context-menu .menu-item:focused,
+.context-menu .menu-item:hover {
+    -fx-background-color: -bg-tertiary;
+}
+
+.context-menu .check-menu-item:selected {
+    -fx-background-color: rgba(88, 101, 242, 0.18);
+}
+
+.context-menu .check-menu-item:selected .label {
+    -fx-text-fill: #F5F7FA;
 }
 
 /* TextArea specific */

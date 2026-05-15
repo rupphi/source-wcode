@@ -60,7 +60,11 @@ public class WbProductSyncService {
                 }
             }
         } catch (IOException | RuntimeException ex) {
-            LOGGER.error("Sync products thất bại cho shop {}", shop.getId(), ex);
+            if (ex instanceof WbApiException wb && wb.isRateLimited()) {
+                LOGGER.warn("Sync products bị WB rate limit cho shop {}: {}", shop.getId(), wb.getMessage());
+            } else {
+                LOGGER.error("Sync products thất bại cho shop {}", shop.getId(), ex);
+            }
             syncStateRepository.saveSyncError(shop.getId(), ex.getMessage());
             syncRunRepository.finishSyncRun(runId, false, read, written, ex instanceof WbApiException wb ? String.valueOf(wb.getStatusCode()) : "local_error", ex.getMessage());
             throw ex;

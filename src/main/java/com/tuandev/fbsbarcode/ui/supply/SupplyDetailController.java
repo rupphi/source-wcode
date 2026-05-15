@@ -1,11 +1,11 @@
 package com.tuandev.fbsbarcode.ui.supply;
 
 import com.tuandev.fbsbarcode.models.Order;
-import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
 import javafx.geometry.Pos;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.scene.control.CheckBox;
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.TableCell;
@@ -22,6 +22,9 @@ import java.util.List;
 import java.util.function.Consumer;
 
 public class SupplyDetailController {
+    private static final String DEFAULT_STICKER_LOADING_TEXT = "Загрузка стикеров WB...";
+    private boolean updatingSortControls;
+
     @FXML
     private Label supplyTitleLabel;
 
@@ -29,10 +32,22 @@ public class SupplyDetailController {
     private Label supplyMetaLabel;
 
     @FXML
+    private Label supplyStatusLabel;
+
+    @FXML
     private Label emptyStateLabel;
 
     @FXML
     private ProgressIndicator orderLoading;
+
+    @FXML
+    private ProgressIndicator orderLoadingInline;
+
+    @FXML
+    private HBox orderLoadingBox;
+
+    @FXML
+    private Label orderLoadingLabel;
 
     @FXML
     private ProgressIndicator stickerLoading;
@@ -94,7 +109,19 @@ public class SupplyDetailController {
     @FXML
     private CheckBox sortBySizeCheckBox;
 
+    @FXML
+    private Button printButton;
+
+    @FXML
+    private Button backButton;
+
+    @FXML
+    private Button deliverButton;
+
     private Consumer<OrderSortOptions> onSortOptionsChanged;
+    private Runnable onPrint;
+    private Runnable onBack;
+    private Runnable onDeliver;
 
     @FXML
     private void initialize() {
@@ -132,6 +159,30 @@ public class SupplyDetailController {
         setSupplyInfo("Chưa chọn supply", "Chọn một supply để xem đơn hàng");
         setStickerLoading(false);
         setOrders(List.of());
+        setPrintEnabled(false);
+        setDeliverEnabled(false);
+        setSupplyStatus("");
+    }
+
+    @FXML
+    private void onPrint() {
+        if (onPrint != null) {
+            onPrint.run();
+        }
+    }
+
+    @FXML
+    private void onBack() {
+        if (onBack != null) {
+            onBack.run();
+        }
+    }
+
+    @FXML
+    private void onDeliver() {
+        if (onDeliver != null) {
+            onDeliver.run();
+        }
     }
 
     public void setSupplyInfo(String title, String meta) {
@@ -143,7 +194,7 @@ public class SupplyDetailController {
     }
 
     public void setOrders(List<Order> orders) {
-        orderTable.setItems(FXCollections.observableArrayList(orders));
+        orderTable.getItems().setAll(orders == null ? List.of() : orders);
         boolean hasOrders = orders != null && !orders.isEmpty();
         orderTable.setVisible(hasOrders);
         orderTable.setManaged(hasOrders);
@@ -151,7 +202,6 @@ public class SupplyDetailController {
         sortOptionsBox.setManaged(hasOrders);
         emptyStateLabel.setVisible(false);
         emptyStateLabel.setManaged(false);
-        orderTable.refresh();
     }
 
     public void refreshOrders() {
@@ -168,16 +218,60 @@ public class SupplyDetailController {
 
     public void setLoading(boolean loading) {
         orderLoading.setVisible(loading);
+        if (orderLoadingInline != null) {
+            orderLoadingInline.setVisible(loading);
+        }
+        if (orderLoadingBox != null) {
+            orderLoadingBox.setVisible(loading);
+            orderLoadingBox.setManaged(loading);
+        }
+        if (orderLoadingLabel != null) {
+            orderLoadingLabel.setText("Загрузка заказов и данных поставки...");
+        }
+        orderTable.setDisable(loading);
+        sortOptionsBox.setDisable(loading);
     }
 
     public void setStickerLoading(boolean loading) {
+        setStickerLoading(loading, DEFAULT_STICKER_LOADING_TEXT);
+    }
+
+    public void setStickerLoading(boolean loading, String message) {
         stickerLoading.setVisible(loading);
         stickerLoadingBox.setVisible(loading);
         stickerLoadingBox.setManaged(loading);
+        stickerLoadingLabel.setText(message == null || message.isBlank() ? DEFAULT_STICKER_LOADING_TEXT : message);
     }
 
     public void setOnSortOptionsChanged(Consumer<OrderSortOptions> onSortOptionsChanged) {
         this.onSortOptionsChanged = onSortOptionsChanged;
+    }
+
+    public void setOnPrint(Runnable onPrint) {
+        this.onPrint = onPrint;
+    }
+
+    public void setOnBack(Runnable onBack) {
+        this.onBack = onBack;
+    }
+
+    public void setOnDeliver(Runnable onDeliver) {
+        this.onDeliver = onDeliver;
+    }
+
+    public void setPrintEnabled(boolean enabled) {
+        printButton.setDisable(!enabled);
+    }
+
+    public void setDeliverEnabled(boolean enabled) {
+        deliverButton.setDisable(!enabled);
+    }
+
+    public void setSupplyStatus(String status) {
+        boolean visible = status != null && !status.isBlank();
+        supplyStatusLabel.setText(visible ? status : "");
+        supplyStatusLabel.setVisible(visible);
+        supplyStatusLabel.setManaged(visible);
     }
 
     public OrderSortOptions getSortOptions() {
@@ -187,6 +281,19 @@ public class SupplyDetailController {
                 sortByColorCheckBox.isSelected(),
                 sortBySizeCheckBox.isSelected()
         );
+    }
+
+    public void setSortOptions(OrderSortOptions options) {
+        OrderSortOptions safe = options == null ? OrderSortOptions.defaultOptions() : options;
+        updatingSortControls = true;
+        try {
+            sortBySubjectCheckBox.setSelected(safe.bySubject());
+            sortByArticleCheckBox.setSelected(safe.byArticle());
+            sortByColorCheckBox.setSelected(safe.byColor());
+            sortBySizeCheckBox.setSelected(safe.bySize());
+        } finally {
+            updatingSortControls = false;
+        }
     }
 
     private void disableColumnSorting() {
@@ -205,6 +312,9 @@ public class SupplyDetailController {
     }
 
     private void notifySortChanged() {
+        if (updatingSortControls) {
+            return;
+        }
         if (onSortOptionsChanged != null) {
             onSortOptionsChanged.accept(getSortOptions());
         }

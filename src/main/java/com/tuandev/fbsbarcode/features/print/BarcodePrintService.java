@@ -9,6 +9,10 @@ import java.util.List;
 
 public class BarcodePrintService {
     public void export(PrintTemplate template, List<Order> orders, File outputFile) throws IOException, WriterException {
-        GenerateBarcode.exportTemplateAndSticker(template, orders, outputFile);
+        export(template, orders, outputFile, PrintJobOptions.defaults());
+    }
+
+    public void export(PrintTemplate template, List<Order> orders, File outputFile, PrintJobOptions options) throws IOException, WriterException {
+        GenerateBarcode.exportTemplateAndSticker(template, orders, outputFile, options);
     }
 }

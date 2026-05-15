@@ -19,4 +19,16 @@ public class WbApiException extends IOException {
     public String getResponseBody() {
         return responseBody;
     }
+
+    public boolean isStatus(int expectedStatusCode) {
+        return statusCode == expectedStatusCode;
+    }
+
+    public boolean isContentPermissionError() {
+        return statusCode == 401 || statusCode == 403;
+    }
+
+    public boolean isRateLimited() {
+        return statusCode == 429;
+    }
 }

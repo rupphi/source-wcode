@@ -10,7 +10,13 @@ public final class FxmlViewLoader {
     }
 
     public static FXMLLoader loader(Class<?> resourceOwner, String resourceName) {
-        URL resource = resourceOwner.getResource("/com/tuandev/fbsbarcode/" + resourceName);
+        URL resource = resourceOwner.getResource(resourceName);
+        if (resource == null && resourceName.startsWith("/")) {
+            resource = resourceOwner.getResource(resourceName);
+        }
+        if (resource == null) {
+            resource = resourceOwner.getResource("/com/tuandev/fbsbarcode/" + resourceName);
+        }
         if (resource == null) {
             throw new IllegalStateException("Không tìm thấy FXML: " + resourceName);
         }

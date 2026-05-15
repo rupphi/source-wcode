@@ -7,6 +7,9 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
 
 public class ImageCacheRepository {
     public byte[] findImage(String cacheKey) {
@@ -21,7 +24,6 @@ public class ImageCacheRepository {
             if (!rs.next()) {
                 return null;
             }
-            touch(cacheKey);
             return rs.getBytes("image_blob");
         } catch (SQLException e) {
             throw new RuntimeException(e);
@@ -57,13 +59,32 @@ public class ImageCacheRepository {
         }
     }
 
-    public void touch(String cacheKey) {
-        String sql = "UPDATE image_cache SET last_used_at = ? WHERE cache_key = ?";
+    public Map<String, byte[]> findImages(Collection<String> cacheKeys) {
+        Map<String, byte[]> images = new HashMap<>();
+        if (cacheKeys == null || cacheKeys.isEmpty()) {
+            return images;
+        }
+        java.util.List<String> safeKeys = cacheKeys.stream()
+                .filter(key -> key != null && !key.isBlank())
+                .distinct()
+                .toList();
+        if (safeKeys.isEmpty()) {
+            return images;
+        }
+
+        String placeholders = String.join(", ", java.util.Collections.nCopies(safeKeys.size(), "?"));
+        String sql = "SELECT cache_key, image_blob FROM image_cache WHERE cache_key IN (" + placeholders + ")";
         try (Connection conn = Database.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, Instant.now().toString());
-            ps.setString(2, cacheKey);
-            ps.executeUpdate();
+            int index = 1;
+            for (String key : safeKeys) {
+                ps.setString(index++, key);
+            }
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                images.put(rs.getString("cache_key"), rs.getBytes("image_blob"));
+            }
+            return images;
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }

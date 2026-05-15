@@ -62,7 +62,7 @@ jobs:
             --dest out \
             --app-version "${{ env.APP_VERSION }}" \
             --vendor TuanDev \
-            --icon src/main/resources/com/tuandev/fbsbarcode/logo-fbs.ico \
+            --icon src/main/resources/com/tuandev/fbsbarcode/assets/images/logo.ico \
             --win-menu \
             --win-shortcut \
             --win-per-user-install \
@@ -87,7 +87,7 @@ jobs:
             --dest out \
             --app-version "${{ env.APP_VERSION }}" \
             --vendor TuanDev \
-            --icon src/main/resources/com/tuandev/fbsbarcode/logo-fbs.ico \
+            --icon src/main/resources/com/tuandev/fbsbarcode/assets/images/logo.ico \
             --win-menu \
             --win-shortcut \
             --win-per-user-install \
@@ -112,7 +112,7 @@ jobs:
             --dest out \
             --app-version "${{ env.APP_VERSION }}" \
             --vendor TuanDev \
-            --icon src/main/resources/com/tuandev/fbsbarcode/logo-fbs.ico \
+            --icon src/main/resources/com/tuandev/fbsbarcode/assets/images/logo.ico \
             --java-options "--enable-native-access=ALL-UNNAMED" \
             --java-options "-Djavafx.cachedir=C:\\ProgramData\\WCode\\openjfx-cache" \
             --java-options "-Djava.io.tmpdir=C:\\ProgramData\\WCode\\tmp" \

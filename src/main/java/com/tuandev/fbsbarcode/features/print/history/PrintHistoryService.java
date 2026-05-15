@@ -4,6 +4,8 @@ import com.google.zxing.WriterException;
 import com.tuandev.fbsbarcode.features.print.BarcodePrintService;
 import com.tuandev.fbsbarcode.features.print.OrderDetailsPdfExporter;
 import com.tuandev.fbsbarcode.features.print.OrderExportWorkflow;
+import com.tuandev.fbsbarcode.features.print.PrintJobOptions;
+import com.tuandev.fbsbarcode.features.print.PrintPreferenceService;
 import com.tuandev.fbsbarcode.features.print.PrintTemplate;
 import com.tuandev.fbsbarcode.features.print.PrintTemplateService;
 import com.tuandev.fbsbarcode.models.Order;
@@ -20,6 +22,7 @@ public class PrintHistoryService {
     private final PrintTemplateService printTemplateService = new PrintTemplateService();
     private final BarcodePrintService barcodePrintService = new BarcodePrintService();
     private final OrderDetailsPdfExporter orderDetailsPdfExporter = new OrderDetailsPdfExporter();
+    private final PrintPreferenceService printPreferenceService = new PrintPreferenceService();
 
     public long recordSuccessfulJob(Shop shop, String supplyId, String supplyName, String printedAt, PrintTemplate template, List<Order> orders) {
         List<PrintHistoryItem> items = new ArrayList<>(orders.size());
@@ -83,11 +86,16 @@ public class PrintHistoryService {
         return repository.findItems(printJobId);
     }
 
+    public boolean hasSuccessfulJobForSupply(int shopId, String supplyId) {
+        return supplyId != null && !supplyId.isBlank() && repository.hasSuccessfulJobForSupply(shopId, supplyId);
+    }
+
     public OrderExportWorkflow.ExportResult reprint(PrintHistoryJobSummary job, File outputFile, File detailsFile) throws IOException, WriterException {
         PrintTemplate template = printTemplateService.getDefaultTemplate();
+        PrintJobOptions printOptions = printPreferenceService.load();
 
         List<Order> orders = toOrders(repository.findItems(job.id()));
-        barcodePrintService.export(template, orders, outputFile);
+        barcodePrintService.export(template, orders, outputFile, printOptions);
         orderDetailsPdfExporter.export(detailsFile, orders, new OrderDetailsPdfExporter.PrintDetailsMetadata(
                 job.supplyId(),
                 job.supplyName(),
@@ -95,11 +103,17 @@ public class PrintHistoryService {
                 job.printedAt(),
                 job.itemCount()
         ));
-        return new OrderExportWorkflow.ExportResult(orders, List.of());
+        return new OrderExportWorkflow.ExportResult(orders, List.of(), 0L, List.of());
     }
 
     private List<Order> toOrders(List<PrintHistoryItem> items) {
         List<Order> orders = new ArrayList<>(items.size());
+        List<String> imageKeys = items.stream()
+                .map(PrintHistoryItem::imageCacheKey)
+                .filter(key -> key != null && !key.isBlank())
+                .distinct()
+                .toList();
+        java.util.Map<String, byte[]> imagesByKey = imageCacheRepository.findImages(imageKeys);
         for (PrintHistoryItem item : items) {
             Order order = new Order(
                     item.orderId(),
@@ -117,7 +131,7 @@ public class PrintHistoryService {
             order.setKiz(item.kiz());
             order.setImageUrl(item.imageCacheKey());
             if (item.imageCacheKey() != null && !item.imageCacheKey().isBlank()) {
-                order.setImage(imageCacheRepository.findImage(item.imageCacheKey()));
+                order.setImage(imagesByKey.get(item.imageCacheKey()));
             }
             orders.add(order);
         }

@@ -14,6 +14,10 @@ public class Order {
     private String kiz;
     private String stickerCode;
     private String imageUrl;
+    private String createdAt;
+    private Integer price;
+    private String supplierStatus;
+    private String wbStatus;
 
     public Order() {
     }
@@ -132,6 +136,38 @@ public class Order {
 
     public void setImageUrl(String imageUrl) {
         this.imageUrl = imageUrl;
+    }
+
+    public String getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(String createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public Integer getPrice() {
+        return price;
+    }
+
+    public void setPrice(Integer price) {
+        this.price = price;
+    }
+
+    public String getSupplierStatus() {
+        return supplierStatus;
+    }
+
+    public void setSupplierStatus(String supplierStatus) {
+        this.supplierStatus = supplierStatus;
+    }
+
+    public String getWbStatus() {
+        return wbStatus;
+    }
+
+    public void setWbStatus(String wbStatus) {
+        this.wbStatus = wbStatus;
     }
 
     @Override

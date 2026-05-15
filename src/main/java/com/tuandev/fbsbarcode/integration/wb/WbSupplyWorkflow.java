@@ -17,6 +17,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Collections;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -73,11 +74,16 @@ public class WbSupplyWorkflow {
             try {
                 productSyncService.sync(shop);
             } catch (WbApiException ex) {
-                if (ex.getStatusCode() != 401 && ex.getStatusCode() != 403) {
+                if (!ex.isContentPermissionError() && !ex.isRateLimited()) {
                     throw ex;
                 }
-                LOGGER.warn("Không thể đồng bộ products cho supply {} của shop {} vì token thiếu quyền Content: {}",
-                        supplyId, shop.getId(), ex.getMessage());
+                if (ex.isContentPermissionError()) {
+                    LOGGER.warn("Không thể đồng bộ products cho supply {} của shop {} vì token thiếu quyền Content: {}",
+                            supplyId, shop.getId(), ex.getMessage());
+                } else {
+                    LOGGER.warn("Không thể đồng bộ products cho supply {} của shop {} vì WB rate limit: {}",
+                            supplyId, shop.getId(), ex.getMessage());
+                }
             }
         }
         List<Order> orders = orderRepository.getOrdersForSupply(shop.getId(), supplyId);
@@ -120,10 +126,11 @@ public class WbSupplyWorkflow {
         populateOrderImages(orders);
     }
 
-    private void populateCachedOrderImages(List<Order> orders) {
+    public List<Order> populateCachedOrderImages(List<Order> orders) {
         if (orders == null || orders.isEmpty()) {
-            return;
+            return orders;
         }
+        Map<String, List<Order>> ordersByCacheKey = new HashMap<>();
         for (Order order : orders) {
             if (order.getImage() != null) {
                 continue;
@@ -136,17 +143,32 @@ public class WbSupplyWorkflow {
             if (cacheKey == null) {
                 continue;
             }
-            byte[] image = IMAGE_CACHE.get(cacheKey);
-            if (image == null) {
-                image = imageCacheRepository.findImage(cacheKey);
-                if (image != null) {
-                    IMAGE_CACHE.put(cacheKey, image);
-                }
+            byte[] memoryImage = IMAGE_CACHE.get(cacheKey);
+            if (memoryImage != null) {
+                order.setImage(memoryImage);
+                continue;
             }
-            if (image != null) {
+            ordersByCacheKey.computeIfAbsent(cacheKey, ignored -> new ArrayList<>()).add(order);
+        }
+        if (ordersByCacheKey.isEmpty()) {
+            return orders;
+        }
+        Map<String, byte[]> cachedImages = imageCacheRepository.findImages(ordersByCacheKey.keySet());
+        for (Map.Entry<String, byte[]> entry : cachedImages.entrySet()) {
+            byte[] image = entry.getValue();
+            if (image == null) {
+                continue;
+            }
+            IMAGE_CACHE.put(entry.getKey(), image);
+            List<Order> matchingOrders = ordersByCacheKey.get(entry.getKey());
+            if (matchingOrders == null) {
+                continue;
+            }
+            for (Order order : matchingOrders) {
                 order.setImage(image);
             }
         }
+        return orders;
     }
 
     private void populateOrderImages(List<Order> orders) {
@@ -159,11 +181,48 @@ public class WbSupplyWorkflow {
             return;
         }
 
-        CountDownLatch latch = new CountDownLatch(missingImages.size());
+        Map<String, List<Order>> missingByCacheKey = new LinkedHashMap<>();
         for (Order order : missingImages) {
+            String cacheKey = PrintHistoryService.imageCacheKey(order.getImageUrl());
+            if (cacheKey == null) {
+                continue;
+            }
+            byte[] memoryImage = IMAGE_CACHE.get(cacheKey);
+            if (memoryImage != null) {
+                order.setImage(memoryImage);
+                continue;
+            }
+            missingByCacheKey.computeIfAbsent(cacheKey, ignored -> new ArrayList<>()).add(order);
+        }
+        if (missingByCacheKey.isEmpty()) {
+            return;
+        }
+
+        Map<String, byte[]> dbImages = imageCacheRepository.findImages(missingByCacheKey.keySet());
+        for (Map.Entry<String, byte[]> entry : dbImages.entrySet()) {
+            byte[] image = entry.getValue();
+            if (image == null) {
+                continue;
+            }
+            IMAGE_CACHE.put(entry.getKey(), image);
+            List<Order> matchingOrders = missingByCacheKey.remove(entry.getKey());
+            if (matchingOrders == null) {
+                continue;
+            }
+            for (Order order : matchingOrders) {
+                order.setImage(image);
+            }
+        }
+
+        if (missingByCacheKey.isEmpty()) {
+            return;
+        }
+
+        CountDownLatch latch = new CountDownLatch(missingByCacheKey.size());
+        for (Map.Entry<String, List<Order>> entry : missingByCacheKey.entrySet()) {
             IMAGE_EXECUTOR.submit(() -> {
                 try {
-                    populateSingleOrderImage(order);
+                    populateOrdersByCacheKey(entry.getKey(), entry.getValue());
                 } finally {
                     latch.countDown();
                 }
@@ -177,23 +236,16 @@ public class WbSupplyWorkflow {
         }
     }
 
-    private void populateSingleOrderImage(Order order) {
-        String imageUrl = order.getImageUrl();
-        if (imageUrl == null || imageUrl.isBlank()) {
+    private void populateOrdersByCacheKey(String cacheKey, List<Order> orders) {
+        if (cacheKey == null || cacheKey.isBlank() || orders == null || orders.isEmpty()) {
             return;
         }
-        String cacheKey = PrintHistoryService.imageCacheKey(imageUrl);
-        if (cacheKey == null) {
+        String imageUrl = orders.get(0).getImageUrl();
+        if (imageUrl == null || imageUrl.isBlank()) {
             return;
         }
 
         byte[] image = IMAGE_CACHE.get(cacheKey);
-        if (image == null) {
-            image = imageCacheRepository.findImage(cacheKey);
-            if (image != null) {
-                IMAGE_CACHE.put(cacheKey, image);
-            }
-        }
         if (image == null && !FAILED_IMAGE_URLS.contains(cacheKey)) {
             image = downloadProductImage(imageUrl);
             if (image != null) {
@@ -205,7 +257,9 @@ public class WbSupplyWorkflow {
         }
 
         if (image != null) {
-            order.setImage(image);
+            for (Order order : orders) {
+                order.setImage(image);
+            }
         }
     }
 

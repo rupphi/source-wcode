@@ -38,7 +38,7 @@ public class WbOrderSyncService {
         try {
             WbOrdersResponse response = apiClient.getNewOrders(shop.getApiKey());
             int count = response == null || response.getOrders() == null ? 0 : response.getOrders().size();
-            orderRepository.saveOrders(shop.getId(), response == null ? List.of() : response.getOrders());
+            orderRepository.saveCurrentNewOrdersSnapshot(shop.getId(), response == null ? List.of() : response.getOrders());
             syncRunRepository.finishSyncRun(runId, true, count, count, null, null);
             return count;
         } catch (IOException | RuntimeException ex) {

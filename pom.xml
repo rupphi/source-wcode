@@ -6,15 +6,15 @@
 
     <groupId>com.tuandev</groupId>
     <artifactId>FBSBarcode</artifactId>
-    <version>1.0.14</version>
-    <name>FBSBarcode</name>
+    <version>1.0.15</version>
+    <name>WCode</name>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <junit.version>5.12.1</junit.version>
         <slf4j.version>1.7.36</slf4j.version>
         <log4j.version>2.24.3</log4j.version>
-        <app.version>1.0.14</app.version>
+        <app.version>1.0.15</app.version>
     </properties>
 
     <dependencies>

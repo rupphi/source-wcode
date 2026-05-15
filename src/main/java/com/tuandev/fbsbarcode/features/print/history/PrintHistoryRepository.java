@@ -198,4 +198,22 @@ public class PrintHistoryRepository {
             throw new RuntimeException(e);
         }
     }
+
+    public boolean hasSuccessfulJobForSupply(int shopId, String supplyId) {
+        String sql = """
+                SELECT 1
+                FROM print_jobs
+                WHERE shop_id = ? AND supply_id = ? AND status = 'success'
+                LIMIT 1
+                """;
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, shopId);
+            ps.setString(2, supplyId);
+            ResultSet rs = ps.executeQuery();
+            return rs.next();
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
 }

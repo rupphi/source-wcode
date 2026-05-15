@@ -46,7 +46,7 @@ public class GenerateBarcode {
             synchronized (GenerateBarcode.class) {
                 if (arialFontBytes == null) {
                     try {
-                        try (InputStream is = GenerateBarcode.class.getResourceAsStream("/com/tuandev/fbsbarcode/services/ARIAL.TTF")) {
+                        try (InputStream is = GenerateBarcode.class.getResourceAsStream("/com/tuandev/fbsbarcode/assets/fonts/ARIAL.TTF")) {
                             if (is == null) {
                                 throw new RuntimeException("Không tìm thấy file font trong resources!");
                             }
@@ -66,6 +66,10 @@ public class GenerateBarcode {
     }
 
     public static void exportTemplateAndSticker(PrintTemplate template, List<Order> orders, File file) throws IOException, WriterException {
+        exportTemplateAndSticker(template, orders, file, PrintJobOptions.defaults());
+    }
+
+    public static void exportTemplateAndSticker(PrintTemplate template, List<Order> orders, File file, PrintJobOptions options) throws IOException, WriterException {
         PdfWriter pdfWriter = new PdfWriter(file);
         PdfDocument pdfDocument = new PdfDocument(pdfWriter);
 
@@ -74,18 +78,50 @@ public class GenerateBarcode {
         document.setMargins(0, 0, 0, 0);
         document.setFont(getArialFont());
         RenderContext renderContext = new RenderContext();
+        PrintJobOptions safeOptions = options == null ? PrintJobOptions.defaults() : options.normalized();
+        boolean firstPage = true;
 
-        for (int i = 0; i < orders.size(); i++) {
-            Order order = orders.get(i);
-            addTemplatePage(order, template, document, pdfDocument, renderContext);
-            document.add(new AreaBreak(AreaBreakType.NEXT_PAGE));
-            addPageSticker(order, document, pdfDocument, renderContext);
-            if (i != orders.size() - 1) {
-                document.add(new AreaBreak(AreaBreakType.NEXT_PAGE));
+        for (Order order : orders) {
+            if (safeOptions.pageOrder() == PrintPageOrder.STICKER_THEN_BARCODE) {
+                firstPage = appendStickerPage(document, pdfDocument, renderContext, firstPage, order);
+                firstPage = appendTemplatePages(document, pdfDocument, renderContext, firstPage, order, template, safeOptions.barcodeCopies());
+            } else {
+                firstPage = appendTemplatePages(document, pdfDocument, renderContext, firstPage, order, template, safeOptions.barcodeCopies());
+                firstPage = appendStickerPage(document, pdfDocument, renderContext, firstPage, order);
             }
         }
 
         document.close();
+    }
+
+    private static boolean appendTemplatePages(Document document,
+                                               PdfDocument pdfDocument,
+                                               RenderContext renderContext,
+                                               boolean firstPage,
+                                               Order order,
+                                               PrintTemplate template,
+                                               int copies) throws IOException {
+        boolean currentFirstPage = firstPage;
+        for (int copyIndex = 0; copyIndex < Math.max(1, copies); copyIndex++) {
+            if (!currentFirstPage) {
+                document.add(new AreaBreak(AreaBreakType.NEXT_PAGE));
+            }
+            addTemplatePage(order, template, document, pdfDocument, renderContext);
+            currentFirstPage = false;
+        }
+        return currentFirstPage;
+    }
+
+    private static boolean appendStickerPage(Document document,
+                                             PdfDocument pdfDocument,
+                                             RenderContext renderContext,
+                                             boolean firstPage,
+                                             Order order) throws IOException, WriterException {
+        if (!firstPage) {
+            document.add(new AreaBreak(AreaBreakType.NEXT_PAGE));
+        }
+        addPageSticker(order, document, pdfDocument, renderContext);
+        return false;
     }
 
     private static void addTemplatePage(

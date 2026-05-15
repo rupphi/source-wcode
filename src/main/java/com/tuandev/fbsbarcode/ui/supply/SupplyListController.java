@@ -1,7 +1,6 @@
 package com.tuandev.fbsbarcode.ui.supply;
 
 import com.tuandev.fbsbarcode.integration.wb.WbSupplySummary;
-import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ComboBox;
@@ -49,7 +48,7 @@ public class SupplyListController {
 
     public void setSupplies(List<WbSupplySummary> supplies) {
         suppressSelectionCallback = true;
-        supplyComboBox.setItems(FXCollections.observableArrayList(supplies));
+        supplyComboBox.getItems().setAll(supplies == null ? List.of() : supplies);
         supplyComboBox.getSelectionModel().clearSelection();
         suppressSelectionCallback = false;
         updateEmptyState();
@@ -57,7 +56,7 @@ public class SupplyListController {
 
     public void refreshSupplies(List<WbSupplySummary> supplies, String selectedSupplyId) {
         suppressSelectionCallback = true;
-        supplyComboBox.setItems(FXCollections.observableArrayList(supplies));
+        supplyComboBox.getItems().setAll(supplies == null ? List.of() : supplies);
         if (selectedSupplyId == null || selectedSupplyId.isBlank()) {
             supplyComboBox.getSelectionModel().clearSelection();
         } else {
@@ -74,7 +73,6 @@ public class SupplyListController {
                 supplyComboBox.getSelectionModel().clearSelection();
             }
         }
-        supplyComboBox.requestLayout();
         suppressSelectionCallback = false;
         updateEmptyState();
     }
@@ -95,6 +93,26 @@ public class SupplyListController {
         suppressSelectionCallback = false;
         if (selected != null) {
             notifySelection(selected);
+        }
+    }
+
+    public void updateSupplySummary(WbSupplySummary updatedSupply) {
+        if (updatedSupply == null) {
+            return;
+        }
+        int selectedIndex = supplyComboBox.getSelectionModel().getSelectedIndex();
+        for (int i = 0; i < supplyComboBox.getItems().size(); i++) {
+            WbSupplySummary existing = supplyComboBox.getItems().get(i);
+            if (!updatedSupply.getSupplyId().equals(existing.getSupplyId())) {
+                continue;
+            }
+            supplyComboBox.getItems().set(i, updatedSupply);
+            if (selectedIndex == i) {
+                suppressSelectionCallback = true;
+                supplyComboBox.getSelectionModel().select(i);
+                suppressSelectionCallback = false;
+            }
+            return;
         }
     }
 

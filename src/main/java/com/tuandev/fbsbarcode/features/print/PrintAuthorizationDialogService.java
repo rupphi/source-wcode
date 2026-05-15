@@ -20,7 +20,7 @@ public class PrintAuthorizationDialogService {
         }
 
         Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.getDialogPane().getStylesheets().add(java.util.Objects.requireNonNull(com.tuandev.fbsbarcode.MainApplication.class.getResource("css/theme.css")).toExternalForm());
+        dialog.getDialogPane().getStylesheets().add(java.util.Objects.requireNonNull(com.tuandev.fbsbarcode.MainApplication.class.getResource("/com/tuandev/fbsbarcode/styles/theme.css")).toExternalForm());
         dialog.setTitle("Xác thực in");
         dialog.setHeaderText(null);
         dialog.getDialogPane().setPadding(new Insets(18));

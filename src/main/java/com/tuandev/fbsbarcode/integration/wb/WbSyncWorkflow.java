@@ -67,8 +67,12 @@ public class WbSyncWorkflow {
         try {
             return productSyncService.sync(shop);
         } catch (WbApiException ex) {
-            if (ex.getStatusCode() == 401 || ex.getStatusCode() == 403) {
+            if (ex.isContentPermissionError()) {
                 LOGGER.warn("Bỏ qua sync products cho shop {} vì token không có quyền Content: {}", shop.getId(), ex.getMessage());
+                return 0;
+            }
+            if (ex.isRateLimited()) {
+                LOGGER.warn("Bỏ qua sync products cho shop {} vì WB Content API đang rate limit: {}", shop.getId(), ex.getMessage());
                 return 0;
             }
             throw ex;

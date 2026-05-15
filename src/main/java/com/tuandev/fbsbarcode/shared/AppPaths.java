@@ -81,6 +81,27 @@ public final class AppPaths {
         return null;
     }
 
+    public static File preferredDownloadsDirectory() {
+        List<Path> candidates = List.of(
+                pathsFromBase(windowsUserProfile().orElse(null), "Downloads"),
+                appDataDir()
+        );
+
+        for (Path candidate : candidates) {
+            if (candidate == null) {
+                continue;
+            }
+            try {
+                Files.createDirectories(candidate);
+                if (Files.isDirectory(candidate)) {
+                    return candidate.toFile();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return preferredFileChooserDirectory();
+    }
+
     private static Path pathsFromBase(Path base, String child) {
         return base == null ? null : base.resolve(child);
     }

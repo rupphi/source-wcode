@@ -2,9 +2,6 @@ package com.tuandev.fbsbarcode.ui.workspace;
 
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
-import javafx.scene.control.Label;
-import javafx.scene.control.ProgressIndicator;
-
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ListCell;
 import com.tuandev.fbsbarcode.models.Shop;
@@ -16,13 +13,7 @@ public class WorkspaceHeaderController {
     private ComboBox<Shop> shopComboBox;
 
     @FXML
-    private ProgressIndicator syncLoading;
-
-    @FXML
     private Button syncButton;
-
-    @FXML
-    private Button exportButton;
 
     @FXML
     private Button editShopButton;
@@ -31,7 +22,6 @@ public class WorkspaceHeaderController {
     private Button deleteShopButton;
 
     private Runnable onSync;
-    private Runnable onExport;
     private Runnable onEditShop;
     private Runnable onDeleteShop;
     private Consumer<Shop> onShopSelected;
@@ -61,13 +51,6 @@ public class WorkspaceHeaderController {
     }
 
     @FXML
-    private void onExport() {
-        if (onExport != null) {
-            onExport.run();
-        }
-    }
-
-    @FXML
     private void onEditShop() {
         if (onEditShop != null) {
             onEditShop.run();
@@ -83,10 +66,6 @@ public class WorkspaceHeaderController {
 
     public void setOnSync(Runnable onSync) {
         this.onSync = onSync;
-    }
-
-    public void setOnExport(Runnable onExport) {
-        this.onExport = onExport;
     }
 
     public void setOnEditShop(Runnable onEditShop) {
@@ -112,13 +91,12 @@ public class WorkspaceHeaderController {
     }
 
     public void setBusy(boolean busy) {
-        syncLoading.setVisible(busy);
+        // Header loading removed. Keep local loading indicators near the active content instead.
     }
 
     public void setControls(boolean hasShop, boolean busy, boolean exportEnabled, boolean tokenValid) {
         syncButton.setDisable(!hasShop || busy || !tokenValid);
         editShopButton.setDisable(!hasShop || busy);
         deleteShopButton.setDisable(!hasShop || busy || !tokenValid);
-        exportButton.setDisable(!exportEnabled || busy || !tokenValid);
     }
 }

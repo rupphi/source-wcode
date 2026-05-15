@@ -55,7 +55,8 @@ mkdir "%JPACKAGE_INPUT%"
 copy /y "target\%MAIN_JAR%" "%JPACKAGE_INPUT%\%MAIN_JAR%" >nul
 xcopy /e /i /y "target\lib" "%JPACKAGE_INPUT%\lib" >nul
 
-set JPACKAGE_COMMON=--name %APP_NAME% --input %JPACKAGE_INPUT% --main-jar %MAIN_JAR% --main-class %MAIN_CLASS% --dest out --app-version %APP_VERSION% --vendor %VENDOR% --icon app.ico %INSTALLER_OPTIONS% --java-options "--enable-native-access=ALL-UNNAMED" --java-options "-Djavafx.cachedir=C:\ProgramData\WCode\openjfx-cache" --java-options "-Djava.io.tmpdir=C:\ProgramData\WCode\tmp" --java-options "-Dorg.sqlite.tmpdir=C:\ProgramData\WCode\tmp" --jlink-options "--strip-native-commands --strip-debug --no-man-pages --no-header-files --bind-services"
+set APP_ICON=src\main\resources\com\tuandev\fbsbarcode\assets\images\logo.ico
+set JPACKAGE_COMMON=--name %APP_NAME% --input %JPACKAGE_INPUT% --main-jar %MAIN_JAR% --main-class %MAIN_CLASS% --dest out --app-version %APP_VERSION% --vendor %VENDOR% --icon %APP_ICON% %INSTALLER_OPTIONS% --java-options "--enable-native-access=ALL-UNNAMED" --java-options "-Djavafx.cachedir=C:\ProgramData\WCode\openjfx-cache" --java-options "-Djava.io.tmpdir=C:\ProgramData\WCode\tmp" --java-options "-Dorg.sqlite.tmpdir=C:\ProgramData\WCode\tmp" --jlink-options "--strip-native-commands --strip-debug --no-man-pages --no-header-files --bind-services"
 
 echo Building %PACKAGE_TYPE% package...
 jpackage --type %PACKAGE_TYPE% %JPACKAGE_COMMON%

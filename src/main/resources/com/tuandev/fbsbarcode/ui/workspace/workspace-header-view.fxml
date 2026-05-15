@@ -4,8 +4,6 @@
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.Button?>
 <?import javafx.scene.control.ComboBox?>
-<?import javafx.scene.control.Label?>
-<?import javafx.scene.control.ProgressIndicator?>
 <?import javafx.scene.image.Image?>
 <?import javafx.scene.image.ImageView?>
 <?import javafx.scene.layout.HBox?>
@@ -43,7 +41,6 @@
             </children>
         </VBox>
         <Pane HBox.hgrow="ALWAYS" />
-        <ProgressIndicator fx:id="syncLoading" maxHeight="22.0" maxWidth="22.0" prefHeight="22.0" prefWidth="22.0" visible="false" />
         <Button fx:id="syncButton" mnemonicParsing="false" onAction="#onSync" prefHeight="34.0" prefWidth="130.0" text=" Синхронизировать WB">
             <styleClass>
                 <String fx:value="button" />
@@ -51,15 +48,6 @@
             </styleClass>
             <graphic>
                 <FontIcon iconLiteral="fth-refresh-cw" iconSize="16" iconColor="white"/>
-            </graphic>
-        </Button>
-        <Button fx:id="exportButton" disable="true" mnemonicParsing="false" onAction="#onExport" prefHeight="34.0" prefWidth="110.0" text=" Print">
-            <styleClass>
-                <String fx:value="button" />
-                <String fx:value="btn-success" />
-            </styleClass>
-            <graphic>
-                <FontIcon iconLiteral="fth-printer" iconSize="16" iconColor="white"/>
             </graphic>
         </Button>
     </children>

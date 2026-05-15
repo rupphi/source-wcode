@@ -217,6 +217,21 @@ public final class WbSchemaSupport {
                     FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
                 )
             """);
+            st.execute("""
+                CREATE TABLE IF NOT EXISTS wb_action_log(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    shop_id INTEGER NOT NULL,
+                    action_type TEXT NOT NULL,
+                    supply_id TEXT,
+                    order_ids TEXT,
+                    status TEXT NOT NULL,
+                    request_json TEXT,
+                    response_json TEXT,
+                    error_message TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
+                )
+            """);
         }
 
         createIndexIfTableExists(conn, "idx_kizs_shop_id", "kizs", "shop_id");
@@ -226,15 +241,23 @@ public final class WbSchemaSupport {
         createIndexIfTableExists(conn, "idx_wb_product_photos_shop_nm_id", "wb_product_photos", "shop_id, nm_id");
         createIndexIfTableExists(conn, "idx_wb_product_tags_shop_nm_id", "wb_product_tags", "shop_id, nm_id");
         createIndexIfTableExists(conn, "idx_wb_supplies_shop_id", "wb_supplies", "shop_id");
+        createIndexIfTableExists(conn, "idx_wb_supplies_shop_done_created", "wb_supplies", "shop_id, done, created_at DESC");
         createIndexIfTableExists(conn, "idx_wb_orders_shop_id", "wb_orders", "shop_id");
         createIndexIfTableExists(conn, "idx_wb_orders_shop_supply_id", "wb_orders", "shop_id, supply_id");
         createIndexIfTableExists(conn, "idx_wb_orders_shop_nm_id", "wb_orders", "shop_id, nm_id");
+        createIndexIfTableExists(conn, "idx_wb_orders_shop_supplier_status_supply", "wb_orders", "shop_id, supplier_status, supply_id");
+        createIndexIfTableExists(conn, "idx_wb_orders_shop_supply_created", "wb_orders", "shop_id, supply_id, created_at DESC");
+        createIndexIfTableExists(conn, "idx_wb_orders_shop_created", "wb_orders", "shop_id, created_at DESC");
+        createIndexIfTableExists(conn, "idx_wb_orders_shop_chrt_id", "wb_orders", "shop_id, chrt_id");
         createIndexIfTableExists(conn, "idx_wb_order_offices_shop_order_id", "wb_order_offices", "shop_id, order_id");
         createIndexIfTableExists(conn, "idx_wb_order_skus_shop_order_id", "wb_order_skus", "shop_id, order_id");
         createIndexIfTableExists(conn, "idx_wb_order_meta_requirements_shop_order_id", "wb_order_meta_requirements", "shop_id, order_id");
+        createIndexIfTableExists(conn, "idx_wb_order_meta_requirements_shop_type_order", "wb_order_meta_requirements", "shop_id, requirement_type, order_id");
         createIndexIfTableExists(conn, "idx_wb_supply_orders_shop_supply_id", "wb_supply_orders", "shop_id, supply_id");
         createIndexIfTableExists(conn, "idx_wb_supply_orders_shop_order_id", "wb_supply_orders", "shop_id, order_id");
+        createIndexIfTableExists(conn, "idx_wb_product_size_skus_shop_chrt_id", "wb_product_size_skus", "shop_id, chrt_id");
         createIndexIfTableExists(conn, "idx_wb_sync_runs_shop_id", "wb_sync_runs", "shop_id");
+        createIndexIfTableExists(conn, "idx_wb_action_log_shop_id", "wb_action_log", "shop_id");
 
         ensureShopColumn(conn, "wb_products_cursor_updated_at", "TEXT");
         ensureShopColumn(conn, "wb_products_cursor_nm_id", "INTEGER");

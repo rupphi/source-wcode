@@ -1,24 +1,62 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <?import javafx.geometry.Insets?>
+<?import java.lang.String?>
+<?import javafx.scene.control.Button?>
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.control.ProgressIndicator?>
 <?import javafx.scene.control.CheckBox?>
 <?import javafx.scene.control.TableColumn?>
 <?import javafx.scene.control.TableView?>
 <?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Pane?>
 <?import javafx.scene.layout.VBox?>
 <?import javafx.scene.text.Font?>
+<?import org.kordamp.ikonli.javafx.FontIcon?>
 
 <VBox spacing="8.0" styleClass="card" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.ui.supply.SupplyDetailController">
     <children>
         <HBox alignment="CENTER_LEFT" spacing="8.0">
             <children>
+                <Button fx:id="backButton" alignment="CENTER" mnemonicParsing="false" onAction="#onBack" prefHeight="32.0" prefWidth="32.0">
+                    <styleClass>
+                        <String fx:value="btn-icon" />
+                    </styleClass>
+                    <graphic>
+                        <FontIcon iconLiteral="fth-arrow-left" iconSize="17" iconColor="#CCD1D9" />
+                    </graphic>
+                </Button>
                 <Label fx:id="supplyTitleLabel" text="Поставка не выбрана" styleClass="h3" />
+                <Label fx:id="supplyStatusLabel" styleClass="badge" text="" visible="false" managed="false" />
                 <ProgressIndicator fx:id="orderLoading" maxHeight="20.0" maxWidth="20.0" prefHeight="20.0" prefWidth="20.0" visible="false" />
+                <Pane HBox.hgrow="ALWAYS" />
+                <Button fx:id="printButton" disable="true" mnemonicParsing="false" onAction="#onPrint" prefHeight="32.0" text="Печать">
+                    <styleClass>
+                        <String fx:value="button" />
+                        <String fx:value="btn-success" />
+                    </styleClass>
+                    <graphic>
+                        <FontIcon iconLiteral="fth-printer" iconSize="16" iconColor="white" />
+                    </graphic>
+                </Button>
+                <Button fx:id="deliverButton" disable="true" mnemonicParsing="false" onAction="#onDeliver" prefHeight="32.0" text="В доставку">
+                    <styleClass>
+                        <String fx:value="button" />
+                        <String fx:value="btn-primary" />
+                    </styleClass>
+                    <graphic>
+                        <FontIcon iconLiteral="fth-truck" iconSize="16" iconColor="white" />
+                    </graphic>
+                </Button>
             </children>
         </HBox>
         <Label fx:id="supplyMetaLabel" managed="false" style="-fx-text-fill: #6c757d;" text="" visible="false" />
+        <HBox fx:id="orderLoadingBox" alignment="CENTER_LEFT" managed="false" spacing="8.0" visible="false">
+            <children>
+                <ProgressIndicator fx:id="orderLoadingInline" maxHeight="18.0" maxWidth="18.0" prefHeight="18.0" prefWidth="18.0" visible="false" />
+                <Label fx:id="orderLoadingLabel" style="-fx-text-fill: #6c757d;" text="Загрузка заказов и данных поставки..." />
+            </children>
+        </HBox>
         <HBox fx:id="stickerLoadingBox" alignment="CENTER_LEFT" managed="false" spacing="8.0" visible="false">
             <children>
                 <ProgressIndicator fx:id="stickerLoading" maxHeight="18.0" maxWidth="18.0" prefHeight="18.0" prefWidth="18.0" visible="false" />
@@ -38,7 +76,7 @@
             <columns>
                 <TableColumn fx:id="noTC" prefWidth="54.0" text="No" />
                 <TableColumn fx:id="idTC" prefWidth="85.0" text="№ задания" />
-                <TableColumn fx:id="imageTC" prefWidth="58.0" text="Ảnh" />
+                <TableColumn fx:id="imageTC" prefWidth="58.0" text="Фото" />
                 <TableColumn fx:id="nameTC" prefWidth="180.0" text="Наименование" />
                 <TableColumn fx:id="subjectNameTC" prefWidth="128.0" text="Категория" />
                 <TableColumn fx:id="articleTC" prefWidth="128.0" text="Артикул продавца" />
