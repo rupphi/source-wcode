@@ -72,7 +72,12 @@ public class WbSupplyRepository {
                        s.done,
                        s.is_b2b,
                        s.created_at,
-                       COALESCE(s.order_count, 0) AS item_count
+                       COALESCE((
+                           SELECT COUNT(*)
+                           FROM wb_supply_orders so
+                           WHERE so.shop_id = s.shop_id
+                             AND so.supply_id = s.supply_id
+                       ), s.order_count, 0) AS item_count
                 FROM wb_supplies s
                 WHERE s.shop_id = ?
                 ORDER BY s.done ASC, s.created_at DESC, s.supply_id DESC

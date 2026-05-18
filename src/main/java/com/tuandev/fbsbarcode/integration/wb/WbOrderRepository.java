@@ -188,12 +188,27 @@ public class WbOrderRepository {
         List<Long> safeOrderIds = orderIds == null ? Collections.emptyList() : orderIds;
         try (Connection conn = Database.getConnection()) {
             conn.setAutoCommit(false);
-            try (PreparedStatement delete = conn.prepareStatement("DELETE FROM wb_supply_orders WHERE shop_id = ? AND supply_id = ?");
+            try (PreparedStatement clearDetached = conn.prepareStatement("""
+                         UPDATE wb_orders
+                         SET supply_id = NULL
+                         WHERE shop_id = ?
+                           AND order_id IN (
+                               SELECT order_id
+                               FROM wb_supply_orders
+                               WHERE shop_id = ? AND supply_id = ?
+                           )
+                         """);
+                 PreparedStatement delete = conn.prepareStatement("DELETE FROM wb_supply_orders WHERE shop_id = ? AND supply_id = ?");
                  PreparedStatement insert = conn.prepareStatement(
                          "INSERT OR IGNORE INTO wb_supply_orders (shop_id, supply_id, order_id) " +
                                  "SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM wb_orders WHERE shop_id = ? AND order_id = ?)");
                  PreparedStatement updateOrders = conn.prepareStatement(
                          "UPDATE wb_orders SET supply_id = ? WHERE shop_id = ? AND order_id = ?")) {
+                clearDetached.setInt(1, shopId);
+                clearDetached.setInt(2, shopId);
+                clearDetached.setString(3, supplyId);
+                clearDetached.executeUpdate();
+
                 delete.setInt(1, shopId);
                 delete.setString(2, supplyId);
                 delete.executeUpdate();
@@ -272,10 +287,11 @@ public class WbOrderRepository {
                                  WHERE pp.shop_id = o.shop_id AND pp.nm_id = o.nm_id
                                  ORDER BY pp.photo_index
                                  LIMIT 1), '') AS image_url
-                FROM wb_orders o
+                FROM wb_supply_orders so
+                JOIN wb_orders o ON o.shop_id = so.shop_id AND o.order_id = so.order_id
                 LEFT JOIN wb_product_cards pc ON pc.shop_id = o.shop_id AND pc.nm_id = o.nm_id
                 LEFT JOIN wb_product_sizes ps ON ps.shop_id = o.shop_id AND ps.chrt_id = o.chrt_id
-                WHERE o.shop_id = ? AND o.supply_id = ?
+                WHERE so.shop_id = ? AND so.supply_id = ?
                 ORDER BY article COLLATE NOCASE, o.order_id
                 """;
         try (Connection conn = Database.getConnection();
