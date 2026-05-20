@@ -87,6 +87,7 @@ public final class KizAttachmentCoordinator {
                 assignments.size(),
                 true,
                 "Отправка KIZ в WB 0/" + assignments.size(),
+                List.of(),
                 List.of()
         );
         activeJobs.put(key, initialProgress);
@@ -125,7 +126,7 @@ public final class KizAttachmentCoordinator {
                 successfulKizs.add(assignment.sourceKiz());
                 completed++;
                 notifyProgress(key, shop, supplyId, supplyName, completed, assignments.size(), true,
-                        "Отправка KIZ в WB " + completed + "/" + assignments.size(), failures);
+                        "Отправка KIZ в WB " + completed + "/" + assignments.size(), failures, successfulKizs);
                 continue;
             }
 
@@ -142,7 +143,7 @@ public final class KizAttachmentCoordinator {
             LOGGER.warn("Background attach KIZ failed for shop {}, supply {}, order {}: {}",
                     shop.getId(), supplyId, assignment.orderId(), message);
             notifyProgress(key, shop, supplyId, supplyName, completed, assignments.size(), true,
-                    "Отправка KIZ в WB " + completed + "/" + assignments.size(), failures);
+                    "Отправка KIZ в WB " + completed + "/" + assignments.size(), failures, successfulKizs);
         }
 
         if (!successfulKizs.isEmpty()) {
@@ -161,7 +162,8 @@ public final class KizAttachmentCoordinator {
                 assignments.size(),
                 false,
                 finalMessage,
-                List.copyOf(failures)
+                List.copyOf(failures),
+                successfulKizs.stream().map(Kiz::getCode).filter(Objects::nonNull).toList()
         );
         activeJobs.remove(key);
         notifyListeners(completedProgress);
@@ -175,7 +177,8 @@ public final class KizAttachmentCoordinator {
                                 int total,
                                 boolean active,
                                 String message,
-                                List<String> failures) {
+                                List<String> failures,
+                                List<Kiz> successfulKizs) {
         KizAttachmentProgress progress = new KizAttachmentProgress(
                 shop.getId(),
                 shop.getName(),
@@ -185,7 +188,8 @@ public final class KizAttachmentCoordinator {
                 total,
                 active,
                 message,
-                List.copyOf(failures)
+                List.copyOf(failures),
+                successfulKizs.stream().map(Kiz::getCode).filter(Objects::nonNull).toList()
         );
         activeJobs.put(key, progress);
         notifyListeners(progress);
@@ -214,7 +218,8 @@ public final class KizAttachmentCoordinator {
             int total,
             boolean active,
             String message,
-            List<String> failures
+            List<String> failures,
+            List<String> successfulKizCodes
     ) {
     }
 }

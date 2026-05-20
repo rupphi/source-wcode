@@ -1244,6 +1244,12 @@ public class HomeController implements Initializable {
             }
         }
         if (!progress.active()) {
+            if (isCurrentShop(progress.shopId())) {
+                loadCategories();
+            }
+            if (matchesCurrentSupply(progress.shopId(), progress.supplyId())) {
+                removeCompletedKizAssignments(progress.successfulKizCodes());
+            }
             if (!progress.failures().isEmpty() && isCurrentShop(progress.shopId())) {
                 AlertService.showWarning(
                         i18nService.tr("workspace.kiz_incomplete.title"),
@@ -1255,6 +1261,29 @@ public class HomeController implements Initializable {
                 refreshSupplyListIfCurrent(progress.shopId());
             }
             updateExportAvailability();
+        }
+    }
+
+    private void removeCompletedKizAssignments(List<String> successfulKizCodes) {
+        if (successfulKizCodes == null || successfulKizCodes.isEmpty()) {
+            return;
+        }
+        List<Order> orders = state.getLoadedOrdersRaw();
+        if (orders == null || orders.isEmpty()) {
+            return;
+        }
+        boolean changed = false;
+        for (Order order : orders) {
+            if (order == null || order.getKiz() == null || order.getKiz().isBlank()) {
+                continue;
+            }
+            if (successfulKizCodes.contains(order.getKiz())) {
+                order.setKiz(null);
+                changed = true;
+            }
+        }
+        if (changed) {
+            applySortAndDisplayOrders();
         }
     }
 
