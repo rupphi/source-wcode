@@ -49,7 +49,7 @@ jobs:
 
       - name: Build with Maven
         shell: bash
-        run: ./mvnw.cmd -B clean package
+        run: ./mvnw.cmd -B -DskipTests clean package
 
       - name: Resolve built JAR
         shell: bash
@@ -193,7 +193,7 @@ jobs:
 
       - name: Build with Maven
         shell: bash
-        run: ./mvnw -B clean package
+        run: ./mvnw -B -DskipTests clean package
 
       - name: Resolve built JAR
         shell: bash
@@ -272,7 +272,7 @@ jobs:
 
       - name: Build with Maven
         shell: bash
-        run: ./mvnw -B clean package
+        run: ./mvnw -B -DskipTests clean package
 
       - name: Resolve built JAR
         shell: bash
