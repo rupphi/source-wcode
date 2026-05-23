@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -74,7 +75,7 @@ public final class AppPaths {
     }
 
     public static File preferredFileChooserDirectory() {
-        List<Path> candidates = List.of(
+        List<Path> candidates = Arrays.asList(
                 pathsFromBase(appDataDir(), "exports"),
                 pathsFromBase(windowsUserProfile().orElse(null), "Downloads"),
                 appDataDir(),
@@ -97,7 +98,7 @@ public final class AppPaths {
     }
 
     public static File preferredDownloadsDirectory() {
-        List<Path> candidates = List.of(
+        List<Path> candidates = Arrays.asList(
                 pathsFromBase(windowsUserProfile().orElse(null), "Downloads"),
                 appDataDir()
         );

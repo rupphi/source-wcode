@@ -8,13 +8,22 @@ import java.util.List;
 import java.util.Optional;
 
 public class PrintTemplateRepository {
+    private final String tableName;
+
+    public PrintTemplateRepository() {
+        this("print_templates");
+    }
+
+    protected PrintTemplateRepository(String tableName) {
+        this.tableName = tableName;
+    }
 
     public List<TemplateRecord> findAll() {
         String sql = """
                 SELECT id, name, page_width, page_height, is_default, layout_json
-                FROM print_templates
+                FROM %s
                 ORDER BY is_default DESC, name ASC
-                """;
+                """.formatted(tableName);
         try (Connection conn = Database.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
@@ -31,9 +40,9 @@ public class PrintTemplateRepository {
     public Optional<TemplateRecord> findById(int id) {
         String sql = """
                 SELECT id, name, page_width, page_height, is_default, layout_json
-                FROM print_templates
+                FROM %s
                 WHERE id = ?
-                """;
+                """.formatted(tableName);
         try (Connection conn = Database.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
@@ -51,10 +60,10 @@ public class PrintTemplateRepository {
     public Optional<TemplateRecord> findDefault() {
         String sql = """
                 SELECT id, name, page_width, page_height, is_default, layout_json
-                FROM print_templates
+                FROM %s
                 WHERE is_default = 1
                 LIMIT 1
-                """;
+                """.formatted(tableName);
         try (Connection conn = Database.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
@@ -69,9 +78,9 @@ public class PrintTemplateRepository {
 
     public int insert(String name, double pageWidth, double pageHeight, boolean isDefault, String layoutJson) {
         String sql = """
-                INSERT INTO print_templates(name, page_width, page_height, is_default, layout_json, created_at, updated_at)
+                INSERT INTO %s(name, page_width, page_height, is_default, layout_json, created_at, updated_at)
                 VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                """;
+                """.formatted(tableName);
         try (Connection conn = Database.getConnection()) {
             conn.setAutoCommit(false);
             if (isDefault) {
@@ -104,10 +113,10 @@ public class PrintTemplateRepository {
 
     public void update(int id, String name, double pageWidth, double pageHeight, boolean isDefault, String layoutJson) {
         String sql = """
-                UPDATE print_templates
+                UPDATE %s
                 SET name = ?, page_width = ?, page_height = ?, is_default = ?, layout_json = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-                """;
+                """.formatted(tableName);
         try (Connection conn = Database.getConnection()) {
             conn.setAutoCommit(false);
             if (isDefault) {
@@ -134,7 +143,7 @@ public class PrintTemplateRepository {
     }
 
     public void rename(int id, String name) {
-        String sql = "UPDATE print_templates SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?";
+        String sql = "UPDATE " + tableName + " SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?";
         executeSimpleUpdate(sql, ps -> {
             ps.setString(1, name);
             ps.setInt(2, id);
@@ -142,7 +151,7 @@ public class PrintTemplateRepository {
     }
 
     public void delete(int id) {
-        executeSimpleUpdate("DELETE FROM print_templates WHERE id = ?", ps -> ps.setInt(1, id), "Không thể xóa template");
+        executeSimpleUpdate("DELETE FROM " + tableName + " WHERE id = ?", ps -> ps.setInt(1, id), "Không thể xóa template");
     }
 
     public void setDefault(int id) {
@@ -150,7 +159,7 @@ public class PrintTemplateRepository {
             conn.setAutoCommit(false);
             try {
                 clearDefault(conn);
-                try (PreparedStatement ps = conn.prepareStatement("UPDATE print_templates SET is_default = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?")) {
+                try (PreparedStatement ps = conn.prepareStatement("UPDATE " + tableName + " SET is_default = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?")) {
                     ps.setInt(1, id);
                     ps.executeUpdate();
                 }
@@ -168,7 +177,7 @@ public class PrintTemplateRepository {
 
     public int count() {
         try (Connection conn = Database.getConnection();
-             PreparedStatement ps = conn.prepareStatement("SELECT COUNT(*) FROM print_templates");
+             PreparedStatement ps = conn.prepareStatement("SELECT COUNT(*) FROM " + tableName);
              ResultSet rs = ps.executeQuery()) {
             return rs.next() ? rs.getInt(1) : 0;
         } catch (SQLException e) {
@@ -178,10 +187,10 @@ public class PrintTemplateRepository {
 
     public void normalizePageSize(double pageWidth, double pageHeight) {
         String sql = """
-                UPDATE print_templates
+                UPDATE %s
                 SET page_width = ?, page_height = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE ABS(page_width - ?) > 0.01 OR ABS(page_height - ?) > 0.01
-                """;
+                """.formatted(tableName);
         executeSimpleUpdate(sql, ps -> {
             ps.setDouble(1, pageWidth);
             ps.setDouble(2, pageHeight);
@@ -191,7 +200,7 @@ public class PrintTemplateRepository {
     }
 
     private void clearDefault(Connection conn) throws SQLException {
-        try (PreparedStatement ps = conn.prepareStatement("UPDATE print_templates SET is_default = 0 WHERE is_default = 1")) {
+        try (PreparedStatement ps = conn.prepareStatement("UPDATE " + tableName + " SET is_default = 0 WHERE is_default = 1")) {
             ps.executeUpdate();
         }
     }

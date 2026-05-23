@@ -11,6 +11,17 @@ public class CategoryDialogController {
     @FXML
     private TextField nameField;
 
+    public void setCategory(Category category, boolean editableId) {
+        if (category == null) {
+            return;
+        }
+        idField.setText(String.valueOf(category.getId()));
+        idField.setEditable(editableId);
+        idField.setDisable(!editableId);
+        nameField.setText(category.getName());
+        nameField.requestFocus();
+    }
+
     public Category toCategory() {
         String idText = idField.getText() == null ? "" : idField.getText().trim();
         String name = nameField.getText() == null ? "" : nameField.getText().trim();

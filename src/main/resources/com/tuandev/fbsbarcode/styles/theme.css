@@ -50,6 +50,16 @@
     -fx-text-fill: -danger;
 }
 
+.activation-active {
+    -fx-text-fill: -success;
+    -fx-font-weight: bold;
+}
+
+.activation-inactive {
+    -fx-text-fill: -danger;
+    -fx-font-weight: bold;
+}
+
 .text-bold {
     -fx-font-weight: bold;
 }
@@ -256,6 +266,68 @@
 
 .filter-bar .menu-button {
     -fx-min-width: 0;
+}
+
+.fbo-filter-bar .text-field,
+.fbo-filter-bar .menu-button,
+.fbo-filter-bar .button {
+    -fx-min-height: 36px;
+    -fx-pref-height: 36px;
+    -fx-max-height: 36px;
+}
+
+.fbo-clear-filter-button {
+    -fx-min-width: 36px;
+    -fx-pref-width: 36px;
+    -fx-max-width: 36px;
+}
+
+.fbo-category-scroll {
+    -fx-background-color: transparent;
+    -fx-padding: 4px;
+}
+
+.fbo-category-scroll .viewport {
+    -fx-background-color: transparent;
+}
+
+.fbo-category-check {
+    -fx-text-fill: -text-primary;
+    -fx-padding: 5px 8px;
+    -fx-min-height: 28px;
+}
+
+.fbo-row-print-button {
+    -fx-background-color: -success;
+    -fx-border-color: -success-hover;
+    -fx-min-width: 32px;
+    -fx-pref-width: 32px;
+    -fx-max-width: 32px;
+}
+
+.fbo-row-print-button:hover {
+    -fx-background-color: -success-hover;
+}
+
+.fbo-image-placeholder {
+    -fx-background-color: #4a4d54;
+    -fx-background-radius: 4px;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 4px;
+}
+
+.fbo-quantity-field {
+    -fx-background-color: -bg-primary;
+    -fx-background-radius: 4px;
+    -fx-border-color: #69707a;
+    -fx-border-radius: 4px;
+    -fx-border-width: 1px;
+    -fx-text-fill: -text-primary;
+    -fx-padding: 2px 4px;
+}
+
+.fbo-quantity-field:focused {
+    -fx-border-color: -success;
 }
 
 .context-menu {
@@ -475,6 +547,42 @@
     -fx-border-color: -border-color;
     -fx-border-width: 1px;
 }
+
+.app-dialog-pane,
+.app-dialog-pane > .content,
+.dialog-content {
+    -fx-background-color: -bg-primary;
+}
+
+.dialog-content {
+    -fx-padding: 14px;
+}
+
+.app-dialog-pane .check-box {
+    -fx-text-fill: -text-primary;
+}
+
+.app-dialog-pane .text-field,
+.app-dialog-pane .password-field,
+.app-dialog-pane .combo-box-base {
+    -fx-background-color: -bg-secondary;
+    -fx-control-inner-background: -bg-secondary;
+    -fx-text-fill: -text-primary;
+    -fx-prompt-text-fill: -text-muted;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+}
+
+.app-dialog-pane .combo-box .list-cell {
+    -fx-text-fill: -text-primary;
+}
+
+.app-dialog-pane .error-label {
+    -fx-text-fill: -danger;
+    -fx-font-size: 11px;
+}
+
 .dialog-pane > *.button-bar > *.container {
     -fx-background-color: -bg-primary;
     -fx-padding: 16px;

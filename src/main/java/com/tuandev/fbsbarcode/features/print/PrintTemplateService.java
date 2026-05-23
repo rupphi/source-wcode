@@ -15,10 +15,21 @@ public class PrintTemplateService {
     public static final double PAGE_HEIGHT_MM = 40d;
     public static final double PAGE_WIDTH = PAGE_WIDTH_MM * POINTS_PER_MM;
     public static final double PAGE_HEIGHT = PAGE_HEIGHT_MM * POINTS_PER_MM;
+    public static final String PRINT_PREFIX_ARTICLE = "Арт";
+    public static final String PRINT_PREFIX_COLOR = "Цвет";
+    public static final String PRINT_PREFIX_SIZE = "Раз";
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private final PrintTemplateRepository repository = new PrintTemplateRepository();
-    private final I18nService i18n = I18nService.getInstance();
+    protected final PrintTemplateRepository repository;
+    protected final I18nService i18n = I18nService.getInstance();
+
+    public PrintTemplateService() {
+        this(new PrintTemplateRepository());
+    }
+
+    protected PrintTemplateService(PrintTemplateRepository repository) {
+        this.repository = repository;
+    }
 
     public void ensureDefaultTemplateExists() {
         repository.normalizePageSize(PAGE_WIDTH, PAGE_HEIGHT);
@@ -30,15 +41,25 @@ public class PrintTemplateService {
         }
         repository.findDefault()
                 .map(this::fromRecord)
-                .filter(this::upgradeLegacySystemDefaultTemplate)
-                .ifPresent(this::saveTemplate);
+                .ifPresent(template -> {
+                    if (upgradeLegacySystemDefaultTemplate(template)) {
+                        saveTemplate(template);
+                        return;
+                    }
+                    if (shouldResetSystemDefaultTemplate(template)) {
+                        PrintTemplate reset = createSystemDefaultTemplate(template.getName());
+                        reset.setId(template.getId());
+                        reset.setDefaultTemplate(template.isDefaultTemplate());
+                        saveTemplate(reset);
+                    }
+                });
     }
 
     private static double snapToMillimeterGrid(double value) {
         return Math.round(value / POINTS_PER_MM) * POINTS_PER_MM;
     }
 
-    private static double mm(double value) {
+    protected static double mm(double value) {
         return value * POINTS_PER_MM;
     }
 
@@ -55,11 +76,12 @@ public class PrintTemplateService {
         PrintTemplateElement separator = findElementByType(template, PrintElementType.SEPARATOR_LINE);
         PrintTemplateElement barcode = findElementByType(template, PrintElementType.BARCODE_CODE128);
         PrintTemplateElement stickerTail = findElementByType(template, PrintElementType.STICKER_TAIL);
-        if (brand == null || name == null || color == null || article == null || size == null
+        if (brand == null || color == null || article == null || size == null
                 || barcodeText == null || separator == null || barcode == null || stickerTail == null) {
             return false;
         }
-        boolean legacyLayout = approximately(brand.getX(), 70d)
+        boolean legacyLayout = name != null
+                && approximately(brand.getX(), 70d)
                 && approximately(brand.getY(), 8d)
                 && approximately(brand.getWidth(), 84d)
                 && approximately(name.getX(), 70d)
@@ -80,7 +102,8 @@ public class PrintTemplateService {
                 && approximately(barcodeText.getY(), 99d)
                 && approximately(stickerTail.getX(), 134d)
                 && approximately(stickerTail.getY(), 99d);
-        boolean snappedSystemDefaultV1 = approximately(brand.getX(), mm(25))
+        boolean snappedSystemDefaultV1 = name != null
+                && approximately(brand.getX(), mm(25))
                 && approximately(brand.getY(), mm(3))
                 && approximately(brand.getWidth(), mm(30))
                 && approximately(brand.getHeight(), 10d)
@@ -104,12 +127,83 @@ public class PrintTemplateService {
                 && approximately(barcodeText.getY(), mm(36))
                 && approximately(stickerTail.getX(), mm(47))
                 && approximately(stickerTail.getY(), mm(36));
-        if (!legacyLayout && !snappedSystemDefaultV1) {
+        boolean sharedFboFbsTailLabel = approximately(stickerTail.getX(), mm(49))
+                && approximately(stickerTail.getY(), mm(36.5))
+                && !stickerTailLabel().equals(stickerTail.getLabel());
+        if (!legacyLayout && !snappedSystemDefaultV1 && !sharedFboFbsTailLabel) {
             return false;
         }
         PrintTemplate systemDefault = createSystemDefaultTemplate(template.getName());
         template.setElements(systemDefault.getElements());
         return true;
+    }
+
+    private boolean shouldResetSystemDefaultTemplate(PrintTemplate template) {
+        if (!isRecognizedSystemDefaultTemplate(template)) {
+            return false;
+        }
+        PrintTemplate desired = createSystemDefaultTemplate(template.getName());
+        for (PrintTemplateElement desiredElement : desired.getElements()) {
+            PrintTemplateElement currentElement = findComparableElement(template, desiredElement);
+            if (!sameTemplateElementLayout(currentElement, desiredElement)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isRecognizedSystemDefaultTemplate(PrintTemplate template) {
+        if (template == null || !template.isDefaultTemplate() || template.getElements() == null || template.getElements().isEmpty()) {
+            return false;
+        }
+        PrintTemplateElement kiz = findElementByType(template, PrintElementType.KIZ_DATAMATRIX);
+        PrintTemplateElement barcode = findElementByType(template, PrintElementType.BARCODE_CODE128);
+        PrintTemplateElement stickerTail = findElementByType(template, PrintElementType.STICKER_TAIL);
+        PrintTemplateElement brand = findField(template, PrintFieldKey.BRAND);
+        PrintTemplateElement article = findField(template, PrintFieldKey.ARTICLE);
+        PrintTemplateElement color = findField(template, PrintFieldKey.COLOR);
+        PrintTemplateElement size = findField(template, PrintFieldKey.SIZE);
+        if (kiz == null || barcode == null || stickerTail == null || brand == null || article == null || color == null || size == null) {
+            return false;
+        }
+        boolean currentBase = approximately(kiz.getX(), mm(2.5))
+                && approximately(kiz.getY(), mm(5))
+                && approximately(kiz.getWidth(), 50d)
+                && approximately(kiz.getHeight(), 50d)
+                && approximately(barcode.getX(), mm(2.5))
+                && approximately(barcode.getY(), mm(28.2))
+                && approximately(stickerTail.getX(), mm(49))
+                && approximately(stickerTail.getY(), mm(36.5));
+        boolean olderBase = approximately(kiz.getX(), mm(4))
+                || approximately(barcode.getX(), mm(4))
+                || approximately(barcode.getY(), mm(27))
+                || approximately(stickerTail.getX(), mm(47))
+                || findField(template, PrintFieldKey.NAME) != null;
+        return currentBase || olderBase;
+    }
+
+    private static PrintTemplateElement findComparableElement(PrintTemplate template, PrintTemplateElement desired) {
+        if (desired.getType() == PrintElementType.TEXT_FIELD) {
+            return findField(template, desired.getFieldKey());
+        }
+        return findElementByType(template, desired.getType());
+    }
+
+    private static boolean sameTemplateElementLayout(PrintTemplateElement current, PrintTemplateElement desired) {
+        if (current == null || desired == null) {
+            return false;
+        }
+        return current.getType() == desired.getType()
+                && current.getFieldKey() == desired.getFieldKey()
+                && approximately(current.getX(), desired.getX())
+                && approximately(current.getY(), desired.getY())
+                && approximately(current.getWidth(), desired.getWidth())
+                && approximately(current.getHeight(), desired.getHeight())
+                && approximately(current.getFontSize(), desired.getFontSize())
+                && current.isBold() == desired.isBold()
+                && current.getAlign() == desired.getAlign()
+                && safeTrim(current.getLabel()).equals(safeTrim(desired.getLabel()))
+                && safeTrim(current.getPrefix()).equals(safeTrim(desired.getPrefix()));
     }
 
     private static PrintTemplateElement findField(PrintTemplate template, PrintFieldKey key) {
@@ -220,34 +314,35 @@ public class PrintTemplateService {
         PrintTemplateElement kiz = PrintTemplateElement.create(
                 PrintElementType.KIZ_DATAMATRIX,
                 i18n.tr("template.palette.kiz"),
-                mm(4),
-                mm(4),
-                mm(18),
-                mm(18)
+                mm(2.5),
+                mm(5),
+                50,
+                50
         );
         kiz.setZIndex(1);
         elements.add(kiz);
 
-        PrintTemplateElement brand = textField(i18n.tr("template.palette.brand"), PrintFieldKey.BRAND, mm(25), mm(3), mm(30), 12, 9, true, PrintTextAlign.CENTER, 2);
+        PrintTemplateElement brand = textField(i18n.tr("template.palette.brand"), PrintFieldKey.BRAND, mm(22), mm(2.5), mm(34), 13, 9, true, PrintTextAlign.CENTER, 2);
         elements.add(brand);
-        elements.add(textField(i18n.tr("template.palette.name"), PrintFieldKey.NAME, mm(25), mm(7), mm(30), 12, 8, false, PrintTextAlign.LEFT, 3));
-        elements.add(textField(i18n.tr("template.palette.color"), PrintFieldKey.COLOR, i18n.tr("template.prefix.color"), mm(25), mm(11), mm(30), 12, 8, false, PrintTextAlign.LEFT, 4));
-        elements.add(textField(i18n.tr("template.palette.article"), PrintFieldKey.ARTICLE, i18n.tr("template.prefix.article"), mm(25), mm(16), mm(30), 12, 8, false, PrintTextAlign.LEFT, 5));
-        elements.add(textField(i18n.tr("template.palette.size"), PrintFieldKey.SIZE, i18n.tr("template.prefix.size"), mm(25), mm(21), mm(30), 12, 9, false, PrintTextAlign.LEFT, 6));
+        elements.add(textField(i18n.tr("template.palette.subject"), PrintFieldKey.SUBJECT_NAME, "", mm(22), mm(7.2), mm(34), 10, 8, true, PrintTextAlign.LEFT, 3));
+        elements.add(textField(i18n.tr("template.palette.article"), PrintFieldKey.ARTICLE, PRINT_PREFIX_ARTICLE, mm(22), mm(12.5), mm(34), 16, 8, true, PrintTextAlign.LEFT, 4));
+        elements.add(textField(i18n.tr("template.palette.color"), PrintFieldKey.COLOR, PRINT_PREFIX_COLOR, mm(22), mm(18.5), mm(34), 16, 8, true, PrintTextAlign.LEFT, 5));
+        elements.add(textField(i18n.tr("template.palette.size"), PrintFieldKey.SIZE, PRINT_PREFIX_SIZE, mm(22), mm(24.5) - 1, mm(34), 8, 8, true, PrintTextAlign.LEFT, 6));
 
-        PrintTemplateElement separator = PrintTemplateElement.create(PrintElementType.SEPARATOR_LINE, i18n.tr("template.palette.separator"), mm(4), mm(25), mm(51), 1);
+        PrintTemplateElement separator = PrintTemplateElement.create(PrintElementType.SEPARATOR_LINE, i18n.tr("template.palette.separator"), mm(2.5), mm(27), mm(53), 1);
         separator.setZIndex(7);
         elements.add(separator);
 
-        PrintTemplateElement barcode = PrintTemplateElement.create(PrintElementType.BARCODE_CODE128, i18n.tr("template.palette.barcode"), mm(4), mm(27), mm(49), 23);
+        PrintTemplateElement barcode = PrintTemplateElement.create(PrintElementType.BARCODE_CODE128, i18n.tr("template.palette.barcode"), mm(2.5), mm(28.2), mm(53), 22);
         barcode.setShowHumanReadable(false);
         barcode.setZIndex(8);
         elements.add(barcode);
 
-        elements.add(textField(i18n.tr("template.palette.barcode_text"), PrintFieldKey.BARCODE, null, snapToMillimeterGrid(8d), mm(36), mm(42), 8, 8, false, PrintTextAlign.CENTER, 9));
+        elements.add(textField(i18n.tr("template.palette.barcode_text"), PrintFieldKey.BARCODE, null, mm(2.5), mm(37), mm(47), 10, 8, false, PrintTextAlign.CENTER, 9));
 
-        PrintTemplateElement stickerTail = PrintTemplateElement.create(PrintElementType.STICKER_TAIL, i18n.tr("template.palette.sticker_tail"), mm(47), mm(36), mm(7), 8);
-        stickerTail.setFontSize(8);
+        PrintTemplateElement stickerTail = PrintTemplateElement.create(PrintElementType.STICKER_TAIL, stickerTailLabel(), mm(49), mm(36.5), mm(6), 9);
+        stickerTail.setFontSize(9);
+        stickerTail.setBold(true);
         stickerTail.setAlign(PrintTextAlign.RIGHT);
         stickerTail.setZIndex(10);
         elements.add(stickerTail);
@@ -268,7 +363,7 @@ public class PrintTemplateService {
                 new ElementPaletteItem(i18n.tr("template.palette.size"), PrintElementType.TEXT_FIELD, PrintFieldKey.SIZE),
                 new ElementPaletteItem(i18n.tr("template.palette.static_text"), PrintElementType.STATIC_TEXT, null),
                 new ElementPaletteItem(i18n.tr("template.palette.barcode_text"), PrintElementType.TEXT_FIELD, PrintFieldKey.BARCODE),
-                new ElementPaletteItem(i18n.tr("template.palette.sticker_tail"), PrintElementType.STICKER_TAIL, null),
+                new ElementPaletteItem(stickerTailLabel(), PrintElementType.STICKER_TAIL, null),
                 new ElementPaletteItem(i18n.tr("template.palette.separator"), PrintElementType.SEPARATOR_LINE, null)
         );
     }
@@ -291,8 +386,9 @@ public class PrintTemplateService {
             return element;
         }
         if (item.type() == PrintElementType.STICKER_TAIL) {
-            PrintTemplateElement element = PrintTemplateElement.create(item.type(), item.label(), mm(47), mm(36), mm(7), 8);
-            element.setFontSize(8);
+            PrintTemplateElement element = PrintTemplateElement.create(item.type(), item.label(), mm(49), mm(36.5), mm(6), 9);
+            element.setFontSize(9);
+            element.setBold(true);
             element.setAlign(PrintTextAlign.RIGHT);
             element.setZIndex(zIndex);
             return element;
@@ -417,7 +513,7 @@ public class PrintTemplateService {
         return copy;
     }
 
-    private static PrintTemplateElement textField(String label, PrintFieldKey fieldKey, String prefix, double x, double y, double width, double height,
+    protected static PrintTemplateElement textField(String label, PrintFieldKey fieldKey, String prefix, double x, double y, double width, double height,
                                                   float fontSize, boolean bold, PrintTextAlign align, int zIndex) {
         PrintTemplateElement element = PrintTemplateElement.create(PrintElementType.TEXT_FIELD, label, x, y, width, height);
         element.setFieldKey(fieldKey);
@@ -429,7 +525,7 @@ public class PrintTemplateService {
         return element;
     }
 
-    private static PrintTemplateElement textField(String label, PrintFieldKey fieldKey, double x, double y, double width, double height,
+    protected static PrintTemplateElement textField(String label, PrintFieldKey fieldKey, double x, double y, double width, double height,
                                                   float fontSize, boolean bold, PrintTextAlign align, int zIndex) {
         return textField(label, fieldKey, null, x, y, width, height, fontSize, bold, align, zIndex);
     }
@@ -439,12 +535,16 @@ public class PrintTemplateService {
             return null;
         }
         return switch (fieldKey) {
-            case COLOR -> I18nService.getInstance().tr("template.prefix.color");
-            case ARTICLE -> I18nService.getInstance().tr("template.prefix.article");
-            case SIZE -> I18nService.getInstance().tr("template.prefix.size");
-            case SUBJECT_NAME -> I18nService.getInstance().tr("template.prefix.subject");
+            case COLOR -> PRINT_PREFIX_COLOR;
+            case ARTICLE -> PRINT_PREFIX_ARTICLE;
+            case SIZE -> PRINT_PREFIX_SIZE;
+            case SUBJECT_NAME -> "";
             default -> null;
         };
+    }
+
+    protected String stickerTailLabel() {
+        return i18n.tr("template.palette.path2");
     }
 
     private static String safeTrim(String value) {

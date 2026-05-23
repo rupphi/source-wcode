@@ -148,7 +148,11 @@ public class KizService {
         try (Response response = client.newCall(request).execute()) {
             String responseBody = response.body() == null ? "" : response.body().string();
             if (!response.isSuccessful()) {
-                LOGGER.warn("WB attach KIZ failed for order {} with status {} and body {}", orderId, response.code(), responseBody);
+                if (response.code() == 409 && responseBody.contains("FailedToUpdateMeta")) {
+                    LOGGER.info("WB skipped KIZ attach for order {} because it is not in Processing status: {}", orderId, responseBody);
+                } else {
+                    LOGGER.warn("WB attach KIZ failed for order {} with status {} and body {}", orderId, response.code(), responseBody);
+                }
             }
             return new AttachCodeResult(response.isSuccessful(), response.code(), responseBody);
         }

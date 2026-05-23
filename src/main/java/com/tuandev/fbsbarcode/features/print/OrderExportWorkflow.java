@@ -1,8 +1,8 @@
 package com.tuandev.fbsbarcode.features.print;
 
 import com.google.zxing.WriterException;
-import com.tuandev.fbsbarcode.features.kiz.KizCommandParser;
 import com.tuandev.fbsbarcode.features.kiz.KizService;
+import com.tuandev.fbsbarcode.features.kizmapping.KizMappingRepository;
 import com.tuandev.fbsbarcode.features.print.history.PrintHistoryService;
 import com.tuandev.fbsbarcode.integration.wb.WbSupplyWorkflow;
 import com.tuandev.fbsbarcode.models.Kiz;
@@ -24,6 +24,7 @@ public class OrderExportWorkflow {
     private final PrintTemplateService printTemplateService = new PrintTemplateService();
     private final WbSupplyWorkflow wbSupplyWorkflow = new WbSupplyWorkflow();
     private final PrintHistoryService printHistoryService = new PrintHistoryService();
+    private final KizMappingRepository kizMappingRepository = new KizMappingRepository();
 
     public ExportResult export(ExportRequest request) throws IOException, WriterException {
         List<Order> workingOrders = copyOrders(request.orders());
@@ -32,11 +33,7 @@ public class OrderExportWorkflow {
         String printedAt = Instant.now().toString();
         boolean successRecorded = false;
         try {
-            usedKizs = assignKizCodes(
-                    workingOrders,
-                    request.shop(),
-                    request.kizCommand()
-            );
+            usedKizs = assignKizCodes(workingOrders, request.shop());
 
             wbSupplyWorkflow.ensureOrderImages(workingOrders);
             exportPdfFiles(template, request.outputFile(), request.detailsFile(), request.shop(), request.supplyId(), request.supplyName(), printedAt, workingOrders, request.printOptions());
@@ -81,37 +78,49 @@ public class OrderExportWorkflow {
             copy.setPrice(order.getPrice());
             copy.setSupplierStatus(order.getSupplierStatus());
             copy.setWbStatus(order.getWbStatus());
+            copy.setNmId(order.getNmId());
+            copy.setRequiresKiz(order.isRequiresKiz());
             copies.add(copy);
         }
         return copies;
     }
 
-    private static List<Kiz> assignKizCodes(List<Order> orders, Shop shop, String commandText) {
+    private List<Kiz> assignKizCodes(List<Order> orders, Shop shop) {
         for (Order order : orders) {
             order.setKiz(null);
         }
 
         List<Kiz> usedKizs = new ArrayList<>();
-        List<KizCommandParser.KizRange> ranges = KizCommandParser.parse(commandText);
-        for (KizCommandParser.KizRange range : ranges) {
-            if (range.to() > orders.size()) {
-                throw new IllegalArgumentException("Vị trí order vượt quá số lượng đơn: " + range.rawLine());
-            }
-
-            List<Kiz> kizList = KizService.getKizs(shop.getId(), range.categoryId(), range.count());
-            if (kizList.size() != range.count()) {
-                throw new IllegalStateException("Không lấy đủ KIZ cho dòng: " + range.rawLine());
-            }
-
-            for (int offset = 0; offset < range.count(); offset++) {
-                int orderIndex = range.from() - 1 + offset;
-                Order order = orders.get(orderIndex);
-                if (order.getKiz() != null) {
-                    throw new IllegalStateException("Order thứ " + (orderIndex + 1) + " bị gán KIZ trùng nhau");
+        List<Long> nmIds = orders.stream()
+                .map(Order::getNmId)
+                .filter(value -> value != null && value > 0)
+                .distinct()
+                .toList();
+        java.util.Map<Long, Integer> mappingByNmId = kizMappingRepository.findMappings(shop.getId(), nmIds);
+        java.util.Map<Integer, List<Order>> ordersByCategory = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < orders.size(); i++) {
+            Order order = orders.get(i);
+            Integer categoryId = order.getNmId() == null ? null : mappingByNmId.get(order.getNmId());
+            if (categoryId == null) {
+                if (order.isRequiresKiz()) {
+                    throw new IllegalStateException("Order thứ " + (i + 1) + " cần KIZ nhưng nmId chưa được map: " + order.getNmId());
                 }
+                continue;
+            }
+            ordersByCategory.computeIfAbsent(categoryId, key -> new ArrayList<>()).add(order);
+        }
 
-                Kiz kiz = kizList.get(offset);
-                order.setKiz(kiz.getCode());
+        for (java.util.Map.Entry<Integer, List<Order>> entry : ordersByCategory.entrySet()) {
+            int categoryId = entry.getKey();
+            List<Order> categoryOrders = entry.getValue();
+            List<Kiz> kizList = KizService.getKizs(shop.getId(), categoryId, categoryOrders.size());
+            if (kizList.size() != categoryOrders.size()) {
+                throw new IllegalStateException("Không đủ KIZ cho category " + categoryId
+                        + ": cần " + categoryOrders.size() + ", còn " + kizList.size());
+            }
+            for (int i = 0; i < categoryOrders.size(); i++) {
+                Kiz kiz = kizList.get(i);
+                categoryOrders.get(i).setKiz(kiz.getCode());
                 usedKizs.add(kiz);
             }
         }
@@ -164,7 +173,6 @@ public class OrderExportWorkflow {
             String supplyId,
             String supplyName,
             List<Order> orders,
-            String kizCommand,
             PrintJobOptions printOptions,
             File outputFile,
             File detailsFile

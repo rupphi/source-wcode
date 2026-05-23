@@ -69,8 +69,7 @@ public final class AppDataRecoveryService {
             Path currentDir = AppPaths.appDataDir();
             Path currentDb = currentDir.resolve(DB_NAME);
             if (!Files.exists(currentDb) || databaseLooksEmpty(currentDb)) {
-                deleteRecursively(currentDir);
-                copyRecursively(payloadDir, currentDir);
+                copyAppDataWithoutDeletingCurrent(payloadDir, currentDir, true);
                 LOGGER.info("Restored app data from update backup {}", payloadDir);
             } else {
                 LOGGER.info("Skipped update backup restore because current database is not empty");
@@ -97,8 +96,7 @@ public final class AppDataRecoveryService {
                 continue;
             }
             try {
-                deleteRecursively(currentDir);
-                copyRecursively(legacyDir, currentDir);
+                copyAppDataWithoutDeletingCurrent(legacyDir, currentDir, true);
                 LOGGER.info("Migrated app data from legacy directory {}", legacyDir);
                 return;
             } catch (Exception ex) {
@@ -151,6 +149,34 @@ public final class AppDataRecoveryService {
                 return rs.next();
             }
         }
+    }
+
+    private static void copyAppDataWithoutDeletingCurrent(Path source, Path target, boolean replaceDatabase) throws IOException {
+        try (Stream<Path> stream = Files.walk(source)) {
+            for (Path path : stream.toList()) {
+                Path relative = source.relativize(path);
+                Path destination = target.resolve(relative);
+                if (Files.isDirectory(path)) {
+                    Files.createDirectories(destination);
+                    continue;
+                }
+
+                Files.createDirectories(destination.getParent());
+                boolean isDatabase = isDatabaseFile(path);
+                if (isDatabase && replaceDatabase) {
+                    Files.copy(path, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
+                } else if (!Files.exists(destination)) {
+                    Files.copy(path, destination, StandardCopyOption.COPY_ATTRIBUTES);
+                }
+            }
+        }
+    }
+
+    private static boolean isDatabaseFile(Path path) {
+        String fileName = path.getFileName().toString();
+        return DB_NAME.equals(fileName)
+                || (DB_NAME + "-wal").equals(fileName)
+                || (DB_NAME + "-shm").equals(fileName);
     }
 
     private static void copyRecursively(Path source, Path target) throws IOException {

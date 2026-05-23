@@ -261,7 +261,7 @@ public class WbOrderRepository {
     public List<Order> getOrdersForSupply(int shopId, String supplyId) {
         List<Order> orders = new ArrayList<>();
         String sql = """
-                SELECT o.order_id, o.created_at, o.final_price, o.price, o.supplier_status, o.wb_status,
+                SELECT o.order_id, o.nm_id, o.created_at, o.final_price, o.price, o.supplier_status, o.wb_status,
                        COALESCE(pc.brand, '') AS brand, COALESCE(pc.title, '') AS title,
                        COALESCE(pc.subject_name, '') AS subject_name,
                        COALESCE(ps.tech_size, '') AS tech_size,
@@ -286,7 +286,14 @@ public class WbOrderRepository {
                                  FROM wb_product_photos pp
                                  WHERE pp.shop_id = o.shop_id AND pp.nm_id = o.nm_id
                                  ORDER BY pp.photo_index
-                                 LIMIT 1), '') AS image_url
+                                 LIMIT 1), '') AS image_url,
+                       EXISTS (
+                           SELECT 1
+                           FROM wb_order_meta_requirements mr
+                           WHERE mr.shop_id = o.shop_id
+                             AND mr.order_id = o.order_id
+                             AND mr.requirement_type = 'required'
+                       ) AS requires_kiz
                 FROM wb_supply_orders so
                 JOIN wb_orders o ON o.shop_id = so.shop_id AND o.order_id = so.order_id
                 LEFT JOIN wb_product_cards pc ON pc.shop_id = o.shop_id AND pc.nm_id = o.nm_id
@@ -302,6 +309,7 @@ public class WbOrderRepository {
             while (rs.next()) {
                 Order order = new Order();
                 order.setId(rs.getLong("order_id"));
+                order.setNmId(getNullableLong(rs, "nm_id"));
                 order.setBrand(rs.getString("brand"));
                 order.setName(rs.getString("title"));
                 order.setSubjectName(rs.getString("subject_name"));
@@ -314,6 +322,7 @@ public class WbOrderRepository {
                 order.setPrice(rs.getObject("final_price") == null ? rs.getInt("price") : rs.getInt("final_price"));
                 order.setSupplierStatus(rs.getString("supplier_status"));
                 order.setWbStatus(rs.getString("wb_status"));
+                order.setRequiresKiz(rs.getInt("requires_kiz") > 0);
                 orders.add(order);
             }
             return orders;
@@ -335,7 +344,7 @@ public class WbOrderRepository {
     private List<Order> getPackingOrders(int shopId, String extraWhere) {
         List<Order> orders = new ArrayList<>();
         String sql = """
-                SELECT o.order_id, o.created_at, o.final_price, o.price, o.supplier_status, o.wb_status,
+                SELECT o.order_id, o.nm_id, o.created_at, o.final_price, o.price, o.supplier_status, o.wb_status,
                        COALESCE(pc.brand, '') AS brand, COALESCE(pc.title, '') AS title,
                        COALESCE(pc.subject_name, '') AS subject_name,
                        COALESCE(ps.tech_size, '') AS tech_size,
@@ -356,7 +365,14 @@ public class WbOrderRepository {
                                  FROM wb_product_photos pp
                                  WHERE pp.shop_id = o.shop_id AND pp.nm_id = o.nm_id
                                  ORDER BY pp.photo_index
-                                 LIMIT 1), '') AS image_url
+                                 LIMIT 1), '') AS image_url,
+                       EXISTS (
+                           SELECT 1
+                           FROM wb_order_meta_requirements mr
+                           WHERE mr.shop_id = o.shop_id
+                             AND mr.order_id = o.order_id
+                             AND mr.requirement_type = 'required'
+                       ) AS requires_kiz
                 FROM wb_orders o
                 LEFT JOIN wb_product_cards pc ON pc.shop_id = o.shop_id AND pc.nm_id = o.nm_id
                 LEFT JOIN wb_product_sizes ps ON ps.shop_id = o.shop_id AND ps.chrt_id = o.chrt_id
@@ -371,6 +387,7 @@ public class WbOrderRepository {
             while (rs.next()) {
                 Order order = new Order();
                 order.setId(rs.getLong("order_id"));
+                order.setNmId(getNullableLong(rs, "nm_id"));
                 order.setBrand(rs.getString("brand"));
                 order.setName(rs.getString("title"));
                 order.setSubjectName(rs.getString("subject_name"));
@@ -383,6 +400,7 @@ public class WbOrderRepository {
                 order.setPrice(rs.getObject("final_price") == null ? rs.getInt("price") : rs.getInt("final_price"));
                 order.setSupplierStatus(rs.getString("supplier_status"));
                 order.setWbStatus(rs.getString("wb_status"));
+                order.setRequiresKiz(rs.getInt("requires_kiz") > 0);
                 orders.add(order);
             }
             return orders;
@@ -625,5 +643,10 @@ public class WbOrderRepository {
             }
             ps.executeUpdate();
         }
+    }
+
+    private Long getNullableLong(ResultSet rs, String column) throws SQLException {
+        long value = rs.getLong(column);
+        return rs.wasNull() ? null : value;
     }
 }

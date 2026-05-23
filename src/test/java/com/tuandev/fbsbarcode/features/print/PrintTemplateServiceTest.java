@@ -1,5 +1,6 @@
 package com.tuandev.fbsbarcode.features.print;
 
+import com.tuandev.fbsbarcode.features.fbo.FboPrintTemplateService;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -21,9 +22,36 @@ class PrintTemplateServiceTest {
         assertTrue(template.getElements().stream().anyMatch(item -> item.getType() == PrintElementType.KIZ_DATAMATRIX));
         assertTrue(template.getElements().stream().anyMatch(item -> item.getType() == PrintElementType.BARCODE_CODE128));
         assertTrue(template.getElements().stream().anyMatch(item -> item.getType() == PrintElementType.STICKER_TAIL));
-        assertEquals("Цвет", template.getElements().stream().filter(item -> item.getFieldKey() == PrintFieldKey.COLOR).findFirst().orElseThrow().getPrefix());
-        assertEquals("Арт", template.getElements().stream().filter(item -> item.getFieldKey() == PrintFieldKey.ARTICLE).findFirst().orElseThrow().getPrefix());
-        assertEquals("Раз", template.getElements().stream().filter(item -> item.getFieldKey() == PrintFieldKey.SIZE).findFirst().orElseThrow().getPrefix());
+        assertEquals("", template.getElements().stream().filter(item -> item.getFieldKey() == PrintFieldKey.SUBJECT_NAME).findFirst().orElseThrow().getPrefix());
+        assertEquals(PrintTemplateService.PRINT_PREFIX_COLOR, template.getElements().stream().filter(item -> item.getFieldKey() == PrintFieldKey.COLOR).findFirst().orElseThrow().getPrefix());
+        assertEquals(PrintTemplateService.PRINT_PREFIX_ARTICLE, template.getElements().stream().filter(item -> item.getFieldKey() == PrintFieldKey.ARTICLE).findFirst().orElseThrow().getPrefix());
+        assertEquals(PrintTemplateService.PRINT_PREFIX_SIZE, template.getElements().stream().filter(item -> item.getFieldKey() == PrintFieldKey.SIZE).findFirst().orElseThrow().getPrefix());
+    }
+
+    @Test
+    void shouldKeepFbsAndFboDefaultContentLayoutAligned() {
+        PrintTemplate fbs = service.createSystemDefaultTemplate("FBS");
+        PrintTemplate fbo = new FboPrintTemplateService().createSystemDefaultTemplate("FBO");
+
+        assertSameLayout(field(fbs, PrintFieldKey.BRAND), field(fbo, PrintFieldKey.BRAND));
+        assertSameLayout(field(fbs, PrintFieldKey.SUBJECT_NAME), field(fbo, PrintFieldKey.SUBJECT_NAME));
+        assertSameLayout(field(fbs, PrintFieldKey.ARTICLE), field(fbo, PrintFieldKey.ARTICLE));
+        assertSameLayout(field(fbs, PrintFieldKey.COLOR), field(fbo, PrintFieldKey.COLOR));
+        assertSameLayout(field(fbs, PrintFieldKey.SIZE), field(fbo, PrintFieldKey.SIZE));
+        assertSameLayout(type(fbs, PrintElementType.SEPARATOR_LINE), type(fbo, PrintElementType.SEPARATOR_LINE));
+        assertSameLayout(type(fbs, PrintElementType.BARCODE_CODE128), type(fbo, PrintElementType.BARCODE_CODE128));
+
+        PrintTemplateElement brand = field(fbs, PrintFieldKey.BRAND);
+        assertEquals(9f, brand.getFontSize());
+        assertTrue(brand.isBold());
+        assertEquals(PrintTextAlign.CENTER, brand.getAlign());
+        assertTrue(field(fbs, PrintFieldKey.SUBJECT_NAME).isBold());
+        assertTrue(field(fbs, PrintFieldKey.ARTICLE).isBold());
+        assertTrue(field(fbs, PrintFieldKey.COLOR).isBold());
+        assertTrue(field(fbs, PrintFieldKey.SIZE).isBold());
+        assertEquals(PrintTemplateService.mm(12.5), field(fbs, PrintFieldKey.ARTICLE).getY(), 0.25d);
+        assertEquals(PrintTemplateService.mm(18.5), field(fbs, PrintFieldKey.COLOR).getY(), 0.25d);
+        assertEquals(PrintTemplateService.mm(24.5) - 1, field(fbs, PrintFieldKey.SIZE).getY(), 0.25d);
     }
 
     @Test
@@ -63,7 +91,7 @@ class PrintTemplateServiceTest {
 
         PrintTemplateElement element = service.createElementFromPalette(paletteItem, 4);
 
-        assertEquals("Раз", element.getPrefix());
+        assertEquals(PrintTemplateService.PRINT_PREFIX_SIZE, element.getPrefix());
     }
 
     @Test
@@ -78,5 +106,30 @@ class PrintTemplateServiceTest {
         assertEquals(PrintElementType.STATIC_TEXT, element.getType());
         assertEquals(com.tuandev.fbsbarcode.shared.I18nService.getInstance().tr("template.static_text_default"), element.getContent());
         assertEquals(5, element.getZIndex());
+    }
+
+    private static PrintTemplateElement field(PrintTemplate template, PrintFieldKey key) {
+        return template.getElements().stream()
+                .filter(element -> element.getType() == PrintElementType.TEXT_FIELD)
+                .filter(element -> element.getFieldKey() == key)
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private static PrintTemplateElement type(PrintTemplate template, PrintElementType type) {
+        return template.getElements().stream()
+                .filter(element -> element.getType() == type)
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private static void assertSameLayout(PrintTemplateElement first, PrintTemplateElement second) {
+        assertEquals(first.getX(), second.getX(), 0.01d);
+        assertEquals(first.getY(), second.getY(), 0.01d);
+        assertEquals(first.getWidth(), second.getWidth(), 0.01d);
+        assertEquals(first.getHeight(), second.getHeight(), 0.01d);
+        assertEquals(first.getFontSize(), second.getFontSize(), 0.01d);
+        assertEquals(first.isBold(), second.isBold());
+        assertEquals(first.getAlign(), second.getAlign());
     }
 }

@@ -16,6 +16,9 @@ import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 public class UpdateInstallerService {
+    private static final String APP_NAME = "WCode";
+    private static final String APP_EXECUTABLE = APP_NAME + ".exe";
+
     private static final OkHttpClient CLIENT = new OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
@@ -75,8 +78,37 @@ public class UpdateInstallerService {
 
     public void launchInstallerAfterExit(Path installerFile) throws IOException {
         AppDataRecoveryService.prepareBackupForUpdate();
-        String escapedInstaller = installerFile.toAbsolutePath().toString().replace("'", "''");
-        String command = "Start-Sleep -Seconds 2; Start-Process -FilePath '" + escapedInstaller + "'";
+        String escapedInstaller = escapePowerShellSingleQuoted(installerFile.toAbsolutePath().toString());
+        String command = """
+                $ErrorActionPreference = 'SilentlyContinue';
+                Start-Sleep -Seconds 2;
+                $installer = '%s';
+                $extension = [System.IO.Path]::GetExtension($installer).ToLowerInvariant();
+                if ($extension -eq '.msi') {
+                    $process = Start-Process -FilePath 'msiexec.exe' -ArgumentList @('/i', $installer) -Wait -PassThru;
+                } else {
+                    $process = Start-Process -FilePath $installer -Wait -PassThru;
+                }
+                if ($null -eq $process -or $process.ExitCode -eq 0) {
+                    Start-Sleep -Seconds 1;
+                    $candidates = @(
+                        (Join-Path $env:LOCALAPPDATA 'Programs\\%s\\%s'),
+                        (Join-Path $env:ProgramFiles '%s\\%s'),
+                        (Join-Path ${env:ProgramFiles(x86)} '%s\\%s')
+                    );
+                    foreach ($candidate in $candidates) {
+                        if ($candidate -and (Test-Path $candidate)) {
+                            Start-Process -FilePath $candidate;
+                            break;
+                        }
+                    }
+                }
+                """.formatted(
+                escapedInstaller,
+                APP_NAME, APP_EXECUTABLE,
+                APP_NAME, APP_EXECUTABLE,
+                APP_NAME, APP_EXECUTABLE
+        );
         new ProcessBuilder(
                 "powershell.exe",
                 "-NoProfile",
@@ -84,6 +116,10 @@ public class UpdateInstallerService {
                 "-WindowStyle", "Hidden",
                 "-Command", command
         ).start();
+    }
+
+    private String escapePowerShellSingleQuoted(String value) {
+        return value.replace("'", "''");
     }
 
     private String guessExtension(String url) {

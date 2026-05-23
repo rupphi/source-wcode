@@ -4,12 +4,18 @@ import com.tuandev.fbsbarcode.shared.AppLanguage;
 import com.tuandev.fbsbarcode.shared.I18nService;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
-import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.Menu;
+import javafx.scene.control.MenuButton;
+import javafx.scene.control.MenuItem;
+import javafx.scene.control.RadioMenuItem;
+import javafx.scene.control.ToggleGroup;
 
 import java.util.function.Consumer;
 
 public class ShopSidebarController {
+    @FXML
+    private Button dashboardButton;
     @FXML
     private Button btnPrintHistory;
     @FXML
@@ -19,24 +25,50 @@ public class ShopSidebarController {
     @FXML
     private Button templateButton;
     @FXML
-    private Label languageLabel;
+    private Button fboPackingButton;
     @FXML
-    private ComboBox<AppLanguage> languageComboBox;
+    private Button kizMappingButton;
+    @FXML
+    private MenuButton settingsMenuButton;
+    @FXML
+    private Menu languageMenu;
+    @FXML
+    private RadioMenuItem languageRuMenuItem;
+    @FXML
+    private RadioMenuItem languageEnMenuItem;
+    @FXML
+    private RadioMenuItem languageZhMenuItem;
+    @FXML
+    private RadioMenuItem languageViMenuItem;
+    @FXML
+    private MenuItem checkVersionMenuItem;
+    @FXML
+    private MenuItem activationMenuItem;
+    @FXML
+    private MenuItem aboutMenuItem;
+    @FXML
+    private Label activationStatusLabel;
 
     private Runnable onPacking;
+    private Runnable onDashboard;
+    private Runnable onFboPacking;
+    private Runnable onKizMapping;
     private Runnable onPrintHistory;
     private Runnable onAddShop;
     private Runnable onOpenSettings;
+    private Runnable onCheckVersion;
+    private Runnable onActivation;
+    private Runnable onAbout;
     private Consumer<AppLanguage> onLanguageChanged;
+    private boolean activated;
 
     @FXML
     private void initialize() {
-        languageComboBox.getItems().setAll(AppLanguage.values());
-        languageComboBox.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) -> {
-            if (newValue != null && newValue != oldValue && onLanguageChanged != null) {
-                onLanguageChanged.accept(newValue);
-            }
-        });
+        ToggleGroup languageGroup = new ToggleGroup();
+        languageRuMenuItem.setToggleGroup(languageGroup);
+        languageEnMenuItem.setToggleGroup(languageGroup);
+        languageZhMenuItem.setToggleGroup(languageGroup);
+        languageViMenuItem.setToggleGroup(languageGroup);
         applyTranslations();
     }
 
@@ -44,8 +76,20 @@ public class ShopSidebarController {
         this.onPrintHistory = onPrintHistory;
     }
 
+    public void setOnDashboard(Runnable onDashboard) {
+        this.onDashboard = onDashboard;
+    }
+
     public void setOnPacking(Runnable onPacking) {
         this.onPacking = onPacking;
+    }
+
+    public void setOnFboPacking(Runnable onFboPacking) {
+        this.onFboPacking = onFboPacking;
+    }
+
+    public void setOnKizMapping(Runnable onKizMapping) {
+        this.onKizMapping = onKizMapping;
     }
 
     public void setOnAddShop(Runnable onAddShop) {
@@ -56,23 +100,65 @@ public class ShopSidebarController {
         this.onOpenSettings = onOpenSettings;
     }
 
+    public void setOnCheckVersion(Runnable onCheckVersion) {
+        this.onCheckVersion = onCheckVersion;
+    }
+
+    public void setOnActivation(Runnable onActivation) {
+        this.onActivation = onActivation;
+    }
+
+    public void setOnAbout(Runnable onAbout) {
+        this.onAbout = onAbout;
+    }
+
     public void setOnLanguageChanged(Consumer<AppLanguage> onLanguageChanged) {
         this.onLanguageChanged = onLanguageChanged;
     }
 
     public void setSelectedLanguage(AppLanguage language) {
-        if (language != null) {
-            languageComboBox.getSelectionModel().select(language);
+        if (language == null) {
+            return;
         }
+        switch (language) {
+            case RU -> languageRuMenuItem.setSelected(true);
+            case EN -> languageEnMenuItem.setSelected(true);
+            case ZH -> languageZhMenuItem.setSelected(true);
+            case VI -> languageViMenuItem.setSelected(true);
+        }
+    }
+
+    public void setActivated(boolean activated) {
+        this.activated = activated;
+        I18nService i18n = I18nService.getInstance();
+        activationStatusLabel.setText(activated
+                ? "• " + i18n.tr("activation.status.activated_short")
+                : "• " + i18n.tr("activation.status.inactive_short"));
+        activationStatusLabel.setStyle(activated ? "-fx-text-fill: #22c55e; -fx-font-weight: 700;" : "-fx-text-fill: #ef4444; -fx-font-weight: 700;");
     }
 
     public void applyTranslations() {
         I18nService i18n = I18nService.getInstance();
         templateButton.setText(" " + i18n.tr("sidebar.template"));
         addShopButton.setText(" " + i18n.tr("sidebar.add_shop"));
+        dashboardButton.setText(" Dashboard");
         packingButton.setText(" " + i18n.tr("sidebar.packing"));
         btnPrintHistory.setText(" " + i18n.tr("sidebar.print_history"));
-        languageLabel.setText(i18n.tr("sidebar.language"));
+        fboPackingButton.setText(" " + i18n.tr("sidebar.fbo_packing"));
+        kizMappingButton.setText(" " + i18n.tr("sidebar.kiz_mapping"));
+        settingsMenuButton.setText(" " + i18n.tr("settings.menu"));
+        languageMenu.setText(i18n.tr("sidebar.language"));
+        checkVersionMenuItem.setText(i18n.tr("settings.check_version"));
+        activationMenuItem.setText(i18n.tr("settings.activation"));
+        aboutMenuItem.setText(i18n.tr("settings.about"));
+        setActivated(activated);
+    }
+
+    @FXML
+    private void onDashboard() {
+        if (onDashboard != null) {
+            onDashboard.run();
+        }
     }
 
     @FXML
@@ -90,6 +176,20 @@ public class ShopSidebarController {
     }
 
     @FXML
+    private void onFboPacking() {
+        if (onFboPacking != null) {
+            onFboPacking.run();
+        }
+    }
+
+    @FXML
+    private void onKizMapping() {
+        if (onKizMapping != null) {
+            onKizMapping.run();
+        }
+    }
+
+    @FXML
     private void onAddShop() {
         if (onAddShop != null) {
             onAddShop.run();
@@ -100,6 +200,53 @@ public class ShopSidebarController {
     private void onSettings() {
         if (onOpenSettings != null) {
             onOpenSettings.run();
+        }
+    }
+
+    @FXML
+    private void onLanguageRu() {
+        changeLanguage(AppLanguage.RU);
+    }
+
+    @FXML
+    private void onLanguageEn() {
+        changeLanguage(AppLanguage.EN);
+    }
+
+    @FXML
+    private void onLanguageZh() {
+        changeLanguage(AppLanguage.ZH);
+    }
+
+    @FXML
+    private void onLanguageVi() {
+        changeLanguage(AppLanguage.VI);
+    }
+
+    @FXML
+    private void onCheckVersion() {
+        if (onCheckVersion != null) {
+            onCheckVersion.run();
+        }
+    }
+
+    @FXML
+    private void onActivation() {
+        if (onActivation != null) {
+            onActivation.run();
+        }
+    }
+
+    @FXML
+    private void onAbout() {
+        if (onAbout != null) {
+            onAbout.run();
+        }
+    }
+
+    private void changeLanguage(AppLanguage language) {
+        if (onLanguageChanged != null) {
+            onLanguageChanged.accept(language);
         }
     }
 }

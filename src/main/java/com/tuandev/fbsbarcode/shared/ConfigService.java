@@ -108,6 +108,14 @@ public class ConfigService {
         setConfigValue("app_language", languageCode == null ? "" : languageCode);
     }
 
+    public static String getActivatedAt() {
+        return getConfigValue("activated_at");
+    }
+
+    public static void setActivatedAt(String timestamp) {
+        setConfigValue("activated_at", timestamp == null ? "" : timestamp);
+    }
+
     private static boolean isBusy(SQLException e) {
         String message = e.getMessage();
         return message != null && message.toLowerCase().contains("busy");

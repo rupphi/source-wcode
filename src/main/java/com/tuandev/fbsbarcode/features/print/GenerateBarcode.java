@@ -94,6 +94,28 @@ public class GenerateBarcode {
         document.close();
     }
 
+    public static void exportTemplatePages(PrintTemplate template, List<Order> orders, File file) throws IOException {
+        PdfWriter pdfWriter = new PdfWriter(file);
+        PdfDocument pdfDocument = new PdfDocument(pdfWriter);
+
+        PageSize pageSize = new PageSize(WIDTH, HEIGHT);
+        Document document = new Document(pdfDocument, pageSize);
+        document.setMargins(0, 0, 0, 0);
+        document.setFont(getArialFont());
+        RenderContext renderContext = new RenderContext();
+        boolean firstPage = true;
+
+        for (Order order : orders == null ? List.<Order>of() : orders) {
+            if (!firstPage) {
+                document.add(new AreaBreak(AreaBreakType.NEXT_PAGE));
+            }
+            addTemplatePage(order, template, document, pdfDocument, renderContext);
+            firstPage = false;
+        }
+
+        document.close();
+    }
+
     private static boolean appendTemplatePages(Document document,
                                                PdfDocument pdfDocument,
                                                RenderContext renderContext,
@@ -193,9 +215,7 @@ public class GenerateBarcode {
             return;
         }
 
-        Paragraph paragraph = baseParagraph(output, element)
-                .setFixedPosition((float) element.getX(), toBottomY(element), (float) element.getWidth());
-        document.add(paragraph);
+        renderTextBlock(output, element, document);
     }
 
     private static void renderStaticText(PrintTemplateElement element, Document document) {
@@ -204,21 +224,19 @@ public class GenerateBarcode {
             return;
         }
 
-        Paragraph paragraph = baseParagraph(output, element)
-                .setFixedPosition((float) element.getX(), toBottomY(element), (float) element.getWidth());
-        document.add(paragraph);
+        renderTextBlock(output, element, document);
     }
 
     private static void renderStickerTail(Order order, PrintTemplateElement element, Document document) {
-        String value = normalizeStickerTail(StickerText.secondPartOrFirst(order.getSticker()));
+        String value = safeValue(order.getStickerTail()).isBlank()
+                ? normalizeStickerTail(StickerText.secondPartOrFirst(order.getSticker()))
+                : safeValue(order.getStickerTail());
         String output = withPrefix(element.getPrefix(), value);
         if (output.isBlank() || element.getWidth() <= 0 || element.getHeight() <= 0 || element.getFontSize() <= 0f) {
             return;
         }
 
-        Paragraph paragraph = baseParagraph(output, element)
-                .setFixedPosition((float) element.getX(), toBottomY(element), (float) element.getWidth());
-        document.add(paragraph);
+        renderTextBlock(output, element, document);
     }
 
     private static void renderSeparatorLine(PrintTemplateElement element, PdfDocument pdfDocument) {
@@ -246,6 +264,53 @@ public class GenerateBarcode {
         return paragraph;
     }
 
+    private static void renderTextBlock(String text, PrintTemplateElement element, Document document) {
+        float lineHeight = Math.max(6f, element.getFontSize() * 0.98f);
+        int maxLines = Math.max(1, (int) Math.floor(element.getHeight() / lineHeight));
+        int maxCharsPerLine = Math.max(3, (int) Math.floor(element.getWidth() / Math.max(3.5f, element.getFontSize() * 0.55f)));
+        List<String> lines = splitIntoLines(text, maxCharsPerLine, maxLines);
+        int emptyTopLines = bottomAlignedTwoLineField(element) ? Math.max(0, maxLines - lines.size()) : 0;
+        float firstLineBottomY = (float) (HEIGHT - element.getY() - ((emptyTopLines + 1) * lineHeight));
+        for (int i = 0; i < lines.size(); i++) {
+            Paragraph paragraph = baseParagraph(lines.get(i), element)
+                    .setFixedPosition((float) element.getX(), firstLineBottomY - (i * lineHeight), (float) element.getWidth());
+            document.add(paragraph);
+        }
+    }
+
+    private static boolean bottomAlignedTwoLineField(PrintTemplateElement element) {
+        return element != null
+                && element.getType() == PrintElementType.TEXT_FIELD
+                && (element.getFieldKey() == PrintFieldKey.ARTICLE || element.getFieldKey() == PrintFieldKey.COLOR);
+    }
+
+    private static List<String> splitIntoLines(String value, int maxCharsPerLine, int maxLines) {
+        String safeValue = safeValue(value);
+        if (safeValue.isBlank() || maxLines <= 0) {
+            return List.of("");
+        }
+        java.util.ArrayList<String> lines = new java.util.ArrayList<>();
+        String remaining = safeValue;
+        while (!remaining.isBlank() && lines.size() < maxLines) {
+            if (remaining.length() <= maxCharsPerLine) {
+                lines.add(remaining);
+                break;
+            }
+            int breakAt = remaining.lastIndexOf(' ', maxCharsPerLine);
+            if (breakAt < Math.max(4, maxCharsPerLine / 2)) {
+                breakAt = maxCharsPerLine;
+            }
+            String line = remaining.substring(0, breakAt).trim();
+            remaining = remaining.substring(Math.min(breakAt, remaining.length())).trim();
+            if (lines.size() == maxLines - 1 && !remaining.isBlank()) {
+                line = compact(line + " " + remaining, maxCharsPerLine);
+                remaining = "";
+            }
+            lines.add(line);
+        }
+        return lines.isEmpty() ? List.of("") : lines;
+    }
+
     private static String resolveFieldValue(Order order, PrintFieldKey fieldKey) {
         if (fieldKey == null) {
             return "";
@@ -258,7 +323,9 @@ public class GenerateBarcode {
             case ARTICLE -> safeValue(order.getArticle());
             case SIZE -> safeValue(order.getSize());
             case BARCODE -> safeValue(order.getBarcode());
-            case STICKER_TAIL -> normalizeStickerTail(StickerText.secondPartOrFirst(order.getSticker()));
+            case STICKER_TAIL -> safeValue(order.getStickerTail()).isBlank()
+                    ? normalizeStickerTail(StickerText.secondPartOrFirst(order.getSticker()))
+                    : safeValue(order.getStickerTail());
         };
     }
 
@@ -358,6 +425,13 @@ public class GenerateBarcode {
 
         String[] names = safeName.split("\\s+");
         return names.length > 1 ? names[0] + " " + names[1] : names[0];
+    }
+
+    private static String compact(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value == null ? "" : value;
+        }
+        return value.substring(0, Math.max(0, maxLength - 1)).trim() + "\u2026";
     }
 
     private static String safeValue(String value) {

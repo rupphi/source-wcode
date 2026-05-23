@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ProgressIndicator?>
+<?import javafx.scene.control.TableColumn?>
+<?import javafx.scene.control.TableView?>
+<?import javafx.scene.layout.GridPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Priority?>
+<?import javafx.scene.layout.VBox?>
+<?import org.kordamp.ikonli.javafx.FontIcon?>
+
+<VBox spacing="12.0" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.ui.dashboard.DashboardController">
+    <padding>
+        <Insets bottom="16.0" left="16.0" right="16.0" top="16.0" />
+    </padding>
+    <children>
+        <HBox alignment="CENTER_LEFT" spacing="10.0">
+            <children>
+                <Label fx:id="titleLabel" styleClass="h2" text="Dashboard" />
+                <ProgressIndicator fx:id="loadingIndicator" managed="false" maxHeight="18.0" maxWidth="18.0" prefHeight="18.0" prefWidth="18.0" visible="false" />
+                <Label fx:id="statusLabel" styleClass="text-muted" text="" />
+                <HBox HBox.hgrow="ALWAYS" />
+                <Button fx:id="refreshButton" mnemonicParsing="false" onAction="#onRefresh" prefHeight="28.0" text="Refresh">
+                    <graphic>
+                        <FontIcon iconLiteral="fth-refresh-cw" iconColor="white" iconSize="15" />
+                    </graphic>
+                </Button>
+            </children>
+        </HBox>
+        <HBox spacing="10.0">
+            <children>
+                <VBox spacing="4.0" styleClass="surface" HBox.hgrow="ALWAYS">
+                    <children>
+                        <Label styleClass="text-muted" text="Sản phẩm" />
+                        <Label fx:id="productCountLabel" styleClass="h1" text="0" />
+                    </children>
+                </VBox>
+                <VBox spacing="4.0" styleClass="surface" HBox.hgrow="ALWAYS">
+                    <children>
+                        <Label styleClass="text-muted" text="Đơn mới" />
+                        <Label fx:id="newOrderCountLabel" styleClass="h1" text="0" />
+                    </children>
+                </VBox>
+                <VBox spacing="4.0" styleClass="surface" HBox.hgrow="ALWAYS">
+                    <children>
+                        <Label styleClass="text-muted" text="Supply mở" />
+                        <Label fx:id="openSupplyCountLabel" styleClass="h1" text="0" />
+                    </children>
+                </VBox>
+            </children>
+        </HBox>
+        <Label fx:id="emptyStateLabel" managed="false" styleClass="text-muted" text="Chưa có dữ liệu sản phẩm local. Hãy sync shop trước." visible="false" />
+        <Label fx:id="analyticsErrorLabel" managed="false" styleClass="text-danger" text="Không tải được dữ liệu Analytics" visible="false" />
+        <GridPane hgap="12.0" vgap="12.0" VBox.vgrow="ALWAYS">
+            <children>
+                <VBox spacing="8.0" GridPane.columnIndex="0" GridPane.hgrow="ALWAYS" GridPane.rowIndex="0" GridPane.vgrow="ALWAYS">
+                    <children>
+                        <Label styleClass="h3" text="Top bán chạy 7 ngày" />
+                        <TableView fx:id="topSellingTable" VBox.vgrow="ALWAYS">
+                            <columns>
+                                <TableColumn fx:id="topProductTC" minWidth="260.0" prefWidth="360.0" text="Sản phẩm" />
+                                <TableColumn fx:id="topOrdersTC" minWidth="70.0" prefWidth="80.0" text="Đơn" />
+                                <TableColumn fx:id="topRevenueTC" minWidth="100.0" prefWidth="120.0" text="Doanh thu" />
+                                <TableColumn fx:id="topConversionTC" minWidth="120.0" prefWidth="140.0" text="Conversion" />
+                            </columns>
+                        </TableView>
+                    </children>
+                </VBox>
+                <VBox spacing="8.0" GridPane.columnIndex="1" GridPane.hgrow="ALWAYS" GridPane.rowIndex="0" GridPane.vgrow="ALWAYS">
+                    <children>
+                        <Label styleClass="h3" text="Sản phẩm tiềm năng" />
+                        <TableView fx:id="potentialTable" VBox.vgrow="ALWAYS">
+                            <columns>
+                                <TableColumn fx:id="potentialProductTC" minWidth="220.0" prefWidth="280.0" text="Sản phẩm" />
+                                <TableColumn fx:id="potentialRatingTC" minWidth="80.0" prefWidth="90.0" text="Rating" />
+                                <TableColumn fx:id="potentialDemandTC" minWidth="100.0" prefWidth="115.0" text="Wishlist/Cart/Order" />
+                                <TableColumn fx:id="potentialConversionTC" minWidth="110.0" prefWidth="125.0" text="Conversion" />
+                                <TableColumn fx:id="potentialStockTC" minWidth="60.0" prefWidth="70.0" text="Stock" />
+                                <TableColumn fx:id="potentialReasonTC" minWidth="170.0" prefWidth="220.0" text="Lý do" />
+                            </columns>
+                        </TableView>
+                    </children>
+                </VBox>
+            </children>
+            <columnConstraints>
+                <javafx.scene.layout.ColumnConstraints hgrow="ALWAYS" percentWidth="50.0" />
+                <javafx.scene.layout.ColumnConstraints hgrow="ALWAYS" percentWidth="50.0" />
+            </columnConstraints>
+            <rowConstraints>
+                <javafx.scene.layout.RowConstraints vgrow="ALWAYS" />
+            </rowConstraints>
+        </GridPane>
+    </children>
+</VBox>

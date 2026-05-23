@@ -2,9 +2,11 @@ package com.tuandev.fbsbarcode.ui;
 
 import com.tuandev.fbsbarcode.shared.FxmlViewLoader;
 import com.tuandev.fbsbarcode.ui.history.PrintHistoryController;
+import com.tuandev.fbsbarcode.ui.dashboard.DashboardController;
 import com.tuandev.fbsbarcode.ui.kiz.CategoryDialogController;
 import com.tuandev.fbsbarcode.ui.kiz.CategoryItemController;
 import com.tuandev.fbsbarcode.ui.kiz.KizPanelController;
+import com.tuandev.fbsbarcode.ui.kizmapping.KizMappingController;
 import com.tuandev.fbsbarcode.ui.packing.PackingController;
 import com.tuandev.fbsbarcode.ui.print.PrintTemplateDesignerController;
 import com.tuandev.fbsbarcode.ui.shop.ShopDialogController;
@@ -15,6 +17,7 @@ import com.tuandev.fbsbarcode.ui.workspace.HomeController;
 import com.tuandev.fbsbarcode.ui.workspace.WorkspaceHeaderController;
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
+import javafx.scene.Parent;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -44,6 +47,7 @@ class FxmlSmokeTest {
     @Test
     void shouldLoadAllPrimaryViews() throws Exception {
         assertLoads(HomeController.class, "home-view.fxml");
+        assertLoads(DashboardController.class, "dashboard-view.fxml");
         assertLoads(ShopSidebarController.class, "shop-sidebar-view.fxml");
         assertLoads(WorkspaceHeaderController.class, "workspace-header-view.fxml");
         assertLoads(SupplyListController.class, "supply-list-view.fxml");
@@ -51,10 +55,30 @@ class FxmlSmokeTest {
         assertLoads(PackingController.class, "packing-view.fxml");
         assertLoads(PrintHistoryController.class, "print-history-view.fxml");
         assertLoads(KizPanelController.class, "kiz-panel-view.fxml");
+        assertLoads(KizMappingController.class, "kiz-mapping-view.fxml");
         assertLoads(PrintTemplateDesignerController.class, "print-template-designer-view.fxml");
         assertLoads(ShopDialogController.class, "shop-dialog.fxml");
         assertLoads(CategoryDialogController.class, "category-dialog.fxml");
         assertLoads(CategoryItemController.class, "category-item.fxml");
+    }
+
+    @Test
+    void sidebarShouldExposeDashboardAndKizMappingButtons() throws Exception {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicBoolean found = new AtomicBoolean(false);
+
+        Platform.runLater(() -> {
+            try {
+                FXMLLoader loader = FxmlViewLoader.loader(ShopSidebarController.class, "shop-sidebar-view.fxml");
+                Parent root = FxmlViewLoader.load(loader);
+                found.set(root.lookup("#dashboardButton") != null && root.lookup("#kizMappingButton") != null);
+            } finally {
+                latch.countDown();
+            }
+        });
+
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+        assertTrue(found.get(), "Sidebar should contain dashboard and KIZ mapping buttons");
     }
 
     private void assertLoads(Class<?> resourceOwner, String resourceName) throws Exception {

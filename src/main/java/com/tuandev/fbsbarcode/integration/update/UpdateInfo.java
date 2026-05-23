@@ -1,5 +1,6 @@
 package com.tuandev.fbsbarcode.integration.update;
 
+import java.util.Locale;
 import java.util.Map;
 
 public class UpdateInfo {
@@ -23,16 +24,37 @@ public class UpdateInfo {
     public void setMandatory(boolean mandatory) { this.mandatory = mandatory; }
 
     public String getBestDownloadUrl() {
-        String os = System.getProperty("os.name", "").toLowerCase();
-        if (os.contains("win") && downloadUrls != null) {
-            String exe = downloadUrls.get("exe");
-            if (exe != null && !exe.isBlank()) return exe;
-            String msi = downloadUrls.get("msi");
-            if (msi != null && !msi.isBlank()) return msi;
+        if (downloadUrls == null || downloadUrls.isEmpty()) {
+            return null;
         }
-        return downloadUrls != null && !downloadUrls.isEmpty()
-                ? downloadUrls.values().iterator().next()
-                : null;
+
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        if (os.contains("win")) {
+            return firstAvailable("exe", "msi", "zip", "release");
+        }
+        if (os.contains("mac")) {
+            return firstAvailable("dmg", "release");
+        }
+        if (os.contains("nux") || os.contains("nix") || os.contains("aix")) {
+            return firstAvailable("deb", "release");
+        }
+        return firstAvailable("release");
+    }
+
+    private String firstAvailable(String... keys) {
+        if (downloadUrls == null || downloadUrls.isEmpty()) {
+            return null;
+        }
+        for (String key : keys) {
+            String url = downloadUrls.get(key);
+            if (url != null && !url.isBlank()) {
+                return url;
+            }
+        }
+        return downloadUrls.values().stream()
+                .filter(url -> url != null && !url.isBlank())
+                .findFirst()
+                .orElse(null);
     }
 
     public String getDisplayChangelog() {

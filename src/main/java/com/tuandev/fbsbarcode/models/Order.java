@@ -10,6 +10,7 @@ public class Order {
     private String color;
     private String article;
     private String sticker;
+    private String stickerTail;
     private String barcode;
     private String kiz;
     private String stickerCode;
@@ -18,6 +19,8 @@ public class Order {
     private Integer price;
     private String supplierStatus;
     private String wbStatus;
+    private Long nmId;
+    private boolean requiresKiz;
 
     public Order() {
     }
@@ -106,6 +109,14 @@ public class Order {
         this.sticker = sticker;
     }
 
+    public String getStickerTail() {
+        return stickerTail;
+    }
+
+    public void setStickerTail(String stickerTail) {
+        this.stickerTail = stickerTail;
+    }
+
     public String getBarcode() {
         return barcode;
     }
@@ -170,6 +181,22 @@ public class Order {
         this.wbStatus = wbStatus;
     }
 
+    public Long getNmId() {
+        return nmId;
+    }
+
+    public void setNmId(Long nmId) {
+        this.nmId = nmId;
+    }
+
+    public boolean isRequiresKiz() {
+        return requiresKiz;
+    }
+
+    public void setRequiresKiz(boolean requiresKiz) {
+        this.requiresKiz = requiresKiz;
+    }
+
     @Override
     public String toString() {
         return "Order{" +
@@ -183,6 +210,8 @@ public class Order {
                 ", sticker='" + sticker + '\'' +
                 ", barcode='" + barcode + '\'' +
                 ", kiz='" + kiz + '\'' +
+                ", nmId=" + nmId +
+                ", requiresKiz=" + requiresKiz +
                 ", stickerCode='" + stickerCode + '\'' +
                 '}';
     }

@@ -111,6 +111,7 @@ public final class KizAttachmentCoordinator {
         List<Kiz> successfulKizs = new ArrayList<>();
         List<String> failures = new ArrayList<>();
         int completed = 0;
+        int skipped = 0;
 
         for (OrderExportWorkflow.KizAttachmentAssignment assignment : assignments) {
             if (assignment == null || assignment.orderId() == null || assignment.orderId() <= 0) {
@@ -127,6 +128,14 @@ public final class KizAttachmentCoordinator {
                 completed++;
                 notifyProgress(key, shop, supplyId, supplyName, completed, assignments.size(), true,
                         "Отправка KIZ в WB " + completed + "/" + assignments.size(), failures, successfulKizs);
+                continue;
+            }
+
+            if (isSkippedNonProcessingOrder(result)) {
+                skipped++;
+                notifyProgress(key, shop, supplyId, supplyName, completed, assignments.size(), true,
+                        "Отправка KIZ в WB " + completed + "/" + assignments.size()
+                                + " (пропущено " + skipped + ")", failures, successfulKizs);
                 continue;
             }
 
@@ -152,7 +161,9 @@ public final class KizAttachmentCoordinator {
 
         String finalMessage = failures.isEmpty()
                 ? "KIZ отправлены в WB: " + completed + "/" + assignments.size()
-                : "KIZ отправлены частично: " + completed + "/" + assignments.size();
+                        + (skipped > 0 ? ", пропущено " + skipped : "")
+                : "KIZ отправлены частично: " + completed + "/" + assignments.size()
+                        + (skipped > 0 ? ", пропущено " + skipped : "");
         KizAttachmentProgress completedProgress = new KizAttachmentProgress(
                 shop.getId(),
                 shop.getName(),
@@ -193,6 +204,14 @@ public final class KizAttachmentCoordinator {
         );
         activeJobs.put(key, progress);
         notifyListeners(progress);
+    }
+
+    private boolean isSkippedNonProcessingOrder(KizService.AttachCodeResult result) {
+        if (result == null || result.statusCode() != 409) {
+            return false;
+        }
+        String body = result.responseBody() == null ? "" : result.responseBody();
+        return body.contains("FailedToUpdateMeta") || body.contains("Processing status");
     }
 
     private void notifyListeners(KizAttachmentProgress progress) {

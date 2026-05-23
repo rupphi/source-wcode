@@ -1,6 +1,7 @@
 package com.tuandev.fbsbarcode.features.shop;
 
 import com.tuandev.fbsbarcode.models.Shop;
+import com.tuandev.fbsbarcode.shared.AlertService;
 import com.tuandev.fbsbarcode.shared.FxmlViewLoader;
 import com.tuandev.fbsbarcode.shared.I18nService;
 import com.tuandev.fbsbarcode.ui.shop.ShopDialogController;
@@ -24,7 +25,7 @@ public class ShopDialogService {
 
     private Optional<Shop> showDialog(String title, String submitLabel, Shop initialValue) {
         Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.getDialogPane().getStylesheets().add(java.util.Objects.requireNonNull(com.tuandev.fbsbarcode.MainApplication.class.getResource("/com/tuandev/fbsbarcode/styles/theme.css")).toExternalForm());
+        AlertService.applyTheme(dialog);
         dialog.setTitle(title);
 
         FXMLLoader loader = FxmlViewLoader.loader(ShopDialogController.class, "shop-dialog.fxml");

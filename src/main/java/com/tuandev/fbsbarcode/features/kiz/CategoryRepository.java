@@ -21,6 +21,16 @@ public class CategoryRepository {
         }
     }
 
+    public int updateName(Category category) throws SQLException {
+        String sql = "UPDATE categories SET name = ? WHERE id = ?";
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, category.getName());
+            ps.setInt(2, category.getId());
+            return ps.executeUpdate();
+        }
+    }
+
     public List<Category> findAllForShop(int shopId) {
         List<Category> categories = new ArrayList<>();
         String sql = """

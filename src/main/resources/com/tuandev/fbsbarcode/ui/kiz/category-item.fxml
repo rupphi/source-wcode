@@ -7,37 +7,60 @@
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.control.TextField?>
 <?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Pane?>
+<?import javafx.scene.layout.VBox?>
 <?import org.kordamp.ikonli.javafx.FontIcon?>
 
-<HBox fx:id="root" alignment="CENTER_LEFT" minHeight="40.0" prefWidth="350.0" spacing="8.0" styleClass="card" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.ui.kiz.CategoryItemController">
+<VBox fx:id="root" minHeight="74.0" prefWidth="350.0" spacing="6.0" styleClass="card" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.ui.kiz.CategoryItemController">
     <children>
-        <Label fx:id="idLabel" prefWidth="56.0" text="ID: 0" styleClass="text-muted" />
-        <Label fx:id="nameLabel" prefWidth="170.0" text="Category" styleClass="text-bold" />
-        <TextField fx:id="countKizsField" alignment="CENTER" editable="false" prefWidth="72.0" text="0" />
-        <Button fx:id="addKizBtn" mnemonicParsing="false">
-            <styleClass>
-                <String fx:value="btn-icon" />
-            </styleClass>
-            <graphic>
-                <FontIcon iconLiteral="fth-upload" iconSize="14" iconColor="#5865F2"/>
-            </graphic>
-            <cursor>
-                <Cursor fx:constant="HAND" />
-            </cursor>
-        </Button>
-        <Button fx:id="deleteCategoryBtn" mnemonicParsing="false">
-            <styleClass>
-                <String fx:value="btn-icon" />
-            </styleClass>
-            <graphic>
-                <FontIcon iconLiteral="fth-trash-2" iconSize="14" iconColor="#da373c"/>
-            </graphic>
-            <cursor>
-                <Cursor fx:constant="HAND" />
-            </cursor>
-        </Button>
+        <HBox alignment="CENTER_LEFT" spacing="8.0">
+            <children>
+                <Label fx:id="idLabel" text="ID: 0" styleClass="text-muted" />
+                <Pane HBox.hgrow="ALWAYS" />
+                <Label text="KIZ" styleClass="text-muted" />
+                <TextField fx:id="countKizsField" alignment="CENTER" editable="false" prefWidth="64.0" text="0" />
+            </children>
+        </HBox>
+        <HBox alignment="CENTER_LEFT" spacing="8.0">
+            <children>
+                <Label fx:id="nameLabel" maxWidth="1.7976931348623157E308" text="Category" styleClass="text-bold" wrapText="true" HBox.hgrow="ALWAYS" />
+                <Button fx:id="addKizBtn" mnemonicParsing="false">
+                    <styleClass>
+                        <String fx:value="btn-icon" />
+                    </styleClass>
+                    <graphic>
+                        <FontIcon iconLiteral="fth-upload" iconSize="14" iconColor="#5865F2"/>
+                    </graphic>
+                    <cursor>
+                        <Cursor fx:constant="HAND" />
+                    </cursor>
+                </Button>
+                <Button fx:id="editCategoryBtn" mnemonicParsing="false">
+                    <styleClass>
+                        <String fx:value="btn-icon" />
+                    </styleClass>
+                    <graphic>
+                        <FontIcon iconLiteral="fth-edit-2" iconSize="14" iconColor="#5865F2"/>
+                    </graphic>
+                    <cursor>
+                        <Cursor fx:constant="HAND" />
+                    </cursor>
+                </Button>
+                <Button fx:id="deleteCategoryBtn" mnemonicParsing="false">
+                    <styleClass>
+                        <String fx:value="btn-icon" />
+                    </styleClass>
+                    <graphic>
+                        <FontIcon iconLiteral="fth-trash-2" iconSize="14" iconColor="#da373c"/>
+                    </graphic>
+                    <cursor>
+                        <Cursor fx:constant="HAND" />
+                    </cursor>
+                </Button>
+            </children>
+        </HBox>
     </children>
     <padding>
-        <Insets bottom="6.0" left="6.0" right="6.0" top="6.0" />
+        <Insets bottom="8.0" left="8.0" right="8.0" top="8.0" />
     </padding>
-</HBox>
+</VBox>

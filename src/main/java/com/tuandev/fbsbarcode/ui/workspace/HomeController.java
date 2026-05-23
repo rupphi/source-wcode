@@ -1,6 +1,13 @@
 package com.tuandev.fbsbarcode.ui.workspace;
 
 import com.tuandev.fbsbarcode.config.Database;
+import com.tuandev.fbsbarcode.BuildConfig;
+import com.tuandev.fbsbarcode.features.fbo.FboBarcodePdfExporter;
+import com.tuandev.fbsbarcode.features.fbo.FboBarcodePrintItem;
+import com.tuandev.fbsbarcode.features.fbo.FboKizPrintPlanner;
+import com.tuandev.fbsbarcode.features.fbo.FboProductRepository;
+import com.tuandev.fbsbarcode.features.fbo.FboProductSku;
+import com.tuandev.fbsbarcode.features.fbo.FboPrintPlan;
 import com.tuandev.fbsbarcode.features.packing.PackingWorkflow;
 import com.tuandev.fbsbarcode.integration.wb.WbSupplySummary;
 import com.tuandev.fbsbarcode.integration.wb.WbSupplyWorkflow;
@@ -22,10 +29,12 @@ import com.tuandev.fbsbarcode.features.print.PrintJobOptions;
 import com.tuandev.fbsbarcode.features.print.PrintOptionsDialogService;
 import com.tuandev.fbsbarcode.features.print.OrderExportWorkflow;
 import com.tuandev.fbsbarcode.features.print.PrintAuthorizationDialogService;
+import com.tuandev.fbsbarcode.features.print.PrintAuthorizationService;
 import com.tuandev.fbsbarcode.features.print.PrintTemplateDesignerService;
 import com.tuandev.fbsbarcode.features.print.PrintTemplateService;
 import com.tuandev.fbsbarcode.features.print.history.PrintHistoryJobSummary;
 import com.tuandev.fbsbarcode.features.print.history.PrintHistoryService;
+import com.tuandev.fbsbarcode.features.kiz.KizService;
 import com.tuandev.fbsbarcode.features.supply.OrderSortPreferenceService;
 import com.tuandev.fbsbarcode.features.supply.OrderSortingService;
 import com.tuandev.fbsbarcode.integration.update.UpdateDialogService;
@@ -35,7 +44,10 @@ import com.tuandev.fbsbarcode.integration.update.UpdateService;
 import com.tuandev.fbsbarcode.features.shop.ShopWorkflow;
 import com.tuandev.fbsbarcode.features.supply.SupplyLoadWorkflow;
 import com.tuandev.fbsbarcode.ui.history.PrintHistoryController;
+import com.tuandev.fbsbarcode.ui.dashboard.DashboardController;
+import com.tuandev.fbsbarcode.ui.fbo.FboPackingController;
 import com.tuandev.fbsbarcode.ui.kiz.KizPanelController;
+import com.tuandev.fbsbarcode.ui.kizmapping.KizMappingController;
 import com.tuandev.fbsbarcode.ui.packing.PackingController;
 import com.tuandev.fbsbarcode.ui.shop.ShopSidebarController;
 import com.tuandev.fbsbarcode.ui.supply.OrderSortOptions;
@@ -44,6 +56,7 @@ import com.tuandev.fbsbarcode.ui.supply.SupplyListController;
 import com.tuandev.fbsbarcode.ui.supply.SupplyManagementController;
 import javafx.concurrent.Task;
 import javafx.animation.FadeTransition;
+import javafx.animation.PauseTransition;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXMLLoader;
 import javafx.fxml.Initializable;
@@ -51,6 +64,9 @@ import javafx.application.Platform;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.Dialog;
+import javafx.scene.control.Label;
+import javafx.scene.control.PasswordField;
 import javafx.scene.Node;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
@@ -66,6 +82,7 @@ import java.io.IOException;
 import java.net.URL;
 import java.sql.SQLException;
 import java.text.MessageFormat;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -87,10 +104,14 @@ public class HomeController implements Initializable {
     private final OrderSortingService orderSortingService = new OrderSortingService();
     private final OrderSortPreferenceService orderSortPreferenceService = new OrderSortPreferenceService();
     private final PrintAuthorizationDialogService printAuthorizationDialogService = new PrintAuthorizationDialogService();
+    private final PrintAuthorizationService printAuthorizationService = new PrintAuthorizationService();
     private final PrintOptionsDialogService printOptionsDialogService = new PrintOptionsDialogService();
     private final PrintTemplateService printTemplateService = new PrintTemplateService();
     private final PrintTemplateDesignerService printTemplateDesignerService = new PrintTemplateDesignerService();
     private final PrintHistoryService printHistoryService = new PrintHistoryService();
+    private final FboProductRepository fboProductRepository = new FboProductRepository();
+    private final FboBarcodePdfExporter fboBarcodePdfExporter = new FboBarcodePdfExporter();
+    private final FboKizPrintPlanner fboKizPrintPlanner = new FboKizPrintPlanner();
     private final KizAttachmentCoordinator kizAttachmentCoordinator = KizAttachmentCoordinator.getInstance();
     private final WorkspaceState state = new WorkspaceState();
     private final WorkspaceActivityTracker activityTracker = new WorkspaceActivityTracker();
@@ -104,11 +125,17 @@ public class HomeController implements Initializable {
     public StackPane dynamicContentContainer;
 
     private BorderPane supplyManagementView;
+    private VBox dashboardView;
     private VBox printHistoryView;
     private VBox packingView;
+    private VBox fboPackingView;
+    private Node kizMappingView;
     private SupplyManagementController supplyManagementController;
+    private DashboardController dashboardController;
     private PrintHistoryController printHistoryController;
     private PackingController packingController;
+    private FboPackingController fboPackingController;
+    private KizMappingController kizMappingController;
 
     private FileChooser fileChooser;
     private ShopSidebarController shopSidebarController;
@@ -117,6 +144,11 @@ public class HomeController implements Initializable {
     private SupplyDetailController supplyDetailController;
     private KizPanelController kizPanelController;
     private WbSupplySummary loadedSupplySummary;
+    private final PauseTransition fboSearchDebounce = new PauseTransition(javafx.util.Duration.millis(250));
+    private static final int FBO_PAGE_SIZE = 50;
+    private boolean appActivated;
+    private boolean fboLoading;
+    private boolean fboHasMore;
     private final Consumer<com.tuandev.fbsbarcode.shared.AppLanguage> languageListener =
             language -> Platform.runLater(this::applyTranslations);
     private final Consumer<KizAttachmentCoordinator.KizAttachmentProgress> kizProgressListener =
@@ -127,6 +159,7 @@ public class HomeController implements Initializable {
     public void initialize(URL url, ResourceBundle resourceBundle) {
         Database.initDatabase();
         printTemplateService.ensureDefaultTemplateExists();
+        appActivated = printAuthorizationService.isAuthorized();
 
         fileChooser = new FileChooser();
         File initialDirectory = AppPaths.preferredFileChooserDirectory();
@@ -143,7 +176,7 @@ public class HomeController implements Initializable {
         i18nService.addListener(languageListener);
 
         contentPane.setVisible(false);
-        showPacking();
+        showDashboard();
         updateHeaderState();
         updateExportAvailability();
         loadShops();
@@ -151,6 +184,11 @@ public class HomeController implements Initializable {
     }
 
     private void loadDynamicViews() {
+        FXMLLoader dashboardLoader = FxmlViewLoader.loader(DashboardController.class, "dashboard-view.fxml");
+        dashboardView = FxmlViewLoader.load(dashboardLoader);
+        dashboardController = dashboardLoader.getController();
+        dashboardController.applyTranslations();
+
         FXMLLoader supplyLoader = FxmlViewLoader.loader(SupplyManagementController.class, "supply-management-view.fxml");
         supplyManagementView = FxmlViewLoader.load(supplyLoader);
         supplyManagementController = supplyLoader.getController();
@@ -166,6 +204,20 @@ public class HomeController implements Initializable {
         packingController = packingLoader.getController();
         packingController.setOnPrintSupply(this::openSupplyForPrint);
         packingController.applyTranslations();
+
+        FXMLLoader fboLoader = FxmlViewLoader.loader(FboPackingController.class, "fbo-packing-view.fxml");
+        fboPackingView = FxmlViewLoader.load(fboLoader);
+        fboPackingController = fboLoader.getController();
+        fboPackingController.setOnSearchChanged(this::scheduleFboReload);
+        fboPackingController.setOnLoadMoreRequested(this::loadMoreFboProducts);
+        fboPackingController.setOnPrint(this::printFboBarcodes);
+        fboPackingController.setOnQuickPrint(this::printSingleFboBarcode);
+        fboPackingController.applyTranslations();
+
+        FXMLLoader kizMappingLoader = FxmlViewLoader.loader(KizMappingController.class, "kiz-mapping-view.fxml");
+        kizMappingView = FxmlViewLoader.load(kizMappingLoader);
+        kizMappingController = kizMappingLoader.getController();
+        kizMappingController.applyTranslations();
     }
 
     private void showPrintHistory() {
@@ -174,10 +226,28 @@ public class HomeController implements Initializable {
         refreshPrintHistory();
     }
 
+    private void showDashboard() {
+        clearKizDraft();
+        setDynamicContent(dashboardView);
+        refreshDashboard(false);
+    }
+
     private void showPacking() {
         clearKizDraft();
         setDynamicContent(packingView);
         refreshPackingView();
+    }
+
+    private void showFboPacking() {
+        clearKizDraft();
+        setDynamicContent(fboPackingView);
+        refreshFboView();
+    }
+
+    private void showKizMapping() {
+        clearKizDraft();
+        setDynamicContent(kizMappingView);
+        refreshKizMappingView();
     }
 
     private void refreshPrintHistory() {
@@ -199,6 +269,86 @@ public class HomeController implements Initializable {
         packingController.setShop(state.getSelectedShop(), state.isSelectedShopTokenValid());
     }
 
+    private void refreshDashboard(boolean forceRefresh) {
+        if (dashboardController != null) {
+            dashboardController.setShop(state.getSelectedShop(), forceRefresh);
+        }
+    }
+
+    private void refreshFboView() {
+        if (fboPackingController == null) {
+            return;
+        }
+        Shop shop = state.getSelectedShop();
+        if (shop == null) {
+            fboPackingController.setSubjects(List.of());
+            fboPackingController.replaceProducts(List.of(), false);
+            return;
+        }
+        fboPackingController.setSubjects(fboProductRepository.findSubjects(shop.getId()));
+        reloadFboProducts();
+    }
+
+    private void refreshKizMappingView() {
+        if (kizMappingController != null) {
+            kizMappingController.setShop(state.getSelectedShop());
+        }
+    }
+
+    private void scheduleFboReload() {
+        fboSearchDebounce.setOnFinished(event -> reloadFboProducts());
+        fboSearchDebounce.playFromStart();
+    }
+
+    private void reloadFboProducts() {
+        loadFboProducts(false);
+    }
+
+    private void loadMoreFboProducts() {
+        if (fboHasMore && !fboLoading) {
+            loadFboProducts(true);
+        }
+    }
+
+    private void loadFboProducts(boolean append) {
+        if (fboPackingController == null || fboLoading) {
+            return;
+        }
+        Shop shop = state.getSelectedShop();
+        if (shop == null) {
+            fboPackingController.replaceProducts(List.of(), false);
+            return;
+        }
+        fboLoading = true;
+        int offset = append ? fboPackingController.rowCount() : 0;
+        Task<List<FboProductSku>> task = new Task<>() {
+            @Override
+            protected List<FboProductSku> call() {
+                return fboProductRepository.search(fboPackingController.criteria(shop.getId(), FBO_PAGE_SIZE + 1, offset));
+            }
+        };
+        fboPackingController.setLoading(true);
+        task.setOnSucceeded(event -> {
+            fboLoading = false;
+            fboPackingController.setLoading(false);
+            List<FboProductSku> loaded = task.getValue() == null ? List.of() : task.getValue();
+            fboHasMore = loaded.size() > FBO_PAGE_SIZE;
+            List<FboProductSku> page = fboHasMore ? loaded.subList(0, FBO_PAGE_SIZE) : loaded;
+            if (append) {
+                fboPackingController.appendProducts(page, fboHasMore);
+            } else {
+                fboPackingController.replaceProducts(page, fboHasMore);
+            }
+        });
+        task.setOnFailed(event -> {
+            fboLoading = false;
+            fboPackingController.setLoading(false);
+            LOGGER.error("Không thể tải sản phẩm FBO", task.getException());
+            AlertService.showError(task.getException().getMessage());
+        });
+        AppTaskExecutor.execute(task);
+    }
+
     private void openSupplyForPrint(WbSupplySummary supply) {
         setSupplyListVisible(false);
         setDynamicContent(supplyManagementView);
@@ -206,12 +356,22 @@ public class HomeController implements Initializable {
     }
 
     private void setDynamicContent(Node view) {
+        clearFboQuantitiesIfLeaving(view);
         dynamicContentContainer.getChildren().setAll(view);
         view.setOpacity(0.0);
         FadeTransition fade = new FadeTransition(javafx.util.Duration.millis(120), view);
         fade.setFromValue(0.0);
         fade.setToValue(1.0);
         fade.play();
+    }
+
+    private void clearFboQuantitiesIfLeaving(Node nextView) {
+        if (fboPackingController == null || fboPackingView == null || nextView == fboPackingView) {
+            return;
+        }
+        if (dynamicContentContainer.getChildren().contains(fboPackingView)) {
+            fboPackingController.clearQuantities();
+        }
     }
 
     private void setSupplyListVisible(boolean visible) {
@@ -259,6 +419,79 @@ public class HomeController implements Initializable {
         AppTaskExecutor.execute(task);
     }
 
+    private void printFboBarcodes(List<FboBarcodePrintItem> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        Shop shop = state.getSelectedShop();
+        if (shop == null) {
+            return;
+        }
+        if (!appActivated && !showActivationInputDialog()) {
+            return;
+        }
+        preparePdfSaveChooser();
+        File file = fileChooser.showSaveDialog(null);
+        if (file == null) {
+            return;
+        }
+        Task<Void> task = new Task<>() {
+            @Override
+            protected Void call() throws Exception {
+                FboPrintPlan plan = fboKizPrintPlanner.plan(shop.getId(), items);
+                fboBarcodePdfExporter.exportPlan(plan, file);
+                if (!plan.usedKizs().isEmpty()) {
+                    KizService.deleteKizs(plan.usedKizs());
+                }
+                return null;
+            }
+        };
+        task.setOnFailed(event -> {
+            LOGGER.error("Không thể in barcode FBO", task.getException());
+            AlertService.showError(task.getException().getMessage());
+        });
+        task.setOnSucceeded(event -> {
+            fboPackingController.clearQuantities();
+            tryOpenFile(file);
+        });
+        AppTaskExecutor.execute(task);
+    }
+
+    private void printSingleFboBarcode(FboProductSku product) {
+        if (product == null) {
+            return;
+        }
+        Shop shop = state.getSelectedShop();
+        if (shop == null) {
+            return;
+        }
+        if (!appActivated && !showActivationInputDialog()) {
+            return;
+        }
+        preparePdfSaveChooser();
+        File file = fileChooser.showSaveDialog(null);
+        if (file == null) {
+            return;
+        }
+        Task<Void> task = new Task<>() {
+            @Override
+            protected Void call() throws Exception {
+                FboPrintPlan plan = fboKizPrintPlanner.plan(shop.getId(), List.of(new FboBarcodePrintItem(product, 1)));
+                fboBarcodePdfExporter.exportPlan(plan, file);
+                if (!plan.usedKizs().isEmpty()) {
+                    KizService.deleteKizs(plan.usedKizs());
+                }
+                return null;
+            }
+        };
+        task.setOnFailed(event -> {
+            LOGGER.error("Không thể in nhanh barcode FBO", task.getException());
+            AlertService.showError(task.getException().getMessage());
+        });
+        task.setOnSucceeded(event -> tryOpenFile(file));
+        AppTaskExecutor.execute(task);
+    }
+
     private void checkForUpdates() {
         javafx.concurrent.Task<UpdateInfo> task = new javafx.concurrent.Task<>() {
             @Override
@@ -276,6 +509,142 @@ public class HomeController implements Initializable {
             LOGGER.warn("Update check failed", task.getException())
         );
         AppTaskExecutor.execute(task);
+    }
+
+    private void checkVersionManually() {
+        Task<UpdateInfo> task = new Task<>() {
+            @Override
+            protected UpdateInfo call() {
+                return updateService.checkForUpdate();
+            }
+        };
+        task.setOnSucceeded(e -> {
+            UpdateInfo info = task.getValue();
+            if (info != null) {
+                showUpdateDialog(info);
+            } else {
+                AlertService.showInfo(
+                        i18nService.tr("version.current.title"),
+                        i18nService.tr("version.current.header"),
+                        MessageFormat.format(i18nService.tr("version.current.content"), BuildConfig.getAppVersion())
+                );
+            }
+        });
+        task.setOnFailed(e -> {
+            LOGGER.warn("Manual update check failed", task.getException());
+            AlertService.showError(i18nService.tr("version.check_failed"));
+        });
+        AppTaskExecutor.execute(task);
+    }
+
+    private void showActivationDialog() {
+        if (!printAuthorizationService.isAuthorized()) {
+            showActivationInputDialog();
+            return;
+        }
+
+        ButtonType deleteButton = new ButtonType(i18nService.tr("activation.delete"), ButtonBar.ButtonData.OTHER);
+        ButtonType closeButton = new ButtonType(i18nService.tr("common.close"), ButtonBar.ButtonData.CANCEL_CLOSE);
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        AlertService.applyTheme(alert);
+        alert.setTitle(i18nService.tr("activation.status.title"));
+        alert.setHeaderText(i18nService.tr("activation.status.header"));
+        alert.setContentText(MessageFormat.format(
+                i18nService.tr("activation.status.content"),
+                i18nService.tr("activation.status.authorized"),
+                safeText(ConfigService.getActivatedAt())
+        ));
+        alert.getDialogPane().getButtonTypes().setAll(deleteButton, closeButton);
+        alert.showAndWait().ifPresent(choice -> {
+            if (choice == deleteButton) {
+                printAuthorizationService.clearRememberedAuthorization();
+                setAppActivated(false);
+                AlertService.showInfo(
+                        i18nService.tr("activation.deleted.title"),
+                        i18nService.tr("activation.deleted.header"),
+                        i18nService.tr("activation.deleted.content")
+                );
+            }
+        });
+    }
+
+    private boolean showActivationInputDialog() {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        AlertService.applyTheme(dialog);
+        dialog.setTitle(i18nService.tr("activation.input.title"));
+        dialog.setHeaderText(i18nService.tr("activation.input.header"));
+        dialog.getDialogPane().setMinWidth(420);
+
+        ButtonType activateButton = new ButtonType(i18nService.tr("activation.activate"), ButtonBar.ButtonData.OK_DONE);
+        ButtonType cancelButton = new ButtonType(i18nService.tr("common.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
+        dialog.getDialogPane().getButtonTypes().setAll(activateButton, cancelButton);
+
+        PasswordField keyField = new PasswordField();
+        keyField.setPromptText(i18nService.tr("activation.input.content"));
+
+        Label errorLabel = new Label();
+        errorLabel.getStyleClass().add("error-label");
+        errorLabel.setManaged(false);
+        errorLabel.setVisible(false);
+
+        VBox content = new VBox(10,
+                new Label(i18nService.tr("activation.input.content")),
+                keyField,
+                errorLabel
+        );
+        content.getStyleClass().add("dialog-content");
+        dialog.getDialogPane().setContent(content);
+
+        Node activateNode = dialog.getDialogPane().lookupButton(activateButton);
+        activateNode.addEventFilter(ActionEvent.ACTION, event -> {
+            if (!printAuthorizationService.matches(keyField.getText())) {
+                errorLabel.setText(i18nService.tr("print_auth.invalid"));
+                errorLabel.setManaged(true);
+                errorLabel.setVisible(true);
+                keyField.requestFocus();
+                keyField.selectAll();
+                event.consume();
+                return;
+            }
+            printAuthorizationService.rememberAuthorized();
+            if (!printAuthorizationService.isAuthorized()) {
+                errorLabel.setText(i18nService.tr("print_auth.remember_failed"));
+                errorLabel.setManaged(true);
+                errorLabel.setVisible(true);
+                event.consume();
+            }
+        });
+
+        Optional<ButtonType> choice = dialog.showAndWait();
+        boolean activated = choice.isPresent() && choice.get() == activateButton && printAuthorizationService.isAuthorized();
+        if (activated) {
+            setAppActivated(true);
+            AlertService.showInfo(
+                    i18nService.tr("activation.success.title"),
+                    i18nService.tr("activation.success.header"),
+                    i18nService.tr("activation.success.content")
+            );
+        }
+        return activated;
+    }
+
+    private void setAppActivated(boolean activated) {
+        appActivated = activated;
+        if (shopSidebarController != null) {
+            shopSidebarController.setActivated(activated);
+        }
+    }
+
+    private void showAboutDialog() {
+        AlertService.showInfo(
+                i18nService.tr("about.title"),
+                MessageFormat.format(i18nService.tr("about.header"), BuildConfig.getAppVersion()),
+                i18nService.tr("about.content")
+        );
+    }
+
+    private String safeText(String value) {
+        return value == null || value.isBlank() ? "-" : value;
     }
 
     private void preparePdfSaveChooser() {
@@ -412,7 +781,6 @@ public class HomeController implements Initializable {
             return;
         }
         List<Order> exportOrders = new ArrayList<>(state.getDisplayedOrders());
-        String kizCommand = kizPanelController.getKizCommand();
         String supplyId = state.getLoadedSupplyId();
         String supplyName = state.getLoadedSupplyName();
 
@@ -433,7 +801,6 @@ public class HomeController implements Initializable {
                                 supplyId,
                                 supplyName,
                                 ordersWithStickers,
-                                kizCommand,
                                 printOptions.get(),
                                 file,
                                 orderDetailsFile
@@ -657,6 +1024,7 @@ public class HomeController implements Initializable {
         }
 
         Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        AlertService.applyTheme(alert);
         alert.setTitle(i18nService.tr("category.delete.title"));
         alert.setHeaderText(MessageFormat.format(i18nService.tr("category.delete.header"), category.getName()));
         ButtonType buttonTypeConfirm = new ButtonType(i18nService.tr("common.delete"), ButtonBar.ButtonData.YES);
@@ -719,6 +1087,15 @@ public class HomeController implements Initializable {
         if (isPrintHistoryVisible()) {
             refreshPrintHistory();
         }
+        if (isDashboardVisible()) {
+            refreshDashboard(false);
+        }
+        if (isFboPackingVisible()) {
+            refreshFboView();
+        }
+        if (isKizMappingVisible()) {
+            refreshKizMappingView();
+        }
         refreshSupplyList();
         refreshPackingView();
         if (!tokenValid) {
@@ -778,6 +1155,15 @@ public class HomeController implements Initializable {
             refreshSupplyListIfCurrent(shop.getId());
             if (isPackingVisible()) {
                 refreshPackingView();
+            }
+            if (isFboPackingVisible()) {
+                refreshFboView();
+            }
+            if (isDashboardVisible()) {
+                refreshDashboard(false);
+            }
+            if (isKizMappingVisible()) {
+                refreshKizMappingView();
             }
         });
         AppTaskExecutor.execute(task);
@@ -943,10 +1329,17 @@ public class HomeController implements Initializable {
         shopSidebarController = loader.getController();
         shopSidebarController.setOnAddShop(() -> onAddShop(new ActionEvent()));
         shopSidebarController.setOnOpenSettings(() -> onSettings(new ActionEvent()));
+        shopSidebarController.setOnDashboard(this::showDashboard);
         shopSidebarController.setOnPacking(this::showPacking);
+        shopSidebarController.setOnFboPacking(this::showFboPacking);
+        shopSidebarController.setOnKizMapping(this::showKizMapping);
         shopSidebarController.setOnPrintHistory(this::showPrintHistory);
+        shopSidebarController.setOnCheckVersion(this::checkVersionManually);
+        shopSidebarController.setOnActivation(this::showActivationDialog);
+        shopSidebarController.setOnAbout(this::showAboutDialog);
         shopSidebarController.setOnLanguageChanged(i18nService::setLanguage);
         shopSidebarController.setSelectedLanguage(i18nService.getCurrentLanguage());
+        shopSidebarController.setActivated(appActivated);
         shopSidebarController.applyTranslations();
         sidebarContainer.getChildren().setAll(root);
     }
@@ -1013,6 +1406,15 @@ public class HomeController implements Initializable {
         if (packingController != null) {
             packingController.applyTranslations();
         }
+        if (dashboardController != null) {
+            dashboardController.applyTranslations();
+        }
+        if (fboPackingController != null) {
+            fboPackingController.applyTranslations();
+        }
+        if (kizMappingController != null) {
+            kizMappingController.applyTranslations();
+        }
         if (printHistoryController != null) {
             printHistoryController.applyTranslations();
         }
@@ -1049,6 +1451,12 @@ public class HomeController implements Initializable {
         }
         if (packingController != null) {
             packingController.setShop(null, false);
+        }
+        if (dashboardController != null) {
+            dashboardController.setShop(null, false);
+        }
+        if (kizMappingController != null) {
+            kizMappingController.setShop(null);
         }
         resetLoadedSupply();
     }
@@ -1144,8 +1552,20 @@ public class HomeController implements Initializable {
         return dynamicContentContainer.getChildren().contains(printHistoryView);
     }
 
+    private boolean isDashboardVisible() {
+        return dynamicContentContainer.getChildren().contains(dashboardView);
+    }
+
     private boolean isPackingVisible() {
         return dynamicContentContainer.getChildren().contains(packingView);
+    }
+
+    private boolean isFboPackingVisible() {
+        return dynamicContentContainer.getChildren().contains(fboPackingView);
+    }
+
+    private boolean isKizMappingVisible() {
+        return dynamicContentContainer.getChildren().contains(kizMappingView);
     }
 
     private boolean isCurrentSupplyRequest(int shopId, String supplyId, long requestToken) {
@@ -1326,9 +1746,7 @@ public class HomeController implements Initializable {
     }
 
     private void clearKizDraft() {
-        if (kizPanelController != null) {
-            kizPanelController.setKizCommand("");
-        }
+        // KIZ assignment is driven by nmId mapping; no manual draft is kept.
     }
 
     private void deliverLoadedSupply() {
@@ -1342,6 +1760,7 @@ public class HomeController implements Initializable {
                 MessageFormat.format(i18nService.tr("workspace.deliver.confirm.content"), supply.getSupplyId()),
                 deliver,
                 ButtonType.CANCEL);
+        AlertService.applyTheme(confirm);
         confirm.setHeaderText(i18nService.tr("workspace.deliver.confirm.header"));
         Optional<ButtonType> choice = confirm.showAndWait();
         if (choice.isEmpty() || choice.get() != deliver) {

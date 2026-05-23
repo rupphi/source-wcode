@@ -19,11 +19,12 @@ public class UpdateDialogService {
     public UpdateChoice showDialog(UpdateInfo info) {
         I18nService i18n = I18nService.getInstance();
         Dialog<UpdateChoice> dialog = new Dialog<>();
-        dialog.getDialogPane().getStylesheets().add(java.util.Objects.requireNonNull(com.tuandev.fbsbarcode.MainApplication.class.getResource("/com/tuandev/fbsbarcode/styles/theme.css")).toExternalForm());
+        AlertService.applyTheme(dialog);
         dialog.setTitle(i18n.tr("update.dialog.title"));
         dialog.setHeaderText(i18n.tr("update.dialog.header"));
 
         VBox content = new VBox(12);
+        content.getStyleClass().add("dialog-content");
         content.setPadding(new Insets(4, 0, 4, 0));
         content.setPrefWidth(520);
 
@@ -82,7 +83,7 @@ public class UpdateDialogService {
         dialog.initModality(Modality.APPLICATION_MODAL);
         dialog.setTitle(i18n.tr("update.progress.title"));
         dialog.setHeaderText(i18n.tr("update.progress.header") + " " + safeValue(info.getVersion()));
-        dialog.getDialogPane().getStylesheets().add(java.util.Objects.requireNonNull(com.tuandev.fbsbarcode.MainApplication.class.getResource("/com/tuandev/fbsbarcode/styles/theme.css")).toExternalForm());
+        AlertService.applyTheme(dialog);
         dialog.getDialogPane().getButtonTypes().setAll(ButtonType.CANCEL);
 
         Node cancelButton = dialog.getDialogPane().lookupButton(ButtonType.CANCEL);
@@ -120,6 +121,7 @@ public class UpdateDialogService {
         }, task.messageProperty()));
 
         VBox content = new VBox(12, progressBar, percentLabel, messageLabel);
+        content.getStyleClass().add("dialog-content");
         content.setPadding(new Insets(4, 0, 4, 0));
         dialog.getDialogPane().setContent(content);
         dialog.setOnCloseRequest(event -> event.consume());

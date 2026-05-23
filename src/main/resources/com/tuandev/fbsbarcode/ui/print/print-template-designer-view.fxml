@@ -29,6 +29,8 @@
                 <Label fx:id="templateMetaLabel" styleClass="text-muted" text="58x40 mm" />
             </HBox>
             <HBox alignment="CENTER_LEFT" spacing="8.0">
+                <Label text="%template.type" />
+                <ComboBox fx:id="templateTypeComboBox" prefWidth="120.0" />
                 <ComboBox fx:id="templateComboBox" prefWidth="250.0" />
                 <Button mnemonicParsing="false" onAction="#onCreateTemplate" text="%template.create" />
                 <Button mnemonicParsing="false" onAction="#onDuplicateTemplate" text="%template.duplicate" />

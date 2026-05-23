@@ -280,7 +280,7 @@ public class WbSupplyWorkflow {
                 ImageIO.write(image, "png", output);
                 return output.toByteArray();
             }
-        } catch (IOException ex) {
+        } catch (IOException | IllegalArgumentException | LinkageError ex) {
             return null;
         }
     }

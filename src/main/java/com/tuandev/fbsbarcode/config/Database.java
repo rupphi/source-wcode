@@ -104,6 +104,19 @@ public class Database {
             """);
 
             st.execute("""
+            CREATE TABLE IF NOT EXISTS fbo_print_templates(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                page_width REAL NOT NULL DEFAULT 164.40944881889766,
+                page_height REAL NOT NULL DEFAULT 113.38582677165356,
+                is_default INTEGER NOT NULL DEFAULT 0,
+                layout_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """);
+
+            st.execute("""
             CREATE TABLE IF NOT EXISTS image_cache(
                 cache_key TEXT PRIMARY KEY,
                 image_url TEXT NOT NULL,

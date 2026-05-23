@@ -1,6 +1,7 @@
 package com.tuandev.fbsbarcode.ui.print;
 
 import com.tuandev.fbsbarcode.features.print.PrintElementType;
+import com.tuandev.fbsbarcode.features.fbo.FboPrintTemplateService;
 import com.tuandev.fbsbarcode.features.print.PrintTemplate;
 import com.tuandev.fbsbarcode.features.print.PrintTemplateElement;
 import com.tuandev.fbsbarcode.features.print.PrintTemplateService;
@@ -30,6 +31,7 @@ import javafx.scene.layout.Pane;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.text.TextAlignment;
 
 import java.net.URL;
 import java.util.ArrayList;
@@ -44,10 +46,12 @@ public class PrintTemplateDesignerController implements Initializable {
     private static final double PREVIEW_SCALE = 3d;
     private static final double DRAG_THRESHOLD_PX = 3d;
 
-    private final PrintTemplateService templateService = new PrintTemplateService();
-    private final List<PrintTemplateService.ElementPaletteItem> paletteItems = templateService.getPaletteItems();
+    private PrintTemplateService templateService = new PrintTemplateService();
+    private List<PrintTemplateService.ElementPaletteItem> paletteItems = List.of();
     private final I18nService i18n = I18nService.getInstance();
 
+    @FXML
+    private ComboBox<TemplateMode> templateTypeComboBox;
     @FXML
     private ComboBox<PrintTemplate> templateComboBox;
     @FXML
@@ -129,6 +133,21 @@ public class PrintTemplateDesignerController implements Initializable {
         bindEditorShortcuts(designPane);
         bindEditorShortcuts(elementListView);
 
+        templateTypeComboBox.getItems().setAll(TemplateMode.values());
+        templateTypeComboBox.setCellFactory(list -> new ListCell<>() {
+            @Override
+            protected void updateItem(TemplateMode item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty || item == null ? null : item.label(i18n));
+            }
+        });
+        templateTypeComboBox.setButtonCell(templateTypeComboBox.getCellFactory().call(null));
+        templateTypeComboBox.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) -> {
+            if (newValue != null) {
+                switchTemplateMode(newValue);
+            }
+        });
+
         templateComboBox.setCellFactory(list -> new ListCell<>() {
             @Override
             protected void updateItem(PrintTemplate item, boolean empty) {
@@ -150,7 +169,6 @@ public class PrintTemplateDesignerController implements Initializable {
                     }
                 });
         addElementComboBox.setButtonCell(addElementComboBox.getCellFactory().call(null));
-        addElementComboBox.getItems().setAll(paletteItems);
         addElementComboBox.setPromptText(i18n.tr("template.add_element_prompt"));
 
         elementListView.setCellFactory(list -> new ListCell<>() {
@@ -182,6 +200,16 @@ public class PrintTemplateDesignerController implements Initializable {
         });
 
         setupPropertyBindings();
+        templateTypeComboBox.getSelectionModel().select(TemplateMode.FBS);
+    }
+
+    private void switchTemplateMode(TemplateMode mode) {
+        templateService = mode == TemplateMode.FBO ? new FboPrintTemplateService() : new PrintTemplateService();
+        paletteItems = templateService.getPaletteItems();
+        addElementComboBox.getItems().setAll(paletteItems);
+        workingTemplate = null;
+        selectedElement = null;
+        clipboardElement = null;
         reloadTemplates();
     }
 
@@ -386,16 +414,21 @@ public class PrintTemplateDesignerController implements Initializable {
         node.setPrefHeight(Math.max(8, element.getHeight() * PREVIEW_SCALE));
         node.setMinSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
         node.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
-        node.setAlignment(Pos.CENTER);
+        node.setAlignment(previewAlignment(element));
         node.setCursor(Cursor.MOVE);
-        node.setPadding(new Insets(3));
+        node.setPadding(new Insets(1.5));
         node.setUserData(element.getType());
         applyNodeStyle(node, element.equals(selectedElement), element.isVisible());
 
         Label label = new Label(previewText(element));
         label.setWrapText(true);
         label.setMouseTransparent(true);
-        label.setStyle("-fx-font-size: 11px; -fx-text-fill: -bg-primary;");
+        label.setMaxWidth(Math.max(4, element.getWidth() * PREVIEW_SCALE - 3));
+        label.setMaxHeight(Math.max(4, element.getHeight() * PREVIEW_SCALE - 3));
+        label.setAlignment(previewAlignment(element));
+        label.setTextAlignment(previewTextAlignment(element));
+        StackPane.setAlignment(label, previewAlignment(element));
+        applyPreviewLabelStyle(label, element);
         node.getChildren().add(label);
         addResizeHandles(node, element);
 
@@ -803,8 +836,12 @@ public class PrintTemplateDesignerController implements Initializable {
                 continue;
             }
             label.setText(previewText(element));
-            double previewFont = Math.max(8d, Math.min(20d, element.getFontSize() <= 0 ? 8d : element.getFontSize() * 1.2d));
-            label.setStyle("-fx-font-size: %.1fpx; -fx-text-fill: -bg-primary;".formatted(previewFont));
+            label.setMaxWidth(Math.max(4, element.getWidth() * PREVIEW_SCALE - 3));
+            label.setMaxHeight(Math.max(4, element.getHeight() * PREVIEW_SCALE - 3));
+            label.setAlignment(previewAlignment(element));
+            label.setTextAlignment(previewTextAlignment(element));
+            StackPane.setAlignment(label, previewAlignment(element));
+            applyPreviewLabelStyle(label, element);
             return;
         }
     }
@@ -1028,11 +1065,66 @@ public class PrintTemplateDesignerController implements Initializable {
         if (element.getType() == PrintElementType.STATIC_TEXT) {
             return withPrefix(element.getPrefix(), safeText(element.getContent()));
         }
+        if (element.getType() == PrintElementType.TEXT_FIELD) {
+            return withPrefix(element.getPrefix(), sampleValue(element));
+        }
         String prefix = safeText(element.getPrefix()).trim();
         if (supportsPrefix(element) && !prefix.isBlank()) {
             return prefix + ":";
         }
         return safeText(element.getLabel());
+    }
+
+    private String sampleValue(PrintTemplateElement element) {
+        if (element == null || element.getFieldKey() == null) {
+            return safeText(element == null ? null : element.getLabel());
+        }
+        return switch (element.getFieldKey()) {
+            case BRAND -> "Brand";
+            case NAME -> "Tên sản phẩm";
+            case SUBJECT_NAME -> "Danh mục";
+            case COLOR -> "Màu sản phẩm";
+            case ARTICLE -> "ABC-123456";
+            case SIZE -> "42";
+            case BARCODE -> "4600000000000";
+            case STICKER_TAIL -> "1";
+        };
+    }
+
+    private void applyPreviewLabelStyle(Label label, PrintTemplateElement element) {
+        double previewFont = element.getFontSize() <= 0 ? 8d : element.getFontSize() * PREVIEW_SCALE;
+        label.setStyle("-fx-font-size: %.1fpx; -fx-text-fill: -bg-primary; -fx-font-weight: %s;"
+                .formatted(previewFont, element.isBold() ? "700" : "400"));
+    }
+
+    private Pos previewAlignment(PrintTemplateElement element) {
+        PrintTextAlign align = element == null ? PrintTextAlign.LEFT : element.getAlign();
+        boolean bottom = bottomAlignedTwoLineField(element);
+        if (align == PrintTextAlign.RIGHT) {
+            return bottom ? Pos.BOTTOM_RIGHT : Pos.TOP_RIGHT;
+        }
+        if (align == PrintTextAlign.CENTER) {
+            return bottom ? Pos.BOTTOM_CENTER : Pos.TOP_CENTER;
+        }
+        return bottom ? Pos.BOTTOM_LEFT : Pos.TOP_LEFT;
+    }
+
+    private TextAlignment previewTextAlignment(PrintTemplateElement element) {
+        PrintTextAlign align = element == null ? PrintTextAlign.LEFT : element.getAlign();
+        if (align == PrintTextAlign.RIGHT) {
+            return TextAlignment.RIGHT;
+        }
+        if (align == PrintTextAlign.CENTER) {
+            return TextAlignment.CENTER;
+        }
+        return TextAlignment.LEFT;
+    }
+
+    private boolean bottomAlignedTwoLineField(PrintTemplateElement element) {
+        return element != null
+                && element.getType() == PrintElementType.TEXT_FIELD
+                && (element.getFieldKey() == com.tuandev.fbsbarcode.features.print.PrintFieldKey.ARTICLE
+                || element.getFieldKey() == com.tuandev.fbsbarcode.features.print.PrintFieldKey.COLOR);
     }
 
     private String withPrefix(String prefix, String value) {
@@ -1123,6 +1215,18 @@ public class PrintTemplateDesignerController implements Initializable {
         HandlePosition(Pos alignment, Cursor cursor) {
             this.alignment = alignment;
             this.cursor = cursor;
+        }
+    }
+
+    private enum TemplateMode {
+        FBS,
+        FBO;
+
+        private String label(I18nService i18n) {
+            return switch (this) {
+                case FBS -> i18n.tr("template.type.fbs");
+                case FBO -> i18n.tr("template.type.fbo");
+            };
         }
     }
 }

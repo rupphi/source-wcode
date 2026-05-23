@@ -111,6 +111,11 @@ public class WbApiClient {
         return Base64.getDecoder().decode(response.getFile());
     }
 
+    public SalesFunnelResponse getSalesFunnelProducts(String apiKey, SalesFunnelRequest request) throws IOException {
+        String url = "https://seller-analytics-api.wildberries.ru/api/analytics/v3/sales-funnel/products";
+        return postJson(apiKey, url, request, SalesFunnelResponse.class);
+    }
+
     private <T> T getJson(String apiKey, String url, Class<T> type) throws IOException {
         Request request = new Request.Builder()
                 .url(url)

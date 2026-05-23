@@ -5,11 +5,11 @@ import javafx.fxml.FXML;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
-import javafx.scene.layout.HBox;
+import javafx.scene.layout.VBox;
 
 public class CategoryItemController {
     @FXML
-    private HBox root;
+    private VBox root;
 
     @FXML
     private Label idLabel;
@@ -22,6 +22,9 @@ public class CategoryItemController {
 
     @FXML
     private Button addKizBtn;
+
+    @FXML
+    private Button editCategoryBtn;
 
     @FXML
     private Button deleteCategoryBtn;
@@ -46,11 +49,15 @@ public class CategoryItemController {
         addKizBtn.setOnAction(event -> action.run());
     }
 
+    public void setOnEditCategory(Runnable action) {
+        editCategoryBtn.setOnAction(event -> action.run());
+    }
+
     public void setOnDeleteCategory(Runnable action) {
         deleteCategoryBtn.setOnAction(event -> action.run());
     }
 
-    public HBox getRoot() {
+    public VBox getRoot() {
         return root;
     }
 }

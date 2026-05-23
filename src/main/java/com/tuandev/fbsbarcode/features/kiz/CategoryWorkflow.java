@@ -19,8 +19,16 @@ public class CategoryWorkflow {
         return categoryDialogService.showCreateDialog();
     }
 
+    public Optional<Category> requestEditCategory(Category category) {
+        return categoryDialogService.showEditDialog(category);
+    }
+
     public int createCategory(Category category) throws SQLException {
         return categoryRepository.insert(category);
+    }
+
+    public int updateCategoryName(Category category) throws SQLException {
+        return categoryRepository.updateName(category);
     }
 
     public List<Category> loadCategories(int shopId) {

@@ -1,6 +1,6 @@
 package com.tuandev.fbsbarcode.features.print;
 
-import com.tuandev.fbsbarcode.MainApplication;
+import com.tuandev.fbsbarcode.shared.AlertService;
 import com.tuandev.fbsbarcode.shared.I18nService;
 import javafx.geometry.Insets;
 import javafx.scene.control.ButtonBar;
@@ -20,8 +20,7 @@ public class PrintOptionsDialogService {
         PrintJobOptions saved = preferenceService.load();
 
         Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.getDialogPane().getStylesheets().add(java.util.Objects.requireNonNull(
-                MainApplication.class.getResource("/com/tuandev/fbsbarcode/styles/theme.css")).toExternalForm());
+        AlertService.applyTheme(dialog);
         I18nService i18n = I18nService.getInstance();
         dialog.setTitle(i18n.tr("print_options.title"));
         dialog.setHeaderText(null);
@@ -41,7 +40,7 @@ public class PrintOptionsDialogService {
         barcodeCopiesField.setPromptText("1");
 
         Label errorLabel = new Label();
-        errorLabel.setStyle("-fx-text-fill: #dc2626; -fx-font-size: 11px;");
+        errorLabel.getStyleClass().add("error-label");
         errorLabel.setManaged(false);
         errorLabel.setVisible(false);
 
@@ -52,6 +51,7 @@ public class PrintOptionsDialogService {
                 barcodeCopiesField,
                 errorLabel
         );
+        content.getStyleClass().add("dialog-content");
         content.setPadding(new Insets(4, 0, 0, 0));
         dialog.getDialogPane().setContent(content);
 
