@@ -4,7 +4,9 @@ import com.tuandev.fbsbarcode.shared.I18nService;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
+import javafx.scene.control.ProgressIndicator;
 import com.tuandev.fbsbarcode.models.Shop;
 import java.util.List;
 import java.util.function.Consumer;
@@ -21,6 +23,12 @@ public class WorkspaceHeaderController {
 
     @FXML
     private Button deleteShopButton;
+
+    @FXML
+    private ProgressIndicator syncLoadingIndicator;
+
+    @FXML
+    private Label syncLoadingLabel;
 
     private Runnable onSync;
     private Runnable onEditShop;
@@ -95,6 +103,13 @@ public class WorkspaceHeaderController {
         // Header loading removed. Keep local loading indicators near the active content instead.
     }
 
+    public void setProductKizSyncLoading(boolean loading) {
+        syncLoadingIndicator.setVisible(loading);
+        syncLoadingIndicator.setManaged(loading);
+        syncLoadingLabel.setVisible(loading);
+        syncLoadingLabel.setManaged(loading);
+    }
+
     public void setControls(boolean hasShop, boolean busy, boolean exportEnabled, boolean tokenValid) {
         syncButton.setDisable(!hasShop || busy || !tokenValid);
         editShopButton.setDisable(!hasShop || busy);
@@ -105,5 +120,6 @@ public class WorkspaceHeaderController {
         I18nService i18n = I18nService.getInstance();
         shopComboBox.setPromptText(i18n.tr("header.shop_prompt"));
         syncButton.setText(" " + i18n.tr("header.sync"));
+        syncLoadingLabel.setText(i18n.tr("header.sync_products_kiz"));
     }
 }

@@ -1,6 +1,7 @@
 package com.tuandev.fbsbarcode.ui.kiz;
 
 import com.tuandev.fbsbarcode.models.Category;
+import com.tuandev.fbsbarcode.shared.I18nService;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -13,6 +14,9 @@ public class CategoryItemController {
 
     @FXML
     private Label idLabel;
+
+    @FXML
+    private Label kizCountLabel;
 
     @FXML
     private Label nameLabel;
@@ -33,9 +37,16 @@ public class CategoryItemController {
 
     public void setCategory(Category category) {
         this.category = category;
-        idLabel.setText("ID: " + category.getId());
+        applyTranslations();
         nameLabel.setText(category.getName());
         countKizsField.setText(String.valueOf(category.getCountKiz()));
+    }
+
+    public void applyTranslations() {
+        if (category != null) {
+            idLabel.setText(I18nService.getInstance().tr("category_item.id_prefix") + ": " + category.getId());
+        }
+        kizCountLabel.setText(I18nService.getInstance().tr("category_item.kiz_count"));
     }
 
     public void updateCount(int countKiz) {

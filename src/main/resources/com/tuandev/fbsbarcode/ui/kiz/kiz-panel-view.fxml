@@ -4,7 +4,9 @@
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.Button?>
 <?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ProgressIndicator?>
 <?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.VBox?>
 <?import org.kordamp.ikonli.javafx.FontIcon?>
 
@@ -20,6 +22,12 @@
                 <FontIcon iconLiteral="fth-plus" iconSize="14" iconColor="white"/>
             </graphic>
         </Button>
+        <HBox fx:id="loadingBox" alignment="CENTER_LEFT" managed="false" spacing="8.0" visible="false">
+            <children>
+                <ProgressIndicator fx:id="loadingIndicator" maxHeight="18.0" maxWidth="18.0" prefHeight="18.0" prefWidth="18.0" />
+                <Label fx:id="loadingLabel" styleClass="text-muted" text="%kiz_panel.importing" />
+            </children>
+        </HBox>
         <ScrollPane fitToWidth="true" hbarPolicy="NEVER" prefHeight="376.0" prefWidth="340.0">
             <content>
                 <VBox fx:id="categoryVBox" prefWidth="350.0" spacing="6.0" />

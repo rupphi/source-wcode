@@ -27,9 +27,9 @@
                         <FontIcon iconLiteral="fth-arrow-left" iconSize="17" iconColor="#CCD1D9" />
                     </graphic>
                 </Button>
-                <Label fx:id="supplyTitleLabel" text="Поставка не выбрана" styleClass="h3" />
+                <Label fx:id="supplyTitleLabel" text="%supply.not_selected" styleClass="h3" />
                 <Pane HBox.hgrow="ALWAYS" />
-                <Button fx:id="printButton" disable="true" mnemonicParsing="false" onAction="#onPrint" prefHeight="32.0" text="Печать">
+                <Button fx:id="printButton" disable="true" mnemonicParsing="false" onAction="#onPrint" prefHeight="32.0" text="%supply.print">
                     <styleClass>
                         <String fx:value="button" />
                         <String fx:value="btn-success" />
@@ -38,7 +38,7 @@
                         <FontIcon iconLiteral="fth-printer" iconSize="16" iconColor="white" />
                     </graphic>
                 </Button>
-                <Button fx:id="deliverButton" disable="true" mnemonicParsing="false" onAction="#onDeliver" prefHeight="32.0" text="В доставку">
+                <Button fx:id="deliverButton" disable="true" mnemonicParsing="false" onAction="#onDeliver" prefHeight="32.0" text="%supply.deliver">
                     <styleClass>
                         <String fx:value="button" />
                         <String fx:value="btn-primary" />
@@ -53,39 +53,39 @@
         <HBox fx:id="stickerLoadingBox" alignment="CENTER_LEFT" managed="false" spacing="8.0" visible="false">
             <children>
                 <ProgressIndicator fx:id="stickerLoading" maxHeight="18.0" maxWidth="18.0" prefHeight="18.0" prefWidth="18.0" visible="false" />
-                <Label fx:id="stickerLoadingLabel" style="-fx-text-fill: #6c757d;" text="Загрузка стикеров WB..." />
+                <Label fx:id="stickerLoadingLabel" style="-fx-text-fill: #6c757d;" text="%supply.loading_stickers" />
             </children>
         </HBox>
         <HBox fx:id="sortOptionsBox" alignment="CENTER_LEFT" managed="false" spacing="14.0" visible="false">
             <children>
-                <CheckBox fx:id="sortBySubjectCheckBox" mnemonicParsing="false" selected="true" text="Категория" />
-                <CheckBox fx:id="sortByArticleCheckBox" mnemonicParsing="false" selected="true" text="Article" />
-                <CheckBox fx:id="sortByColorCheckBox" mnemonicParsing="false" selected="true" text="Цвет" />
-                <CheckBox fx:id="sortBySizeCheckBox" mnemonicParsing="false" selected="true" text="Size" />
+                <CheckBox fx:id="sortBySubjectCheckBox" mnemonicParsing="false" selected="true" text="%supply.sort.subject" />
+                <CheckBox fx:id="sortByArticleCheckBox" mnemonicParsing="false" selected="true" text="%supply.sort.article" />
+                <CheckBox fx:id="sortByColorCheckBox" mnemonicParsing="false" selected="true" text="%supply.sort.color" />
+                <CheckBox fx:id="sortBySizeCheckBox" mnemonicParsing="false" selected="true" text="%supply.sort.size" />
             </children>
         </HBox>
         <StackPane prefHeight="520.0" VBox.vgrow="ALWAYS">
             <children>
                 <TableView fx:id="orderTable" managed="false" prefHeight="520.0" prefWidth="900.0" visible="false">
                     <columns>
-                        <TableColumn fx:id="noTC" prefWidth="54.0" text="No" />
-                        <TableColumn fx:id="idTC" prefWidth="85.0" text="№ задания" />
-                        <TableColumn fx:id="imageTC" prefWidth="58.0" text="Фото" />
-                        <TableColumn fx:id="nameTC" prefWidth="180.0" text="Наименование" />
-                        <TableColumn fx:id="subjectNameTC" prefWidth="128.0" text="Категория" />
-                        <TableColumn fx:id="articleTC" prefWidth="128.0" text="Артикул продавца" />
-                        <TableColumn fx:id="colorTC" prefWidth="70.0" text="Цвет" />
-                        <TableColumn fx:id="sizeTC" prefWidth="74.0" text="Размер" />
-                        <TableColumn fx:id="stickerTC" prefWidth="90.0" text="Стикер" />
-                        <TableColumn fx:id="barcodeTC" prefWidth="95.0" text="Баркод" />
-                        <TableColumn fx:id="stickerCodeTC" prefWidth="100.0" text="Стикер Code" />
+                        <TableColumn fx:id="noTC" prefWidth="54.0" text="%supply.col.no" />
+                        <TableColumn fx:id="idTC" prefWidth="85.0" text="%supply.col.task_number" />
+                        <TableColumn fx:id="imageTC" prefWidth="58.0" text="%supply.col.photo" />
+                        <TableColumn fx:id="nameTC" prefWidth="180.0" text="%supply.col.name" />
+                        <TableColumn fx:id="subjectNameTC" prefWidth="128.0" text="%supply.col.category" />
+                        <TableColumn fx:id="articleTC" prefWidth="128.0" text="%supply.col.article" />
+                        <TableColumn fx:id="colorTC" prefWidth="70.0" text="%supply.col.color" />
+                        <TableColumn fx:id="sizeTC" prefWidth="74.0" text="%supply.col.size" />
+                        <TableColumn fx:id="stickerTC" prefWidth="90.0" text="%supply.col.sticker" />
+                        <TableColumn fx:id="barcodeTC" prefWidth="95.0" text="%supply.col.barcode" />
+                        <TableColumn fx:id="stickerCodeTC" prefWidth="100.0" text="%supply.col.sticker_code" />
                     </columns>
                 </TableView>
                 <Label fx:id="emptyStateLabel" managed="false" style="-fx-text-fill: #6c757d;" text="" visible="false" wrapText="true" />
                 <VBox fx:id="orderLoadingBox" alignment="CENTER" managed="false" spacing="10.0" visible="false">
                     <children>
                         <ProgressIndicator fx:id="orderLoadingInline" maxHeight="28.0" maxWidth="28.0" prefHeight="28.0" prefWidth="28.0" visible="false" />
-                        <Label fx:id="orderLoadingLabel" style="-fx-text-fill: #6c757d;" text="Загрузка заказов и данных поставки..." />
+                        <Label fx:id="orderLoadingLabel" style="-fx-text-fill: #6c757d;" text="%supply.loading_orders" />
                     </children>
                 </VBox>
             </children>

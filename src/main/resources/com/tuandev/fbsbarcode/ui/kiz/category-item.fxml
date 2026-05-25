@@ -15,9 +15,9 @@
     <children>
         <HBox alignment="CENTER_LEFT" spacing="8.0">
             <children>
-                <Label fx:id="idLabel" text="ID: 0" styleClass="text-muted" />
+                <Label fx:id="idLabel" text="%category_item.id_prefix" styleClass="text-muted" />
                 <Pane HBox.hgrow="ALWAYS" />
-                <Label text="KIZ" styleClass="text-muted" />
+                <Label fx:id="kizCountLabel" text="%category_item.kiz_count" styleClass="text-muted" />
                 <TextField fx:id="countKizsField" alignment="CENTER" editable="false" prefWidth="64.0" text="0" />
             </children>
         </HBox>

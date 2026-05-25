@@ -1,6 +1,8 @@
 package com.tuandev.fbsbarcode.integration.wb;
 
 import com.tuandev.fbsbarcode.models.Shop;
+import com.tuandev.fbsbarcode.features.kizmapping.AutoKizMappingRepository;
+import com.tuandev.fbsbarcode.features.kizmapping.AutoKizMappingResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,9 +14,10 @@ public class WbSyncWorkflow {
     private final WbSupplySyncService supplySyncService = new WbSupplySyncService();
     private final WbOrderSyncService orderSyncService = new WbOrderSyncService();
     private final WbSyncStateRepository syncStateRepository = new WbSyncStateRepository();
+    private final AutoKizMappingRepository autoKizMappingRepository = new AutoKizMappingRepository();
 
     public int syncProducts(Shop shop) throws IOException {
-        return productSyncService.sync(shop);
+        return syncProductsAndAutoMap(shop);
     }
 
     public WbSyncReport syncOverview(Shop shop) throws IOException {
@@ -65,7 +68,7 @@ public class WbSyncWorkflow {
 
     private int syncProductsIfAvailable(Shop shop) throws IOException {
         try {
-            return productSyncService.sync(shop);
+            return syncProductsAndAutoMap(shop);
         } catch (WbApiException ex) {
             if (ex.isContentPermissionError()) {
                 LOGGER.warn("Bỏ qua sync products cho shop {} vì token không có quyền Content: {}", shop.getId(), ex.getMessage());
@@ -77,5 +80,15 @@ public class WbSyncWorkflow {
             }
             throw ex;
         }
+    }
+
+    private int syncProductsAndAutoMap(Shop shop) throws IOException {
+        int products = productSyncService.sync(shop);
+        AutoKizMappingResult result = autoKizMappingRepository.autoCreateAndMap(shop.getId());
+        if (result.categoriesCreated() > 0 || result.mappingsCreated() > 0) {
+            LOGGER.info("Auto KIZ mapping for shop {} created {} categories and {} mappings",
+                    shop.getId(), result.categoriesCreated(), result.mappingsCreated());
+        }
+        return products;
     }
 }

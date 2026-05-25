@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -101,6 +102,24 @@ class KizMappingRepositoryTest {
 
         assertFalse(result.success());
         assertEquals(List.of("Không tồn tại KIZ Category ID: 999"), result.errors());
+    }
+
+    @Test
+    void shouldImportMoreThanOneThousandMappingsWithoutProductConstraint() throws Exception {
+        initializeFixture();
+        KizMappingRepository repository = new KizMappingRepository();
+        Map<Long, Integer> imported = new LinkedHashMap<>();
+        List<Long> nmIds = new ArrayList<>();
+        for (long nmId = 10_000; nmId <= 11_050; nmId++) {
+            imported.put(nmId, 10);
+            nmIds.add(nmId);
+        }
+
+        KizMappingImportResult result = repository.replaceMappingsFromImport(1, imported);
+
+        assertTrue(result.success());
+        assertEquals(1051, result.updatedCount());
+        assertEquals(1051, repository.findMappings(1, nmIds).size());
     }
 
     private void initializeFixture() throws Exception {

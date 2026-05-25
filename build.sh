@@ -10,6 +10,11 @@ if [[ ! "$PACKAGE_TYPE" =~ ^(app-image|exe|msi|deb|rpm|dmg|pkg)$ ]]; then
 fi
 
 APP_NAME="WCode"
+VENDOR=$(./mvnw help:evaluate -Dexpression=app.vendor -q -DforceStdout 2>/dev/null)
+if [ -z "$VENDOR" ]; then
+    echo "Could not read app.vendor from pom.xml, using default"
+    VENDOR="TuanDev"
+fi
 
 # Read version from pom.xml using Maven
 APP_VERSION=$(./mvnw help:evaluate -Dexpression=app.version -q -DforceStdout 2>/dev/null)
@@ -21,7 +26,6 @@ echo "Building version: $APP_VERSION"
 
 MAIN_JAR="FBSBarcode-${APP_VERSION}.jar"
 MAIN_CLASS="com.tuandev.fbsbarcode.Launcher"
-VENDOR="TuanDev"
 
 echo "Packaging with Maven..."
 ./mvnw -q clean package

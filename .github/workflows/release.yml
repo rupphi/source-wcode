@@ -8,6 +8,7 @@ env:
   JAVA_VERSION: '25'
   JAVA_DISTRIBUTION: oracle
   APP_NAME: WCode
+  APP_VENDOR: TuanDev
   PUBLIC_RELEASE_REPO: tuanworlddev/WCode
 
 jobs:
@@ -49,7 +50,7 @@ jobs:
 
       - name: Build with Maven
         shell: bash
-        run: ./mvnw.cmd -B -DskipTests clean package
+        run: ./mvnw.cmd -B -DskipTests -Dapp.version="${{ env.APP_VERSION }}" -Dapp.vendor="${{ env.APP_VENDOR }}" clean package
 
       - name: Resolve built JAR
         shell: bash
@@ -81,7 +82,7 @@ jobs:
             --main-class com.tuandev.fbsbarcode.Launcher \
             --dest out \
             --app-version "${{ env.APP_VERSION }}" \
-            --vendor TuanDev \
+            --vendor "${{ env.APP_VENDOR }}" \
             --icon src/main/resources/com/tuandev/fbsbarcode/assets/images/logo.ico \
             --win-menu \
             --win-shortcut \
@@ -112,7 +113,7 @@ jobs:
             --main-class com.tuandev.fbsbarcode.Launcher \
             --dest out \
             --app-version "${{ env.APP_VERSION }}" \
-            --vendor TuanDev \
+            --vendor "${{ env.APP_VENDOR }}" \
             --icon src/main/resources/com/tuandev/fbsbarcode/assets/images/logo.ico \
             --win-menu \
             --win-shortcut \
@@ -143,7 +144,7 @@ jobs:
             --main-class com.tuandev.fbsbarcode.Launcher \
             --dest out \
             --app-version "${{ env.APP_VERSION }}" \
-            --vendor TuanDev \
+            --vendor "${{ env.APP_VENDOR }}" \
             --icon src/main/resources/com/tuandev/fbsbarcode/assets/images/logo.ico \
             --java-options "--enable-native-access=ALL-UNNAMED" \
             --java-options "-Djavafx.cachedir=C:\\ProgramData\\WCode\\openjfx-cache" \
@@ -193,7 +194,7 @@ jobs:
 
       - name: Build with Maven
         shell: bash
-        run: ./mvnw -B -DskipTests clean package
+        run: ./mvnw -B -DskipTests -Dapp.version="${{ env.APP_VERSION }}" -Dapp.vendor="${{ env.APP_VENDOR }}" clean package
 
       - name: Resolve built JAR
         shell: bash
@@ -225,7 +226,7 @@ jobs:
             --main-class com.tuandev.fbsbarcode.Launcher \
             --dest out \
             --app-version "${{ env.APP_VERSION }}" \
-            --vendor TuanDev \
+            --vendor "${{ env.APP_VENDOR }}" \
             --icon logo.icns \
             --java-options "--enable-native-access=ALL-UNNAMED" \
             --jlink-options "--strip-native-commands --strip-debug --no-man-pages --no-header-files --bind-services"
@@ -272,7 +273,7 @@ jobs:
 
       - name: Build with Maven
         shell: bash
-        run: ./mvnw -B -DskipTests clean package
+        run: ./mvnw -B -DskipTests -Dapp.version="${{ env.APP_VERSION }}" -Dapp.vendor="${{ env.APP_VENDOR }}" clean package
 
       - name: Resolve built JAR
         shell: bash
@@ -304,7 +305,7 @@ jobs:
             --main-class com.tuandev.fbsbarcode.Launcher \
             --dest out \
             --app-version "${{ env.APP_VERSION }}" \
-            --vendor TuanDev \
+            --vendor "${{ env.APP_VENDOR }}" \
             --icon src/main/resources/com/tuandev/fbsbarcode/assets/images/logo.png \
             --linux-menu-group Utility \
             --linux-shortcut \

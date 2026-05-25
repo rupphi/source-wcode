@@ -88,6 +88,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.ResourceBundle;
 import java.util.function.Consumer;
 
@@ -153,6 +155,7 @@ public class HomeController implements Initializable {
             language -> Platform.runLater(this::applyTranslations);
     private final Consumer<KizAttachmentCoordinator.KizAttachmentProgress> kizProgressListener =
             progress -> Platform.runLater(() -> onKizAttachmentProgress(progress));
+    private final Set<Integer> productKizSyncingShopIds = ConcurrentHashMap.newKeySet();
     private boolean disposed;
 
     @Override
@@ -217,6 +220,7 @@ public class HomeController implements Initializable {
         FXMLLoader kizMappingLoader = FxmlViewLoader.loader(KizMappingController.class, "kiz-mapping-view.fxml");
         kizMappingView = FxmlViewLoader.load(kizMappingLoader);
         kizMappingController = kizMappingLoader.getController();
+        kizMappingController.setOnKizInventoryChanged(this::loadCategories);
         kizMappingController.applyTranslations();
     }
 
@@ -452,6 +456,7 @@ public class HomeController implements Initializable {
         });
         task.setOnSucceeded(event -> {
             fboPackingController.clearQuantities();
+            loadCategories();
             tryOpenFile(file);
         });
         AppTaskExecutor.execute(task);
@@ -488,7 +493,10 @@ public class HomeController implements Initializable {
             LOGGER.error("Không thể in nhanh barcode FBO", task.getException());
             AlertService.showError(task.getException().getMessage());
         });
-        task.setOnSucceeded(event -> tryOpenFile(file));
+        task.setOnSucceeded(event -> {
+            loadCategories();
+            tryOpenFile(file);
+        });
         AppTaskExecutor.execute(task);
     }
 
@@ -1003,15 +1011,20 @@ public class HomeController implements Initializable {
                 return categoryWorkflow.importKizFromPdf(file, shop, category);
             }
         };
-        task.setOnRunning(ex -> markShopRunning(shop.getId(), true));
+        task.setOnRunning(ex -> {
+            markShopRunning(shop.getId(), true);
+            setSupplyKizPanelLoading(true);
+        });
         task.setOnSucceeded(ex -> {
             markShopRunning(shop.getId(), false);
+            setSupplyKizPanelLoading(false);
             if (isCurrentShop(shop.getId())) {
                 loadCategories();
             }
         });
         task.setOnFailed(ex -> {
             markShopRunning(shop.getId(), false);
+            setSupplyKizPanelLoading(false);
             AlertService.showError(task.getException().getMessage());
         });
         AppTaskExecutor.execute(task);
@@ -1035,6 +1048,12 @@ public class HomeController implements Initializable {
         if (result.isPresent() && result.get() == buttonTypeConfirm) {
             categoryWorkflow.deleteCategory(shop, category);
             loadCategories();
+        }
+    }
+
+    private void setSupplyKizPanelLoading(boolean loading) {
+        if (kizPanelController != null) {
+            kizPanelController.setLoading(loading);
         }
     }
 
@@ -1129,6 +1148,7 @@ public class HomeController implements Initializable {
         if (!started) {
             return;
         }
+        markProductKizSyncing(shop.getId(), true);
 
         Task<WbSyncReport> task = new Task<>() {
             @Override
@@ -1143,6 +1163,7 @@ public class HomeController implements Initializable {
         });
         task.setOnFailed(e -> {
             markShopRunning(shop.getId(), false);
+            markProductKizSyncing(shop.getId(), false);
             Throwable ex = task.getException();
             LOGGER.error("Đồng bộ WB thất bại cho shop {}", shop.getId(), ex);
             refreshSupplyListIfCurrent(shop.getId());
@@ -1152,6 +1173,10 @@ public class HomeController implements Initializable {
         });
         task.setOnSucceeded(e -> {
             markShopRunning(shop.getId(), false);
+            markProductKizSyncing(shop.getId(), false);
+            if (isCurrentShop(shop.getId())) {
+                loadCategories();
+            }
             refreshSupplyListIfCurrent(shop.getId());
             if (isPackingVisible()) {
                 refreshPackingView();
@@ -1385,6 +1410,7 @@ public class HomeController implements Initializable {
         VBox root = FxmlViewLoader.load(loader);
         kizPanelController = loader.getController();
         kizPanelController.setOnAddCategory(this::onAddCategory);
+        kizPanelController.applyTranslations();
         supplyManagementController.kizPanelContainer.getChildren().setAll(root);
     }
 
@@ -1429,6 +1455,9 @@ public class HomeController implements Initializable {
                         i18nService.tr("supply.select_prompt")
                 );
             }
+        }
+        if (kizPanelController != null) {
+            kizPanelController.applyTranslations();
         }
     }
 
@@ -1603,11 +1632,23 @@ public class HomeController implements Initializable {
         }
     }
 
+    private void markProductKizSyncing(int shopId, boolean syncing) {
+        if (syncing) {
+            productKizSyncingShopIds.add(shopId);
+        } else {
+            productKizSyncingShopIds.remove(shopId);
+        }
+        if (isCurrentShop(shopId)) {
+            updateHeaderState();
+        }
+    }
+
     private void updateHeaderState() {
         Shop selectedShop = state.getSelectedShop();
         boolean hasShop = selectedShop != null;
         boolean running = hasShop && isShopBusy(selectedShop.getId());
         workspaceHeaderController.setBusy(running);
+        workspaceHeaderController.setProductKizSyncLoading(hasShop && productKizSyncingShopIds.contains(selectedShop.getId()));
         boolean tokenValid = !hasShop || state.isSelectedShopTokenValid();
         workspaceHeaderController.setControls(hasShop, running, canExport(), tokenValid);
         if (supplyDetailController != null) {

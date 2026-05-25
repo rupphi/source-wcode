@@ -17,6 +17,8 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 public class KizMappingRepository {
+    private static final int SQL_PARAM_BATCH_SIZE = 900;
+
     public List<String> findSubjects(int shopId) {
         String sql = """
                 SELECT DISTINCT subject_name
@@ -122,21 +124,25 @@ public class KizMappingRepository {
         if (nmIds == null || nmIds.isEmpty()) {
             return Map.of();
         }
-        String placeholders = String.join(", ", Collections.nCopies(nmIds.size(), "?"));
-        String sql = "SELECT nm_id, kiz_category_id FROM wb_product_kiz_mappings WHERE shop_id = ? AND kiz_category_id IS NOT NULL AND nm_id IN (" + placeholders + ")";
-        try (Connection conn = Database.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setInt(1, shopId);
-            for (int i = 0; i < nmIds.size(); i++) {
-                ps.setLong(i + 2, nmIds.get(i));
-            }
-            try (ResultSet rs = ps.executeQuery()) {
-                Map<Long, Integer> mappings = new HashMap<>();
-                while (rs.next()) {
-                    mappings.put(rs.getLong("nm_id"), rs.getInt("kiz_category_id"));
+        Map<Long, Integer> mappings = new HashMap<>();
+        try (Connection conn = Database.getConnection()) {
+            for (int start = 0; start < nmIds.size(); start += SQL_PARAM_BATCH_SIZE) {
+                List<Long> batch = nmIds.subList(start, Math.min(start + SQL_PARAM_BATCH_SIZE, nmIds.size()));
+                String placeholders = String.join(", ", Collections.nCopies(batch.size(), "?"));
+                String sql = "SELECT nm_id, kiz_category_id FROM wb_product_kiz_mappings WHERE shop_id = ? AND kiz_category_id IS NOT NULL AND nm_id IN (" + placeholders + ")";
+                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                    ps.setInt(1, shopId);
+                    for (int i = 0; i < batch.size(); i++) {
+                        ps.setLong(i + 2, batch.get(i));
+                    }
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) {
+                            mappings.put(rs.getLong("nm_id"), rs.getInt("kiz_category_id"));
+                        }
+                    }
                 }
-                return mappings;
             }
+            return mappings;
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
@@ -174,7 +180,7 @@ public class KizMappingRepository {
 
     public KizMappingImportResult replaceMappingsFromImport(int shopId, Map<Long, Integer> importedMappings) {
         Map<Long, Integer> safeMappings = importedMappings == null ? Map.of() : importedMappings;
-        List<String> errors = validateImport(shopId, safeMappings);
+        List<String> errors = validateImport(safeMappings);
         if (!errors.isEmpty()) {
             return new KizMappingImportResult(0, 0, errors);
         }
@@ -204,25 +210,24 @@ public class KizMappingRepository {
         }
     }
 
-    private List<String> validateImport(int shopId, Map<Long, Integer> mappings) {
-        Set<Long> missingNmIds = new LinkedHashSet<>();
+    private List<String> validateImport(Map<Long, Integer> mappings) {
         Set<Integer> missingCategoryIds = new LinkedHashSet<>();
         try (Connection conn = Database.getConnection()) {
-            for (Map.Entry<Long, Integer> entry : mappings.entrySet()) {
-                if (!productExists(conn, shopId, entry.getKey())) {
-                    missingNmIds.add(entry.getKey());
+            Set<Integer> categoryIds = new LinkedHashSet<>();
+            for (Integer categoryId : mappings.values()) {
+                if (categoryId != null) {
+                    categoryIds.add(categoryId);
                 }
-                if (entry.getValue() != null && !categoryExists(conn, entry.getValue())) {
-                    missingCategoryIds.add(entry.getValue());
+            }
+            for (Integer categoryId : categoryIds) {
+                if (!categoryExists(conn, categoryId)) {
+                    missingCategoryIds.add(categoryId);
                 }
             }
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
         List<String> errors = new ArrayList<>();
-        for (Long nmId : missingNmIds) {
-            errors.add("nmId không thuộc shop hiện tại: " + nmId);
-        }
         for (Integer categoryId : missingCategoryIds) {
             errors.add("Không tồn tại KIZ Category ID: " + categoryId);
         }

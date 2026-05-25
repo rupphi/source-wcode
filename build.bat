@@ -24,6 +24,11 @@ if /I not "%PACKAGE_TYPE%"=="app-image" if /I not "%PACKAGE_TYPE%"=="exe" if /I 
 )
 
 set APP_NAME=WCode
+for /f "delims=" %%a in ('mvnw.cmd help:evaluate -Dexpression^=app.vendor -q -DforceStdout 2^>nul') do set VENDOR=%%a
+if "%VENDOR%"=="" (
+    echo Could not read app.vendor from pom.xml, using default
+    set VENDOR=TuanDev
+)
 :: Read app.version from pom.xml using Maven evaluate (reliable)
 for /f "delims=" %%a in ('mvnw.cmd help:evaluate -Dexpression^=app.version -q -DforceStdout 2^>nul') do set APP_VERSION=%%a
 if "%APP_VERSION%"=="" (
@@ -34,7 +39,6 @@ echo Building version: %APP_VERSION%
 
 set MAIN_JAR=FBSBarcode-%APP_VERSION%.jar
 set MAIN_CLASS=com.tuandev.fbsbarcode.Launcher
-set VENDOR=TuanDev
 set JPACKAGE_INPUT=target\jpackage-input
 set INSTALLER_OPTIONS=
 if /I "%PACKAGE_TYPE%"=="exe" set INSTALLER_OPTIONS=--win-menu --win-shortcut --win-per-user-install

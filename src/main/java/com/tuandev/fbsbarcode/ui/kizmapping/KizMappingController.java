@@ -95,6 +95,7 @@ public class KizMappingController {
     private boolean loading;
     private boolean hasMore;
     private boolean suppressSearchEvents;
+    private Runnable onKizInventoryChanged;
 
     @FXML
     private void initialize() {
@@ -138,6 +139,10 @@ public class KizMappingController {
         }
     }
 
+    public void setOnKizInventoryChanged(Runnable onKizInventoryChanged) {
+        this.onKizInventoryChanged = onKizInventoryChanged;
+    }
+
     public void refresh() {
         if (shop != null) {
             setSubjects(repository.findSubjects(shop.getId()));
@@ -160,6 +165,9 @@ public class KizMappingController {
         genderColumn.setText(i18n.tr("kiz_mapping.column.gender"));
         vendorCodeColumn.setText(i18n.tr("kiz_mapping.column.vendor_code"));
         categoryIdColumn.setText(i18n.tr("kiz_mapping.column.kiz_category"));
+        if (kizPanelController != null) {
+            kizPanelController.applyTranslations();
+        }
         updateSubjectText();
     }
 
@@ -230,7 +238,7 @@ public class KizMappingController {
                 AlertService.showError(String.join("\n", result.errors()));
                 return;
             }
-            AlertService.showInfo("KIZ Mapping", I18nService.getInstance().tr("kiz_mapping.import_done"),
+            AlertService.showInfo(I18nService.getInstance().tr("kiz_mapping.title"), I18nService.getInstance().tr("kiz_mapping.import_done"),
                     "Updated: " + result.updatedCount() + ", cleared: " + result.clearedCount());
             refresh();
         });
@@ -254,6 +262,7 @@ public class KizMappingController {
         VBox root = FxmlViewLoader.load(loader);
         kizPanelController = loader.getController();
         kizPanelController.setOnAddCategory(this::onAddCategory);
+        kizPanelController.applyTranslations();
         kizPanelContainer.getChildren().setAll(root);
     }
 
@@ -291,6 +300,7 @@ public class KizMappingController {
             Optional<Category> categoryResult = categoryWorkflow.requestCreateCategory();
             if (categoryResult.isPresent() && categoryWorkflow.createCategory(categoryResult.get()) > 0) {
                 loadCategories();
+                notifyKizInventoryChanged();
             }
         } catch (NumberFormatException ex) {
             AlertService.showError(I18nService.getInstance().tr("category.error.id_number"));
@@ -308,6 +318,7 @@ public class KizMappingController {
             Optional<Category> categoryResult = categoryWorkflow.requestEditCategory(category);
             if (categoryResult.isPresent() && categoryWorkflow.updateCategoryName(categoryResult.get()) > 0) {
                 loadCategories();
+                notifyKizInventoryChanged();
             }
         } catch (NumberFormatException ex) {
             AlertService.showError(I18nService.getInstance().tr("category.error.id_number"));
@@ -337,14 +348,18 @@ public class KizMappingController {
             }
         };
         setLoading(true);
+        setKizPanelLoading(true);
         task.setOnSucceeded(event -> {
             setLoading(false);
+            setKizPanelLoading(false);
             if (shop != null && shop.getId() == currentShop.getId()) {
                 loadCategories();
+                notifyKizInventoryChanged();
             }
         });
         task.setOnFailed(event -> {
             setLoading(false);
+            setKizPanelLoading(false);
             AlertService.showError(task.getException().getMessage());
         });
         AppTaskExecutor.execute(task);
@@ -366,6 +381,19 @@ public class KizMappingController {
         if (result.isPresent() && result.get() == confirm) {
             categoryWorkflow.deleteCategory(shop, category);
             loadCategories();
+            notifyKizInventoryChanged();
+        }
+    }
+
+    private void notifyKizInventoryChanged() {
+        if (onKizInventoryChanged != null) {
+            onKizInventoryChanged.run();
+        }
+    }
+
+    private void setKizPanelLoading(boolean loading) {
+        if (kizPanelController != null) {
+            kizPanelController.setLoading(loading);
         }
     }
 
