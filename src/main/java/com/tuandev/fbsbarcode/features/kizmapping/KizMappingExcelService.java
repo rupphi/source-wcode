@@ -15,6 +15,7 @@ import org.apache.poi.ss.usermodel.IndexedColors;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.openxml4j.util.ZipSecureFile;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import java.io.File;
@@ -30,6 +31,8 @@ public class KizMappingExcelService {
     private static final DataFormatter FORMATTER = new DataFormatter();
     private static final String[] HEADERS = {"nmId", "Ảnh", "Tên", "Danh mục", "Giới tính", "Vendor Code", "KIZ Category ID"};
     private static final int IMAGE_PRELOAD_TIMEOUT_SECONDS = 30;
+    private static final long LARGE_MAPPING_MAX_FILE_COUNT = 20_000;
+    private static final Object ZIP_SECURITY_LOCK = new Object();
     private final ImageCacheRepository imageCacheRepository = new ImageCacheRepository();
     private final FboProductImageService imageService = new FboProductImageService();
 
@@ -93,22 +96,29 @@ public class KizMappingExcelService {
 
     public Map<Long, Integer> readMappings(File file) throws Exception {
         Map<Long, Integer> mappings = new LinkedHashMap<>();
-        try (FileInputStream inputStream = new FileInputStream(file);
-             Workbook workbook = new XSSFWorkbook(inputStream)) {
-            Sheet sheet = workbook.getSheetAt(0);
-            for (int i = 1; i <= sheet.getLastRowNum(); i++) {
-                Row row = sheet.getRow(i);
-                if (row == null) {
-                    continue;
+        synchronized (ZIP_SECURITY_LOCK) {
+            long previousMaxFileCount = ZipSecureFile.getMaxFileCount();
+            ZipSecureFile.setMaxFileCount(Math.max(previousMaxFileCount, LARGE_MAPPING_MAX_FILE_COUNT));
+            try (FileInputStream inputStream = new FileInputStream(file);
+                 Workbook workbook = new XSSFWorkbook(inputStream)) {
+                Sheet sheet = workbook.getSheetAt(0);
+                int categoryColumn = resolveCategoryColumn(sheet);
+                for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+                    Row row = sheet.getRow(i);
+                    if (row == null) {
+                        continue;
+                    }
+                    String nmIdText = read(row, 0);
+                    if (nmIdText.isBlank()) {
+                        continue;
+                    }
+                    long nmId = parseLong(nmIdText, "nmId", i + 1);
+                    String categoryText = read(row, categoryColumn);
+                    Integer categoryId = categoryText.isBlank() ? null : Math.toIntExact(parseLong(categoryText, "KIZ Category ID", i + 1));
+                    mappings.put(nmId, categoryId);
                 }
-                String nmIdText = read(row, 0);
-                if (nmIdText.isBlank()) {
-                    continue;
-                }
-                long nmId = parseLong(nmIdText, "nmId", i + 1);
-                String categoryText = read(row, resolveCategoryColumn(sheet));
-                Integer categoryId = categoryText.isBlank() ? null : Math.toIntExact(parseLong(categoryText, "KIZ Category ID", i + 1));
-                mappings.put(nmId, categoryId);
+            } finally {
+                ZipSecureFile.setMaxFileCount(previousMaxFileCount);
             }
         }
         return mappings;

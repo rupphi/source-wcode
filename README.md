@@ -121,7 +121,7 @@ Workflow [release.yml](.github/workflows/release.yml) tự chạy khi push tag t
 Mỗi nền tảng được upload thành artifact riêng, sau đó job publish sẽ đẩy toàn bộ asset lên GitHub Release public tại `tuanworlddev/WCode`.
 
 ```bash
-git tag v1.0.22
+git tag v1.0.23
 git push origin main --tags
 ```
 
