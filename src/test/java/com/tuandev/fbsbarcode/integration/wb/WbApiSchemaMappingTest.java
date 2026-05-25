@@ -1,7 +1,11 @@
 package com.tuandev.fbsbarcode.integration.wb;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import org.junit.jupiter.api.Test;
+
+import java.time.LocalDate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -106,5 +110,90 @@ class WbApiSchemaMappingTest {
         assertEquals("uin", response.getOrders().getFirst().getRequiredMeta().getFirst());
         assertEquals(12345678L, response.getOrders().getFirst().getNmId());
         assertTrue(response.getOrders().getFirst().getOptions().getIsB2B());
+    }
+
+    @Test
+    void shouldSerializeSalesFunnelProductsRequestForV3Schema() {
+        SalesFunnelRequest request = SalesFunnelRequest.lastSevenDays(LocalDate.of(2026, 5, 25), true);
+
+        JsonObject json = JsonParser.parseString(GSON.toJson(request)).getAsJsonObject();
+
+        assertEquals("2026-05-18", json.getAsJsonObject("selectedPeriod").get("start").getAsString());
+        assertEquals("2026-05-24", json.getAsJsonObject("selectedPeriod").get("end").getAsString());
+        assertEquals("2026-05-11", json.getAsJsonObject("pastPeriod").get("start").getAsString());
+        assertEquals("2026-05-17", json.getAsJsonObject("pastPeriod").get("end").getAsString());
+        assertTrue(json.getAsJsonArray("nmIds").isEmpty());
+        assertTrue(json.getAsJsonArray("brandNames").isEmpty());
+        assertTrue(json.getAsJsonArray("subjectIds").isEmpty());
+        assertTrue(json.getAsJsonArray("tagIds").isEmpty());
+        assertTrue(json.get("skipDeletedNm").getAsBoolean());
+        assertEquals("openCard", json.getAsJsonObject("orderBy").get("field").getAsString());
+        assertEquals("desc", json.getAsJsonObject("orderBy").get("mode").getAsString());
+        assertEquals(1000, json.get("limit").getAsInt());
+        assertEquals(0, json.get("offset").getAsInt());
+    }
+
+    @Test
+    void shouldDeserializeSalesFunnelProductsV3Response() {
+        String json = """
+                {
+                  "data": {
+                    "products": [
+                      {
+                        "product": {
+                          "nmId": 268913787,
+                          "title": "Кроссовки для бега",
+                          "vendorCode": "12345456",
+                          "brandName": "Demix",
+                          "subjectId": 105,
+                          "subjectName": "Кроссовки",
+                          "productRating": 4.5,
+                          "feedbackRating": 4,
+                          "stocks": {"wb": 0, "mp": 0, "balanceSum": 7}
+                        },
+                        "statistic": {
+                          "selected": {
+                            "openCount": 45,
+                            "cartCount": 34,
+                            "orderCount": 19,
+                            "orderSum": 1262,
+                            "addToWishlist": 455,
+                            "cancelCount": 0,
+                            "conversions": {
+                              "addToCartPercent": 19,
+                              "cartToOrderPercent": 65,
+                              "buyoutPercent": 0
+                            }
+                          },
+                          "comparison": {
+                            "cartCountDynamic": 30,
+                            "orderCountDynamic": -100,
+                            "addToWishlistDynamic": 60
+                          }
+                        }
+                      }
+                    ],
+                    "currency": "RUB"
+                  }
+                }
+                """;
+
+        SalesFunnelResponse response = GSON.fromJson(json, SalesFunnelResponse.class);
+        SalesFunnelResponse.SalesFunnelProductItem item = response.getItems().getFirst();
+
+        assertEquals(268913787L, item.getProduct().getNmId());
+        assertEquals("Кроссовки для бега", item.getProduct().getDisplayName());
+        assertEquals("12345456", item.getProduct().getVendorCode());
+        assertEquals(4.5, item.getProduct().getProductRating());
+        assertEquals(4.0, item.getProduct().getFeedbackRating());
+        assertEquals(45, item.getSelected().getOpenCount());
+        assertEquals(34, item.getSelected().getCartCount());
+        assertEquals(19, item.getSelected().getOrderCount());
+        assertEquals(1262.0, item.getSelected().getOrderSum());
+        assertEquals(455, item.getSelected().getAddToWishlist());
+        assertEquals(19.0, item.getSelected().getAddToCartPercent());
+        assertEquals(65.0, item.getSelected().getCartToOrderPercent());
+        assertEquals(7, item.getSelected().getStocks().getBalanceSum());
+        assertEquals(-100.0, item.getComparison().getOrderCountDynamic());
     }
 }

@@ -45,7 +45,7 @@ public class SalesFunnelResponse {
             if (selected == null) {
                 selected = new SalesFunnelPeriodStats();
             }
-            selected.inherit(getStatistic().getConversions(), getStatistic().getStocks());
+            selected.inherit(getStatistic().getConversions(), getStatistic().getStocks(), getProduct().getStocks());
             return selected;
         }
 
@@ -65,6 +65,7 @@ public class SalesFunnelResponse {
         private Double productRating;
         private Double feedbackRating;
         private Double rating;
+        private SalesFunnelStocks stocks;
 
         public Long getNmId() {
             return nmId;
@@ -88,9 +89,15 @@ public class SalesFunnelResponse {
         public double getFeedbackRating() {
             return firstNumber(feedbackRating, rating);
         }
+
+        public SalesFunnelStocks getStocks() {
+            return stocks == null ? new SalesFunnelStocks() : stocks;
+        }
     }
 
     public static class SalesFunnelStatistic {
+        private SalesFunnelPeriodStats selected;
+        private SalesFunnelPeriodStats past;
         private SalesFunnelPeriodStats selectedPeriod;
         private SalesFunnelPeriodStats pastPeriod;
         private SalesFunnelComparison comparison;
@@ -98,7 +105,7 @@ public class SalesFunnelResponse {
         private SalesFunnelStocks stocks;
 
         public SalesFunnelPeriodStats getSelectedPeriod() {
-            return selectedPeriod;
+            return selected != null ? selected : selectedPeriod;
         }
 
         public SalesFunnelComparison getComparison() {
@@ -167,12 +174,12 @@ public class SalesFunnelResponse {
             return stocks == null ? new SalesFunnelStocks() : stocks;
         }
 
-        private void inherit(SalesFunnelConversions fallbackConversions, SalesFunnelStocks fallbackStocks) {
+        private void inherit(SalesFunnelConversions fallbackConversions, SalesFunnelStocks fallbackStocks, SalesFunnelStocks productStocks) {
             if (conversions == null) {
                 conversions = fallbackConversions;
             }
             if (stocks == null) {
-                stocks = fallbackStocks;
+                stocks = fallbackStocks == null ? productStocks : fallbackStocks;
             }
         }
     }

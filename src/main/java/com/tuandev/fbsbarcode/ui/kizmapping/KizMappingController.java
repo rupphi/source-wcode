@@ -51,6 +51,7 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.sql.SQLException;
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -238,8 +239,9 @@ public class KizMappingController {
                 AlertService.showError(String.join("\n", result.errors()));
                 return;
             }
-            AlertService.showInfo(I18nService.getInstance().tr("kiz_mapping.title"), I18nService.getInstance().tr("kiz_mapping.import_done"),
-                    "Updated: " + result.updatedCount() + ", cleared: " + result.clearedCount());
+            I18nService i18n = I18nService.getInstance();
+            AlertService.showInfo(i18n.tr("kiz_mapping.title"), i18n.tr("kiz_mapping.import_done"),
+                    MessageFormat.format(i18n.tr("kiz_mapping.import_result"), result.updatedCount(), result.clearedCount()));
             refresh();
         });
         task.setOnFailed(event -> {

@@ -179,7 +179,7 @@ public class PrintTemplateDesignerController implements Initializable {
                     setText(null);
                     return;
                 }
-                setText(item.getLabel() + (item.isVisible() ? "" : " (ẩn)"));
+                setText(item.getLabel() + (item.isVisible() ? "" : " (" + i18n.tr("template.hidden_suffix") + ")"));
             }
         });
         alignComboBox.getItems().setAll(PrintTextAlign.values());
@@ -923,6 +923,7 @@ public class PrintTemplateDesignerController implements Initializable {
 
     private void promptTemplateName(String title, String header, String initialValue, NameConsumer consumer) {
         TextInputDialog dialog = new TextInputDialog(initialValue);
+        AlertService.applyTheme(dialog);
         dialog.setTitle(title);
         dialog.setHeaderText(header);
         dialog.setContentText(i18n.tr("template.dialog.name"));
@@ -1049,9 +1050,9 @@ public class PrintTemplateDesignerController implements Initializable {
 
     private String nextPastedLabel(String baseLabel) {
         if (baseLabel == null || baseLabel.isBlank()) {
-            return "Bản sao";
+            return i18n.tr("template.copy_default_name");
         }
-        return baseLabel + " Copy";
+        return baseLabel + " " + i18n.tr("template.copy_suffix");
     }
 
     private boolean supportsPrefix(PrintTemplateElement element) {
@@ -1081,9 +1082,9 @@ public class PrintTemplateDesignerController implements Initializable {
         }
         return switch (element.getFieldKey()) {
             case BRAND -> "Brand";
-            case NAME -> "Tên sản phẩm";
-            case SUBJECT_NAME -> "Danh mục";
-            case COLOR -> "Màu sản phẩm";
+            case NAME -> i18n.tr("template.palette.name");
+            case SUBJECT_NAME -> i18n.tr("template.palette.subject");
+            case COLOR -> i18n.tr("template.sample.color");
             case ARTICLE -> "ABC-123456";
             case SIZE -> "42";
             case BARCODE -> "4600000000000";

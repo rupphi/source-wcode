@@ -317,7 +317,7 @@ public class GenerateBarcode {
         }
         return switch (fieldKey) {
             case BRAND -> safeValue(order.getBrand());
-            case NAME -> compactProductName(order.getName());
+            case NAME -> safeValue(order.getName());
             case SUBJECT_NAME -> safeValue(order.getSubjectName());
             case COLOR -> safeValue(order.getColor());
             case ARTICLE -> safeValue(order.getArticle());
@@ -415,16 +415,6 @@ public class GenerateBarcode {
                 .setTextAlignment(TextAlignment.CENTER);
         stickerPathB.setFixedPosition(WIDTH - 2, 36, 51);
         document.add(stickerPathB);
-    }
-
-    private static String compactProductName(String name) {
-        String safeName = safeValue(name);
-        if (safeName.isBlank()) {
-            return "";
-        }
-
-        String[] names = safeName.split("\\s+");
-        return names.length > 1 ? names[0] + " " + names[1] : names[0];
     }
 
     private static String compact(String value, int maxLength) {

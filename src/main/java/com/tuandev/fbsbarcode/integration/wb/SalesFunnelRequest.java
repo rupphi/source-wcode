@@ -12,14 +12,23 @@ public class SalesFunnelRequest {
     private List<Integer> tagIds = List.of();
     private boolean skipDeletedNm = true;
     private OrderBy orderBy;
-    private int limit = 100;
+    private int limit = 1000;
     private int offset = 0;
 
-    public static SalesFunnelRequest lastSevenDays(LocalDate today, boolean includeOrderBy) {
+    public static SalesFunnelRequest lastSevenDays(LocalDate today) {
         SalesFunnelRequest request = new SalesFunnelRequest();
-        request.selectedPeriod = new Period(today.minusDays(7).toString(), today.toString());
-        request.pastPeriod = new Period(today.minusDays(14).toString(), today.minusDays(7).toString());
-        request.orderBy = includeOrderBy ? new OrderBy("orders", "desc") : null;
+        LocalDate selectedEnd = today.minusDays(1);
+        LocalDate selectedStart = selectedEnd.minusDays(6);
+        LocalDate pastEnd = selectedStart.minusDays(1);
+        LocalDate pastStart = pastEnd.minusDays(6);
+        request.selectedPeriod = new Period(selectedStart.toString(), selectedEnd.toString());
+        request.pastPeriod = new Period(pastStart.toString(), pastEnd.toString());
+        return request;
+    }
+
+    public static SalesFunnelRequest lastSevenDays(LocalDate today, boolean includeOrderBy) {
+        SalesFunnelRequest request = lastSevenDays(today);
+        request.orderBy = includeOrderBy ? new OrderBy("openCard", "desc") : null;
         return request;
     }
 

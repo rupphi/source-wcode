@@ -158,6 +158,7 @@ public class PackingController {
         }
         List<Long> orderIds = selectedOrderIds.stream().toList();
         TextInputDialog dialog = new TextInputDialog(packingWorkflow.defaultShipmentName());
+        AlertService.applyTheme(dialog);
         I18nService i18n = I18nService.getInstance();
         dialog.setTitle(i18n.tr("packing.dialog.new_shipment.title"));
         dialog.setHeaderText(i18n.tr("packing.dialog.new_shipment.header"));
@@ -180,6 +181,7 @@ public class PackingController {
             return;
         }
         ChoiceDialog<WbSupplySummary> dialog = new ChoiceDialog<>(supplies.get(0), supplies);
+        AlertService.applyTheme(dialog);
         I18nService i18n = I18nService.getInstance();
         dialog.setTitle(i18n.tr("packing.dialog.add_to_shipment.title"));
         dialog.setHeaderText(i18n.tr("packing.dialog.add_to_shipment.header"));
@@ -614,9 +616,9 @@ public class PackingController {
             String date = LocalDateTime.ofInstant(instant, ZoneId.systemDefault()).format(DATE_FORMAT);
             Duration age = Duration.between(instant, Instant.now());
             if (age.toHours() >= 1) {
-                return date + "\n" + age.toHours() + " ч назад";
+                return date + "\n" + MessageFormat.format(I18nService.getInstance().tr("packing.order_age_hours"), age.toHours());
             }
-            return date + "\n" + Math.max(1, age.toMinutes()) + " мин назад";
+            return date + "\n" + MessageFormat.format(I18nService.getInstance().tr("packing.order_age_minutes"), Math.max(1, age.toMinutes()));
         } catch (Exception ignored) {
             return value;
         }

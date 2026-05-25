@@ -40,7 +40,7 @@ public class DashboardService {
 
     public synchronized DashboardData load(Shop shop, boolean forceRefresh) {
         DashboardKpis kpis = repository.loadKpis(shop.getId());
-        SalesFunnelRequest request = SalesFunnelRequest.lastSevenDays(LocalDate.now(clock), false);
+        SalesFunnelRequest request = SalesFunnelRequest.lastSevenDays(LocalDate.now(clock));
         String key = cacheKey(shop.getId(), request);
         if (!forceRefresh) {
             CacheEntry cached = analyticsCache.get(key);

@@ -34,19 +34,19 @@
             <children>
                 <VBox spacing="4.0" styleClass="surface" HBox.hgrow="ALWAYS">
                     <children>
-                        <Label styleClass="text-muted" text="Sản phẩm" />
+                        <Label fx:id="productKpiLabel" styleClass="text-muted" text="Sản phẩm" />
                         <Label fx:id="productCountLabel" styleClass="h1" text="0" />
                     </children>
                 </VBox>
                 <VBox spacing="4.0" styleClass="surface" HBox.hgrow="ALWAYS">
                     <children>
-                        <Label styleClass="text-muted" text="Đơn mới" />
+                        <Label fx:id="newOrdersKpiLabel" styleClass="text-muted" text="Đơn mới" />
                         <Label fx:id="newOrderCountLabel" styleClass="h1" text="0" />
                     </children>
                 </VBox>
                 <VBox spacing="4.0" styleClass="surface" HBox.hgrow="ALWAYS">
                     <children>
-                        <Label styleClass="text-muted" text="Supply mở" />
+                        <Label fx:id="openSuppliesKpiLabel" styleClass="text-muted" text="Supply mở" />
                         <Label fx:id="openSupplyCountLabel" styleClass="h1" text="0" />
                     </children>
                 </VBox>
@@ -58,7 +58,7 @@
             <children>
                 <VBox spacing="8.0" GridPane.columnIndex="0" GridPane.hgrow="ALWAYS" GridPane.rowIndex="0" GridPane.vgrow="ALWAYS">
                     <children>
-                        <Label styleClass="h3" text="Top bán chạy 7 ngày" />
+                        <Label fx:id="topSellingTitleLabel" styleClass="h3" text="Top bán chạy 7 ngày" />
                         <TableView fx:id="topSellingTable" VBox.vgrow="ALWAYS">
                             <columns>
                                 <TableColumn fx:id="topProductTC" minWidth="260.0" prefWidth="360.0" text="Sản phẩm" />
@@ -71,7 +71,7 @@
                 </VBox>
                 <VBox spacing="8.0" GridPane.columnIndex="1" GridPane.hgrow="ALWAYS" GridPane.rowIndex="0" GridPane.vgrow="ALWAYS">
                     <children>
-                        <Label styleClass="h3" text="Sản phẩm tiềm năng" />
+                        <Label fx:id="potentialTitleLabel" styleClass="h3" text="Sản phẩm tiềm năng" />
                         <TableView fx:id="potentialTable" VBox.vgrow="ALWAYS">
                             <columns>
                                 <TableColumn fx:id="potentialProductTC" minWidth="220.0" prefWidth="280.0" text="Sản phẩm" />

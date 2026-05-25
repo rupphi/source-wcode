@@ -44,13 +44,6 @@ public class PrintTemplateService {
                 .ifPresent(template -> {
                     if (upgradeLegacySystemDefaultTemplate(template)) {
                         saveTemplate(template);
-                        return;
-                    }
-                    if (shouldResetSystemDefaultTemplate(template)) {
-                        PrintTemplate reset = createSystemDefaultTemplate(template.getName());
-                        reset.setId(template.getId());
-                        reset.setDefaultTemplate(template.isDefaultTemplate());
-                        saveTemplate(reset);
                     }
                 });
     }
@@ -136,74 +129,6 @@ public class PrintTemplateService {
         PrintTemplate systemDefault = createSystemDefaultTemplate(template.getName());
         template.setElements(systemDefault.getElements());
         return true;
-    }
-
-    private boolean shouldResetSystemDefaultTemplate(PrintTemplate template) {
-        if (!isRecognizedSystemDefaultTemplate(template)) {
-            return false;
-        }
-        PrintTemplate desired = createSystemDefaultTemplate(template.getName());
-        for (PrintTemplateElement desiredElement : desired.getElements()) {
-            PrintTemplateElement currentElement = findComparableElement(template, desiredElement);
-            if (!sameTemplateElementLayout(currentElement, desiredElement)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean isRecognizedSystemDefaultTemplate(PrintTemplate template) {
-        if (template == null || !template.isDefaultTemplate() || template.getElements() == null || template.getElements().isEmpty()) {
-            return false;
-        }
-        PrintTemplateElement kiz = findElementByType(template, PrintElementType.KIZ_DATAMATRIX);
-        PrintTemplateElement barcode = findElementByType(template, PrintElementType.BARCODE_CODE128);
-        PrintTemplateElement stickerTail = findElementByType(template, PrintElementType.STICKER_TAIL);
-        PrintTemplateElement brand = findField(template, PrintFieldKey.BRAND);
-        PrintTemplateElement article = findField(template, PrintFieldKey.ARTICLE);
-        PrintTemplateElement color = findField(template, PrintFieldKey.COLOR);
-        PrintTemplateElement size = findField(template, PrintFieldKey.SIZE);
-        if (kiz == null || barcode == null || stickerTail == null || brand == null || article == null || color == null || size == null) {
-            return false;
-        }
-        boolean currentBase = approximately(kiz.getX(), mm(2.5))
-                && approximately(kiz.getY(), mm(5))
-                && approximately(kiz.getWidth(), 50d)
-                && approximately(kiz.getHeight(), 50d)
-                && approximately(barcode.getX(), mm(2.5))
-                && approximately(barcode.getY(), mm(28.2))
-                && approximately(stickerTail.getX(), mm(49))
-                && approximately(stickerTail.getY(), mm(36.5));
-        boolean olderBase = approximately(kiz.getX(), mm(4))
-                || approximately(barcode.getX(), mm(4))
-                || approximately(barcode.getY(), mm(27))
-                || approximately(stickerTail.getX(), mm(47))
-                || findField(template, PrintFieldKey.NAME) != null;
-        return currentBase || olderBase;
-    }
-
-    private static PrintTemplateElement findComparableElement(PrintTemplate template, PrintTemplateElement desired) {
-        if (desired.getType() == PrintElementType.TEXT_FIELD) {
-            return findField(template, desired.getFieldKey());
-        }
-        return findElementByType(template, desired.getType());
-    }
-
-    private static boolean sameTemplateElementLayout(PrintTemplateElement current, PrintTemplateElement desired) {
-        if (current == null || desired == null) {
-            return false;
-        }
-        return current.getType() == desired.getType()
-                && current.getFieldKey() == desired.getFieldKey()
-                && approximately(current.getX(), desired.getX())
-                && approximately(current.getY(), desired.getY())
-                && approximately(current.getWidth(), desired.getWidth())
-                && approximately(current.getHeight(), desired.getHeight())
-                && approximately(current.getFontSize(), desired.getFontSize())
-                && current.isBold() == desired.isBold()
-                && current.getAlign() == desired.getAlign()
-                && safeTrim(current.getLabel()).equals(safeTrim(desired.getLabel()))
-                && safeTrim(current.getPrefix()).equals(safeTrim(desired.getPrefix()));
     }
 
     private static PrintTemplateElement findField(PrintTemplate template, PrintFieldKey key) {

@@ -5,6 +5,7 @@ import com.tuandev.fbsbarcode.features.dashboard.DashboardProductMetric;
 import com.tuandev.fbsbarcode.features.dashboard.DashboardService;
 import com.tuandev.fbsbarcode.models.Shop;
 import com.tuandev.fbsbarcode.shared.AppTaskExecutor;
+import com.tuandev.fbsbarcode.shared.I18nService;
 import javafx.beans.property.ReadOnlyObjectWrapper;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.concurrent.Task;
@@ -36,11 +37,16 @@ public class DashboardController {
     @FXML private Label statusLabel;
     @FXML private ProgressIndicator loadingIndicator;
     @FXML private Button refreshButton;
+    @FXML private Label productKpiLabel;
+    @FXML private Label newOrdersKpiLabel;
+    @FXML private Label openSuppliesKpiLabel;
     @FXML private Label productCountLabel;
     @FXML private Label newOrderCountLabel;
     @FXML private Label openSupplyCountLabel;
     @FXML private Label emptyStateLabel;
     @FXML private Label analyticsErrorLabel;
+    @FXML private Label topSellingTitleLabel;
+    @FXML private Label potentialTitleLabel;
     @FXML private TableView<DashboardProductMetric> topSellingTable;
     @FXML private TableColumn<DashboardProductMetric, DashboardProductMetric> topProductTC;
     @FXML private TableColumn<DashboardProductMetric, Number> topOrdersTC;
@@ -87,8 +93,26 @@ public class DashboardController {
     }
 
     public void applyTranslations() {
-        titleLabel.setText("Dashboard");
-        refreshButton.setText("Refresh");
+        I18nService i18n = I18nService.getInstance();
+        titleLabel.setText(i18n.tr("dashboard.title"));
+        refreshButton.setText(i18n.tr("dashboard.refresh"));
+        productKpiLabel.setText(i18n.tr("dashboard.kpi.products"));
+        newOrdersKpiLabel.setText(i18n.tr("dashboard.kpi.new_orders"));
+        openSuppliesKpiLabel.setText(i18n.tr("dashboard.kpi.open_supplies"));
+        emptyStateLabel.setText(i18n.tr("dashboard.empty"));
+        analyticsErrorLabel.setText(i18n.tr("dashboard.analytics_error"));
+        topSellingTitleLabel.setText(i18n.tr("dashboard.top_selling"));
+        potentialTitleLabel.setText(i18n.tr("dashboard.potential_products"));
+        topProductTC.setText(i18n.tr("dashboard.col.product"));
+        topOrdersTC.setText(i18n.tr("dashboard.col.orders"));
+        topRevenueTC.setText(i18n.tr("dashboard.col.revenue"));
+        topConversionTC.setText(i18n.tr("dashboard.col.conversion"));
+        potentialProductTC.setText(i18n.tr("dashboard.col.product"));
+        potentialRatingTC.setText(i18n.tr("dashboard.col.rating"));
+        potentialDemandTC.setText(i18n.tr("dashboard.col.demand"));
+        potentialConversionTC.setText(i18n.tr("dashboard.col.conversion"));
+        potentialStockTC.setText(i18n.tr("dashboard.col.stock"));
+        potentialReasonTC.setText(i18n.tr("dashboard.col.reason"));
     }
 
     @FXML
@@ -141,7 +165,7 @@ public class DashboardController {
             setLoading(false);
             LOGGER.error("Không thể tải dashboard cho shop {}", currentShop.getId(), task.getException());
             setData(new DashboardData(new com.tuandev.fbsbarcode.features.dashboard.DashboardKpis(0, 0, 0), List.of(), List.of(),
-                    "Không tải được dữ liệu Dashboard"));
+                    I18nService.getInstance().tr("dashboard.load_error")));
         });
         AppTaskExecutor.execute(task);
     }
@@ -158,7 +182,8 @@ public class DashboardController {
         analyticsErrorLabel.setText(data.hasAnalyticsError() ? data.analyticsError() : "");
         analyticsErrorLabel.setVisible(data.hasAnalyticsError());
         analyticsErrorLabel.setManaged(data.hasAnalyticsError());
-        statusLabel.setText(data.hasAnalyticsError() ? "Analytics unavailable" : "Updated");
+        I18nService i18n = I18nService.getInstance();
+        statusLabel.setText(data.hasAnalyticsError() ? i18n.tr("dashboard.status.analytics_unavailable") : i18n.tr("dashboard.status.updated"));
     }
 
     private void clear() {
@@ -181,7 +206,7 @@ public class DashboardController {
         loadingIndicator.setVisible(loading);
         loadingIndicator.setManaged(loading);
         refreshButton.setDisable(loading);
-        statusLabel.setText(loading ? "Loading..." : "");
+        statusLabel.setText(loading ? I18nService.getInstance().tr("dashboard.status.loading") : "");
     }
 
     private String productText(DashboardProductMetric metric) {

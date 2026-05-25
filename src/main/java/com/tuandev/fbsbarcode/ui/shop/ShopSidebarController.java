@@ -141,7 +141,7 @@ public class ShopSidebarController {
         I18nService i18n = I18nService.getInstance();
         templateButton.setText(" " + i18n.tr("sidebar.template"));
         addShopButton.setText(" " + i18n.tr("sidebar.add_shop"));
-        dashboardButton.setText(" Dashboard");
+        dashboardButton.setText(" " + i18n.tr("dashboard.title"));
         packingButton.setText(" " + i18n.tr("sidebar.packing"));
         btnPrintHistory.setText(" " + i18n.tr("sidebar.print_history"));
         fboPackingButton.setText(" " + i18n.tr("sidebar.fbo_packing"));

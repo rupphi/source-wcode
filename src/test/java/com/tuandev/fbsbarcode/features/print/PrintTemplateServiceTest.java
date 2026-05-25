@@ -1,16 +1,29 @@
 package com.tuandev.fbsbarcode.features.print;
 
+import com.tuandev.fbsbarcode.config.Database;
 import com.tuandev.fbsbarcode.features.fbo.FboPrintTemplateService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PrintTemplateServiceTest {
     private final PrintTemplateService service = new PrintTemplateService();
+
+    @TempDir
+    Path tempDir;
+
+    @AfterEach
+    void clearOverride() {
+        System.clearProperty("wcode.appdata.dir");
+    }
 
     @Test
     void shouldCreateDefaultTemplateShape() {
@@ -108,12 +121,62 @@ class PrintTemplateServiceTest {
         assertEquals(5, element.getZIndex());
     }
 
+    @Test
+    void shouldKeepEditedDefaultFbsTemplateAfterReload() {
+        System.setProperty("wcode.appdata.dir", tempDir.toString());
+        Database.initDatabase();
+        PrintTemplateService templateService = new PrintTemplateService();
+        templateService.ensureDefaultTemplateExists();
+        PrintTemplate template = templateService.getDefaultTemplate();
+        replaceSubjectWithName(template, templateService);
+
+        templateService.saveTemplate(template);
+        PrintTemplate reloaded = templateService.getDefaultTemplate();
+
+        assertTrue(hasField(reloaded, PrintFieldKey.NAME));
+        assertFalse(hasField(reloaded, PrintFieldKey.SUBJECT_NAME));
+    }
+
+    @Test
+    void shouldKeepEditedDefaultFboTemplateAfterReload() {
+        System.setProperty("wcode.appdata.dir", tempDir.toString());
+        Database.initDatabase();
+        FboPrintTemplateService templateService = new FboPrintTemplateService();
+        templateService.ensureDefaultTemplateExists();
+        PrintTemplate template = templateService.getDefaultTemplate();
+        replaceSubjectWithName(template, templateService);
+
+        templateService.saveTemplate(template);
+        PrintTemplate reloaded = templateService.getDefaultTemplate();
+
+        assertTrue(hasField(reloaded, PrintFieldKey.NAME));
+        assertFalse(hasField(reloaded, PrintFieldKey.SUBJECT_NAME));
+    }
+
     private static PrintTemplateElement field(PrintTemplate template, PrintFieldKey key) {
         return template.getElements().stream()
                 .filter(element -> element.getType() == PrintElementType.TEXT_FIELD)
                 .filter(element -> element.getFieldKey() == key)
                 .findFirst()
                 .orElseThrow();
+    }
+
+    private static boolean hasField(PrintTemplate template, PrintFieldKey key) {
+        return template.getElements().stream()
+                .anyMatch(element -> element.getType() == PrintElementType.TEXT_FIELD && element.getFieldKey() == key);
+    }
+
+    private static void replaceSubjectWithName(PrintTemplate template, PrintTemplateService templateService) {
+        template.getElements().removeIf(element -> element.getType() == PrintElementType.TEXT_FIELD
+                && element.getFieldKey() == PrintFieldKey.SUBJECT_NAME);
+        PrintTemplateService.ElementPaletteItem nameItem = templateService.getPaletteItems().stream()
+                .filter(item -> item.fieldKey() == PrintFieldKey.NAME)
+                .findFirst()
+                .orElseThrow();
+        PrintTemplateElement name = templateService.createElementFromPalette(nameItem, template.getElements().size() + 1);
+        name.setX(PrintTemplateService.mm(22));
+        name.setY(PrintTemplateService.mm(7.2));
+        template.getElements().add(name);
     }
 
     private static PrintTemplateElement type(PrintTemplate template, PrintElementType type) {
