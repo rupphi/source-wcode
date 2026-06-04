@@ -164,8 +164,10 @@ public class KizService {
                 .put(body)
                 .build();
 
+        WbLabelIdentifierRateLimiter.awaitTurn(apiKey);
         try (Response response = client.newCall(request).execute()) {
             String responseBody = response.body() == null ? "" : response.body().string();
+            WbLabelIdentifierRateLimiter.registerResponse(apiKey, response.code(), response.headers());
             if (!response.isSuccessful()) {
                 if (response.code() == 409 && responseBody.contains("FailedToUpdateMeta")) {
                     LOGGER.info("WB skipped KIZ attach for order {} because it is not in Processing status: {}", orderId, responseBody);

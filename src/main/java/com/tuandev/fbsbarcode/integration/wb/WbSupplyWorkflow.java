@@ -71,18 +71,19 @@ public class WbSupplyWorkflow {
     }
 
     public List<Order> loadOrdersForSupply(Shop shop, String supplyId) throws IOException {
-        if (orderRepository.hasMissingProductsForSupply(shop.getId(), supplyId)) {
+        List<Long> missingNmIds = orderRepository.findMissingProductNmIdsForSupply(shop.getId(), supplyId);
+        if (!missingNmIds.isEmpty()) {
             try {
-                productSyncService.sync(shop);
+                productSyncService.recoverProductsByNmIds(shop, missingNmIds);
             } catch (WbApiException ex) {
                 if (!ex.isContentPermissionError() && !ex.isRateLimited()) {
                     throw ex;
                 }
                 if (ex.isContentPermissionError()) {
-                    LOGGER.warn("Không thể đồng bộ products cho supply {} của shop {} vì token thiếu quyền Content: {}",
+                    LOGGER.warn("Không thể khôi phục products cho supply {} của shop {} vì token thiếu quyền Content: {}",
                             supplyId, shop.getId(), ex.getMessage());
                 } else {
-                    LOGGER.warn("Không thể đồng bộ products cho supply {} của shop {} vì WB rate limit: {}",
+                    LOGGER.warn("Không thể khôi phục products cho supply {} của shop {} vì WB rate limit: {}",
                             supplyId, shop.getId(), ex.getMessage());
                 }
             }

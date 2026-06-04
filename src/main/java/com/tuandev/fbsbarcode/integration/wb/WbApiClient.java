@@ -124,7 +124,7 @@ public class WbApiClient {
                 .header("Authorization", "Bearer " + apiKey)
                 .get()
                 .build();
-        return execute(request, type);
+        return execute(apiKey, request, type);
     }
 
     private <T> T postJson(String apiKey, String url, Object payload, Class<T> type) throws IOException {
@@ -134,7 +134,7 @@ public class WbApiClient {
                 .header("Authorization", "Bearer " + apiKey)
                 .post(body)
                 .build();
-        return execute(request, type);
+        return execute(apiKey, request, type);
     }
 
     private void patchJson(String apiKey, String url, Object payload) throws IOException {
@@ -144,13 +144,19 @@ public class WbApiClient {
                 .header("Authorization", "Bearer " + apiKey)
                 .patch(body)
                 .build();
-        execute(request, Void.class);
+        execute(apiKey, request, Void.class);
     }
 
-    private <T> T execute(Request request, Class<T> type) throws IOException {
+    private <T> T execute(String apiKey, Request request, Class<T> type) throws IOException {
+        if (isContentApi(request.url())) {
+            WbContentApiRateLimiter.awaitTurn(apiKey);
+        }
         try (Response response = CLIENT.newCall(request).execute()) {
             String body = response.body() == null ? "" : response.body().string();
             if (!response.isSuccessful()) {
+                if (isContentApiRateLimited(request.url(), response.code())) {
+                    WbContentApiRateLimiter.registerRateLimit(apiKey, response.headers());
+                }
                 String message = extractErrorMessage(request.url(), response.code(), body);
                 LOGGER.warn("WB API request failed: {} {} -> {} {}", request.method(), request.url(), response.code(), message);
                 throw new WbApiException(message, response.code(), body);
@@ -241,12 +247,16 @@ public class WbApiClient {
         if (url == null || (statusCode != 401 && statusCode != 403)) {
             return false;
         }
-        return "content-api.wildberries.ru".equalsIgnoreCase(url.host());
+        return isContentApi(url);
     }
 
     private boolean isContentApiRateLimited(HttpUrl url, int statusCode) {
         return url != null
                 && statusCode == 429
-                && "content-api.wildberries.ru".equalsIgnoreCase(url.host());
+                && isContentApi(url);
+    }
+
+    private boolean isContentApi(HttpUrl url) {
+        return url != null && "content-api.wildberries.ru".equalsIgnoreCase(url.host());
     }
 }

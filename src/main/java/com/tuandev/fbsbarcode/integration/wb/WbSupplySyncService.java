@@ -5,8 +5,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class WbSupplySyncService {
     private static final Logger LOGGER = LoggerFactory.getLogger(WbSupplySyncService.class);
@@ -14,6 +17,8 @@ public class WbSupplySyncService {
     private static final int RECENT_SUPPLY_DETAIL_LIMIT = 50;
     private static final int OPEN_SUPPLY_DETAIL_LIMIT = 20;
     private static final int INITIAL_OPEN_SUPPLY_SCAN_PAGES = 5;
+    private static final long SUPPLY_NOT_FOUND_COOLDOWN_MS = Duration.ofMinutes(10).toMillis();
+    private static final Map<String, Long> SUPPLY_DETAIL_NOT_FOUND_UNTIL = new ConcurrentHashMap<>();
 
     private final WbApiClient apiClient;
     private final WbSupplyRepository supplyRepository;
@@ -177,6 +182,10 @@ public class WbSupplySyncService {
         int written = 0;
         IOException firstError = null;
         for (String supplyId : supplyIds) {
+            if (isSupplyDetailNotFoundCoolingDown(shop.getId(), supplyId)) {
+                LOGGER.debug("Bỏ qua sync chi tiết supply {} cho shop {} vì WB vừa trả 404", supplyId, shop.getId());
+                continue;
+            }
             try {
                 WbSupplyDto detail = apiClient.getSupplyDetail(shop.getApiKey(), supplyId);
                 if (detail != null) {
@@ -184,6 +193,11 @@ public class WbSupplySyncService {
                     written++;
                 }
             } catch (IOException ex) {
+                if (isNotFound(ex)) {
+                    rememberSupplyDetailNotFound(shop.getId(), supplyId);
+                    LOGGER.warn("Bỏ qua sync chi tiết supply {} cho shop {} vì WB trả 404 Not found", supplyId, shop.getId());
+                    continue;
+                }
                 LOGGER.warn("Bỏ qua lỗi sync chi tiết supply {} cho shop {}", supplyId, shop.getId(), ex);
                 if (firstError == null) {
                     firstError = ex;
@@ -203,12 +217,21 @@ public class WbSupplySyncService {
         int written = 0;
         IOException firstError = null;
         for (String supplyId : supplyIds) {
+            if (isSupplyDetailNotFoundCoolingDown(shop.getId(), supplyId)) {
+                LOGGER.debug("Bỏ qua sync số lượng supply {} cho shop {} vì WB vừa trả 404", supplyId, shop.getId());
+                continue;
+            }
             try {
                 WbSupplyOrderIdsResponse response = apiClient.getSupplyOrderIds(shop.getApiKey(), supplyId);
                 int count = response == null || response.getOrderIds() == null ? 0 : response.getOrderIds().size();
                 supplyRepository.updateSupplyOrderCount(shop.getId(), supplyId, count);
                 written++;
             } catch (IOException ex) {
+                if (isNotFound(ex)) {
+                    rememberSupplyDetailNotFound(shop.getId(), supplyId);
+                    LOGGER.warn("Bỏ qua sync số lượng supply {} cho shop {} vì WB trả 404 Not found", supplyId, shop.getId());
+                    continue;
+                }
                 LOGGER.warn("Bỏ qua lỗi sync số lượng supply {} cho shop {}", supplyId, shop.getId(), ex);
                 if (firstError == null) {
                     firstError = ex;
@@ -219,5 +242,29 @@ public class WbSupplySyncService {
             throw firstError;
         }
         return written;
+    }
+
+    private boolean isNotFound(IOException ex) {
+        return ex instanceof WbApiException wb && wb.isStatus(404);
+    }
+
+    private boolean isSupplyDetailNotFoundCoolingDown(int shopId, String supplyId) {
+        Long notFoundUntil = SUPPLY_DETAIL_NOT_FOUND_UNTIL.get(supplyKey(shopId, supplyId));
+        if (notFoundUntil == null) {
+            return false;
+        }
+        if (notFoundUntil <= System.currentTimeMillis()) {
+            SUPPLY_DETAIL_NOT_FOUND_UNTIL.remove(supplyKey(shopId, supplyId), notFoundUntil);
+            return false;
+        }
+        return true;
+    }
+
+    private void rememberSupplyDetailNotFound(int shopId, String supplyId) {
+        SUPPLY_DETAIL_NOT_FOUND_UNTIL.put(supplyKey(shopId, supplyId), System.currentTimeMillis() + SUPPLY_NOT_FOUND_COOLDOWN_MS);
+    }
+
+    private String supplyKey(int shopId, String supplyId) {
+        return shopId + ":" + (supplyId == null ? "" : supplyId);
     }
 }

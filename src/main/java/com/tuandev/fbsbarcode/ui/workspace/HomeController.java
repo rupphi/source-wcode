@@ -1287,6 +1287,14 @@ public class HomeController implements Initializable {
             }
             updateExportAvailability();
             LOGGER.warn("Không thể refresh supply {} ở nền", supply.getSupplyId(), refreshTask.getException());
+            String message = refreshTask.getException() == null ? "" : refreshTask.getException().getMessage();
+            if (message != null && message.startsWith("Sản phẩm không tồn tại trên WB:")) {
+                AlertService.showWarning(
+                        "Sản phẩm không tồn tại",
+                        "Không thể khôi phục thông tin sản phẩm từ WB",
+                        message
+                );
+            }
         });
         refreshTask.setOnSucceeded(e -> {
             if (!isCurrentSupplyRequest(shop.getId(), supply.getSupplyId(), requestToken)) {

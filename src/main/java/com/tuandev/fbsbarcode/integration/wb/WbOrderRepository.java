@@ -338,7 +338,7 @@ public class WbOrderRepository {
                            FROM wb_order_meta_requirements mr
                            WHERE mr.shop_id = o.shop_id
                              AND mr.order_id = o.order_id
-                             AND mr.requirement_type = 'required'
+                             AND LOWER(mr.meta_key) = 'sgtin'
                        ) AS requires_kiz
                 FROM supply_orders o
                 LEFT JOIN wb_product_cards pc ON pc.shop_id = o.shop_id AND pc.nm_id = o.effective_nm_id
@@ -415,7 +415,7 @@ public class WbOrderRepository {
                            FROM wb_order_meta_requirements mr
                            WHERE mr.shop_id = o.shop_id
                              AND mr.order_id = o.order_id
-                             AND mr.requirement_type = 'required'
+                             AND LOWER(mr.meta_key) = 'sgtin'
                        ) AS requires_kiz
                 FROM wb_orders o
                 LEFT JOIN wb_product_cards pc ON pc.shop_id = o.shop_id AND pc.nm_id = o.nm_id
@@ -460,7 +460,7 @@ public class WbOrderRepository {
                 JOIN wb_order_meta_requirements mr ON mr.shop_id = so.shop_id AND mr.order_id = so.order_id
                 WHERE so.shop_id = ?
                   AND so.supply_id = ?
-                  AND mr.requirement_type = 'required'
+                  AND LOWER(mr.meta_key) = 'sgtin'
                   AND NOT EXISTS (
                       SELECT 1
                       FROM print_jobs pj
@@ -489,7 +489,11 @@ public class WbOrderRepository {
                 FROM wb_supply_orders so
                 JOIN wb_orders o ON o.shop_id = so.shop_id AND o.order_id = so.order_id
                 LEFT JOIN wb_product_cards pc ON pc.shop_id = o.shop_id AND pc.nm_id = o.nm_id
-                WHERE so.shop_id = ? AND so.supply_id = ? AND o.nm_id IS NOT NULL AND pc.nm_id IS NULL
+                LEFT JOIN wb_product_sizes ps ON ps.shop_id = o.shop_id AND ps.chrt_id = o.chrt_id
+                WHERE so.shop_id = ?
+                  AND so.supply_id = ?
+                  AND o.nm_id IS NOT NULL
+                  AND (pc.nm_id IS NULL OR ps.chrt_id IS NULL)
                 """;
         try (Connection conn = Database.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -497,6 +501,35 @@ public class WbOrderRepository {
             ps.setString(2, supplyId);
             ResultSet rs = ps.executeQuery();
             return rs.next() && rs.getInt(1) > 0;
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public List<Long> findMissingProductNmIdsForSupply(int shopId, String supplyId) {
+        List<Long> nmIds = new ArrayList<>();
+        String sql = """
+                SELECT DISTINCT o.nm_id
+                FROM wb_supply_orders so
+                JOIN wb_orders o ON o.shop_id = so.shop_id AND o.order_id = so.order_id
+                LEFT JOIN wb_product_cards pc ON pc.shop_id = o.shop_id AND pc.nm_id = o.nm_id
+                LEFT JOIN wb_product_sizes ps ON ps.shop_id = o.shop_id AND ps.chrt_id = o.chrt_id
+                WHERE so.shop_id = ?
+                  AND so.supply_id = ?
+                  AND o.nm_id IS NOT NULL
+                  AND o.nm_id > 0
+                  AND (pc.nm_id IS NULL OR ps.chrt_id IS NULL)
+                ORDER BY o.nm_id
+                """;
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, shopId);
+            ps.setString(2, supplyId);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                nmIds.add(rs.getLong("nm_id"));
+            }
+            return nmIds;
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }

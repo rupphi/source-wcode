@@ -158,6 +158,9 @@ public class OrderExportWorkflow {
             if (order.getId() == null || order.getKiz() == null || order.getKiz().isBlank()) {
                 continue;
             }
+            if (!order.isRequiresKiz()) {
+                continue;
+            }
             Kiz sourceKiz = kizByCode.get(order.getKiz());
             if (sourceKiz == null) {
                 LOGGER.warn("Không tìm thấy KIZ nguồn để enqueue background attach cho order {}", order.getId());

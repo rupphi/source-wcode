@@ -12,6 +12,8 @@ import java.sql.Statement;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WbOrderRepositorySupplyDetailsTest {
     @TempDir
@@ -62,6 +64,10 @@ class WbOrderRepositorySupplyDetailsTest {
                     INSERT INTO wb_supply_orders(shop_id, supply_id, order_id)
                     VALUES (1, 'WB-GI-1', 5001)
                     """);
+            st.execute("""
+                    INSERT INTO wb_order_meta_requirements(shop_id, order_id, meta_key, requirement_type)
+                    VALUES (1, 5001, 'sgtin', 'optional')
+                    """);
         }
 
         List<Order> orders = new WbOrderRepository().getOrdersForSupply(1, "WB-GI-1");
@@ -77,6 +83,7 @@ class WbOrderRepositorySupplyDetailsTest {
         assertEquals("ART-1", order.getArticle());
         assertEquals("SKU-1", order.getBarcode());
         assertEquals("image-url", order.getImageUrl());
+        assertTrue(order.isRequiresKiz());
     }
 
     @Test
@@ -107,6 +114,10 @@ class WbOrderRepositorySupplyDetailsTest {
                     INSERT INTO wb_supply_orders(shop_id, supply_id, order_id)
                     VALUES (1, 'WB-GI-2', 5002)
                     """);
+            st.execute("""
+                    INSERT INTO wb_order_meta_requirements(shop_id, order_id, meta_key, requirement_type)
+                    VALUES (1, 5002, 'uin', 'required')
+                    """);
         }
 
         List<Order> orders = new WbOrderRepository().getOrdersForSupply(1, "WB-GI-2");
@@ -120,6 +131,7 @@ class WbOrderRepositorySupplyDetailsTest {
         assertEquals("0", order.getSize());
         assertEquals("ART-2", order.getArticle());
         assertEquals("SKU-2", order.getBarcode());
+        assertFalse(order.isRequiresKiz());
     }
 
     @Test
