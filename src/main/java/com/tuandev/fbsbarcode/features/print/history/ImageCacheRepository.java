@@ -1,6 +1,8 @@
 package com.tuandev.fbsbarcode.features.print.history;
 
 import com.tuandev.fbsbarcode.config.Database;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -12,6 +14,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class ImageCacheRepository {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ImageCacheRepository.class);
+
     public byte[] findImage(String cacheKey) {
         if (cacheKey == null || cacheKey.isBlank()) {
             return null;
@@ -26,7 +30,8 @@ public class ImageCacheRepository {
             }
             return rs.getBytes("image_blob");
         } catch (SQLException e) {
-            throw new RuntimeException(e);
+            LOGGER.debug("Skipping cached image lookup for key {}", cacheKey, e);
+            return null;
         }
     }
 
@@ -55,7 +60,7 @@ public class ImageCacheRepository {
             ps.setString(6, now);
             ps.executeUpdate();
         } catch (SQLException e) {
-            throw new RuntimeException(e);
+            LOGGER.debug("Skipping cached image save for key {}", cacheKey, e);
         }
     }
 
@@ -86,7 +91,8 @@ public class ImageCacheRepository {
             }
             return images;
         } catch (SQLException e) {
-            throw new RuntimeException(e);
+            LOGGER.debug("Skipping bulk cached image lookup for {} keys", safeKeys.size(), e);
+            return images;
         }
     }
 }

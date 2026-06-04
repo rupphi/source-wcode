@@ -17,6 +17,7 @@ import com.tuandev.fbsbarcode.models.Order;
 import com.tuandev.fbsbarcode.models.Shop;
 
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -49,9 +50,16 @@ public class PackingWorkflow {
     }
 
     public void refreshBoardData(Shop shop) throws IOException {
-        orderSyncService.syncNewOrders(shop);
-        syncMissingProductsForNewOrders(shop);
-        syncWorkflow.refetchSupplies(shop);
+        try {
+            orderSyncService.syncNewOrders(shop);
+            syncMissingProductsForNewOrders(shop);
+            syncWorkflow.refetchSupplies(shop);
+        } catch (IOException ex) {
+            if (isTimeout(ex)) {
+                return;
+            }
+            throw ex;
+        }
     }
 
     public List<Order> loadSupplyOrders(Shop shop, String supplyId) {
@@ -88,7 +96,15 @@ public class PackingWorkflow {
                 apiClient.addOrdersToSupply(shop.getApiKey(), supplyId, batch);
                 actionLogRepository.record(shop.getId(), "ADD_ORDERS_TO_SUPPLY", supplyId, batch, "success", "{\"orders\":" + batch + "}", null, null);
             }
-            syncWorkflow.syncSupplyOrdersAndStatuses(shop, supplyId);
+            // Reflect successful WB assignment locally even if follow-up sync is slow.
+            orderRepository.replaceSupplyOrders(shop.getId(), supplyId, safeOrderIds);
+            try {
+                syncWorkflow.syncSupplyOrdersAndStatuses(shop, supplyId);
+            } catch (IOException ex) {
+                if (!isTimeout(ex)) {
+                    throw ex;
+                }
+            }
         } catch (IOException | RuntimeException ex) {
             actionLogRepository.record(shop.getId(), "ADD_ORDERS_TO_SUPPLY", supplyId, safeOrderIds, "failed", "{\"orders\":" + safeOrderIds + "}", null, ex.getMessage());
             throw ex;
@@ -155,6 +171,21 @@ public class PackingWorkflow {
 
     private static String sanitize(String value) {
         return value == null ? "" : value.replace("\"", "\\\"");
+    }
+
+    private boolean isTimeout(IOException ex) {
+        Throwable current = ex;
+        while (current != null) {
+            if (current instanceof InterruptedIOException) {
+                return true;
+            }
+            String message = current.getMessage();
+            if (message != null && message.toLowerCase(java.util.Locale.ROOT).contains("timed out")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     public record PackingBoard(List<Order> newOrders, List<WbSupplySummary> preparationSupplies, List<WbSupplySummary> dispatchSupplies) {

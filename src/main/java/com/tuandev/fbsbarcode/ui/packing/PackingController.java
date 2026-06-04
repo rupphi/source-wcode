@@ -43,6 +43,7 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.text.MessageFormat;
 import java.time.Duration;
 import java.time.Instant;
@@ -226,10 +227,30 @@ public class PackingController {
         });
         task.setOnFailed(e -> {
             setLoading(false);
-            LOGGER.error("Не удалось обновить упаковку для shop {}", shop.getId(), task.getException());
-            AlertService.showError(task.getException().getMessage());
+            Throwable failure = task.getException();
+            LOGGER.error("Не удалось обновить упаковку для shop {}", shop.getId(), failure);
+            if (isTimeoutFailure(failure)) {
+                refresh();
+                return;
+            }
+            AlertService.showError(failure.getMessage());
         });
         AppTaskExecutor.execute(task);
+    }
+
+    private boolean isTimeoutFailure(Throwable failure) {
+        Throwable current = failure;
+        while (current != null) {
+            if (current instanceof InterruptedIOException) {
+                return true;
+            }
+            String message = current.getMessage();
+            if (message != null && message.toLowerCase(java.util.Locale.ROOT).contains("timed out")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private void runWriteTask(WriteAction action) {

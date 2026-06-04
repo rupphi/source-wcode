@@ -32,6 +32,7 @@ import java.util.stream.Collectors;
 
 public class WbSupplyWorkflow {
     private static final Logger LOGGER = LoggerFactory.getLogger(WbSupplyWorkflow.class);
+    private static final long IMAGE_WARMUP_WAIT_SECONDS = 3L;
     private static final OkHttpClient HTTP_CLIENT = new OkHttpClient.Builder()
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
@@ -230,7 +231,7 @@ public class WbSupplyWorkflow {
         }
 
         try {
-            latch.await(20, TimeUnit.SECONDS);
+            latch.await(IMAGE_WARMUP_WAIT_SECONDS, TimeUnit.SECONDS);
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
         }
@@ -247,11 +248,16 @@ public class WbSupplyWorkflow {
 
         byte[] image = IMAGE_CACHE.get(cacheKey);
         if (image == null && !FAILED_IMAGE_URLS.contains(cacheKey)) {
-            image = downloadProductImage(imageUrl);
-            if (image != null) {
-                IMAGE_CACHE.put(cacheKey, image);
-                imageCacheRepository.saveImage(cacheKey, imageUrl, image, "image/png");
-            } else {
+            try {
+                image = downloadProductImage(imageUrl);
+                if (image != null) {
+                    IMAGE_CACHE.put(cacheKey, image);
+                    imageCacheRepository.saveImage(cacheKey, imageUrl, image, "image/png");
+                } else {
+                    FAILED_IMAGE_URLS.add(cacheKey);
+                }
+            } catch (RuntimeException ex) {
+                LOGGER.debug("Ignoring product image caching failure for {}", imageUrl, ex);
                 FAILED_IMAGE_URLS.add(cacheKey);
             }
         }

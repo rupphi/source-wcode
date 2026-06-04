@@ -63,7 +63,7 @@ class FxmlSmokeTest {
     }
 
     @Test
-    void sidebarShouldExposeDashboardAndKizMappingButtons() throws Exception {
+    void sidebarShouldExposeNavigationButtons() throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
         AtomicBoolean found = new AtomicBoolean(false);
 
@@ -71,14 +71,16 @@ class FxmlSmokeTest {
             try {
                 FXMLLoader loader = FxmlViewLoader.loader(ShopSidebarController.class, "shop-sidebar-view.fxml");
                 Parent root = FxmlViewLoader.load(loader);
-                found.set(root.lookup("#dashboardButton") != null && root.lookup("#kizMappingButton") != null);
+                found.set(root.lookup("#dashboardButton") != null
+                        && root.lookup("#packingButton") != null
+                        && root.lookup("#kizMappingButton") != null);
             } finally {
                 latch.countDown();
             }
         });
 
         assertTrue(latch.await(5, TimeUnit.SECONDS));
-        assertTrue(found.get(), "Sidebar should contain dashboard and KIZ mapping buttons");
+        assertTrue(found.get(), "Sidebar should contain the primary navigation buttons");
     }
 
     private void assertLoads(Class<?> resourceOwner, String resourceName) throws Exception {

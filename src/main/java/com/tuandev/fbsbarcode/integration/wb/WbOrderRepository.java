@@ -261,7 +261,53 @@ public class WbOrderRepository {
     public List<Order> getOrdersForSupply(int shopId, String supplyId) {
         List<Order> orders = new ArrayList<>();
         String sql = """
-                SELECT o.order_id, o.nm_id, o.created_at, o.final_price, o.price, o.supplier_status, o.wb_status,
+                WITH supply_orders AS (
+                    SELECT o.*,
+                           COALESCE(
+                               (SELECT pc0.nm_id
+                                FROM wb_product_cards pc0
+                                WHERE pc0.shop_id = o.shop_id AND pc0.nm_id = o.nm_id
+                                LIMIT 1),
+                               (SELECT ps2.nm_id
+                                FROM wb_order_skus os
+                                JOIN wb_product_size_skus pss ON pss.shop_id = os.shop_id AND pss.sku = os.sku
+                                JOIN wb_product_sizes ps2 ON ps2.shop_id = pss.shop_id AND ps2.chrt_id = pss.chrt_id
+                                WHERE os.shop_id = o.shop_id AND os.order_id = o.order_id
+                                ORDER BY ps2.nm_id
+                                LIMIT 1),
+                               (SELECT pc2.nm_id
+                                FROM wb_product_cards pc2
+                                WHERE pc2.shop_id = o.shop_id
+                                  AND pc2.vendor_code = o.article
+                                ORDER BY pc2.nm_id
+                                LIMIT 1),
+                               o.nm_id
+                           ) AS effective_nm_id,
+                           COALESCE(
+                               (SELECT ps0.chrt_id
+                                FROM wb_product_sizes ps0
+                                WHERE ps0.shop_id = o.shop_id AND ps0.chrt_id = o.chrt_id
+                                LIMIT 1),
+                               (SELECT pss.chrt_id
+                                FROM wb_order_skus os
+                                JOIN wb_product_size_skus pss ON pss.shop_id = os.shop_id AND pss.sku = os.sku
+                                WHERE os.shop_id = o.shop_id AND os.order_id = o.order_id
+                                ORDER BY pss.chrt_id
+                                LIMIT 1),
+                               (SELECT ps2.chrt_id
+                                FROM wb_product_cards pc2
+                                JOIN wb_product_sizes ps2 ON ps2.shop_id = pc2.shop_id AND ps2.nm_id = pc2.nm_id
+                                WHERE pc2.shop_id = o.shop_id
+                                  AND pc2.vendor_code = o.article
+                                ORDER BY ps2.chrt_id
+                                LIMIT 1),
+                               o.chrt_id
+                           ) AS effective_chrt_id
+                    FROM wb_supply_orders so
+                    JOIN wb_orders o ON o.shop_id = so.shop_id AND o.order_id = so.order_id
+                    WHERE so.shop_id = ? AND so.supply_id = ?
+                )
+                SELECT o.order_id, o.effective_nm_id AS nm_id, o.created_at, o.final_price, o.price, o.supplier_status, o.wb_status,
                        COALESCE(pc.brand, '') AS brand, COALESCE(pc.title, '') AS title,
                        COALESCE(pc.subject_name, '') AS subject_name,
                        COALESCE(ps.tech_size, '') AS tech_size,
@@ -269,7 +315,7 @@ public class WbOrderRepository {
                                 (SELECT COALESCE(json_extract(ch.value_json, '$[0]'), json_extract(ch.value_json, '$'))
                                  FROM wb_product_characteristics ch
                                  WHERE ch.shop_id = o.shop_id
-                                   AND ch.nm_id = o.nm_id
+                                   AND ch.nm_id = o.effective_nm_id
                                    AND ch.characteristic_id IN (14177449, 204557)
                                  ORDER BY CASE ch.characteristic_id
                                           WHEN 14177449 THEN 0
@@ -280,11 +326,11 @@ public class WbOrderRepository {
                                 '') AS color_code,
                        COALESCE(o.article, COALESCE(pc.vendor_code, '')) AS article,
                        COALESCE((SELECT sku FROM wb_order_skus os WHERE os.shop_id = o.shop_id AND os.order_id = o.order_id ORDER BY sku LIMIT 1),
-                                (SELECT sku FROM wb_product_size_skus pss WHERE pss.shop_id = o.shop_id AND pss.chrt_id = o.chrt_id ORDER BY sku LIMIT 1),
+                                (SELECT sku FROM wb_product_size_skus pss WHERE pss.shop_id = o.shop_id AND pss.chrt_id = o.effective_chrt_id ORDER BY sku LIMIT 1),
                                 '') AS barcode,
                        COALESCE((SELECT COALESCE(pp.c246x328_url, pp.square_url, pp.big_url, pp.hq_url, pp.tm_url, '')
                                  FROM wb_product_photos pp
-                                 WHERE pp.shop_id = o.shop_id AND pp.nm_id = o.nm_id
+                                 WHERE pp.shop_id = o.shop_id AND pp.nm_id = o.effective_nm_id
                                  ORDER BY pp.photo_index
                                  LIMIT 1), '') AS image_url,
                        EXISTS (
@@ -294,11 +340,9 @@ public class WbOrderRepository {
                              AND mr.order_id = o.order_id
                              AND mr.requirement_type = 'required'
                        ) AS requires_kiz
-                FROM wb_supply_orders so
-                JOIN wb_orders o ON o.shop_id = so.shop_id AND o.order_id = so.order_id
-                LEFT JOIN wb_product_cards pc ON pc.shop_id = o.shop_id AND pc.nm_id = o.nm_id
-                LEFT JOIN wb_product_sizes ps ON ps.shop_id = o.shop_id AND ps.chrt_id = o.chrt_id
-                WHERE so.shop_id = ? AND so.supply_id = ?
+                FROM supply_orders o
+                LEFT JOIN wb_product_cards pc ON pc.shop_id = o.shop_id AND pc.nm_id = o.effective_nm_id
+                LEFT JOIN wb_product_sizes ps ON ps.shop_id = o.shop_id AND ps.chrt_id = o.effective_chrt_id
                 ORDER BY article COLLATE NOCASE, o.order_id
                 """;
         try (Connection conn = Database.getConnection();

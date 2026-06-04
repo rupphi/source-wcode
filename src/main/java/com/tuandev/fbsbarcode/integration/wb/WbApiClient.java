@@ -12,7 +12,9 @@ import okhttp3.HttpUrl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.InterruptedIOException;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -22,7 +24,12 @@ public class WbApiClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(WbApiClient.class);
     private static final MediaType JSON = MediaType.parse("application/json");
     private static final Gson GSON = new Gson();
-    private static final OkHttpClient CLIENT = new OkHttpClient();
+    private static final OkHttpClient CLIENT = new OkHttpClient.Builder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .readTimeout(Duration.ofSeconds(20))
+            .writeTimeout(Duration.ofSeconds(20))
+            .callTimeout(Duration.ofSeconds(30))
+            .build();
 
     public WbProductCardsResponse getProductCards(String apiKey, String locale, String updatedAtCursor, Long nmIdCursor, int limit)
             throws IOException {
@@ -111,11 +118,6 @@ public class WbApiClient {
         return Base64.getDecoder().decode(response.getFile());
     }
 
-    public SalesFunnelResponse getSalesFunnelProducts(String apiKey, SalesFunnelRequest request) throws IOException {
-        String url = "https://seller-analytics-api.wildberries.ru/api/analytics/v3/sales-funnel/products";
-        return postJson(apiKey, url, request, SalesFunnelResponse.class);
-    }
-
     private <T> T getJson(String apiKey, String url, Class<T> type) throws IOException {
         Request request = new Request.Builder()
                 .url(url)
@@ -157,6 +159,8 @@ public class WbApiClient {
                 return null;
             }
             return GSON.fromJson(body, type);
+        } catch (InterruptedIOException ex) {
+            throw new IOException("Wildberries system response timed out. Please try again.", ex);
         }
     }
 

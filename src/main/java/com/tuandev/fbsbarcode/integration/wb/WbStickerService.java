@@ -11,16 +11,23 @@ import okhttp3.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.InterruptedIOException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 public class WbStickerService {
     private static final Logger LOGGER = LoggerFactory.getLogger(WbStickerService.class);
-    private static final OkHttpClient CLIENT = new OkHttpClient();
+    private static final OkHttpClient CLIENT = new OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .writeTimeout(20, TimeUnit.SECONDS)
+            .callTimeout(30, TimeUnit.SECONDS)
+            .build();
     private static final Gson GSON = new Gson();
     private static final int BATCH_SIZE = 100;
 
@@ -59,6 +66,8 @@ public class WbStickerService {
             String responseBody = response.body() == null ? "" : response.body().string();
             LOGGER.warn("WB sticker request failed with status {} and body {}", response.code(), responseBody);
             return Collections.emptyList();
+        } catch (InterruptedIOException ex) {
+            throw new IOException("Wildberries system response timed out. Please try again.", ex);
         }
     }
 }
