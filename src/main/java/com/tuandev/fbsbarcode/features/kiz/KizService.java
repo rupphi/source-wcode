@@ -7,19 +7,27 @@ import okhttp3.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.InterruptedIOException;
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 public class KizService {
     private static final Logger LOGGER = LoggerFactory.getLogger(KizService.class);
+    private static final char GS = 0x1D;
     private static final int MAX_ATTACH_ATTEMPTS = 4;
     private static final long ATTACH_BASE_RETRY_DELAY_MS = 400L;
     private static final long ATTACH_REQUEST_SPACING_MS = 150L;
-    private static final OkHttpClient client = new OkHttpClient();
+    private static final OkHttpClient client = new OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .writeTimeout(20, TimeUnit.SECONDS)
+            .callTimeout(30, TimeUnit.SECONDS)
+            .build();
     private static final Gson gson = new Gson();
 
     public static List<Kiz> getKizs(int shopId, int categoryId, int count) {
@@ -131,11 +139,22 @@ public class KizService {
         return new AttachCodeResult(false, 0, "WB attach KIZ failed");
     }
 
+    public static String scannerSafeCode(String code) {
+        if (code == null || code.isEmpty()) {
+            return code;
+        }
+        int index = 0;
+        while (index < code.length() && code.charAt(index) == GS) {
+            index++;
+        }
+        return index == 0 ? code : code.substring(index);
+    }
+
     private static AttachCodeResult sendAttachCodeRequest(String apiKey, Long orderId, String code) throws IOException {
         String url = "https://marketplace-api.wildberries.ru/api/v3/orders/" + orderId + "/meta/sgtin";
 
         Map<String, Object> bodyMap = new HashMap<>();
-        bodyMap.put("sgtins", List.of(code));
+        bodyMap.put("sgtins", List.of(scannerSafeCode(code)));
 
         RequestBody body = RequestBody.create(MediaType.parse("application/json"), gson.toJson(bodyMap));
 
@@ -155,6 +174,8 @@ public class KizService {
                 }
             }
             return new AttachCodeResult(response.isSuccessful(), response.code(), responseBody);
+        } catch (InterruptedIOException ex) {
+            throw new IOException("Wildberries system response timed out. Please try again.", ex);
         }
     }
 
