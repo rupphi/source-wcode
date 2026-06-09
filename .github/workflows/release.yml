@@ -27,8 +27,39 @@ jobs:
         shell: bash
         run: ./mvnw.cmd -B clean test
 
-  build-windows:
+  prepare-public-release:
     needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Extract version from tag
+        shell: bash
+        run: |
+          APP_VERSION=${GITHUB_REF#refs/tags/v}
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+
+      - name: Create or update public release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.WCODE_RELEASE_TOKEN }}
+        run: |
+          TAG="v${APP_VERSION}"
+          TITLE="WCode v${APP_VERSION}"
+          NOTES="Public installer release for WCode ${APP_VERSION}."
+          if gh release view "$TAG" -R "$PUBLIC_RELEASE_REPO" >/dev/null 2>&1; then
+            gh release edit "$TAG" -R "$PUBLIC_RELEASE_REPO" --title "$TITLE" --notes "$NOTES" --latest
+          else
+            gh release create "$TAG" \
+              -R "$PUBLIC_RELEASE_REPO" \
+              --target main \
+              --title "$TITLE" \
+              --notes "$NOTES" \
+              --latest
+          fi
+
+  build-windows:
+    needs: prepare-public-release
     runs-on: windows-latest
     permissions:
       contents: read
@@ -162,17 +193,20 @@ jobs:
           if (Test-Path "out/WCode-portable.zip") { Remove-Item "out/WCode-portable.zip" -Force }
           Compress-Archive -Path "out/WCode/*" -DestinationPath "out/WCode-portable.zip"
 
-      - name: Upload Windows artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: WCode-windows
-          path: |
-            out/WCode.exe
-            out/WCode.msi
-            out/WCode-portable.zip
+      - name: Upload Windows assets to public release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.WCODE_RELEASE_TOKEN }}
+        run: |
+          gh release upload "v${APP_VERSION}" \
+            out/WCode.exe \
+            out/WCode.msi \
+            out/WCode-portable.zip \
+            -R "$PUBLIC_RELEASE_REPO" \
+            --clobber
 
   build-macos:
-    needs: test
+    needs: prepare-public-release
     runs-on: macos-latest
     permissions:
       contents: read
@@ -241,14 +275,18 @@ jobs:
           fi
           mv "$DMG" out/WCode-mac-arm64.dmg
 
-      - name: Upload macOS artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: WCode-macos
-          path: out/WCode-mac-arm64.dmg
+      - name: Upload macOS asset to public release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.WCODE_RELEASE_TOKEN }}
+        run: |
+          gh release upload "v${APP_VERSION}" \
+            out/WCode-mac-arm64.dmg \
+            -R "$PUBLIC_RELEASE_REPO" \
+            --clobber
 
   build-linux:
-    needs: test
+    needs: prepare-public-release
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -326,13 +364,17 @@ jobs:
           fi
           mv "$DEB" out/WCode-linux-amd64.deb
 
-      - name: Upload Linux artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: WCode-linux
-          path: out/WCode-linux-amd64.deb
+      - name: Upload Linux asset to public release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.WCODE_RELEASE_TOKEN }}
+        run: |
+          gh release upload "v${APP_VERSION}" \
+            out/WCode-linux-amd64.deb \
+            -R "$PUBLIC_RELEASE_REPO" \
+            --clobber
 
-  publish-release:
+  finalize-release:
     needs:
       - build-windows
       - build-macos
@@ -347,13 +389,7 @@ jobs:
           APP_VERSION=${GITHUB_REF#refs/tags/v}
           echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
 
-      - name: Download release artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: release-assets
-          merge-multiple: true
-
-      - name: Publish release to public repo
+      - name: Mark public release as latest
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.WCODE_RELEASE_TOKEN }}
@@ -361,20 +397,4 @@ jobs:
           TAG="v${APP_VERSION}"
           TITLE="WCode v${APP_VERSION}"
           NOTES="Public installer release for WCode ${APP_VERSION}."
-          ASSETS=(
-            release-assets/WCode.exe
-            release-assets/WCode.msi
-            release-assets/WCode-portable.zip
-            release-assets/WCode-mac-arm64.dmg
-            release-assets/WCode-linux-amd64.deb
-          )
-          if gh release view "$TAG" -R "$PUBLIC_RELEASE_REPO" >/dev/null 2>&1; then
-            gh release upload "$TAG" "${ASSETS[@]}" -R "$PUBLIC_RELEASE_REPO" --clobber
-            gh release edit "$TAG" -R "$PUBLIC_RELEASE_REPO" --title "$TITLE" --notes "$NOTES"
-          else
-            gh release create "$TAG" "${ASSETS[@]}" \
-              -R "$PUBLIC_RELEASE_REPO" \
-              --target main \
-              --title "$TITLE" \
-              --notes "$NOTES"
-          fi
+          gh release edit "$TAG" -R "$PUBLIC_RELEASE_REPO" --title "$TITLE" --notes "$NOTES" --latest
