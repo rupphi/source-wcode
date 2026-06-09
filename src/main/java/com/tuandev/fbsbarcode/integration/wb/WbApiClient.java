@@ -108,6 +108,46 @@ public class WbApiClient {
         patchJson(apiKey, url, Map.of());
     }
 
+    public WbOrderMetaDetailsResponse getOrderMetadata(String apiKey, List<Long> orderIds) throws IOException {
+        String url = "https://marketplace-api.wildberries.ru/api/marketplace/v3/orders/meta";
+        return postJson(apiKey, url, Map.of("orders", orderIds), WbOrderMetaDetailsResponse.class);
+    }
+
+    public WbCrossBorderStickerResponse getCrossBorderStickers(String apiKey, List<Long> orderIds, String type, int width, int height)
+            throws IOException {
+        String safeType = type == null || type.isBlank() ? "png" : type;
+        String url = "https://marketplace-api.wildberries.ru/api/v3/orders/stickers/cross-border"
+                + "?type=" + safeType + "&width=" + width + "&height=" + height;
+        return postJson(apiKey, url, Map.of("orders", orderIds), WbCrossBorderStickerResponse.class);
+    }
+
+    public WbSupplyBoxesResponse getSupplyBoxes(String apiKey, String supplyId) throws IOException {
+        String url = "https://marketplace-api.wildberries.ru/api/v3/supplies/" + supplyId + "/trbx";
+        return getJson(apiKey, url, WbSupplyBoxesResponse.class);
+    }
+
+    public WbSupplyBoxesResponse addSupplyBoxes(String apiKey, String supplyId, int amount) throws IOException {
+        String url = "https://marketplace-api.wildberries.ru/api/v3/supplies/" + supplyId + "/trbx";
+        return postJson(apiKey, url, Map.of("amount", amount), WbSupplyBoxesResponse.class);
+    }
+
+    public void deleteSupplyBox(String apiKey, String supplyId, String trbxId) throws IOException {
+        deleteSupplyBoxes(apiKey, supplyId, List.of(trbxId));
+    }
+
+    public void deleteSupplyBoxes(String apiKey, String supplyId, List<String> trbxIds) throws IOException {
+        String url = "https://marketplace-api.wildberries.ru/api/v3/supplies/" + supplyId + "/trbx";
+        deleteJson(apiKey, url, Map.of("trbxIds", trbxIds));
+    }
+
+    public WbSupplyBarcodeResponse getSupplyBoxStickers(String apiKey, String supplyId, List<String> trbxIds, String type, int width, int height)
+            throws IOException {
+        String safeType = type == null || type.isBlank() ? "png" : type;
+        String url = "https://marketplace-api.wildberries.ru/api/v3/supplies/" + supplyId + "/trbx/stickers"
+                + "?type=" + safeType + "&width=" + width + "&height=" + height;
+        return postJson(apiKey, url, Map.of("trbxIds", trbxIds), WbSupplyBarcodeResponse.class);
+    }
+
     public byte[] getSupplyBarcode(String apiKey, String supplyId, String type) throws IOException {
         String safeType = type == null || type.isBlank() ? "png" : type;
         String url = "https://marketplace-api.wildberries.ru/api/v3/supplies/" + supplyId + "/barcode?type=" + safeType;
@@ -147,15 +187,29 @@ public class WbApiClient {
         execute(apiKey, request, Void.class);
     }
 
+    private void deleteJson(String apiKey, String url, Object payload) throws IOException {
+        RequestBody body = RequestBody.create(GSON.toJson(payload), JSON);
+        Request request = new Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer " + apiKey)
+                .delete(body)
+                .build();
+        execute(apiKey, request, Void.class);
+    }
+
     private <T> T execute(String apiKey, Request request, Class<T> type) throws IOException {
         if (isContentApi(request.url())) {
             WbContentApiRateLimiter.awaitTurn(apiKey);
+        } else if (isMarketplaceApi(request.url())) {
+            WbMarketplaceApiRateLimiter.awaitTurn(apiKey);
         }
         try (Response response = CLIENT.newCall(request).execute()) {
             String body = response.body() == null ? "" : response.body().string();
             if (!response.isSuccessful()) {
                 if (isContentApiRateLimited(request.url(), response.code())) {
                     WbContentApiRateLimiter.registerRateLimit(apiKey, response.headers());
+                } else if (isMarketplaceApiRateLimited(request.url(), response.code())) {
+                    WbMarketplaceApiRateLimiter.registerRateLimit(apiKey, response.headers());
                 }
                 String message = extractErrorMessage(request.url(), response.code(), body);
                 LOGGER.warn("WB API request failed: {} {} -> {} {}", request.method(), request.url(), response.code(), message);
@@ -164,7 +218,13 @@ public class WbApiClient {
             if (type == Void.class) {
                 return null;
             }
-            return GSON.fromJson(body, type);
+            try {
+                return GSON.fromJson(body, type);
+            } catch (com.google.gson.JsonSyntaxException ex) {
+                LOGGER.error("GSON parsing failed for WB API response: {} {} as {}: {}",
+                        request.method(), request.url(), type.getSimpleName(), ex.getMessage(), ex);
+                throw ex;
+            }
         } catch (InterruptedIOException ex) {
             throw new IOException("Wildberries system response timed out. Please try again.", ex);
         }
@@ -199,6 +259,10 @@ public class WbApiClient {
         }
         try {
             JsonObject object = JsonParser.parseString(body).getAsJsonObject();
+            String metaValidation = extractMetaValidationMessage(statusCode, object);
+            if (metaValidation != null) {
+                return metaValidation;
+            }
             if (object.has("message")) {
                 return object.get("message").getAsString();
             }
@@ -212,6 +276,46 @@ public class WbApiClient {
             // fall back to raw body
         }
         return body;
+    }
+
+    private String extractMetaValidationMessage(int statusCode, JsonObject object) {
+        if (statusCode != 409 || object == null) {
+            return null;
+        }
+        String code = object.has("code") && !object.get("code").isJsonNull() ? object.get("code").getAsString() : "";
+        if (!"MetaValidationFail".equalsIgnoreCase(code)) {
+            return null;
+        }
+        StringBuilder message = new StringBuilder("WB metadata validation failed");
+        if (object.has("message") && !object.get("message").isJsonNull()) {
+            message.append(": ").append(object.get("message").getAsString());
+        }
+        if (object.has("metaDetails") && object.get("metaDetails").isJsonArray()) {
+            List<String> details = new java.util.ArrayList<>();
+            object.getAsJsonArray("metaDetails").forEach(element -> {
+                if (!element.isJsonObject()) {
+                    return;
+                }
+                JsonObject detail = element.getAsJsonObject();
+                String key = detail.has("key") && !detail.get("key").isJsonNull()
+                        ? detail.get("key").getAsString()
+                        : detail.has("name") && !detail.get("name").isJsonNull()
+                        ? detail.get("name").getAsString()
+                        : "";
+                String error = detail.has("error") && !detail.get("error").isJsonNull()
+                        ? detail.get("error").getAsString()
+                        : detail.has("status") && !detail.get("status").isJsonNull()
+                        ? detail.get("status").getAsString()
+                        : "";
+                if (!key.isBlank() || !error.isBlank()) {
+                    details.add(key + (error.isBlank() ? "" : "=" + error));
+                }
+            });
+            if (!details.isEmpty()) {
+                message.append(" (").append(String.join(", ", details)).append(")");
+            }
+        }
+        return message.toString();
     }
 
     private String extractJsonField(String body, String fieldName) {
@@ -256,7 +360,17 @@ public class WbApiClient {
                 && isContentApi(url);
     }
 
+    private boolean isMarketplaceApiRateLimited(HttpUrl url, int statusCode) {
+        return url != null
+                && statusCode == 429
+                && isMarketplaceApi(url);
+    }
+
     private boolean isContentApi(HttpUrl url) {
         return url != null && "content-api.wildberries.ru".equalsIgnoreCase(url.host());
+    }
+
+    private boolean isMarketplaceApi(HttpUrl url) {
+        return url != null && "marketplace-api.wildberries.ru".equalsIgnoreCase(url.host());
     }
 }

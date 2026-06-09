@@ -53,6 +53,7 @@ class PrintTemplateServiceTest {
         assertSameLayout(field(fbs, PrintFieldKey.SIZE), field(fbo, PrintFieldKey.SIZE));
         assertSameLayout(type(fbs, PrintElementType.SEPARATOR_LINE), type(fbo, PrintElementType.SEPARATOR_LINE));
         assertSameLayout(type(fbs, PrintElementType.BARCODE_CODE128), type(fbo, PrintElementType.BARCODE_CODE128));
+        assertSameLayout(type(fbs, PrintElementType.STICKER_TAIL), type(fbo, PrintElementType.STICKER_TAIL));
 
         PrintTemplateElement brand = field(fbs, PrintFieldKey.BRAND);
         assertEquals(9f, brand.getFontSize());
@@ -65,6 +66,10 @@ class PrintTemplateServiceTest {
         assertEquals(PrintTemplateService.mm(12.5), field(fbs, PrintFieldKey.ARTICLE).getY(), 0.25d);
         assertEquals(PrintTemplateService.mm(18.5), field(fbs, PrintFieldKey.COLOR).getY(), 0.25d);
         assertEquals(PrintTemplateService.mm(24.5) - 1, field(fbs, PrintFieldKey.SIZE).getY(), 0.25d);
+        PrintTemplateElement stickerTail = type(fbs, PrintElementType.STICKER_TAIL);
+        assertEquals(133, stickerTail.getX(), 0.01d);
+        assertEquals(24, stickerTail.getWidth(), 0.01d);
+        assertEquals(PrintTextAlign.LEFT, stickerTail.getAlign());
     }
 
     @Test
@@ -98,13 +103,19 @@ class PrintTemplateServiceTest {
     @Test
     void shouldCreateTextPaletteElementWithDefaultPrefix() {
         PrintTemplateService.ElementPaletteItem paletteItem = service.getPaletteItems().stream()
-                .filter(item -> item.fieldKey() == PrintFieldKey.SIZE)
+                .filter(item -> item.fieldKey() == PrintFieldKey.RU_SIZE)
                 .findFirst()
                 .orElseThrow();
 
         PrintTemplateElement element = service.createElementFromPalette(paletteItem, 4);
 
-        assertEquals(PrintTemplateService.PRINT_PREFIX_SIZE, element.getPrefix());
+        assertEquals(PrintTemplateService.PRINT_PREFIX_RU_SIZE, element.getPrefix());
+    }
+
+    @Test
+    void shouldExposeRuSizeInPaletteWithoutAddingItToDefaultTemplate() {
+        assertTrue(service.getPaletteItems().stream().anyMatch(item -> item.fieldKey() == PrintFieldKey.RU_SIZE));
+        assertFalse(hasField(service.createSystemDefaultTemplate("Default"), PrintFieldKey.RU_SIZE));
     }
 
     @Test
@@ -119,6 +130,21 @@ class PrintTemplateServiceTest {
         assertEquals(PrintElementType.STATIC_TEXT, element.getType());
         assertEquals(com.tuandev.fbsbarcode.shared.I18nService.getInstance().tr("template.static_text_default"), element.getContent());
         assertEquals(5, element.getZIndex());
+    }
+
+    @Test
+    void shouldCreateStickerTailPaletteElementWithDefaultLayout() {
+        PrintTemplateService.ElementPaletteItem paletteItem = service.getPaletteItems().stream()
+                .filter(item -> item.type() == PrintElementType.STICKER_TAIL)
+                .findFirst()
+                .orElseThrow();
+
+        PrintTemplateElement element = service.createElementFromPalette(paletteItem, 6);
+
+        assertEquals(133, element.getX(), 0.01d);
+        assertEquals(24, element.getWidth(), 0.01d);
+        assertEquals(PrintTextAlign.LEFT, element.getAlign());
+        assertEquals(6, element.getZIndex());
     }
 
     @Test
@@ -138,6 +164,24 @@ class PrintTemplateServiceTest {
     }
 
     @Test
+    void shouldUpgradeOldFbsStickerTailDefaultAfterReload() {
+        System.setProperty("wcode.appdata.dir", tempDir.toString());
+        Database.initDatabase();
+        PrintTemplateService templateService = new PrintTemplateService();
+        templateService.ensureDefaultTemplateExists();
+        PrintTemplate template = templateService.getDefaultTemplate();
+        setOldStickerTailLayout(template);
+        templateService.saveTemplate(template);
+
+        PrintTemplate reloaded = new PrintTemplateService().getDefaultTemplate();
+
+        PrintTemplateElement stickerTail = type(reloaded, PrintElementType.STICKER_TAIL);
+        assertEquals(133, stickerTail.getX(), 0.01d);
+        assertEquals(24, stickerTail.getWidth(), 0.01d);
+        assertEquals(PrintTextAlign.LEFT, stickerTail.getAlign());
+    }
+
+    @Test
     void shouldKeepEditedDefaultFboTemplateAfterReload() {
         System.setProperty("wcode.appdata.dir", tempDir.toString());
         Database.initDatabase();
@@ -151,6 +195,24 @@ class PrintTemplateServiceTest {
 
         assertTrue(hasField(reloaded, PrintFieldKey.NAME));
         assertFalse(hasField(reloaded, PrintFieldKey.SUBJECT_NAME));
+    }
+
+    @Test
+    void shouldUpgradeOldFboStickerTailDefaultAfterReload() {
+        System.setProperty("wcode.appdata.dir", tempDir.toString());
+        Database.initDatabase();
+        FboPrintTemplateService templateService = new FboPrintTemplateService();
+        templateService.ensureDefaultTemplateExists();
+        PrintTemplate template = templateService.getDefaultTemplate();
+        setOldStickerTailLayout(template);
+        templateService.saveTemplate(template);
+
+        PrintTemplate reloaded = new FboPrintTemplateService().getDefaultTemplate();
+
+        PrintTemplateElement stickerTail = type(reloaded, PrintElementType.STICKER_TAIL);
+        assertEquals(133, stickerTail.getX(), 0.01d);
+        assertEquals(24, stickerTail.getWidth(), 0.01d);
+        assertEquals(PrintTextAlign.LEFT, stickerTail.getAlign());
     }
 
     private static PrintTemplateElement field(PrintTemplate template, PrintFieldKey key) {
@@ -177,6 +239,14 @@ class PrintTemplateServiceTest {
         name.setX(PrintTemplateService.mm(22));
         name.setY(PrintTemplateService.mm(7.2));
         template.getElements().add(name);
+    }
+
+    private static void setOldStickerTailLayout(PrintTemplate template) {
+        PrintTemplateElement stickerTail = type(template, PrintElementType.STICKER_TAIL);
+        stickerTail.setX(PrintTemplateService.mm(49));
+        stickerTail.setY(PrintTemplateService.mm(36.5));
+        stickerTail.setWidth(PrintTemplateService.mm(6));
+        stickerTail.setAlign(PrintTextAlign.RIGHT);
     }
 
     private static PrintTemplateElement type(PrintTemplate template, PrintElementType type) {

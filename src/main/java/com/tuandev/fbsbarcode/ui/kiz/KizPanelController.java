@@ -55,14 +55,18 @@ public class KizPanelController {
     }
 
     public void setCategories(List<Category> categories, Consumer<Category> onImportKiz, Consumer<Category> onDeleteCategory) {
-        setCategories(categories, onImportKiz, null, onDeleteCategory);
+        setCategories(categories, onImportKiz, null, null, onDeleteCategory);
     }
 
     public void setCategories(List<Category> categories, Consumer<Category> onImportKiz, Consumer<Category> onEditCategory, Consumer<Category> onDeleteCategory) {
+        setCategories(categories, onImportKiz, onEditCategory, null, onDeleteCategory);
+    }
+
+    public void setCategories(List<Category> categories, Consumer<Category> onImportKiz, Consumer<Category> onEditCategory, Consumer<Category> onResetKiz, Consumer<Category> onDeleteCategory) {
         categoryVBox.getChildren().clear();
         categoryItemControllers.clear();
         for (Category category : categories) {
-            categoryVBox.getChildren().add(createCategoryItem(category, onImportKiz, onEditCategory, onDeleteCategory));
+            categoryVBox.getChildren().add(createCategoryItem(category, onImportKiz, onEditCategory, onResetKiz, onDeleteCategory));
         }
         applyTranslations();
     }
@@ -83,7 +87,7 @@ public class KizPanelController {
         categoryVBox.setDisable(loading);
     }
 
-    private Node createCategoryItem(Category category, Consumer<Category> onImportKiz, Consumer<Category> onEditCategory, Consumer<Category> onDeleteCategory) {
+    private Node createCategoryItem(Category category, Consumer<Category> onImportKiz, Consumer<Category> onEditCategory, Consumer<Category> onResetKiz, Consumer<Category> onDeleteCategory) {
         FXMLLoader loader = FxmlViewLoader.loader(CategoryItemController.class, "category-item.fxml");
         Node root = FxmlViewLoader.load(loader);
         CategoryItemController controller = loader.getController();
@@ -93,6 +97,11 @@ public class KizPanelController {
         controller.setOnEditCategory(() -> {
             if (onEditCategory != null) {
                 onEditCategory.accept(category);
+            }
+        });
+        controller.setOnResetKiz(() -> {
+            if (onResetKiz != null) {
+                onResetKiz.accept(category);
             }
         });
         controller.setOnDeleteCategory(() -> onDeleteCategory.accept(category));

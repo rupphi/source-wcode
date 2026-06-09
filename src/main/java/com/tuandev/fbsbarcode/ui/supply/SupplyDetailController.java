@@ -63,7 +63,7 @@ public class SupplyDetailController {
     private TableColumn<Order, Integer> noTC;
 
     @FXML
-    private TableColumn<Order, Long> idTC;
+    private TableColumn<Order, String> idTC;
 
     @FXML
     private TableColumn<Order, byte[]> imageTC;
@@ -71,26 +71,10 @@ public class SupplyDetailController {
     @FXML
     private TableColumn<Order, String> nameTC;
 
-    @FXML
-    private TableColumn<Order, String> subjectNameTC;
+    // Consolidating category, article, color and size into nameTC
 
     @FXML
-    private TableColumn<Order, String> articleTC;
-
-    @FXML
-    private TableColumn<Order, String> colorTC;
-
-    @FXML
-    private TableColumn<Order, String> sizeTC;
-
-    @FXML
-    private TableColumn<Order, String> stickerTC;
-
-    @FXML
-    private TableColumn<Order, String> barcodeTC;
-
-    @FXML
-    private TableColumn<Order, String> stickerCodeTC;
+    private TableColumn<Order, String> priceTC;
 
     @FXML
     private CheckBox sortBySubjectCheckBox;
@@ -128,27 +112,15 @@ public class SupplyDetailController {
                 setAlignment(Pos.CENTER_LEFT);
             }
         });
-        idTC.setCellValueFactory(new PropertyValueFactory<>("id"));
+        idTC.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(formatOrderDate(data.getValue().getCreatedAt())));
+        idTC.setCellFactory(column -> new OrderIdDateCell());
         imageTC.setCellValueFactory(cell -> new SimpleObjectProperty<>(cell.getValue().getImage()));
         nameTC.setCellValueFactory(new PropertyValueFactory<>("name"));
-        subjectNameTC.setCellValueFactory(new PropertyValueFactory<>("subjectName"));
-        articleTC.setCellValueFactory(new PropertyValueFactory<>("article"));
-        colorTC.setCellValueFactory(new PropertyValueFactory<>("color"));
-        sizeTC.setCellValueFactory(new PropertyValueFactory<>("size"));
-        stickerTC.setCellValueFactory(new PropertyValueFactory<>("sticker"));
-        barcodeTC.setCellValueFactory(new PropertyValueFactory<>("barcode"));
-        stickerCodeTC.setCellValueFactory(new PropertyValueFactory<>("stickerCode"));
+        priceTC.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(formatPrice(data.getValue().getPrice())));
         orderTable.setColumnResizePolicy(TableView.UNCONSTRAINED_RESIZE_POLICY);
-        centerColumn(idTC);
         configureImageColumn();
-        centerColumn(nameTC);
-        centerColumn(subjectNameTC);
-        centerColumn(articleTC);
-        centerColumn(colorTC);
-        centerColumn(sizeTC);
-        centerColumn(stickerTC);
-        centerColumn(barcodeTC);
-        centerColumn(stickerCodeTC);
+        nameTC.setCellFactory(column -> new OrderDetailsCell());
+        centerColumn(priceTC);
         disableColumnSorting();
         bindSortCheckboxes();
         applyTranslations();
@@ -206,12 +178,17 @@ public class SupplyDetailController {
     public void showEmptyState(String title, String message) {
         setSupplyInfo(title, "");
         setOrders(List.of());
-        emptyStateLabel.setText("");
-        emptyStateLabel.setVisible(false);
-        emptyStateLabel.setManaged(false);
+        boolean showMessage = message != null && !message.isBlank();
+        emptyStateLabel.setText(showMessage ? message : "");
+        emptyStateLabel.setVisible(showMessage);
+        emptyStateLabel.setManaged(showMessage);
     }
 
     public void setLoading(boolean loading) {
+        setLoading(loading, I18nService.getInstance().tr("supply.loading_orders"));
+    }
+
+    public void setLoading(boolean loading, String message) {
         if (orderLoadingInline != null) {
             orderLoadingInline.setVisible(loading);
         }
@@ -220,7 +197,9 @@ public class SupplyDetailController {
             orderLoadingBox.setManaged(loading);
         }
         if (orderLoadingLabel != null) {
-            orderLoadingLabel.setText(I18nService.getInstance().tr("supply.loading_orders"));
+            orderLoadingLabel.setText(message == null || message.isBlank()
+                    ? I18nService.getInstance().tr("supply.loading_orders")
+                    : message);
         }
         if (loading) {
             orderTable.setVisible(false);
@@ -272,14 +251,8 @@ public class SupplyDetailController {
         noTC.setText(i18n.tr("supply.col.no"));
         idTC.setText(i18n.tr("supply.col.task_number"));
         imageTC.setText(i18n.tr("supply.col.photo"));
-        nameTC.setText(i18n.tr("supply.col.name"));
-        subjectNameTC.setText(i18n.tr("supply.col.category"));
-        articleTC.setText(i18n.tr("supply.col.article"));
-        colorTC.setText(i18n.tr("supply.col.color"));
-        sizeTC.setText(i18n.tr("supply.col.size"));
-        stickerTC.setText(i18n.tr("supply.col.sticker"));
-        barcodeTC.setText(i18n.tr("supply.col.barcode"));
-        stickerCodeTC.setText(i18n.tr("supply.col.sticker_code"));
+        nameTC.setText(i18n.tr("supply.col.details"));
+        priceTC.setText(i18n.tr("supply.col.price"));
         if (orderLoadingLabel != null) {
             orderLoadingLabel.setText(i18n.tr("supply.loading_orders"));
         }
@@ -392,5 +365,138 @@ public class SupplyDetailController {
                 }
             }
         });
+    }
+
+    private String nullToEmpty(String value) {
+        return value == null ? "" : value;
+    }
+
+    private final class OrderDetailsCell extends TableCell<Order, String> {
+        private final VBox vbox = new VBox(4);
+        private final Label titleLabel = new Label();
+        private final Label metaLabel = new Label();
+        private final Label statusLabel = new Label();
+
+        OrderDetailsCell() {
+            titleLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: -text-primary;");
+            metaLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 11px; -fx-text-fill: -text-muted;");
+            statusLabel.getStyleClass().add("badge");
+            vbox.getChildren().addAll(titleLabel, metaLabel, statusLabel);
+            vbox.setAlignment(Pos.CENTER_LEFT);
+            vbox.setPadding(new javafx.geometry.Insets(4, 0, 4, 0));
+        }
+
+        @Override
+        protected void updateItem(String item, boolean empty) {
+            super.updateItem(item, empty);
+            if (empty) {
+                setGraphic(null);
+                return;
+            }
+            Order order = getTableRow() == null ? null : getTableRow().getItem();
+            if (order == null) {
+                setGraphic(null);
+                return;
+            }
+            titleLabel.setText(nullToEmpty(order.getName()));
+
+            String brand = nullToEmpty(order.getBrand());
+            String article = nullToEmpty(order.getArticle());
+            String size = nullToEmpty(order.getSize());
+            if (size.isEmpty()) {
+                size = nullToEmpty(order.getRuSize());
+            }
+
+            StringBuilder metaBuilder = new StringBuilder();
+            if (!brand.isEmpty()) {
+                metaBuilder.append(brand).append(" • ");
+            }
+            metaBuilder.append(article);
+            if (!size.isEmpty()) {
+                metaBuilder.append(" • Size: ").append(size);
+            }
+            metaLabel.setText(metaBuilder.toString());
+
+            statusLabel.getStyleClass().removeAll("badge-gray", "badge-green", "badge-red");
+
+            if (order.isRequiresKiz()) {
+                statusLabel.setVisible(true);
+                statusLabel.setManaged(true);
+
+                String kizCode = order.getKiz();
+                String error = com.tuandev.fbsbarcode.features.print.KizAttachmentCoordinator.getInstance().getAttachmentError(order.getId());
+
+                if (kizCode != null && !kizCode.isBlank()) {
+                    statusLabel.setText(I18nService.getInstance().tr("supply.status.kiz_attached"));
+                    statusLabel.getStyleClass().add("badge-green");
+                } else if (error != null) {
+                    statusLabel.setText(I18nService.getInstance().tr("supply.status.kiz_error"));
+                    statusLabel.getStyleClass().add("badge-red");
+                } else {
+                    statusLabel.setText(I18nService.getInstance().tr("supply.status.kiz_pending"));
+                    statusLabel.getStyleClass().add("badge-gray");
+                }
+            } else {
+                statusLabel.setVisible(false);
+                statusLabel.setManaged(false);
+            }
+
+            setGraphic(vbox);
+        }
+    }
+
+    private String formatPrice(Integer price) {
+        if (price == null) {
+            return "";
+        }
+        if (price % 100 == 0) {
+            return (price / 100) + " ₽";
+        } else {
+            return String.format(java.util.Locale.US, "%.2f ₽", price / 100.0);
+        }
+    }
+
+    private String formatOrderDate(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        try {
+            java.time.Instant instant = java.time.Instant.parse(value);
+            java.time.ZonedDateTime dateTime = instant.atZone(java.time.ZoneId.systemDefault());
+            return dateTime.format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"));
+        } catch (Exception ex) {
+            return value;
+        }
+    }
+
+    private final class OrderIdDateCell extends TableCell<Order, String> {
+        private final javafx.scene.layout.VBox vbox = new javafx.scene.layout.VBox(4);
+        private final Label idLabel = new Label();
+        private final Label dateLabel = new Label();
+
+        OrderIdDateCell() {
+            idLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: -text-primary;");
+            dateLabel.setStyle("-fx-font-size: 11px; -fx-text-fill: -text-muted;");
+            vbox.getChildren().addAll(idLabel, dateLabel);
+            vbox.setAlignment(Pos.CENTER_LEFT);
+            vbox.setPadding(new javafx.geometry.Insets(4, 0, 4, 0));
+        }
+
+        @Override
+        protected void updateItem(String item, boolean empty) {
+            super.updateItem(item, empty);
+            if (empty) {
+                setGraphic(null);
+                return;
+            }
+            Order order = getTableRow() == null ? null : getTableRow().getItem();
+            if (order == null) {
+                setGraphic(null);
+                return;
+            }
+            idLabel.setText(String.valueOf(order.getId()));
+            dateLabel.setText(formatOrderDate(order.getCreatedAt()));
+            setGraphic(vbox);
+        }
     }
 }

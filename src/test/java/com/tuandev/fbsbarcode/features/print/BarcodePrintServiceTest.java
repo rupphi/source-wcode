@@ -85,4 +85,30 @@ class BarcodePrintServiceTest {
         }
         file.toFile().deleteOnExit();
     }
+
+    @Test
+    void shouldRenderRuSizeField() throws Exception {
+        Order order = new Order();
+        order.setRuSize("44-46");
+        order.setBarcode("8938501432101");
+
+        PrintTemplate template = new PrintTemplateService().createSystemDefaultTemplate("RU size field");
+        template.getElements().removeIf(element -> element.getType() == PrintElementType.TEXT_FIELD
+                && element.getFieldKey() != PrintFieldKey.RU_SIZE);
+        PrintTemplateElement ruSizeElement = PrintTemplateElement.create(PrintElementType.TEXT_FIELD, "RU size", 4, 4, 80, 16);
+        ruSizeElement.setFieldKey(PrintFieldKey.RU_SIZE);
+        ruSizeElement.setPrefix("RU");
+        ruSizeElement.setFontSize(8);
+        ruSizeElement.setZIndex(1);
+        template.getElements().add(ruSizeElement);
+
+        Path file = Files.createTempFile("barcode-ru-size-", ".pdf");
+        GenerateBarcode.exportTemplatePages(template, List.of(order), file.toFile());
+
+        try (PDDocument document = Loader.loadPDF(file.toFile())) {
+            String text = new PDFTextStripper().getText(document).replaceAll("\\s+", " ").trim();
+            assertTrue(text.contains("RU: 44-46"), "PDF text should contain RU size, got: " + text);
+        }
+        file.toFile().deleteOnExit();
+    }
 }

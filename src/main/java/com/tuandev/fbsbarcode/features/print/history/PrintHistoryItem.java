@@ -8,6 +8,7 @@ public record PrintHistoryItem(
         String name,
         String subjectName,
         String size,
+        String ruSize,
         String color,
         String article,
         String barcode,

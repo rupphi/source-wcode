@@ -14,6 +14,10 @@ import java.util.Optional;
 
 public class CategoryDialogService {
     public Optional<Category> showCreateDialog() {
+        return showCreateDialog(0);
+    }
+
+    public Optional<Category> showCreateDialog(int displayId) {
         Dialog<ButtonType> dialog = new Dialog<>();
         AlertService.applyTheme(dialog);
         dialog.setTitle(I18nService.getInstance().tr("category_dialog.title"));
@@ -25,6 +29,9 @@ public class CategoryDialogService {
         FXMLLoader loader = FxmlViewLoader.loader(CategoryDialogController.class, "category-dialog.fxml");
         dialog.getDialogPane().setContent(FxmlViewLoader.load(loader));
         CategoryDialogController controller = loader.getController();
+        if (displayId > 0) {
+            controller.setCreateDisplayId(displayId);
+        }
 
         Optional<ButtonType> result = dialog.showAndWait();
         if (result.isEmpty() || result.get() != okBtnType) {

@@ -71,10 +71,10 @@ public class FboPrintTemplateService extends PrintTemplateService {
 
         elements.add(textField(i18n.tr("template.palette.barcode_text"), PrintFieldKey.BARCODE, null, mm(2.5), mm(37), mm(47), 10, 8, false, PrintTextAlign.CENTER, 9));
 
-        PrintTemplateElement stickerTail = PrintTemplateElement.create(PrintElementType.STICKER_TAIL, stickerTailLabel(), mm(49), mm(36.5), mm(6), 9);
+        PrintTemplateElement stickerTail = PrintTemplateElement.create(PrintElementType.STICKER_TAIL, stickerTailLabel(), 133, mm(36.5), 24, 9);
         stickerTail.setFontSize(9);
         stickerTail.setBold(true);
-        stickerTail.setAlign(PrintTextAlign.RIGHT);
+        stickerTail.setAlign(PrintTextAlign.LEFT);
         stickerTail.setZIndex(10);
         elements.add(stickerTail);
 
@@ -94,7 +94,10 @@ public class FboPrintTemplateService extends PrintTemplateService {
                 || template.getElements().stream()
                 .filter(element -> element.getType() == PrintElementType.STICKER_TAIL)
                 .findFirst()
-                .map(stickerTail -> !stickerTailLabel().equals(stickerTail.getLabel()))
+                .map(stickerTail -> !stickerTailLabel().equals(stickerTail.getLabel())
+                        || (Math.abs(stickerTail.getX() - mm(49)) < 0.25
+                        && Math.abs(stickerTail.getWidth() - mm(6)) < 0.25
+                        && stickerTail.getAlign() == PrintTextAlign.RIGHT))
                 .orElse(false);
     }
 

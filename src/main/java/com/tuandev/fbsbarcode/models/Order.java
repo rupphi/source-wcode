@@ -7,6 +7,7 @@ public class Order {
     private String name;
     private String subjectName;
     private String size;
+    private String ruSize;
     private String color;
     private String article;
     private String sticker;
@@ -91,6 +92,14 @@ public class Order {
 
     public void setSize(String size) {
         this.size = size;
+    }
+
+    public String getRuSize() {
+        return ruSize;
+    }
+
+    public void setRuSize(String ruSize) {
+        this.ruSize = ruSize;
     }
 
     public String getColor() {
@@ -205,6 +214,7 @@ public class Order {
                 ", name='" + name + '\'' +
                 ", subjectName='" + subjectName + '\'' +
                 ", size='" + size + '\'' +
+                ", ruSize='" + ruSize + '\'' +
                 ", color='" + color + '\'' +
                 ", article='" + article + '\'' +
                 ", sticker='" + sticker + '\'' +

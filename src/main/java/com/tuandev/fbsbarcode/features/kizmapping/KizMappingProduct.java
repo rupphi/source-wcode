@@ -7,6 +7,8 @@ public record KizMappingProduct(
         String subjectName,
         String gender,
         String vendorCode,
-        Integer kizCategoryId
+        Integer kizCategoryId,
+        String brand,
+        String size
 ) {
 }

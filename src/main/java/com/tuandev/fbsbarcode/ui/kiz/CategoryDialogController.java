@@ -11,11 +11,25 @@ public class CategoryDialogController {
     @FXML
     private TextField nameField;
 
+    private boolean generatedId;
+    private Integer fixedCategoryId;
+
+    public void setCreateDisplayId(int displayId) {
+        generatedId = true;
+        fixedCategoryId = null;
+        idField.setText(String.valueOf(displayId));
+        idField.setEditable(false);
+        idField.setDisable(true);
+        nameField.requestFocus();
+    }
+
     public void setCategory(Category category, boolean editableId) {
         if (category == null) {
             return;
         }
-        idField.setText(String.valueOf(category.getId()));
+        generatedId = false;
+        fixedCategoryId = editableId ? null : category.getId();
+        idField.setText(String.valueOf(editableId ? category.getId() : category.getDisplayId()));
         idField.setEditable(editableId);
         idField.setDisable(!editableId);
         nameField.setText(category.getName());
@@ -29,6 +43,7 @@ public class CategoryDialogController {
             return null;
         }
 
-        return new Category(Integer.parseInt(idText), name);
+        int id = generatedId ? 0 : fixedCategoryId != null ? fixedCategoryId : Integer.parseInt(idText);
+        return new Category(id, name);
     }
 }

@@ -42,9 +42,14 @@ public class WorkspaceHeaderController {
             protected void updateItem(Shop item, boolean empty) {
                 super.updateItem(item, empty);
                 setText(empty || item == null ? null : item.getName());
+                if (lv != null) {
+                    getStyleClass().remove("shop-combo-button-cell");
+                }
             }
         });
-        shopComboBox.setButtonCell(shopComboBox.getCellFactory().call(null));
+        ListCell<Shop> buttonCell = shopComboBox.getCellFactory().call(null);
+        buttonCell.getStyleClass().add("shop-combo-button-cell");
+        shopComboBox.setButtonCell(buttonCell);
         shopComboBox.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             if (newVal != null && onShopSelected != null) {
                 onShopSelected.accept(newVal);

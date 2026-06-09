@@ -68,6 +68,7 @@ public class FboBarcodePdfExporter {
         order.setArticle(product.vendorCode());
         order.setColor(product.color());
         order.setSize(product.size());
+        order.setRuSize(product.ruSize());
         order.setBarcode(product.sku());
         order.setKiz(page.kizCode());
         order.setStickerTail(String.valueOf(Math.max(1, page.pairNumber())));

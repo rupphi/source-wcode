@@ -40,6 +40,7 @@ class PrintHistoryServiceTest {
             order.setName("Product A");
             order.setSubjectName("Category A");
             order.setSize("M");
+            order.setRuSize("44-46");
             order.setColor("Black");
             order.setArticle("ART-001");
             order.setBarcode("2040000000001");
@@ -67,12 +68,14 @@ class PrintHistoryServiceTest {
             assertEquals(1, items.size());
             assertEquals(12345L, items.getFirst().orderId());
             assertEquals("KIZ-001", items.getFirst().kiz());
+            assertEquals("44-46", items.getFirst().ruSize());
 
             Path output = Files.createTempFile("print-history-", ".pdf");
             Path details = Files.createTempFile("print-history-details-", ".pdf");
             OrderExportWorkflow.ExportResult result = historyService.reprint(jobs.getFirst(), output.toFile(), details.toFile());
 
             assertEquals(1, result.exportedOrders().size());
+            assertEquals("44-46", result.exportedOrders().getFirst().getRuSize());
             assertTrue(Files.size(output) > 0);
             assertTrue(Files.size(details) > 0);
             output.toFile().deleteOnExit();

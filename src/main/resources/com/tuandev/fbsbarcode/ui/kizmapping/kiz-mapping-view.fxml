@@ -33,6 +33,7 @@
             <children>
                 <TextField fx:id="searchField" prefWidth="300.0" promptText="Search nmId / name / vendor code" />
                 <MenuButton fx:id="subjectMenuButton" mnemonicParsing="false" prefWidth="220.0" text="Subjects" />
+                <MenuButton fx:id="genderMenuButton" mnemonicParsing="false" prefWidth="160.0" text="Gender" />
                 <Button fx:id="clearFiltersButton" managed="false" mnemonicParsing="false" onAction="#onClearFilters" visible="false">
                     <styleClass>
                         <String fx:value="button" />
@@ -40,34 +41,17 @@
                         <String fx:value="fbo-clear-filter-button" />
                     </styleClass>
                     <graphic>
-                        <FontIcon iconLiteral="fth-x" iconColor="#CCD1D9" iconSize="15" />
+                        <FontIcon iconLiteral="fth-x" iconSize="15" />
                     </graphic>
                 </Button>
                 <Pane HBox.hgrow="ALWAYS" />
-                <Button fx:id="exportButton" mnemonicParsing="false" onAction="#onExport" prefHeight="32.0" text="Export">
-                    <styleClass>
-                        <String fx:value="button" />
-                        <String fx:value="btn-success" />
-                    </styleClass>
-                    <graphic>
-                        <FontIcon iconLiteral="fth-download" iconColor="white" iconSize="15" />
-                    </graphic>
-                </Button>
-                <Button fx:id="importButton" mnemonicParsing="false" onAction="#onImport" prefHeight="32.0" text="Import">
-                    <graphic>
-                        <FontIcon iconLiteral="fth-upload" iconColor="white" iconSize="15" />
-                    </graphic>
-                </Button>
             </children>
         </HBox>
         <TableView fx:id="productTable" prefHeight="520.0" VBox.vgrow="ALWAYS">
             <columns>
-                <TableColumn fx:id="imageColumn" editable="false" prefWidth="72.0" sortable="false" text="Image" />
-                <TableColumn fx:id="nameColumn" editable="false" prefWidth="170.0" sortable="false" text="Name" />
-                <TableColumn fx:id="subjectColumn" editable="false" prefWidth="115.0" sortable="false" text="Subject" />
-                <TableColumn fx:id="genderColumn" editable="false" prefWidth="110.0" sortable="false" text="Gender" />
-                <TableColumn fx:id="vendorCodeColumn" editable="false" prefWidth="130.0" sortable="false" text="Vendor code" />
-                <TableColumn fx:id="categoryIdColumn" prefWidth="82.0" sortable="false" text="KIZ ID" />
+                <TableColumn fx:id="imageColumn" editable="false" prefWidth="80.0" sortable="false" text="Image" />
+                <TableColumn fx:id="detailsColumn" editable="false" prefWidth="370.0" sortable="false" text="Details" />
+                <TableColumn fx:id="categoryIdColumn" prefWidth="100.0" sortable="false" text="KIZ ID" />
             </columns>
         </TableView>
         <Label fx:id="emptyStateLabel" managed="false" styleClass="text-muted" text="No products" visible="false" />
@@ -76,6 +60,6 @@
                 <Insets bottom="14.0" left="14.0" right="14.0" top="14.0" />
             </padding>
         </VBox>
-        <VBox fx:id="kizPanelContainer" prefWidth="390.0" HBox.hgrow="NEVER" />
+        <VBox fx:id="kizPanelContainer" prefWidth="460.0" HBox.hgrow="NEVER" />
     </children>
 </HBox>

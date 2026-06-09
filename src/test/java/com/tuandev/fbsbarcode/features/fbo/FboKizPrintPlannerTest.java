@@ -139,6 +139,6 @@ class FboKizPrintPlannerTest {
     }
 
     private FboProductSku product(boolean requiresKiz) {
-        return new FboProductSku(1001, "ART-1", "Shoes WB", "Brand", "Product", "Black", "42", "SKU-1", "", requiresKiz);
+        return new FboProductSku(1001, "ART-1", "Shoes WB", "Brand", "Product", "Black", "42", "42", "SKU-1", "", requiresKiz);
     }
 }

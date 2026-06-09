@@ -24,12 +24,25 @@ public final class KizAttachmentCoordinator {
 
     private final Map<String, KizAttachmentProgress> activeJobs = new ConcurrentHashMap<>();
     private final CopyOnWriteArrayList<Consumer<KizAttachmentProgress>> listeners = new CopyOnWriteArrayList<>();
+    private final Map<Long, String> failedAttachments = new ConcurrentHashMap<>();
 
     private KizAttachmentCoordinator() {
     }
 
     public static KizAttachmentCoordinator getInstance() {
         return INSTANCE;
+    }
+
+    public String getAttachmentError(long orderId) {
+        return failedAttachments.get(orderId);
+    }
+
+    public void clearErrors() {
+        failedAttachments.clear();
+    }
+
+    public void clearError(long orderId) {
+        failedAttachments.remove(orderId);
     }
 
     public void addListener(Consumer<KizAttachmentProgress> listener) {
@@ -117,6 +130,35 @@ public final class KizAttachmentCoordinator {
             if (assignment == null || assignment.orderId() == null || assignment.orderId() <= 0) {
                 continue;
             }
+            if (assignment.replaceExisting()) {
+                KizService.RemoveMetaResult removeResult = KizService.removeSgtinFromOrder(
+                        shop.getApiKey(),
+                        assignment.orderId()
+                );
+                if (!removeResult.success()) {
+                    if (isSkippedNonProcessingOrder(removeResult.statusCode(), removeResult.responseBody())) {
+                        skipped++;
+                        notifyProgress(key, shop, supplyId, supplyName, completed, assignments.size(), true,
+                                "Отправка KIZ в WB " + completed + "/" + assignments.size()
+                                        + " (пропущено " + skipped + ")", failures, successfulKizs);
+                        continue;
+                    }
+
+                    String message = "Не удалось удалить старый KIZ для order " + assignment.orderId()
+                            + " (HTTP " + removeResult.statusCode() + ")";
+                    if (removeResult.responseBody() != null && !removeResult.responseBody().isBlank()) {
+                        message += ": " + removeResult.responseBody();
+                    }
+                    failures.add(message);
+                    failedAttachments.put(assignment.orderId(), message);
+                    LOGGER.warn("Background remove KIZ failed for shop {}, supply {}, order {}: {}",
+                            shop.getId(), supplyId, assignment.orderId(), message);
+                    notifyProgress(key, shop, supplyId, supplyName, completed, assignments.size(), true,
+                            "Отправка KIZ в WB " + completed + "/" + assignments.size(), failures, successfulKizs);
+                    continue;
+                }
+            }
+
             KizService.AttachCodeResult result = KizService.addDataMatrixCodeToOrder(
                     shop.getApiKey(),
                     assignment.orderId(),
@@ -126,12 +168,13 @@ public final class KizAttachmentCoordinator {
             if (result.success()) {
                 successfulKizs.add(assignment.sourceKiz());
                 completed++;
+                failedAttachments.remove(assignment.orderId());
                 notifyProgress(key, shop, supplyId, supplyName, completed, assignments.size(), true,
                         "Отправка KIZ в WB " + completed + "/" + assignments.size(), failures, successfulKizs);
                 continue;
             }
 
-            if (isSkippedNonProcessingOrder(result)) {
+            if (isSkippedNonProcessingOrder(result.statusCode(), result.responseBody())) {
                 skipped++;
                 notifyProgress(key, shop, supplyId, supplyName, completed, assignments.size(), true,
                         "Отправка KIZ в WB " + completed + "/" + assignments.size()
@@ -149,6 +192,7 @@ public final class KizAttachmentCoordinator {
                 message += ": " + result.responseBody();
             }
             failures.add(message);
+            failedAttachments.put(assignment.orderId(), message);
             LOGGER.warn("Background attach KIZ failed for shop {}, supply {}, order {}: {}",
                     shop.getId(), supplyId, assignment.orderId(), message);
             notifyProgress(key, shop, supplyId, supplyName, completed, assignments.size(), true,
@@ -206,11 +250,11 @@ public final class KizAttachmentCoordinator {
         notifyListeners(progress);
     }
 
-    private boolean isSkippedNonProcessingOrder(KizService.AttachCodeResult result) {
-        if (result == null || result.statusCode() != 409) {
+    private boolean isSkippedNonProcessingOrder(int statusCode, String responseBody) {
+        if (statusCode != 409) {
             return false;
         }
-        String body = result.responseBody() == null ? "" : result.responseBody();
+        String body = responseBody == null ? "" : responseBody;
         return body.contains("FailedToUpdateMeta") || body.contains("Processing status");
     }
 

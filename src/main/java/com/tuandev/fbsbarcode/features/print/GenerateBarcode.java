@@ -322,6 +322,7 @@ public class GenerateBarcode {
             case COLOR -> safeValue(order.getColor());
             case ARTICLE -> safeValue(order.getArticle());
             case SIZE -> safeValue(order.getSize());
+            case RU_SIZE -> safeValue(order.getRuSize());
             case BARCODE -> safeValue(order.getBarcode());
             case STICKER_TAIL -> safeValue(order.getStickerTail()).isBlank()
                     ? normalizeStickerTail(StickerText.secondPartOrFirst(order.getSticker()))

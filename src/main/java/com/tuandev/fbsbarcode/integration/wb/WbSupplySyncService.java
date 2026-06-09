@@ -198,6 +198,11 @@ public class WbSupplySyncService {
                     LOGGER.warn("Bỏ qua sync chi tiết supply {} cho shop {} vì WB trả 404 Not found", supplyId, shop.getId());
                     continue;
                 }
+                if (isRateLimited(ex)) {
+                    LOGGER.warn("Bỏ qua sync chi tiết supply {} cho shop {} vì WB Marketplace API đang rate limit: {}",
+                            supplyId, shop.getId(), ex.getMessage());
+                    continue;
+                }
                 LOGGER.warn("Bỏ qua lỗi sync chi tiết supply {} cho shop {}", supplyId, shop.getId(), ex);
                 if (firstError == null) {
                     firstError = ex;
@@ -232,6 +237,11 @@ public class WbSupplySyncService {
                     LOGGER.warn("Bỏ qua sync số lượng supply {} cho shop {} vì WB trả 404 Not found", supplyId, shop.getId());
                     continue;
                 }
+                if (isRateLimited(ex)) {
+                    LOGGER.warn("Bỏ qua sync số lượng supply {} cho shop {} vì WB Marketplace API đang rate limit: {}",
+                            supplyId, shop.getId(), ex.getMessage());
+                    continue;
+                }
                 LOGGER.warn("Bỏ qua lỗi sync số lượng supply {} cho shop {}", supplyId, shop.getId(), ex);
                 if (firstError == null) {
                     firstError = ex;
@@ -246,6 +256,10 @@ public class WbSupplySyncService {
 
     private boolean isNotFound(IOException ex) {
         return ex instanceof WbApiException wb && wb.isStatus(404);
+    }
+
+    private boolean isRateLimited(IOException ex) {
+        return ex instanceof WbApiException wb && wb.isRateLimited();
     }
 
     private boolean isSupplyDetailNotFoundCoolingDown(int shopId, String supplyId) {

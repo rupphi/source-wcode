@@ -38,27 +38,40 @@ public class WbSupplyRepository {
                     recommended_wh_id = excluded.recommended_wh_id,
                     synced_at = excluded.synced_at
                 """;
-        try (Connection conn = Database.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            for (WbSupplyDto supply : supplies) {
-                ps.setInt(1, shopId);
-                ps.setString(2, supply.getId());
-                setNullableBoolean(ps, 3, supply.getIsB2b());
-                setNullableBoolean(ps, 4, supply.getDone());
-                ps.setObject(5, null);
-                ps.setString(6, supply.getCreatedAt());
-                ps.setString(7, supply.getClosedAt());
-                ps.setString(8, supply.getScanDt());
-                ps.setString(9, supply.getRejectDt());
-                ps.setString(10, supply.getName());
-                setNullableInteger(ps, 11, supply.getCargoType());
-                setNullableInteger(ps, 12, supply.getCrossBorderType());
-                setNullableInteger(ps, 13, supply.getDestinationOfficeId());
-                setNullableInteger(ps, 14, supply.getRecommendedWhId());
-                ps.setString(15, now);
-                ps.addBatch();
+        try (Connection conn = Database.getConnection()) {
+            conn.setAutoCommit(false);
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                for (WbSupplyDto supply : supplies) {
+                    ps.setInt(1, shopId);
+                    ps.setString(2, supply.getId());
+                    setNullableBoolean(ps, 3, supply.getIsB2b());
+                    setNullableBoolean(ps, 4, supply.getDone());
+                    ps.setObject(5, null);
+                    ps.setString(6, supply.getCreatedAt());
+                    ps.setString(7, supply.getClosedAt());
+                    ps.setString(8, supply.getScanDt());
+                    ps.setString(9, supply.getRejectDt());
+                    ps.setString(10, supply.getName());
+                    setNullableInteger(ps, 11, supply.getCargoType());
+                    setNullableInteger(ps, 12, supply.getCrossBorderType());
+                    setNullableInteger(ps, 13, supply.getDestinationOfficeId());
+                    setNullableInteger(ps, 14, supply.getRecommendedWhId());
+                    ps.setString(15, now);
+                    ps.addBatch();
+                }
+                ps.executeBatch();
+                for (WbSupplyDto supply : supplies) {
+                    if (supply.getId() != null && !supply.getId().isBlank()) {
+                        populateSupplyOrderLinks(conn, shopId, supply.getId());
+                    }
+                }
+                conn.commit();
+            } catch (Exception ex) {
+                conn.rollback();
+                throw ex;
+            } finally {
+                conn.setAutoCommit(true);
             }
-            ps.executeBatch();
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
@@ -72,12 +85,12 @@ public class WbSupplyRepository {
                        s.done,
                        s.is_b2b,
                        s.created_at,
-                       COALESCE((
+                       COALESCE(NULLIF((
                            SELECT COUNT(*)
                            FROM wb_supply_orders so
                            WHERE so.shop_id = s.shop_id
                              AND so.supply_id = s.supply_id
-                       ), s.order_count, 0) AS item_count
+                       ), 0), s.order_count, 0) AS item_count
                 FROM wb_supplies s
                 WHERE s.shop_id = ?
                 ORDER BY s.done ASC, s.created_at DESC, s.supply_id DESC
@@ -182,25 +195,43 @@ public class WbSupplyRepository {
         }
     }
 
-    public void saveCreatedSupply(int shopId, String supplyId, String name) {
+    public void saveCreatedSupply(int shopId, String supplyId, String name, Boolean b2b) {
         String sql = """
                 INSERT INTO wb_supplies(
                     shop_id, supply_id, is_b2b, done, order_count, created_at, name, synced_at
-                ) VALUES (?, ?, 0, 0, 0, ?, ?, ?)
+                ) VALUES (?, ?, ?, 0, 0, ?, ?, ?)
                 ON CONFLICT(shop_id, supply_id) DO UPDATE SET
+                    is_b2b = excluded.is_b2b,
                     done = 0,
                     name = excluded.name,
                     synced_at = excluded.synced_at
                 """;
         String now = Instant.now().toString();
         try (Connection conn = Database.getConnection();
+            PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, shopId);
+            ps.setString(2, supplyId);
+            setNullableBoolean(ps, 3, b2b);
+            ps.setString(4, now);
+            ps.setString(5, name);
+            ps.setString(6, now);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public Boolean getSupplyB2b(int shopId, String supplyId) {
+        String sql = "SELECT is_b2b FROM wb_supplies WHERE shop_id = ? AND supply_id = ?";
+        try (Connection conn = Database.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, shopId);
             ps.setString(2, supplyId);
-            ps.setString(3, now);
-            ps.setString(4, name);
-            ps.setString(5, now);
-            ps.executeUpdate();
+            ResultSet rs = ps.executeQuery();
+            if (!rs.next() || rs.getObject("is_b2b") == null) {
+                return null;
+            }
+            return rs.getInt("is_b2b") == 1;
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
@@ -222,6 +253,20 @@ public class WbSupplyRepository {
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    private void populateSupplyOrderLinks(Connection conn, int shopId, String supplyId) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement("""
+                INSERT OR IGNORE INTO wb_supply_orders(shop_id, supply_id, order_id)
+                SELECT shop_id, supply_id, order_id
+                FROM wb_orders
+                WHERE shop_id = ?
+                  AND supply_id = ?
+                """)) {
+            ps.setInt(1, shopId);
+            ps.setString(2, supplyId);
+            ps.executeUpdate();
         }
     }
 }

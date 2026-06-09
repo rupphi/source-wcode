@@ -24,7 +24,7 @@
                         <String fx:value="btn-icon" />
                     </styleClass>
                     <graphic>
-                        <FontIcon iconLiteral="fth-arrow-left" iconSize="17" iconColor="#CCD1D9" />
+                        <FontIcon iconLiteral="fth-arrow-left" iconSize="17" />
                     </graphic>
                 </Button>
                 <Label fx:id="supplyTitleLabel" text="%supply.not_selected" styleClass="h3" />
@@ -35,7 +35,7 @@
                         <String fx:value="btn-success" />
                     </styleClass>
                     <graphic>
-                        <FontIcon iconLiteral="fth-printer" iconSize="16" iconColor="white" />
+                        <FontIcon iconLiteral="fth-printer" iconSize="16" />
                     </graphic>
                 </Button>
                 <Button fx:id="deliverButton" disable="true" mnemonicParsing="false" onAction="#onDeliver" prefHeight="32.0" text="%supply.deliver">
@@ -44,7 +44,7 @@
                         <String fx:value="btn-primary" />
                     </styleClass>
                     <graphic>
-                        <FontIcon iconLiteral="fth-truck" iconSize="16" iconColor="white" />
+                        <FontIcon iconLiteral="fth-truck" iconSize="16" />
                     </graphic>
                 </Button>
             </children>
@@ -69,16 +69,10 @@
                 <TableView fx:id="orderTable" managed="false" prefHeight="520.0" prefWidth="900.0" visible="false">
                     <columns>
                         <TableColumn fx:id="noTC" prefWidth="54.0" text="%supply.col.no" />
-                        <TableColumn fx:id="idTC" prefWidth="85.0" text="%supply.col.task_number" />
+                        <TableColumn fx:id="idTC" prefWidth="160.0" text="%supply.col.task_number" />
                         <TableColumn fx:id="imageTC" prefWidth="58.0" text="%supply.col.photo" />
-                        <TableColumn fx:id="nameTC" prefWidth="180.0" text="%supply.col.name" />
-                        <TableColumn fx:id="subjectNameTC" prefWidth="128.0" text="%supply.col.category" />
-                        <TableColumn fx:id="articleTC" prefWidth="128.0" text="%supply.col.article" />
-                        <TableColumn fx:id="colorTC" prefWidth="70.0" text="%supply.col.color" />
-                        <TableColumn fx:id="sizeTC" prefWidth="74.0" text="%supply.col.size" />
-                        <TableColumn fx:id="stickerTC" prefWidth="90.0" text="%supply.col.sticker" />
-                        <TableColumn fx:id="barcodeTC" prefWidth="95.0" text="%supply.col.barcode" />
-                        <TableColumn fx:id="stickerCodeTC" prefWidth="100.0" text="%supply.col.sticker_code" />
+                        <TableColumn fx:id="nameTC" prefWidth="260.0" text="%supply.col.details" />
+                        <TableColumn fx:id="priceTC" prefWidth="100.0" text="%supply.col.price" />
                     </columns>
                 </TableView>
                 <Label fx:id="emptyStateLabel" managed="false" style="-fx-text-fill: #6c757d;" text="" visible="false" wrapText="true" />

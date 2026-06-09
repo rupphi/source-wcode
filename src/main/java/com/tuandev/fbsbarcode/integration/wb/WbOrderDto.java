@@ -12,7 +12,7 @@ public class WbOrderDto {
     private String deliveryType;
     private String comment;
     private Integer scanPrice;
-    private Long userId;
+    private String userId;
     private String orderUid;
     private String article;
     private String colorCode;
@@ -46,7 +46,7 @@ public class WbOrderDto {
     public String getDeliveryType() { return deliveryType; }
     public String getComment() { return comment; }
     public Integer getScanPrice() { return scanPrice; }
-    public Long getUserId() { return userId; }
+    public String getUserId() { return userId; }
     public String getOrderUid() { return orderUid; }
     public String getArticle() { return article; }
     public String getColorCode() { return colorCode; }

@@ -27,7 +27,7 @@
                                 <String fx:value="btn-icon" />
                             </styleClass>
                             <graphic>
-                                <FontIcon iconLiteral="fth-edit-2" iconSize="16" iconColor="#949ba4"/>
+                                <FontIcon iconLiteral="fth-edit-2" iconSize="16"/>
                             </graphic>
                         </Button>
                         <Button fx:id="deleteShopButton" alignment="CENTER" mnemonicParsing="false" onAction="#onDeleteShop" prefHeight="32.0" prefWidth="32.0">
@@ -51,7 +51,7 @@
                 <String fx:value="btn-primary" />
             </styleClass>
             <graphic>
-                <FontIcon iconLiteral="fth-refresh-cw" iconSize="16" iconColor="white"/>
+                <FontIcon iconLiteral="fth-refresh-cw" iconSize="16"/>
             </graphic>
         </Button>
     </children>

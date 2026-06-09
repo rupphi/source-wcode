@@ -7,6 +7,7 @@ public enum PrintFieldKey {
     COLOR,
     ARTICLE,
     SIZE,
+    RU_SIZE,
     BARCODE,
     STICKER_TAIL
 }

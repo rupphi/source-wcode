@@ -65,6 +65,18 @@ public class Database {
             )
             """);
 
+            boolean shopCategoriesExisted = tableExists(conn, "shop_categories");
+            st.execute("""
+            CREATE TABLE IF NOT EXISTS shop_categories(
+                shop_id INTEGER NOT NULL,
+                category_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (shop_id, category_id),
+                FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE,
+                FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
+            )
+            """);
+
             st.execute("""
             CREATE TABLE IF NOT EXISTS kizs(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -154,6 +166,7 @@ public class Database {
                 name TEXT,
                 subject_name TEXT,
                 size TEXT,
+                ru_size TEXT,
                 color TEXT,
                 article TEXT,
                 barcode TEXT,
@@ -167,13 +180,23 @@ public class Database {
             """);
 
             st.execute("INSERT INTO config (id, type) SELECT 1, 1 WHERE NOT EXISTS (SELECT 1 FROM config WHERE id = 1)");
+            if (!shopCategoriesExisted) {
+                st.execute("""
+                        INSERT OR IGNORE INTO shop_categories (shop_id, category_id, created_at)
+                        SELECT s.id, c.id, datetime('now')
+                        FROM shops s
+                        CROSS JOIN categories c
+                        """);
+            }
             ensureColumnExists(conn, "print_jobs", "shop_name", "TEXT");
+            ensureColumnExists(conn, "print_job_items", "ru_size", "TEXT");
             createIndexIfNotExists(conn, "idx_print_jobs_shop_id", "print_jobs", "shop_id");
             createIndexIfNotExists(conn, "idx_print_jobs_shop_supply_status", "print_jobs", "shop_id, supply_id, status");
             createIndexIfNotExists(conn, "idx_print_jobs_shop_printed_at", "print_jobs", "shop_id, printed_at DESC");
             createIndexIfNotExists(conn, "idx_print_job_items_print_job_id", "print_job_items", "print_job_id");
             createIndexIfNotExists(conn, "idx_print_job_items_order_id", "print_job_items", "order_id");
             createIndexIfNotExists(conn, "idx_kizs_shop_category_id", "kizs", "shop_id, category_id");
+            createIndexIfNotExists(conn, "idx_shop_categories_category_id", "shop_categories", "category_id");
             createIndexIfNotExists(conn, "idx_image_cache_last_used_at", "image_cache", "last_used_at");
             WbSchemaSupport.initialize(conn);
         } catch (SQLException e) {
@@ -199,6 +222,20 @@ public class Database {
                 }
             }
             return false;
+        }
+    }
+
+    private static boolean tableExists(Connection conn, String tableName) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement("""
+                SELECT 1
+                FROM sqlite_master
+                WHERE type = 'table' AND name = ?
+                LIMIT 1
+                """)) {
+            ps.setString(1, tableName);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
         }
     }
 

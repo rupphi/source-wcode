@@ -1,5 +1,6 @@
 package com.tuandev.fbsbarcode.integration.wb;
 
+import com.google.gson.Gson;
 import com.tuandev.fbsbarcode.config.Database;
 import com.tuandev.fbsbarcode.models.Order;
 import org.junit.jupiter.api.AfterEach;
@@ -16,6 +17,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WbOrderRepositorySupplyDetailsTest {
+    private static final Gson GSON = new Gson();
+
     @TempDir
     Path tempDir;
 
@@ -38,7 +41,7 @@ class WbOrderRepositorySupplyDetailsTest {
                     """);
             st.execute("""
                     INSERT INTO wb_product_sizes(shop_id, chrt_id, nm_id, tech_size, wb_size)
-                    VALUES (1, 2001, 1001, '42', '42')
+                    VALUES (1, 2001, 1001, 'EU-42', '42')
                     """);
             st.execute("""
                     INSERT INTO wb_product_size_skus(shop_id, chrt_id, sku)
@@ -78,7 +81,8 @@ class WbOrderRepositorySupplyDetailsTest {
         assertEquals("Brand A", order.getBrand());
         assertEquals("Product A", order.getName());
         assertEquals("Shoes", order.getSubjectName());
-        assertEquals("42", order.getSize());
+        assertEquals("EU-42", order.getSize());
+        assertEquals("42", order.getRuSize());
         assertEquals("Black", order.getColor());
         assertEquals("ART-1", order.getArticle());
         assertEquals("SKU-1", order.getBarcode());
@@ -100,7 +104,7 @@ class WbOrderRepositorySupplyDetailsTest {
                     """);
             st.execute("""
                     INSERT INTO wb_product_sizes(shop_id, chrt_id, nm_id, tech_size, wb_size)
-                    VALUES (1, 2002, 1002, '0', '0')
+                    VALUES (1, 2002, 1002, '0', 'ONE SIZE')
                     """);
             st.execute("""
                     INSERT INTO wb_product_size_skus(shop_id, chrt_id, sku)
@@ -129,6 +133,7 @@ class WbOrderRepositorySupplyDetailsTest {
         assertEquals("Product B", order.getName());
         assertEquals("Bags", order.getSubjectName());
         assertEquals("0", order.getSize());
+        assertEquals("ONE SIZE", order.getRuSize());
         assertEquals("ART-2", order.getArticle());
         assertEquals("SKU-2", order.getBarcode());
         assertFalse(order.isRequiresKiz());
@@ -148,7 +153,7 @@ class WbOrderRepositorySupplyDetailsTest {
                     """);
             st.execute("""
                     INSERT INTO wb_product_sizes(shop_id, chrt_id, nm_id, tech_size, wb_size)
-                    VALUES (1, 2003, 1003, 'M', 'M')
+                    VALUES (1, 2003, 1003, 'M', '44-46')
                     """);
             st.execute("""
                     INSERT INTO wb_product_size_skus(shop_id, chrt_id, sku)
@@ -177,7 +182,108 @@ class WbOrderRepositorySupplyDetailsTest {
         assertEquals("Product C", order.getName());
         assertEquals("Clothes", order.getSubjectName());
         assertEquals("M", order.getSize());
+        assertEquals("44-46", order.getRuSize());
         assertEquals("ART-3", order.getArticle());
         assertEquals("SKU-3", order.getBarcode());
+    }
+
+    @Test
+    void shouldLinkOrderToSupplyWhenOrderArrivesBeforeSupplyRow() throws Exception {
+        System.setProperty("wcode.appdata.dir", tempDir.toString());
+        Database.initDatabase();
+        try (Connection conn = Database.getConnection();
+             Statement st = conn.createStatement()) {
+            st.execute("INSERT INTO shops(id, name, api_key) VALUES (1, 'Shop', 'token')");
+        }
+
+        WbOrderDto order = GSON.fromJson("""
+                {
+                  "id": 7001,
+                  "article": "ART-7",
+                  "createdAt": "2026-06-04T00:00:00Z",
+                  "options": {"isB2B": true},
+                  "supplyId": "WB-GI-LATE"
+                }
+                """, WbOrderDto.class);
+        new WbOrderRepository().saveOrders(1, List.of(order));
+
+        WbSupplyDto supply = GSON.fromJson("""
+                {
+                  "id": "WB-GI-LATE",
+                  "isB2b": true,
+                  "done": false,
+                  "createdAt": "2026-06-05T00:00:00Z"
+                }
+                """, WbSupplyDto.class);
+        new WbSupplyRepository().saveSupplies(1, List.of(supply));
+
+        List<Long> orderIds = new WbOrderRepository().getOrderIdsForSupply(1, "WB-GI-LATE");
+
+        assertEquals(List.of(7001L), orderIds);
+    }
+
+    @Test
+    void shouldUseSupplyOrderCountWhenNoLocalOrderLinksExist() throws Exception {
+        System.setProperty("wcode.appdata.dir", tempDir.toString());
+        Database.initDatabase();
+        try (Connection conn = Database.getConnection();
+             Statement st = conn.createStatement()) {
+            st.execute("INSERT INTO shops(id, name, api_key) VALUES (1, 'Shop', 'token')");
+            st.execute("""
+                    INSERT INTO wb_supplies(shop_id, supply_id, done, order_count, created_at, synced_at)
+                    VALUES (1, 'WB-GI-COUNT', 0, 3, '2026-06-04T00:00:00Z', 'now')
+                    """);
+        }
+
+        List<WbSupplySummary> supplies = new WbSupplyRepository().getSupplySummaries(1);
+
+        assertEquals(1, supplies.size());
+        assertEquals(3, supplies.getFirst().getItemCount());
+    }
+
+    @Test
+    void shouldUseLocalSupplyOrderLinksBeforeSupplyOrderCount() throws Exception {
+        System.setProperty("wcode.appdata.dir", tempDir.toString());
+        Database.initDatabase();
+        try (Connection conn = Database.getConnection();
+             Statement st = conn.createStatement()) {
+            st.execute("INSERT INTO shops(id, name, api_key) VALUES (1, 'Shop', 'token')");
+            st.execute("""
+                    INSERT INTO wb_supplies(shop_id, supply_id, done, order_count, created_at, synced_at)
+                    VALUES (1, 'WB-GI-LINKS', 0, 3, '2026-06-04T00:00:00Z', 'now')
+                    """);
+            st.execute("""
+                    INSERT INTO wb_orders(shop_id, order_id, synced_at)
+                    VALUES (1, 8001, 'now'), (1, 8002, 'now')
+                    """);
+            st.execute("""
+                    INSERT INTO wb_supply_orders(shop_id, supply_id, order_id)
+                    VALUES (1, 'WB-GI-LINKS', 8001), (1, 'WB-GI-LINKS', 8002)
+                    """);
+        }
+
+        List<WbSupplySummary> supplies = new WbSupplyRepository().getSupplySummaries(1);
+
+        assertEquals(1, supplies.size());
+        assertEquals(2, supplies.getFirst().getItemCount());
+    }
+
+    @Test
+    void shouldUseZeroSupplyCountWhenNoOrderCountOrLocalLinksExist() throws Exception {
+        System.setProperty("wcode.appdata.dir", tempDir.toString());
+        Database.initDatabase();
+        try (Connection conn = Database.getConnection();
+             Statement st = conn.createStatement()) {
+            st.execute("INSERT INTO shops(id, name, api_key) VALUES (1, 'Shop', 'token')");
+            st.execute("""
+                    INSERT INTO wb_supplies(shop_id, supply_id, done, created_at, synced_at)
+                    VALUES (1, 'WB-GI-EMPTY', 0, '2026-06-04T00:00:00Z', 'now')
+                    """);
+        }
+
+        List<WbSupplySummary> supplies = new WbSupplyRepository().getSupplySummaries(1);
+
+        assertEquals(1, supplies.size());
+        assertEquals(0, supplies.getFirst().getItemCount());
     }
 }

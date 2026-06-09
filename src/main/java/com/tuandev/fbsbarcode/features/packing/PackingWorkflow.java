@@ -22,6 +22,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 public class PackingWorkflow {
     private static final int ADD_ORDER_BATCH_SIZE = 100;
@@ -71,6 +72,7 @@ public class PackingWorkflow {
     }
 
     public String createShipment(Shop shop, String name, List<Long> orderIds) throws IOException {
+        Boolean orderB2b = validateOrderB2bSelection(shop.getId(), orderIds);
         String requestJson = "{\"name\":\"" + sanitize(name) + "\",\"orders\":" + orderIds + "}";
         try {
             WbCreateSupplyResponse response = apiClient.createSupply(shop.getApiKey(), name);
@@ -78,7 +80,7 @@ public class PackingWorkflow {
             if (supplyId == null || supplyId.isBlank()) {
                 throw new IOException("WB không trả về supplyId sau khi tạo shipment");
             }
-            supplyRepository.saveCreatedSupply(shop.getId(), supplyId, name);
+            supplyRepository.saveCreatedSupply(shop.getId(), supplyId, name, orderB2b);
             addOrdersToSupply(shop, supplyId, orderIds);
             actionLogRepository.record(shop.getId(), "CREATE_SUPPLY", supplyId, orderIds, "success", requestJson, "{\"id\":\"" + supplyId + "\"}", null);
             return supplyId;
@@ -90,6 +92,7 @@ public class PackingWorkflow {
 
     public void addOrdersToSupply(Shop shop, String supplyId, List<Long> orderIds) throws IOException {
         List<Long> safeOrderIds = orderIds == null ? List.of() : new ArrayList<>(orderIds);
+        validateSupplyB2bCompatibility(shop.getId(), supplyId, safeOrderIds);
         try {
             for (int i = 0; i < safeOrderIds.size(); i += ADD_ORDER_BATCH_SIZE) {
                 List<Long> batch = safeOrderIds.subList(i, Math.min(i + ADD_ORDER_BATCH_SIZE, safeOrderIds.size()));
@@ -118,6 +121,7 @@ public class PackingWorkflow {
         if (orderRepository.hasRequiredMetaWithoutPrintedKiz(shop.getId(), supply.getSupplyId())) {
             throw new IllegalStateException("В поставке есть товары с обязательной маркировкой без KIZ.");
         }
+        validateMetadataBeforeDelivery(shop, supply.getSupplyId());
         try {
             apiClient.deliverSupply(shop.getApiKey(), supply.getSupplyId());
             supplyRepository.markSupplyDelivered(shop.getId(), supply.getSupplyId());
@@ -171,6 +175,50 @@ public class PackingWorkflow {
 
     private static String sanitize(String value) {
         return value == null ? "" : value.replace("\"", "\\\"");
+    }
+
+    private Boolean validateOrderB2bSelection(int shopId, List<Long> orderIds) {
+        List<Boolean> values = orderRepository.findKnownB2bValuesForOrders(shopId, orderIds);
+        if (values.size() > 1) {
+            throw new IllegalStateException("Нельзя смешивать B2B и B2C заказы в одной поставке.");
+        }
+        return values.isEmpty() ? null : values.getFirst();
+    }
+
+    private void validateSupplyB2bCompatibility(int shopId, String supplyId, List<Long> orderIds) {
+        Boolean orderB2b = validateOrderB2bSelection(shopId, orderIds);
+        Boolean supplyB2b = supplyRepository.getSupplyB2b(shopId, supplyId);
+        if (orderB2b != null && supplyB2b != null && !orderB2b.equals(supplyB2b)) {
+            throw new IllegalStateException("Тип B2B/B2C заказов не совпадает с выбранной поставкой.");
+        }
+    }
+
+    private void validateMetadataBeforeDelivery(Shop shop, String supplyId) throws IOException {
+        List<Long> orderIds = orderRepository.getOrderIdsForSupply(shop.getId(), supplyId);
+        if (orderIds.isEmpty()) {
+            return;
+        }
+        var response = apiClient.getOrderMetadata(shop.getApiKey(), orderIds);
+        if (response == null || response.getOrders().isEmpty()) {
+            return;
+        }
+        List<String> blockers = response.getOrders().stream()
+                .map(com.tuandev.fbsbarcode.integration.wb.WbMetadataDecision::from)
+                .filter(com.tuandev.fbsbarcode.integration.wb.WbMetadataDecision::blocksDelivery)
+                .map(decision -> {
+                    List<String> parts = new ArrayList<>();
+                    if (!decision.missingRequiredMeta().isEmpty()) {
+                        parts.add("missing " + decision.missingRequiredMeta());
+                    }
+                    if (!decision.invalidMeta().isEmpty()) {
+                        parts.add("invalid " + decision.invalidMeta());
+                    }
+                    return decision.orderId() + ": " + String.join(", ", parts);
+                })
+                .collect(Collectors.toList());
+        if (!blockers.isEmpty()) {
+            throw new IllegalStateException("WB не разрешает передачу поставки: не заполнены или неверны IMEI/UIN/SGTIN/GTIN для заказов " + String.join("; ", blockers));
+        }
     }
 
     private boolean isTimeout(IOException ex) {

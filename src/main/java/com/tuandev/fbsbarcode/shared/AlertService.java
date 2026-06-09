@@ -80,5 +80,6 @@ public final class AlertService {
         if (!pane.getStyleClass().contains("app-dialog-pane")) {
             pane.getStyleClass().add("app-dialog-pane");
         }
+        ThemeService.applyTheme(pane);
     }
 }

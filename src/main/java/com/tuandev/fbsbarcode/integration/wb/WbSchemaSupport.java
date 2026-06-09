@@ -131,7 +131,7 @@ public final class WbSchemaSupport {
                     ddate TEXT,
                     seller_date TEXT,
                     comment TEXT,
-                    user_id INTEGER,
+                    user_id TEXT,
                     article TEXT,
                     color_code TEXT,
                     warehouse_id INTEGER,
@@ -245,6 +245,54 @@ public final class WbSchemaSupport {
             """);
         }
 
+        ensureShopColumn(conn, "wb_products_cursor_updated_at", "TEXT");
+        ensureShopColumn(conn, "wb_products_cursor_nm_id", "INTEGER");
+        ensureShopColumn(conn, "wb_products_last_synced_at", "TEXT");
+        ensureShopColumn(conn, "wb_supplies_next", "INTEGER NOT NULL DEFAULT 0");
+        ensureShopColumn(conn, "wb_supplies_last_synced_at", "TEXT");
+        ensureShopColumn(conn, "wb_orders_next", "INTEGER NOT NULL DEFAULT 0");
+        ensureShopColumn(conn, "wb_orders_last_synced_at", "TEXT");
+        ensureShopColumn(conn, "wb_orders_window_from", "INTEGER");
+        ensureShopColumn(conn, "wb_orders_window_to", "INTEGER");
+        ensureShopColumn(conn, "wb_last_sync_error", "TEXT");
+        ensureColumn(conn, "wb_product_cards", "is_swatch_try_on", "INTEGER");
+        ensureColumn(conn, "wb_product_cards", "wholesale_enabled", "INTEGER");
+        ensureColumn(conn, "wb_product_cards", "wholesale_quantum", "INTEGER");
+        ensureColumn(conn, "wb_product_cards", "dimension_length", "REAL");
+        ensureColumn(conn, "wb_product_cards", "dimension_width", "REAL");
+        ensureColumn(conn, "wb_product_cards", "dimension_height", "REAL");
+        ensureColumn(conn, "wb_product_cards", "dimension_weight_brutto", "REAL");
+        ensureColumn(conn, "wb_product_cards", "dimension_is_valid", "INTEGER");
+        ensureColumn(conn, "wb_product_photos", "hq_url", "TEXT");
+        ensureColumn(conn, "wb_product_sizes", "wb_size", "TEXT");
+        ensureColumn(conn, "wb_supplies", "closed_at", "TEXT");
+        ensureColumn(conn, "wb_supplies", "scan_dt", "TEXT");
+        ensureColumn(conn, "wb_supplies", "reject_dt", "TEXT");
+        ensureColumn(conn, "wb_supplies", "cargo_type", "INTEGER");
+        ensureColumn(conn, "wb_supplies", "cross_border_type", "INTEGER");
+        ensureColumn(conn, "wb_supplies", "destination_office_id", "INTEGER");
+        ensureColumn(conn, "wb_supplies", "recommended_wh_id", "INTEGER");
+        ensureColumn(conn, "wb_supplies", "order_count", "INTEGER");
+        ensureColumn(conn, "wb_orders", "seller_date", "TEXT");
+        ensureColumn(conn, "wb_orders", "user_id", "TEXT");
+        ensureColumn(conn, "wb_orders", "sale_price", "INTEGER");
+        ensureColumn(conn, "wb_orders", "converted_price", "INTEGER");
+        ensureColumn(conn, "wb_orders", "converted_final_price", "INTEGER");
+        ensureColumn(conn, "wb_orders", "currency_code", "INTEGER");
+        ensureColumn(conn, "wb_orders", "converted_currency_code", "INTEGER");
+        ensureColumn(conn, "wb_orders", "cargo_type", "INTEGER");
+        ensureColumn(conn, "wb_orders", "cross_border_type", "INTEGER");
+        ensureColumn(conn, "wb_orders", "scan_price", "INTEGER");
+        ensureColumn(conn, "wb_orders", "is_zero_order", "INTEGER");
+        ensureColumn(conn, "wb_orders", "is_b2b", "INTEGER");
+        ensureColumn(conn, "wb_orders", "supplier_status", "TEXT");
+        ensureColumn(conn, "wb_orders", "wb_status", "TEXT");
+        ensureColumn(conn, "wb_orders", "is_cancellable", "INTEGER");
+        ensureColumn(conn, "wb_orders", "status_synced_at", "TEXT");
+        ensureColumn(conn, "wb_orders", "address_full", "TEXT");
+        ensureColumn(conn, "wb_orders", "address_longitude", "REAL");
+        ensureColumn(conn, "wb_orders", "address_latitude", "REAL");
+
         createIndexIfTableExists(conn, "idx_kizs_shop_id", "kizs", "shop_id");
         createIndexIfTableExists(conn, "idx_wb_product_cards_shop_id", "wb_product_cards", "shop_id");
         createIndexIfTableExists(conn, "idx_wb_product_sizes_shop_nm_id", "wb_product_sizes", "shop_id, nm_id");
@@ -270,25 +318,6 @@ public final class WbSchemaSupport {
         createIndexIfTableExists(conn, "idx_wb_sync_runs_shop_id", "wb_sync_runs", "shop_id");
         createIndexIfTableExists(conn, "idx_wb_action_log_shop_id", "wb_action_log", "shop_id");
         createIndexIfTableExists(conn, "idx_wb_product_kiz_mappings_shop_category", "wb_product_kiz_mappings", "shop_id, kiz_category_id");
-
-        ensureShopColumn(conn, "wb_products_cursor_updated_at", "TEXT");
-        ensureShopColumn(conn, "wb_products_cursor_nm_id", "INTEGER");
-        ensureShopColumn(conn, "wb_products_last_synced_at", "TEXT");
-        ensureShopColumn(conn, "wb_supplies_next", "INTEGER NOT NULL DEFAULT 0");
-        ensureShopColumn(conn, "wb_supplies_last_synced_at", "TEXT");
-        ensureShopColumn(conn, "wb_orders_next", "INTEGER NOT NULL DEFAULT 0");
-        ensureShopColumn(conn, "wb_orders_last_synced_at", "TEXT");
-        ensureShopColumn(conn, "wb_orders_window_from", "INTEGER");
-        ensureShopColumn(conn, "wb_orders_window_to", "INTEGER");
-        ensureShopColumn(conn, "wb_last_sync_error", "TEXT");
-        ensureColumn(conn, "wb_product_cards", "is_swatch_try_on", "INTEGER");
-        ensureColumn(conn, "wb_product_photos", "hq_url", "TEXT");
-        ensureColumn(conn, "wb_product_sizes", "wb_size", "TEXT");
-        ensureColumn(conn, "wb_supplies", "reject_dt", "TEXT");
-        ensureColumn(conn, "wb_supplies", "recommended_wh_id", "INTEGER");
-        ensureColumn(conn, "wb_supplies", "order_count", "INTEGER");
-        ensureColumn(conn, "wb_orders", "user_id", "INTEGER");
-        ensureColumn(conn, "wb_orders", "is_cancellable", "INTEGER");
     }
 
     private static void ensureShopColumn(Connection conn, String columnName, String columnDefinition) throws SQLException {

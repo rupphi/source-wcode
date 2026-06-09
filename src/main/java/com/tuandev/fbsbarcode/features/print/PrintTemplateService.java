@@ -18,6 +18,7 @@ public class PrintTemplateService {
     public static final String PRINT_PREFIX_ARTICLE = "Арт";
     public static final String PRINT_PREFIX_COLOR = "Цвет";
     public static final String PRINT_PREFIX_SIZE = "Раз";
+    public static final String PRINT_PREFIX_RU_SIZE = "RU";
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     protected final PrintTemplateRepository repository;
@@ -123,6 +124,16 @@ public class PrintTemplateService {
         boolean sharedFboFbsTailLabel = approximately(stickerTail.getX(), mm(49))
                 && approximately(stickerTail.getY(), mm(36.5))
                 && !stickerTailLabel().equals(stickerTail.getLabel());
+        boolean oldStickerTailDefault = approximately(stickerTail.getX(), mm(49))
+                && approximately(stickerTail.getY(), mm(36.5))
+                && approximately(stickerTail.getWidth(), mm(6))
+                && stickerTail.getAlign() == PrintTextAlign.RIGHT;
+        if (oldStickerTailDefault) {
+            stickerTail.setX(133);
+            stickerTail.setWidth(24);
+            stickerTail.setAlign(PrintTextAlign.LEFT);
+            return true;
+        }
         if (!legacyLayout && !snappedSystemDefaultV1 && !sharedFboFbsTailLabel) {
             return false;
         }
@@ -265,10 +276,10 @@ public class PrintTemplateService {
 
         elements.add(textField(i18n.tr("template.palette.barcode_text"), PrintFieldKey.BARCODE, null, mm(2.5), mm(37), mm(47), 10, 8, false, PrintTextAlign.CENTER, 9));
 
-        PrintTemplateElement stickerTail = PrintTemplateElement.create(PrintElementType.STICKER_TAIL, stickerTailLabel(), mm(49), mm(36.5), mm(6), 9);
+        PrintTemplateElement stickerTail = PrintTemplateElement.create(PrintElementType.STICKER_TAIL, stickerTailLabel(), 133, mm(36.5), 24, 9);
         stickerTail.setFontSize(9);
         stickerTail.setBold(true);
-        stickerTail.setAlign(PrintTextAlign.RIGHT);
+        stickerTail.setAlign(PrintTextAlign.LEFT);
         stickerTail.setZIndex(10);
         elements.add(stickerTail);
 
@@ -286,6 +297,7 @@ public class PrintTemplateService {
                 new ElementPaletteItem(i18n.tr("template.palette.color"), PrintElementType.TEXT_FIELD, PrintFieldKey.COLOR),
                 new ElementPaletteItem(i18n.tr("template.palette.article"), PrintElementType.TEXT_FIELD, PrintFieldKey.ARTICLE),
                 new ElementPaletteItem(i18n.tr("template.palette.size"), PrintElementType.TEXT_FIELD, PrintFieldKey.SIZE),
+                new ElementPaletteItem(i18n.tr("template.palette.ru_size"), PrintElementType.TEXT_FIELD, PrintFieldKey.RU_SIZE),
                 new ElementPaletteItem(i18n.tr("template.palette.static_text"), PrintElementType.STATIC_TEXT, null),
                 new ElementPaletteItem(i18n.tr("template.palette.barcode_text"), PrintElementType.TEXT_FIELD, PrintFieldKey.BARCODE),
                 new ElementPaletteItem(stickerTailLabel(), PrintElementType.STICKER_TAIL, null),
@@ -311,10 +323,10 @@ public class PrintTemplateService {
             return element;
         }
         if (item.type() == PrintElementType.STICKER_TAIL) {
-            PrintTemplateElement element = PrintTemplateElement.create(item.type(), item.label(), mm(49), mm(36.5), mm(6), 9);
+            PrintTemplateElement element = PrintTemplateElement.create(item.type(), item.label(), 133, mm(36.5), 24, 9);
             element.setFontSize(9);
             element.setBold(true);
-            element.setAlign(PrintTextAlign.RIGHT);
+            element.setAlign(PrintTextAlign.LEFT);
             element.setZIndex(zIndex);
             return element;
         }
@@ -463,6 +475,7 @@ public class PrintTemplateService {
             case COLOR -> PRINT_PREFIX_COLOR;
             case ARTICLE -> PRINT_PREFIX_ARTICLE;
             case SIZE -> PRINT_PREFIX_SIZE;
+            case RU_SIZE -> PRINT_PREFIX_RU_SIZE;
             case SUBJECT_NAME -> "";
             default -> null;
         };

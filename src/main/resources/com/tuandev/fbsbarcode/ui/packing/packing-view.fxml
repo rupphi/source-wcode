@@ -26,7 +26,7 @@
                 <ProgressIndicator fx:id="refreshLoading" maxHeight="18.0" maxWidth="18.0" prefHeight="18.0" prefWidth="18.0" visible="false" />
                 <Button fx:id="refreshButton" mnemonicParsing="false" onAction="#onRefresh" prefHeight="28.0" text="Обновить заказы">
                     <graphic>
-                        <FontIcon iconLiteral="fth-refresh-cw" iconSize="15" iconColor="white" />
+                        <FontIcon iconLiteral="fth-refresh-cw" iconSize="15" />
                     </graphic>
                 </Button>
             </children>
@@ -46,7 +46,7 @@
                                                 <String fx:value="btn-icon" />
                                             </styleClass>
                                             <graphic>
-                                                <FontIcon iconLiteral="fth-x" iconSize="15" iconColor="#CCD1D9" />
+                                                <FontIcon iconLiteral="fth-x" iconSize="15" />
                                             </graphic>
                                         </Button>
                                     </children>
@@ -72,10 +72,9 @@
                                 <TableView fx:id="newOrdersTable" VBox.vgrow="ALWAYS">
                                     <columns>
                                         <TableColumn fx:id="selectedTC" maxWidth="46.0" minWidth="46.0" prefWidth="46.0" resizable="false" text="" />
-                                        <TableColumn fx:id="orderIdTC" minWidth="120.0" prefWidth="130.0" text="Order ID" />
                                         <TableColumn fx:id="orderDateTC" minWidth="160.0" prefWidth="180.0" text="Дата" />
                                         <TableColumn fx:id="imageTC" minWidth="70.0" prefWidth="78.0" text="Фото" />
-                                        <TableColumn fx:id="productTC" minWidth="300.0" prefWidth="420.0" text="Товар" />
+                                        <TableColumn fx:id="productTC" minWidth="300.0" prefWidth="550.0" text="Товар" />
                                         <TableColumn fx:id="priceTC" minWidth="100.0" prefWidth="110.0" text="Цена" />
                                     </columns>
                                 </TableView>

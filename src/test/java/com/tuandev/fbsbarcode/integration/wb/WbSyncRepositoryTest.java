@@ -58,6 +58,7 @@ class WbSyncRepositoryTest {
                       "deliveryType":"fbs",
                       "comment":"comment",
                       "scanPrice":1500,
+                      "userId":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
                       "orderUid":"uid-1",
                       "article":"one-ring-7548",
                       "colorCode":"RAL 3017",
@@ -96,6 +97,8 @@ class WbSyncRepositoryTest {
             assertEquals(1, count(conn, "SELECT COUNT(*) FROM wb_product_sizes"));
             assertEquals(1, count(conn, "SELECT COUNT(*) FROM wb_product_size_skus"));
             assertEquals(1, count(conn, "SELECT COUNT(*) FROM wb_orders"));
+            assertEquals("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                    scalarString(conn, "SELECT user_id FROM wb_orders WHERE shop_id = 1 AND order_id = 13833711"));
             assertEquals(1, count(conn, "SELECT COUNT(*) FROM wb_order_meta_requirements WHERE requirement_type = 'required'"));
             assertEquals(1, count(conn, "SELECT COUNT(*) FROM wb_order_meta_requirements WHERE requirement_type = 'optional'"));
             assertEquals(1, count(conn, "SELECT COUNT(*) FROM wb_supply_orders"));
@@ -205,6 +208,13 @@ class WbSyncRepositoryTest {
         try (Statement st = conn.createStatement();
              ResultSet rs = st.executeQuery(sql)) {
             return rs.next() ? rs.getInt(1) : 0;
+        }
+    }
+
+    private String scalarString(Connection conn, String sql) throws Exception {
+        try (Statement st = conn.createStatement();
+             ResultSet rs = st.executeQuery(sql)) {
+            return rs.next() ? rs.getString(1) : null;
         }
     }
 }

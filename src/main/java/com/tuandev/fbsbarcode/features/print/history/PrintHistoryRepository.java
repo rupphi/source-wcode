@@ -59,9 +59,9 @@ public class PrintHistoryRepository {
                 """;
         String itemSql = """
                 INSERT INTO print_job_items(
-                    print_job_id, sort_index, order_id, brand, name, subject_name, size, color,
+                    print_job_id, sort_index, order_id, brand, name, subject_name, size, ru_size, color,
                     article, barcode, sticker, sticker_code, kiz, image_cache_key
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
         try (Connection conn = Database.getConnection()) {
             conn.setAutoCommit(false);
@@ -100,13 +100,14 @@ public class PrintHistoryRepository {
                     itemPs.setString(5, item.name());
                     itemPs.setString(6, item.subjectName());
                     itemPs.setString(7, item.size());
-                    itemPs.setString(8, item.color());
-                    itemPs.setString(9, item.article());
-                    itemPs.setString(10, item.barcode());
-                    itemPs.setString(11, item.sticker());
-                    itemPs.setString(12, item.stickerCode());
-                    itemPs.setString(13, item.kiz());
-                    itemPs.setString(14, item.imageCacheKey());
+                    itemPs.setString(8, item.ruSize());
+                    itemPs.setString(9, item.color());
+                    itemPs.setString(10, item.article());
+                    itemPs.setString(11, item.barcode());
+                    itemPs.setString(12, item.sticker());
+                    itemPs.setString(13, item.stickerCode());
+                    itemPs.setString(14, item.kiz());
+                    itemPs.setString(15, item.imageCacheKey());
                     itemPs.addBatch();
                 }
                 if (!items.isEmpty()) {
@@ -166,7 +167,7 @@ public class PrintHistoryRepository {
         List<PrintHistoryItem> result = new ArrayList<>();
         String sql = """
                 SELECT print_job_id, sort_index, order_id, brand, name, subject_name, size, color,
-                       article, barcode, sticker, sticker_code, kiz, image_cache_key
+                       ru_size, article, barcode, sticker, sticker_code, kiz, image_cache_key
                 FROM print_job_items
                 WHERE print_job_id = ?
                 ORDER BY sort_index
@@ -184,6 +185,7 @@ public class PrintHistoryRepository {
                         rs.getString("name"),
                         rs.getString("subject_name"),
                         rs.getString("size"),
+                        rs.getString("ru_size"),
                         rs.getString("color"),
                         rs.getString("article"),
                         rs.getString("barcode"),

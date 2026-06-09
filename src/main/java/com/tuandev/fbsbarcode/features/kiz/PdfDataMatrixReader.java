@@ -62,14 +62,23 @@ public class PdfDataMatrixReader {
         return results;
     }
 
-    private static String decodeDataMatrix(BufferedImage image) {
-        String result = decode(image);
+    static String decodeDataMatrix(BufferedImage image, DataMatrixDecoder decoder) {
+        String result = decoder.decode(image);
         if (result == null) {
-            BufferedImage lefHalf = image.getSubimage(0, 0, image.getWidth() / 2, image.getHeight());
-            result = decode(lefHalf);
+            BufferedImage leftHalf = image.getSubimage(0, 0, image.getWidth() / 2, image.getHeight());
+            result = decoder.decode(leftHalf);
+        }
+        if (result == null) {
+            int rightX = image.getWidth() / 2;
+            BufferedImage rightHalf = image.getSubimage(rightX, 0, image.getWidth() - rightX, image.getHeight());
+            result = decoder.decode(rightHalf);
         }
 
         return result;
+    }
+
+    private static String decodeDataMatrix(BufferedImage image) {
+        return decodeDataMatrix(image, PdfDataMatrixReader::decode);
     }
 
     private static String decode(BufferedImage image) {
@@ -88,5 +97,10 @@ public class PdfDataMatrixReader {
 
     public static void shutdown() {
         DECODE_EXECUTOR.shutdownNow();
+    }
+
+    @FunctionalInterface
+    interface DataMatrixDecoder {
+        String decode(BufferedImage image);
     }
 }

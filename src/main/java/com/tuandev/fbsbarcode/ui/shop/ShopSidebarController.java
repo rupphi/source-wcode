@@ -41,6 +41,12 @@ public class ShopSidebarController {
     @FXML
     private RadioMenuItem languageViMenuItem;
     @FXML
+    private Menu themeMenu;
+    @FXML
+    private RadioMenuItem themeDarkMenuItem;
+    @FXML
+    private RadioMenuItem themeLightMenuItem;
+    @FXML
     private MenuItem checkVersionMenuItem;
     @FXML
     private MenuItem activationMenuItem;
@@ -60,6 +66,7 @@ public class ShopSidebarController {
     private Runnable onActivation;
     private Runnable onAbout;
     private Consumer<AppLanguage> onLanguageChanged;
+    private Consumer<String> onThemeChanged;
     private boolean activated;
 
     @FXML
@@ -69,6 +76,11 @@ public class ShopSidebarController {
         languageEnMenuItem.setToggleGroup(languageGroup);
         languageZhMenuItem.setToggleGroup(languageGroup);
         languageViMenuItem.setToggleGroup(languageGroup);
+
+        ToggleGroup themeGroup = new ToggleGroup();
+        themeDarkMenuItem.setToggleGroup(themeGroup);
+        themeLightMenuItem.setToggleGroup(themeGroup);
+
         applyTranslations();
     }
 
@@ -116,6 +128,18 @@ public class ShopSidebarController {
         this.onLanguageChanged = onLanguageChanged;
     }
 
+    public void setOnThemeChanged(Consumer<String> onThemeChanged) {
+        this.onThemeChanged = onThemeChanged;
+    }
+
+    public void setSelectedTheme(String themeName) {
+        if ("light".equalsIgnoreCase(themeName)) {
+            themeLightMenuItem.setSelected(true);
+        } else {
+            themeDarkMenuItem.setSelected(true);
+        }
+    }
+
     public void setSelectedLanguage(AppLanguage language) {
         if (language == null) {
             return;
@@ -148,6 +172,9 @@ public class ShopSidebarController {
         kizMappingButton.setText(" " + i18n.tr("sidebar.kiz_mapping"));
         settingsMenuButton.setText(" " + i18n.tr("settings.menu"));
         languageMenu.setText(i18n.tr("sidebar.language"));
+        themeMenu.setText(i18n.tr("settings.theme"));
+        themeDarkMenuItem.setText(i18n.tr("settings.theme.dark"));
+        themeLightMenuItem.setText(i18n.tr("settings.theme.light"));
         checkVersionMenuItem.setText(i18n.tr("settings.check_version"));
         activationMenuItem.setText(i18n.tr("settings.activation"));
         aboutMenuItem.setText(i18n.tr("settings.about"));
@@ -200,6 +227,20 @@ public class ShopSidebarController {
     private void onSettings() {
         if (onOpenSettings != null) {
             onOpenSettings.run();
+        }
+    }
+
+    @FXML
+    private void onThemeDark() {
+        if (onThemeChanged != null) {
+            onThemeChanged.accept("dark");
+        }
+    }
+
+    @FXML
+    private void onThemeLight() {
+        if (onThemeChanged != null) {
+            onThemeChanged.accept("light");
         }
     }
 

@@ -67,30 +67,29 @@ public class KizMappingController {
     @FXML private Label titleLabel;
     @FXML private TextField searchField;
     @FXML private MenuButton subjectMenuButton;
+    @FXML private MenuButton genderMenuButton;
     @FXML private Button clearFiltersButton;
-    @FXML private Button exportButton;
-    @FXML private Button importButton;
     @FXML private ProgressIndicator loadingIndicator;
     @FXML private Label loadingLabel;
     @FXML private Label emptyStateLabel;
     @FXML private VBox kizPanelContainer;
     @FXML private TableView<KizMappingRow> productTable;
     @FXML private TableColumn<KizMappingRow, KizMappingRow> imageColumn;
-    @FXML private TableColumn<KizMappingRow, String> nameColumn;
-    @FXML private TableColumn<KizMappingRow, String> subjectColumn;
-    @FXML private TableColumn<KizMappingRow, String> genderColumn;
-    @FXML private TableColumn<KizMappingRow, String> vendorCodeColumn;
+    @FXML private TableColumn<KizMappingRow, KizMappingRow> detailsColumn;
     @FXML private TableColumn<KizMappingRow, KizMappingRow> categoryIdColumn;
 
     private final KizMappingRepository repository = new KizMappingRepository();
-    private final KizMappingExcelService excelService = new KizMappingExcelService();
     private final FboProductImageService imageService = new FboProductImageService();
     private final CategoryWorkflow categoryWorkflow = new CategoryWorkflow();
     private final ObservableList<KizMappingRow> rows = FXCollections.observableArrayList();
     private final List<String> selectedSubjects = new ArrayList<>();
+    private final List<String> selectedGenders = new ArrayList<>();
     private final List<CheckBox> subjectCheckBoxes = new ArrayList<>();
-    private final FileChooser fileChooser = new FileChooser();
+    private final List<CheckBox> genderCheckBoxes = new ArrayList<>();
     private final FileChooser pdfFileChooser = new FileChooser();
+    private final java.util.Map<Integer, Integer> categoryKizCounts = new java.util.HashMap<>();
+    private final java.util.Map<Integer, Integer> categoryDisplayIdsById = new java.util.HashMap<>();
+    private final java.util.Map<Integer, Integer> categoryIdsByDisplayId = new java.util.HashMap<>();
     private KizPanelController kizPanelController;
     private Shop shop;
     private boolean loading;
@@ -121,7 +120,6 @@ public class KizMappingController {
                     }
                 })
         );
-        fileChooser.getExtensionFilters().setAll(new FileChooser.ExtensionFilter("Excel (*.xlsx)", "*.xlsx"));
         applyTranslations();
         updateButtons();
     }
@@ -132,7 +130,11 @@ public class KizMappingController {
         if (shop == null && kizPanelController != null) {
             kizPanelController.clearCategories();
         }
+        if (shop == null) {
+            clearCategoryCaches();
+        }
         setSubjects(shop == null ? List.of() : repository.findSubjects(shop.getId()));
+        setGenders(shop == null ? List.of() : repository.findGenders(shop.getId()));
         updateButtons();
         if (shop != null) {
             loadCategories();
@@ -147,6 +149,7 @@ public class KizMappingController {
     public void refresh() {
         if (shop != null) {
             setSubjects(repository.findSubjects(shop.getId()));
+            setGenders(repository.findGenders(shop.getId()));
             loadCategories();
             reload();
         }
@@ -156,20 +159,16 @@ public class KizMappingController {
         I18nService i18n = I18nService.getInstance();
         titleLabel.setText(i18n.tr("kiz_mapping.title"));
         searchField.setPromptText(i18n.tr("kiz_mapping.search"));
-        exportButton.setText(i18n.tr("kiz_mapping.export"));
-        importButton.setText(i18n.tr("kiz_mapping.import"));
         loadingLabel.setText(i18n.tr("kiz_mapping.loading"));
         emptyStateLabel.setText(i18n.tr("kiz_mapping.empty"));
         imageColumn.setText(i18n.tr("kiz_mapping.column.image"));
-        nameColumn.setText(i18n.tr("kiz_mapping.column.name"));
-        subjectColumn.setText(i18n.tr("kiz_mapping.column.subject"));
-        genderColumn.setText(i18n.tr("kiz_mapping.column.gender"));
-        vendorCodeColumn.setText(i18n.tr("kiz_mapping.column.vendor_code"));
+        detailsColumn.setText(i18n.tr("kiz_mapping.column.details"));
         categoryIdColumn.setText(i18n.tr("kiz_mapping.column.kiz_category"));
         if (kizPanelController != null) {
             kizPanelController.applyTranslations();
         }
         updateSubjectText();
+        updateGenderText();
     }
 
     @FXML
@@ -177,80 +176,17 @@ public class KizMappingController {
         suppressSearchEvents = true;
         searchField.clear();
         selectedSubjects.clear();
+        selectedGenders.clear();
         subjectCheckBoxes.forEach(item -> item.setSelected(false));
+        genderCheckBoxes.forEach(item -> item.setSelected(false));
         suppressSearchEvents = false;
         updateSubjectText();
+        updateGenderText();
         updateClearFiltersVisibility();
         reload();
     }
 
-    @FXML
-    private void onExport() {
-        if (shop == null) {
-            return;
-        }
-        fileChooser.setTitle(I18nService.getInstance().tr("kiz_mapping.export"));
-        fileChooser.setInitialFileName("kiz-mapping-" + shop.getId() + ".xlsx");
-        File file = fileChooser.showSaveDialog(null);
-        if (file == null) {
-            return;
-        }
-        Task<Void> task = new Task<>() {
-            @Override
-            protected Void call() throws Exception {
-                excelService.exportProducts(file, repository.findAllForExport(shop.getId()));
-                return null;
-            }
-        };
-        setLoading(true);
-        task.setOnSucceeded(event -> {
-            setLoading(false);
-            openExportedFile(file);
-        });
-        task.setOnFailed(event -> {
-            setLoading(false);
-            LOGGER.error("Không thể export KIZ mapping", task.getException());
-            AlertService.showError(task.getException().getMessage());
-        });
-        AppTaskExecutor.execute(task);
-    }
-
-    @FXML
-    private void onImport() {
-        if (shop == null) {
-            return;
-        }
-        fileChooser.setTitle(I18nService.getInstance().tr("kiz_mapping.import"));
-        File file = fileChooser.showOpenDialog(null);
-        if (file == null) {
-            return;
-        }
-        Task<KizMappingImportResult> task = new Task<>() {
-            @Override
-            protected KizMappingImportResult call() throws Exception {
-                return repository.replaceMappingsFromImport(shop.getId(), excelService.readMappings(file));
-            }
-        };
-        setLoading(true);
-        task.setOnSucceeded(event -> {
-            setLoading(false);
-            KizMappingImportResult result = task.getValue();
-            if (!result.success()) {
-                AlertService.showError(String.join("\n", result.errors()));
-                return;
-            }
-            I18nService i18n = I18nService.getInstance();
-            AlertService.showInfo(i18n.tr("kiz_mapping.title"), i18n.tr("kiz_mapping.import_done"),
-                    MessageFormat.format(i18n.tr("kiz_mapping.import_result"), result.updatedCount(), result.clearedCount()));
-            refresh();
-        });
-        task.setOnFailed(event -> {
-            setLoading(false);
-            LOGGER.error("Không thể import KIZ mapping", task.getException());
-            AlertService.showError(task.getException().getMessage());
-        });
-        AppTaskExecutor.execute(task);
-    }
+    // Excel features removed
 
     private void reload() {
         loadProducts(false);
@@ -288,7 +224,15 @@ public class KizMappingController {
                 return;
             }
             List<Category> categories = task.getValue() == null ? List.of() : task.getValue();
-            kizPanelController.setCategories(categories, this::importKizForCategory, this::editCategory, this::confirmDeleteCategory);
+            clearCategoryCaches();
+            for (Category c : categories) {
+                categoryKizCounts.put(c.getId(), c.getCountKiz());
+                categoryDisplayIdsById.put(c.getId(), c.getDisplayId());
+                categoryIdsByDisplayId.put(c.getDisplayId(), c.getId());
+            }
+            productTable.refresh();
+            kizPanelController.setCategories(categories, this::importKizForCategory, this::editCategory,
+                    this::confirmClearKizCount, this::confirmDeleteCategory);
         });
         task.setOnFailed(event -> AlertService.showError(task.getException().getMessage()));
         AppTaskExecutor.execute(task);
@@ -299,8 +243,8 @@ public class KizMappingController {
             return;
         }
         try {
-            Optional<Category> categoryResult = categoryWorkflow.requestCreateCategory();
-            if (categoryResult.isPresent() && categoryWorkflow.createCategory(categoryResult.get()) > 0) {
+            Optional<Category> categoryResult = categoryWorkflow.requestCreateCategory(shop.getId());
+            if (categoryResult.isPresent() && categoryWorkflow.createCategory(shop, categoryResult.get()) > 0) {
                 loadCategories();
                 notifyKizInventoryChanged();
             }
@@ -367,6 +311,12 @@ public class KizMappingController {
         AppTaskExecutor.execute(task);
     }
 
+    private void clearCategoryCaches() {
+        categoryKizCounts.clear();
+        categoryDisplayIdsById.clear();
+        categoryIdsByDisplayId.clear();
+    }
+
     private void confirmDeleteCategory(Category category) {
         if (shop == null || category == null) {
             return;
@@ -382,6 +332,26 @@ public class KizMappingController {
         Optional<ButtonType> result = alert.showAndWait();
         if (result.isPresent() && result.get() == confirm) {
             categoryWorkflow.deleteCategory(shop, category);
+            loadCategories();
+            notifyKizInventoryChanged();
+        }
+    }
+
+    private void confirmClearKizCount(Category category) {
+        if (shop == null || category == null || category.getCountKiz() <= 0) {
+            return;
+        }
+        I18nService i18n = I18nService.getInstance();
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        AlertService.applyTheme(alert);
+        alert.setTitle(i18n.tr("category.clear.title"));
+        alert.setHeaderText(MessageFormat.format(i18n.tr("category.clear.header"), category.getName()));
+        ButtonType confirm = new ButtonType(i18n.tr("category.clear.confirm"), ButtonBar.ButtonData.YES);
+        ButtonType cancel = new ButtonType(i18n.tr("common.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
+        alert.getButtonTypes().setAll(confirm, cancel);
+        Optional<ButtonType> result = alert.showAndWait();
+        if (result.isPresent() && result.get() == confirm) {
+            categoryWorkflow.clearKizCount(shop, category);
             loadCategories();
             notifyKizInventoryChanged();
         }
@@ -404,10 +374,11 @@ public class KizMappingController {
             return;
         }
         int offset = append ? rows.size() : 0;
+        KizMappingSearchCriteria criteria = currentCriteria(PAGE_SIZE + 1, offset);
         Task<List<KizMappingProduct>> task = new Task<>() {
             @Override
             protected List<KizMappingProduct> call() {
-                return repository.search(new KizMappingSearchCriteria(shop.getId(), searchField.getText(), List.copyOf(selectedSubjects), PAGE_SIZE + 1, offset));
+                return repository.search(criteria);
             }
         };
         setLoading(true);
@@ -466,13 +437,49 @@ public class KizMappingController {
         updateClearFiltersVisibility();
     }
 
+    private void setGenders(List<String> genders) {
+        genderMenuButton.getItems().clear();
+        genderCheckBoxes.clear();
+        selectedGenders.clear();
+        VBox menuContent = new VBox(2);
+        if (genders != null) {
+            for (String gender : genders) {
+                CheckBox item = new CheckBox(gender);
+                item.getStyleClass().add("fbo-category-check");
+                item.selectedProperty().addListener((obs, wasSelected, selected) -> {
+                    if (selected) {
+                        selectedGenders.add(gender);
+                    } else {
+                        selectedGenders.remove(gender);
+                    }
+                    updateGenderText();
+                    updateClearFiltersVisibility();
+                    if (!suppressSearchEvents) {
+                        reload();
+                    }
+                });
+                genderCheckBoxes.add(item);
+                menuContent.getChildren().add(item);
+            }
+        }
+        ScrollPane scrollPane = new ScrollPane(menuContent);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scrollPane.setPrefViewportWidth(160);
+        scrollPane.setPrefViewportHeight(Math.min(SUBJECT_VISIBLE_ROWS, Math.max(1, genderCheckBoxes.size())) * SUBJECT_ROW_HEIGHT);
+        CustomMenuItem menuItem = new CustomMenuItem(scrollPane, false);
+        genderMenuButton.getItems().setAll(menuItem);
+        updateGenderText();
+        updateClearFiltersVisibility();
+    }
+
     private void configureColumns() {
         imageColumn.setCellValueFactory(cell -> new SimpleObjectProperty<>(cell.getValue()));
         imageColumn.setCellFactory(column -> new ImageCell());
-        nameColumn.setCellValueFactory(cell -> new ReadOnlyStringWrapper(nullToEmpty(cell.getValue().product().title())));
-        subjectColumn.setCellValueFactory(cell -> new ReadOnlyStringWrapper(nullToEmpty(cell.getValue().product().subjectName())));
-        genderColumn.setCellValueFactory(cell -> new ReadOnlyStringWrapper(nullToEmpty(cell.getValue().product().gender())));
-        vendorCodeColumn.setCellValueFactory(cell -> new ReadOnlyStringWrapper(nullToEmpty(cell.getValue().product().vendorCode())));
+
+        detailsColumn.setCellValueFactory(cell -> new SimpleObjectProperty<>(cell.getValue()));
+        detailsColumn.setCellFactory(column -> new ProductDetailsCell());
+
         categoryIdColumn.setCellValueFactory(cell -> new SimpleObjectProperty<>(cell.getValue()));
         categoryIdColumn.setCellFactory(column -> new CategoryCell());
     }
@@ -481,18 +488,35 @@ public class KizMappingController {
         if (shop == null) {
             return;
         }
-        Task<Void> task = new Task<>() {
+        KizMappingSearchCriteria criteria = currentCriteria(0, 0);
+        boolean bulkSave = categoryId != null && hasActiveFilters();
+        Task<Integer> task = new Task<>() {
             @Override
-            protected Void call() {
-                repository.saveMapping(shop.getId(), row.product().nmId(), categoryId);
-                return null;
+            protected Integer call() {
+                if (bulkSave) {
+                    return repository.saveMappingForFilter(criteria, categoryId);
+                }
+                repository.saveMapping(criteria.shopId(), row.product().nmId(), categoryId);
+                return 1;
             }
         };
         row.setSaveState(1);
         task.setOnSucceeded(event -> {
-            row.setCategoryId(categoryId);
+            if (shop == null || shop.getId() != criteria.shopId()) {
+                return;
+            }
+            if (bulkSave) {
+                rows.stream()
+                        .filter(visibleRow -> matchesCurrentFilters(visibleRow.product()))
+                        .forEach(visibleRow -> visibleRow.setCategoryId(categoryId));
+            } else {
+                row.setCategoryId(categoryId);
+            }
             row.setSaveState(2);
             productTable.refresh();
+            if (bulkSave) {
+                reload();
+            }
         });
         task.setOnFailed(event -> {
             row.setSaveState(-1);
@@ -500,6 +524,48 @@ public class KizMappingController {
             AlertService.showError(task.getException().getMessage());
         });
         AppTaskExecutor.execute(task);
+    }
+
+    private Integer displayIdForCategoryId(Integer categoryId) {
+        if (categoryId == null) {
+            return null;
+        }
+        return categoryDisplayIdsById.getOrDefault(categoryId, categoryId);
+    }
+
+    private Integer categoryIdForDisplayId(Integer displayId) {
+        if (displayId == null) {
+            return null;
+        }
+        return categoryIdsByDisplayId.get(displayId);
+    }
+
+    private KizMappingSearchCriteria currentCriteria(int limit, int offset) {
+        return new KizMappingSearchCriteria(shop.getId(), searchField.getText(), List.copyOf(selectedSubjects),
+                List.copyOf(selectedGenders), limit, offset);
+    }
+
+    private boolean hasActiveFilters() {
+        return (searchField.getText() != null && !searchField.getText().isBlank())
+                || !selectedSubjects.isEmpty()
+                || !selectedGenders.isEmpty();
+    }
+
+    private boolean matchesCurrentFilters(KizMappingProduct product) {
+        if (product == null) {
+            return false;
+        }
+        String query = searchField.getText() == null ? "" : searchField.getText().trim().toLowerCase(java.util.Locale.ROOT);
+        if (!query.isBlank()
+                && !String.valueOf(product.nmId()).contains(query)
+                && !nullToEmpty(product.vendorCode()).toLowerCase(java.util.Locale.ROOT).contains(query)
+                && !nullToEmpty(product.title()).toLowerCase(java.util.Locale.ROOT).contains(query)) {
+            return false;
+        }
+        if (!selectedSubjects.isEmpty() && !selectedSubjects.contains(product.subjectName())) {
+            return false;
+        }
+        return selectedGenders.isEmpty() || selectedGenders.contains(product.gender());
     }
 
     private void setLoading(boolean loading) {
@@ -512,9 +578,7 @@ public class KizMappingController {
     }
 
     private void updateButtons() {
-        boolean enabled = shop != null && !loading;
-        exportButton.setDisable(!enabled);
-        importButton.setDisable(!enabled);
+        // Excel buttons removed
     }
 
     private void updateSubjectText() {
@@ -524,8 +588,15 @@ public class KizMappingController {
                 : i18n.tr("kiz_mapping.subjects") + " (" + selectedSubjects.size() + ")");
     }
 
+    private void updateGenderText() {
+        I18nService i18n = I18nService.getInstance();
+        genderMenuButton.setText(selectedGenders.isEmpty()
+                ? i18n.tr("kiz_mapping.genders")
+                : i18n.tr("kiz_mapping.genders") + " (" + selectedGenders.size() + ")");
+    }
+
     private void updateClearFiltersVisibility() {
-        boolean hasFilters = !selectedSubjects.isEmpty() || (searchField.getText() != null && !searchField.getText().isBlank());
+        boolean hasFilters = hasActiveFilters();
         clearFiltersButton.setVisible(hasFilters);
         clearFiltersButton.setManaged(hasFilters);
     }
@@ -540,17 +611,44 @@ public class KizMappingController {
         return value == null ? "" : value;
     }
 
-    private void openExportedFile(File file) {
-        if (file == null || !file.exists()) {
-            return;
+    private final class ProductDetailsCell extends TableCell<KizMappingRow, KizMappingRow> {
+        private final VBox vbox = new VBox(4);
+        private final Label titleLabel = new Label();
+        private final Label metaLabel = new Label();
+
+        ProductDetailsCell() {
+            titleLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: -text-primary;");
+            metaLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 11px; -fx-text-fill: -text-muted;");
+            vbox.getChildren().addAll(titleLabel, metaLabel);
+            vbox.setAlignment(Pos.CENTER_LEFT);
+            vbox.setPadding(new javafx.geometry.Insets(4, 0, 4, 0));
         }
-        if (!Desktop.isDesktopSupported()) {
-            return;
-        }
-        try {
-            Desktop.getDesktop().open(file);
-        } catch (IOException ex) {
-            LOGGER.warn("Không thể mở file Excel sau khi export: {}", file.getAbsolutePath(), ex);
+
+        @Override
+        protected void updateItem(KizMappingRow row, boolean empty) {
+            super.updateItem(row, empty);
+            if (empty || row == null || row.product() == null) {
+                setGraphic(null);
+                return;
+            }
+            KizMappingProduct p = row.product();
+            titleLabel.setText(nullToEmpty(p.title()));
+
+            String brand = nullToEmpty(p.brand());
+            String vendorCode = nullToEmpty(p.vendorCode());
+            String size = nullToEmpty(p.size());
+
+            StringBuilder metaBuilder = new StringBuilder();
+            if (!brand.isEmpty()) {
+                metaBuilder.append(brand).append(" • ");
+            }
+            metaBuilder.append(vendorCode);
+            if (!size.isEmpty()) {
+                metaBuilder.append(" • Size: ").append(size);
+            }
+            metaLabel.setText(metaBuilder.toString());
+
+            setGraphic(vbox);
         }
     }
 
@@ -635,7 +733,8 @@ public class KizMappingController {
                 return;
             }
             updating = true;
-            field.setText(row.getCategoryId() == null ? "" : String.valueOf(row.getCategoryId()));
+            Integer displayId = displayIdForCategoryId(row.getCategoryId());
+            field.setText(displayId == null ? "" : String.valueOf(displayId));
             updating = false;
             setGraphic(field);
         }
@@ -644,11 +743,17 @@ public class KizMappingController {
             if (currentRow == null || updating) {
                 return;
             }
-            Integer value = parse(field.getText());
-            if (java.util.Objects.equals(value, currentRow.getCategoryId())) {
+            Integer displayId = parse(field.getText());
+            Integer categoryId = categoryIdForDisplayId(displayId);
+            if (displayId != null && categoryId == null) {
+                AlertService.showError("Không tồn tại KIZ ID trong shop hiện tại: " + displayId);
+                productTable.refresh();
                 return;
             }
-            saveRow(currentRow, value);
+            if (java.util.Objects.equals(categoryId, currentRow.getCategoryId())) {
+                return;
+            }
+            saveRow(currentRow, categoryId);
         }
 
         private Integer parse(String value) {

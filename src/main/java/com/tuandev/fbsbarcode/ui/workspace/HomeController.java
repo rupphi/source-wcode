@@ -24,6 +24,7 @@ import com.tuandev.fbsbarcode.shared.ConfigService;
 import com.tuandev.fbsbarcode.shared.FxmlViewLoader;
 import com.tuandev.fbsbarcode.shared.AppPaths;
 import com.tuandev.fbsbarcode.shared.I18nService;
+import com.tuandev.fbsbarcode.shared.ThemeService;
 import com.tuandev.fbsbarcode.features.print.KizAttachmentCoordinator;
 import com.tuandev.fbsbarcode.features.print.PrintJobOptions;
 import com.tuandev.fbsbarcode.features.print.PrintOptionsDialogService;
@@ -361,6 +362,7 @@ public class HomeController implements Initializable {
 
     private void setDynamicContent(Node view) {
         clearFboQuantitiesIfLeaving(view);
+        stopPackingDelayIfLeaving(view);
         dynamicContentContainer.getChildren().setAll(view);
         view.setOpacity(0.0);
         FadeTransition fade = new FadeTransition(javafx.util.Duration.millis(120), view);
@@ -375,6 +377,15 @@ public class HomeController implements Initializable {
         }
         if (dynamicContentContainer.getChildren().contains(fboPackingView)) {
             fboPackingController.clearQuantities();
+        }
+    }
+
+    private void stopPackingDelayIfLeaving(Node nextView) {
+        if (packingController == null || packingView == null || nextView == packingView) {
+            return;
+        }
+        if (dynamicContentContainer.getChildren().contains(packingView)) {
+            packingController.cancelPendingRequests();
         }
     }
 
@@ -781,77 +792,109 @@ public class HomeController implements Initializable {
             );
             return;
         }
-        if (!printAuthorizationDialogService.ensureAuthorized()) {
-            return;
-        }
-        Optional<PrintJobOptions> printOptions = printOptionsDialogService.chooseOptions();
-        if (printOptions.isEmpty()) {
-            return;
-        }
         List<Order> exportOrders = new ArrayList<>(state.getDisplayedOrders());
         String supplyId = state.getLoadedSupplyId();
         String supplyName = state.getLoadedSupplyName();
 
-        preparePdfSaveChooser();
-        File file = fileChooser.showSaveDialog(null);
-        if (file == null) {
-            return;
-        }
-
-        File orderDetailsFile = new File(file.getParent(), "NHAT_HANG-" + file.getName());
-        Task<OrderExportWorkflow.ExportResult> task = new Task<>() {
+        Task<Void> checkTask = new Task<>() {
             @Override
-            protected OrderExportWorkflow.ExportResult call() throws Exception {
-                List<Order> ordersWithStickers = supplyLoadWorkflow.enrichStickers(shop, exportOrders);
-                return orderExportWorkflow.export(
-                        new OrderExportWorkflow.ExportRequest(
-                                shop,
-                                supplyId,
-                                supplyName,
-                                ordersWithStickers,
-                                printOptions.get(),
-                                file,
-                                orderDetailsFile
-                        )
-                );
+            protected Void call() throws Exception {
+                orderExportWorkflow.verifyKizAvailability(exportOrders, shop);
+                return null;
             }
         };
 
-        task.setOnRunning(e -> {
+        checkTask.setOnRunning(e -> {
             markShopRunning(shop.getId(), true);
             if (supplyDetailController != null) {
-                supplyDetailController.setStickerLoading(true, i18nService.tr("supply.preparing_pdf"));
+                supplyDetailController.setStickerLoading(true, i18nService.tr("supply.loading_orders"));
             }
         });
-        task.setOnFailed(e -> {
+        checkTask.setOnFailed(e -> {
             markShopRunning(shop.getId(), false);
             if (supplyDetailController != null) {
                 supplyDetailController.setStickerLoading(false);
             }
-            Throwable ex = task.getException();
-            LOGGER.error("Export thất bại cho shop {}", shop.getId(), ex);
+            Throwable ex = checkTask.getException();
+            LOGGER.error("Verify KIZ thất bại cho shop {}", shop.getId(), ex);
             AlertService.showError(ex.getMessage());
         });
-        task.setOnSucceeded(e -> {
+        checkTask.setOnSucceeded(e -> {
             markShopRunning(shop.getId(), false);
-            OrderExportWorkflow.ExportResult result = task.getValue();
-            state.setLoadedOrdersRaw(result.exportedOrders());
-            applySortAndDisplayOrders();
-            loadCategories();
-            clearKizDraft();
-            tryOpenFile(orderDetailsFile);
-            tryOpenFile(file);
-            enqueueBackgroundKizAttachment(shop, supplyId, supplyName, result);
-            if (isPrintHistoryVisible()) {
-                refreshPrintHistory();
+            if (supplyDetailController != null) {
+                supplyDetailController.setStickerLoading(false);
             }
-            if (isPackingVisible()) {
-                refreshPackingView();
-            }
-            refreshCurrentKizAttachmentProgress();
-        });
 
-        AppTaskExecutor.execute(task);
+            javafx.application.Platform.runLater(() -> {
+                if (!printAuthorizationDialogService.ensureAuthorized()) {
+                    return;
+                }
+                Optional<PrintJobOptions> printOptions = printOptionsDialogService.chooseOptions();
+                if (printOptions.isEmpty()) {
+                    return;
+                }
+
+                preparePdfSaveChooser();
+                File file = fileChooser.showSaveDialog(null);
+                if (file == null) {
+                    return;
+                }
+
+                File orderDetailsFile = new File(file.getParent(), "NHAT_HANG-" + file.getName());
+                Task<OrderExportWorkflow.ExportResult> exportTask = new Task<>() {
+                    @Override
+                    protected OrderExportWorkflow.ExportResult call() throws Exception {
+                        List<Order> ordersWithStickers = supplyLoadWorkflow.enrichStickers(shop, exportOrders);
+                        return orderExportWorkflow.export(
+                                new OrderExportWorkflow.ExportRequest(
+                                        shop,
+                                        supplyId,
+                                        supplyName,
+                                        ordersWithStickers,
+                                        printOptions.get(),
+                                        file,
+                                        orderDetailsFile
+                                )
+                        );
+                    }
+                };
+
+                exportTask.setOnRunning(ev -> {
+                    markShopRunning(shop.getId(), true);
+                    if (supplyDetailController != null) {
+                        supplyDetailController.setStickerLoading(true, i18nService.tr("supply.preparing_pdf"));
+                    }
+                });
+                exportTask.setOnFailed(ev -> {
+                    markShopRunning(shop.getId(), false);
+                    if (supplyDetailController != null) {
+                        supplyDetailController.setStickerLoading(false);
+                    }
+                    Throwable ex = exportTask.getException();
+                    LOGGER.error("Export thất bại cho shop {}", shop.getId(), ex);
+                    AlertService.showError(ex.getMessage());
+                });
+                exportTask.setOnSucceeded(ev -> {
+                    markShopRunning(shop.getId(), false);
+                    OrderExportWorkflow.ExportResult result = exportTask.getValue();
+                    state.setLoadedOrdersRaw(result.exportedOrders());
+                    applySortAndDisplayOrders();
+                    loadCategories();
+                    clearKizDraft();
+                    tryOpenFile(orderDetailsFile);
+                    tryOpenFile(file);
+                    enqueueBackgroundKizAttachment(shop, supplyId, supplyName, result);
+                    if (isPrintHistoryVisible()) {
+                        refreshPrintHistory();
+                    }
+                    if (isPackingVisible()) {
+                        refreshPackingView();
+                    }
+                });
+                AppTaskExecutor.execute(exportTask);
+            });
+        });
+        AppTaskExecutor.execute(checkTask);
     }
 
     public void onSettings(ActionEvent event) {
@@ -987,7 +1030,8 @@ public class HomeController implements Initializable {
                 return;
             }
             List<Category> categories = task.getValue();
-            kizPanelController.setCategories(categories, this::importKizForCategory, this::confirmDeleteCategory);
+            kizPanelController.setCategories(categories, this::importKizForCategory, this::editCategory,
+                    this::confirmClearKizCount, this::confirmDeleteCategory);
         });
         task.setOnFailed(e -> AlertService.showError(task.getException().getMessage()));
         AppTaskExecutor.execute(task);
@@ -1051,6 +1095,27 @@ public class HomeController implements Initializable {
         }
     }
 
+    private void confirmClearKizCount(Category category) {
+        Shop shop = state.getSelectedShop();
+        if (shop == null || category == null || category.getCountKiz() <= 0) {
+            return;
+        }
+
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        AlertService.applyTheme(alert);
+        alert.setTitle(i18nService.tr("category.clear.title"));
+        alert.setHeaderText(MessageFormat.format(i18nService.tr("category.clear.header"), category.getName()));
+        ButtonType buttonTypeConfirm = new ButtonType(i18nService.tr("category.clear.confirm"), ButtonBar.ButtonData.YES);
+        ButtonType buttonTypeCancel = new ButtonType(i18nService.tr("common.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
+        alert.getButtonTypes().setAll(buttonTypeConfirm, buttonTypeCancel);
+
+        Optional<ButtonType> result = alert.showAndWait();
+        if (result.isPresent() && result.get() == buttonTypeConfirm) {
+            categoryWorkflow.clearKizCount(shop, category);
+            loadCategories();
+        }
+    }
+
     private void setSupplyKizPanelLoading(boolean loading) {
         if (kizPanelController != null) {
             kizPanelController.setLoading(loading);
@@ -1063,9 +1128,9 @@ public class HomeController implements Initializable {
             return;
         }
         try {
-            Optional<Category> categoryResult = categoryWorkflow.requestCreateCategory();
+            Optional<Category> categoryResult = categoryWorkflow.requestCreateCategory(shop.getId());
             if (categoryResult.isPresent()) {
-                int rowCount = categoryWorkflow.createCategory(categoryResult.get());
+                int rowCount = categoryWorkflow.createCategory(shop, categoryResult.get());
                 if (rowCount > 0) {
                     loadCategories();
                 }
@@ -1075,6 +1140,24 @@ public class HomeController implements Initializable {
         } catch (SQLException e) {
             LOGGER.error("Không thể thêm category", e);
             AlertService.showError(i18nService.tr("category.error.id_exists"));
+        }
+    }
+
+    private void editCategory(Category category) {
+        Shop shop = state.getSelectedShop();
+        if (shop == null || category == null) {
+            return;
+        }
+        try {
+            Optional<Category> categoryResult = categoryWorkflow.requestEditCategory(category);
+            if (categoryResult.isPresent() && categoryWorkflow.updateCategoryName(categoryResult.get()) > 0) {
+                loadCategories();
+            }
+        } catch (NumberFormatException ex) {
+            AlertService.showError(i18nService.tr("category.error.id_number"));
+        } catch (SQLException ex) {
+            LOGGER.error("Không thể sửa category", ex);
+            AlertService.showError(ex.getMessage());
         }
     }
 
@@ -1265,10 +1348,6 @@ public class HomeController implements Initializable {
             }
             state.setLoadedOrdersRaw(localTask.getValue());
             supplyDetailController.setSupplyInfo(formatSupplyTitle(supply), "");
-            applySortAndDisplayOrders();
-            supplyDetailController.setLoading(false);
-            updateExportAvailability();
-            refreshCurrentKizAttachmentProgress();
             startSupplyRefresh(shop, supply, requestToken);
         });
         AppTaskExecutor.execute(localTask);
@@ -1278,14 +1357,28 @@ public class HomeController implements Initializable {
         Task<List<Order>> refreshTask = new Task<>() {
             @Override
             protected List<Order> call() throws Exception {
+                if (supplyLoadWorkflow.hasMissingProducts(shop, supply.getSupplyId())) {
+                    updateMessage(i18nService.tr("supply.loading_missing_products"));
+                }
                 return supplyLoadWorkflow.refreshSupplyData(shop, supply.getSupplyId());
             }
         };
+        refreshTask.messageProperty().addListener((obs, oldMessage, newMessage) -> {
+            if (!isCurrentSupplyRequest(shop.getId(), supply.getSupplyId(), requestToken)) {
+                return;
+            }
+            if (newMessage != null && !newMessage.isBlank()) {
+                supplyDetailController.setLoading(true, newMessage);
+            }
+        });
         refreshTask.setOnFailed(e -> {
             if (!isCurrentSupplyRequest(shop.getId(), supply.getSupplyId(), requestToken)) {
                 return;
             }
+            supplyDetailController.setLoading(false);
+            applySortAndDisplayOrders();
             updateExportAvailability();
+            refreshCurrentKizAttachmentProgress();
             LOGGER.warn("Không thể refresh supply {} ở nền", supply.getSupplyId(), refreshTask.getException());
             String message = refreshTask.getException() == null ? "" : refreshTask.getException().getMessage();
             if (message != null && message.startsWith("Sản phẩm không tồn tại trên WB:")) {
@@ -1300,9 +1393,11 @@ public class HomeController implements Initializable {
             if (!isCurrentSupplyRequest(shop.getId(), supply.getSupplyId(), requestToken)) {
                 return;
             }
+            supplyDetailController.setLoading(false);
             state.setLoadedOrdersRaw(refreshTask.getValue());
             applySortAndDisplayOrders();
             supplyDetailController.setSupplyInfo(formatSupplyTitle(supply), "");
+            refreshCurrentKizAttachmentProgress();
             if (supplyListController != null) {
                 supplyListController.updateSupplySummary(new WbSupplySummary(
                         supply.getSupplyId(),
@@ -1372,6 +1467,8 @@ public class HomeController implements Initializable {
         shopSidebarController.setOnAbout(this::showAboutDialog);
         shopSidebarController.setOnLanguageChanged(i18nService::setLanguage);
         shopSidebarController.setSelectedLanguage(i18nService.getCurrentLanguage());
+        shopSidebarController.setOnThemeChanged(ThemeService::switchTheme);
+        shopSidebarController.setSelectedTheme(ThemeService.getCurrentTheme().getKey());
         shopSidebarController.setActivated(appActivated);
         shopSidebarController.applyTranslations();
         sidebarContainer.getChildren().setAll(root);
@@ -1432,6 +1529,7 @@ public class HomeController implements Initializable {
         }
         if (shopSidebarController != null) {
             shopSidebarController.setSelectedLanguage(i18nService.getCurrentLanguage());
+            shopSidebarController.setSelectedTheme(ThemeService.getCurrentTheme().getKey());
             shopSidebarController.applyTranslations();
         }
         if (workspaceHeaderController != null) {

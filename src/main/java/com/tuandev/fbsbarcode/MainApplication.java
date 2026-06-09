@@ -6,6 +6,7 @@ import com.tuandev.fbsbarcode.integration.wb.WbSupplyWorkflow;
 import com.tuandev.fbsbarcode.shared.AlertService;
 import com.tuandev.fbsbarcode.shared.AppTaskExecutor;
 import com.tuandev.fbsbarcode.shared.I18nService;
+import com.tuandev.fbsbarcode.shared.ThemeService;
 import com.tuandev.fbsbarcode.ui.workspace.HomeController;
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
@@ -25,6 +26,7 @@ public class MainApplication extends Application {
         Scene scene = new Scene(fxmlLoader.load());
         homeController = fxmlLoader.getController();
         scene.getStylesheets().add(MainApplication.class.getResource("/com/tuandev/fbsbarcode/styles/theme.css").toExternalForm());
+        ThemeService.applyTheme(scene);
         stage.setTitle("WCode v" + BuildConfig.getAppVersion() + " (Zalo: 0335407670)");
 
         Image appIcon = new Image(MainApplication.class.getResourceAsStream("/com/tuandev/fbsbarcode/assets/images/logo.png"));

@@ -40,6 +40,7 @@ public class PrintHistoryService {
                     order.getName(),
                     order.getSubjectName(),
                     order.getSize(),
+                    order.getRuSize(),
                     order.getColor(),
                     order.getArticle(),
                     order.getBarcode(),
@@ -127,6 +128,7 @@ public class PrintHistoryService {
                     item.barcode()
             );
             order.setSubjectName(item.subjectName());
+            order.setRuSize(item.ruSize());
             order.setStickerCode(item.stickerCode());
             order.setKiz(item.kiz());
             order.setImageUrl(item.imageCacheKey());

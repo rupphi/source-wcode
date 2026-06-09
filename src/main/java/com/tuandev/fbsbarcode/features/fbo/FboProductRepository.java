@@ -110,6 +110,7 @@ public class FboProductRepository {
                             rs.getString("title"),
                             rs.getString("color_value"),
                             firstNonBlank(rs.getString("tech_size"), rs.getString("wb_size")),
+                            firstNonBlank(rs.getString("wb_size")),
                             rs.getString("sku"),
                             firstNonBlank(
                                     rs.getString("c246x328_url"),

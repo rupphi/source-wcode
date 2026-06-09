@@ -1069,6 +1069,9 @@ public class PrintTemplateDesignerController implements Initializable {
         if (element.getType() == PrintElementType.TEXT_FIELD) {
             return withPrefix(element.getPrefix(), sampleValue(element));
         }
+        if (element.getType() == PrintElementType.STICKER_TAIL) {
+            return withPrefix(element.getPrefix(), "0001");
+        }
         String prefix = safeText(element.getPrefix()).trim();
         if (supportsPrefix(element) && !prefix.isBlank()) {
             return prefix + ":";
@@ -1087,6 +1090,7 @@ public class PrintTemplateDesignerController implements Initializable {
             case COLOR -> i18n.tr("template.sample.color");
             case ARTICLE -> "ABC-123456";
             case SIZE -> "42";
+            case RU_SIZE -> "44-46";
             case BARCODE -> "4600000000000";
             case STICKER_TAIL -> "1";
         };
@@ -1094,7 +1098,7 @@ public class PrintTemplateDesignerController implements Initializable {
 
     private void applyPreviewLabelStyle(Label label, PrintTemplateElement element) {
         double previewFont = element.getFontSize() <= 0 ? 8d : element.getFontSize() * PREVIEW_SCALE;
-        label.setStyle("-fx-font-size: %.1fpx; -fx-text-fill: -bg-primary; -fx-font-weight: %s;"
+        label.setStyle("-fx-font-family: 'Arial'; -fx-font-size: %.1fpx; -fx-text-fill: #000000; -fx-font-weight: %s;"
                 .formatted(previewFont, element.isBold() ? "700" : "400"));
     }
 

@@ -31,6 +31,9 @@ public class CategoryItemController {
     private Button editCategoryBtn;
 
     @FXML
+    private Button resetKizBtn;
+
+    @FXML
     private Button deleteCategoryBtn;
 
     private Category category;
@@ -39,12 +42,12 @@ public class CategoryItemController {
         this.category = category;
         applyTranslations();
         nameLabel.setText(category.getName());
-        countKizsField.setText(String.valueOf(category.getCountKiz()));
+        updateCount(category.getCountKiz());
     }
 
     public void applyTranslations() {
         if (category != null) {
-            idLabel.setText(I18nService.getInstance().tr("category_item.id_prefix") + ": " + category.getId());
+            idLabel.setText(I18nService.getInstance().tr("category_item.id_prefix") + ": " + category.getDisplayId());
         }
         kizCountLabel.setText(I18nService.getInstance().tr("category_item.kiz_count"));
     }
@@ -54,6 +57,7 @@ public class CategoryItemController {
             category.setCountKiz(countKiz);
         }
         countKizsField.setText(String.valueOf(countKiz));
+        resetKizBtn.setDisable(countKiz <= 0);
     }
 
     public void setOnAddKiz(Runnable action) {
@@ -62,6 +66,10 @@ public class CategoryItemController {
 
     public void setOnEditCategory(Runnable action) {
         editCategoryBtn.setOnAction(event -> action.run());
+    }
+
+    public void setOnResetKiz(Runnable action) {
+        resetKizBtn.setOnAction(event -> action.run());
     }
 
     public void setOnDeleteCategory(Runnable action) {

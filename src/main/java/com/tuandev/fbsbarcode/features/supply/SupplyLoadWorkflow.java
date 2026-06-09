@@ -21,6 +21,10 @@ public class SupplyLoadWorkflow {
         return wbSupplyWorkflow.loadOrdersForSupply(shop, supplyId);
     }
 
+    public boolean hasMissingProducts(Shop shop, String supplyId) {
+        return wbSupplyWorkflow.hasMissingProducts(shop, supplyId);
+    }
+
     public List<Order> enrichStickers(Shop shop, List<Order> orders) throws IOException {
         wbSupplyWorkflow.enrichOrderStickers(shop, orders);
         return orders;

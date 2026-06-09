@@ -71,6 +71,7 @@ class WbApiSchemaMappingTest {
                       "deliveryType":"fbs",
                       "comment":"comment",
                       "scanPrice":1500,
+                      "userId":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
                       "orderUid":"uid-1",
                       "article":"one-ring-7548",
                       "colorCode":"RAL 3017",
@@ -105,7 +106,87 @@ class WbApiSchemaMappingTest {
         assertEquals("WB-GI-92937123", response.getOrders().getFirst().getSupplyId());
         assertEquals("uin", response.getOrders().getFirst().getRequiredMeta().getFirst());
         assertEquals(12345678L, response.getOrders().getFirst().getNmId());
+        assertEquals("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                response.getOrders().getFirst().getUserId());
         assertTrue(response.getOrders().getFirst().getOptions().getIsB2B());
+    }
+
+    @Test
+    void shouldDeserializeNumericOrderUserIdAsString() {
+        String json = """
+                {
+                  "orders": [
+                    {
+                      "id": 13833711,
+                      "userId": 123456789
+                    }
+                  ]
+                }
+                """;
+
+        WbOrdersResponse response = GSON.fromJson(json, WbOrdersResponse.class);
+
+        assertEquals("123456789", response.getOrders().getFirst().getUserId());
+    }
+
+    @Test
+    void shouldDeserializeOrderMetaDetailsAndBuildDeliveryDecision() {
+        String json = """
+                {
+                  "orders": [
+                    {
+                      "orderId": 13833711,
+                      "requiredMeta": ["sgtin"],
+                      "metaDetails": [
+                        {"key": "sgtin", "requirementType": "required", "filled": false, "valid": false, "status": "missing"},
+                        {"key": "gtin", "requirementType": "optional", "filled": false, "valid": true}
+                      ]
+                    }
+                  ]
+                }
+                """;
+
+        WbOrderMetaDetailsResponse response = GSON.fromJson(json, WbOrderMetaDetailsResponse.class);
+        WbMetadataDecision decision = WbMetadataDecision.from(response.getOrders().getFirst());
+
+        assertEquals(13833711L, decision.orderId());
+        assertTrue(decision.blocksDelivery());
+        assertEquals("sgtin", decision.missingRequiredMeta().getFirst());
+        assertTrue(decision.invalidMeta().isEmpty());
+    }
+
+    @Test
+    void shouldDeserializeCrossBorderStickerStatus() {
+        String json = """
+                {
+                  "stickers": [
+                    {"orderId": 1, "status": "awaitingTrackNumber"},
+                    {"orderId": 2, "status": "ready", "partA": 11, "partB": 22, "barcode": "abc", "file": "base64"}
+                  ]
+                }
+                """;
+
+        WbCrossBorderStickerResponse response = GSON.fromJson(json, WbCrossBorderStickerResponse.class);
+
+        assertTrue(response.getStickers().getFirst().isAwaitingTrackNumber());
+        assertTrue(response.getStickers().get(1).isReady());
+        assertEquals("abc", response.getStickers().get(1).getBarcode());
+    }
+
+    @Test
+    void shouldDeserializeSupplyBoxes() {
+        String json = """
+                {
+                  "trbxes": [
+                    {"trbxId": "TRBX-1", "orders": [100, 101]}
+                  ]
+                }
+                """;
+
+        WbSupplyBoxesResponse response = GSON.fromJson(json, WbSupplyBoxesResponse.class);
+
+        assertEquals("TRBX-1", response.getBoxes().getFirst().getTrbxId());
+        assertEquals(2, response.getBoxes().getFirst().getOrders().size());
     }
 
 }

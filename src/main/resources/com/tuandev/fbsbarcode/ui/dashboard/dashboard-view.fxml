@@ -21,7 +21,7 @@
                 <HBox HBox.hgrow="ALWAYS" />
                 <Button fx:id="refreshButton" mnemonicParsing="false" onAction="#onRefresh" prefHeight="28.0" text="Refresh">
                     <graphic>
-                        <FontIcon iconLiteral="fth-refresh-cw" iconColor="white" iconSize="15" />
+                        <FontIcon iconLiteral="fth-refresh-cw" iconSize="15" />
                     </graphic>
                 </Button>
             </children>

@@ -45,6 +45,7 @@ public class AutoKizMappingRepository {
                 categoriesByName.put(normalizedName, categoryId);
                 categoriesCreated++;
             }
+            attachCategoryToShop(conn, shopId, categoryId);
             mappingsCreated += upsertMissingMapping(conn, shopId, product.nmId(), categoryId);
         }
 
@@ -102,6 +103,18 @@ public class AutoKizMappingRepository {
         try (PreparedStatement ps = conn.prepareStatement("INSERT INTO categories (id, name) VALUES (?, ?)")) {
             ps.setInt(1, categoryId);
             ps.setString(2, name);
+            ps.executeUpdate();
+        }
+    }
+
+    private void attachCategoryToShop(Connection conn, int shopId, int categoryId) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement("""
+                INSERT OR IGNORE INTO shop_categories (shop_id, category_id, created_at)
+                VALUES (?, ?, ?)
+                """)) {
+            ps.setInt(1, shopId);
+            ps.setInt(2, categoryId);
+            ps.setString(3, Instant.now().toString());
             ps.executeUpdate();
         }
     }

@@ -18,9 +18,12 @@ import com.tuandev.fbsbarcode.ui.workspace.WorkspaceHeaderController;
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Path;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -29,8 +32,12 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FxmlSmokeTest {
+    @TempDir
+    static Path appDataDir;
+
     @BeforeAll
     static void initToolkit() throws Exception {
+        System.setProperty("wcode.appdata.dir", appDataDir.toString());
         AtomicBoolean started = new AtomicBoolean(false);
         try {
             Platform.startup(() -> started.set(true));
@@ -42,6 +49,11 @@ class FxmlSmokeTest {
             Platform.runLater(latch::countDown);
             assertTrue(latch.await(5, TimeUnit.SECONDS));
         }
+    }
+
+    @AfterAll
+    static void clearAppDataOverride() {
+        System.clearProperty("wcode.appdata.dir");
     }
 
     @Test

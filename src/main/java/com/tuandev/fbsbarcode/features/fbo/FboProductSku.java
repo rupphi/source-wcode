@@ -8,6 +8,7 @@ public record FboProductSku(
         String title,
         String color,
         String size,
+        String ruSize,
         String sku,
         String imageUrl,
         boolean requiresKiz

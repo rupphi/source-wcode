@@ -119,7 +119,7 @@ public class WbOrderRepository {
                 ps.setString(7, order.getDdate());
                 ps.setString(8, order.getSellerDate());
                 ps.setString(9, order.getComment());
-                setNullableLong(ps, 10, order.getUserId());
+                ps.setString(10, order.getUserId());
                 ps.setString(11, order.getArticle());
                 ps.setString(12, order.getColorCode());
                 setNullableInteger(ps, 13, order.getWarehouseId());
@@ -307,10 +307,11 @@ public class WbOrderRepository {
                     JOIN wb_orders o ON o.shop_id = so.shop_id AND o.order_id = so.order_id
                     WHERE so.shop_id = ? AND so.supply_id = ?
                 )
-                SELECT o.order_id, o.effective_nm_id AS nm_id, o.created_at, o.final_price, o.price, o.supplier_status, o.wb_status,
+                SELECT o.order_id, o.effective_nm_id AS nm_id, o.created_at, o.final_price, o.price, o.converted_final_price, o.converted_price, o.supplier_status, o.wb_status,
                        COALESCE(pc.brand, '') AS brand, COALESCE(pc.title, '') AS title,
                        COALESCE(pc.subject_name, '') AS subject_name,
                        COALESCE(ps.tech_size, '') AS tech_size,
+                       COALESCE(ps.wb_size, '') AS ru_size,
                        COALESCE(NULLIF(o.color_code, ''),
                                 (SELECT COALESCE(json_extract(ch.value_json, '$[0]'), json_extract(ch.value_json, '$'))
                                  FROM wb_product_characteristics ch
@@ -358,12 +359,13 @@ public class WbOrderRepository {
                 order.setName(rs.getString("title"));
                 order.setSubjectName(rs.getString("subject_name"));
                 order.setSize(rs.getString("tech_size"));
+                order.setRuSize(rs.getString("ru_size"));
                 order.setColor(rs.getString("color_code"));
                 order.setArticle(rs.getString("article"));
                 order.setBarcode(rs.getString("barcode"));
                 order.setImageUrl(rs.getString("image_url"));
                 order.setCreatedAt(rs.getString("created_at"));
-                order.setPrice(rs.getObject("final_price") == null ? rs.getInt("price") : rs.getInt("final_price"));
+                order.setPrice(getOrderPrice(rs));
                 order.setSupplierStatus(rs.getString("supplier_status"));
                 order.setWbStatus(rs.getString("wb_status"));
                 order.setRequiresKiz(rs.getInt("requires_kiz") > 0);
@@ -388,10 +390,11 @@ public class WbOrderRepository {
     private List<Order> getPackingOrders(int shopId, String extraWhere) {
         List<Order> orders = new ArrayList<>();
         String sql = """
-                SELECT o.order_id, o.nm_id, o.created_at, o.final_price, o.price, o.supplier_status, o.wb_status,
+                SELECT o.order_id, o.nm_id, o.created_at, o.final_price, o.price, o.converted_final_price, o.converted_price, o.supplier_status, o.wb_status,
                        COALESCE(pc.brand, '') AS brand, COALESCE(pc.title, '') AS title,
                        COALESCE(pc.subject_name, '') AS subject_name,
                        COALESCE(ps.tech_size, '') AS tech_size,
+                       COALESCE(ps.wb_size, '') AS ru_size,
                        COALESCE(NULLIF(o.color_code, ''),
                                 (SELECT COALESCE(json_extract(ch.value_json, '$[0]'), json_extract(ch.value_json, '$'))
                                  FROM wb_product_characteristics ch
@@ -436,12 +439,13 @@ public class WbOrderRepository {
                 order.setName(rs.getString("title"));
                 order.setSubjectName(rs.getString("subject_name"));
                 order.setSize(rs.getString("tech_size"));
+                order.setRuSize(rs.getString("ru_size"));
                 order.setColor(rs.getString("color_code"));
                 order.setArticle(rs.getString("article"));
                 order.setBarcode(rs.getString("barcode"));
                 order.setImageUrl(rs.getString("image_url"));
                 order.setCreatedAt(rs.getString("created_at"));
-                order.setPrice(rs.getObject("final_price") == null ? rs.getInt("price") : rs.getInt("final_price"));
+                order.setPrice(getOrderPrice(rs));
                 order.setSupplierStatus(rs.getString("supplier_status"));
                 order.setWbStatus(rs.getString("wb_status"));
                 order.setRequiresKiz(rs.getInt("requires_kiz") > 0);
@@ -481,6 +485,65 @@ public class WbOrderRepository {
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public List<Long> findOrderIdsWithDeliveryBlockingMeta(int shopId, String supplyId) {
+        List<Long> orderIds = new ArrayList<>();
+        String sql = """
+                SELECT DISTINCT so.order_id
+                FROM wb_supply_orders so
+                JOIN wb_order_meta_requirements mr ON mr.shop_id = so.shop_id AND mr.order_id = so.order_id
+                WHERE so.shop_id = ?
+                  AND so.supply_id = ?
+                  AND mr.requirement_type = 'required'
+                  AND LOWER(mr.meta_key) IN ('imei', 'uin', 'sgtin', 'gtin')
+                ORDER BY so.order_id
+                """;
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, shopId);
+            ps.setString(2, supplyId);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                orderIds.add(rs.getLong("order_id"));
+            }
+            return orderIds;
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public List<Boolean> findKnownB2bValuesForOrders(int shopId, List<Long> orderIds) {
+        if (orderIds == null || orderIds.isEmpty()) {
+            return List.of();
+        }
+        List<Boolean> values = new ArrayList<>();
+        for (int start = 0; start < orderIds.size(); start += IN_CLAUSE_BATCH_SIZE) {
+            List<Long> batch = orderIds.subList(start, Math.min(start + IN_CLAUSE_BATCH_SIZE, orderIds.size()));
+            String placeholders = String.join(", ", Collections.nCopies(batch.size(), "?"));
+            String sql = """
+                    SELECT DISTINCT is_b2b
+                    FROM wb_orders
+                    WHERE shop_id = ?
+                      AND is_b2b IS NOT NULL
+                      AND order_id IN (
+                    """ + placeholders + ")";
+            try (Connection conn = Database.getConnection();
+                 PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setInt(1, shopId);
+                int index = 2;
+                for (Long orderId : batch) {
+                    ps.setLong(index++, orderId);
+                }
+                ResultSet rs = ps.executeQuery();
+                while (rs.next()) {
+                    values.add(rs.getInt("is_b2b") == 1);
+                }
+            } catch (SQLException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        return values.stream().distinct().toList();
     }
 
     public boolean hasMissingProductsForSupply(int shopId, String supplyId) {
@@ -590,7 +653,15 @@ public class WbOrderRepository {
         String officesSql = "INSERT INTO wb_order_offices (shop_id, order_id, office_index, office_name) VALUES (?, ?, ?, ?)";
         String skusSql = "INSERT INTO wb_order_skus (shop_id, order_id, sku) VALUES (?, ?, ?)";
         String metaSql = "INSERT INTO wb_order_meta_requirements (shop_id, order_id, meta_key, requirement_type) VALUES (?, ?, ?, ?)";
-        String supplySql = "INSERT OR IGNORE INTO wb_supply_orders (shop_id, supply_id, order_id) VALUES (?, ?, ?)";
+        String supplySql = """
+                INSERT OR IGNORE INTO wb_supply_orders (shop_id, supply_id, order_id)
+                SELECT ?, ?, ?
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM wb_supplies
+                    WHERE shop_id = ? AND supply_id = ?
+                )
+                """;
         try (PreparedStatement officesPs = conn.prepareStatement(officesSql);
              PreparedStatement skusPs = conn.prepareStatement(skusSql);
              PreparedStatement metaPs = conn.prepareStatement(metaSql);
@@ -608,6 +679,8 @@ public class WbOrderRepository {
                     supplyPs.setInt(1, shopId);
                     supplyPs.setString(2, order.getSupplyId());
                     supplyPs.setLong(3, orderId);
+                    supplyPs.setInt(4, shopId);
+                    supplyPs.setString(5, order.getSupplyId());
                     supplyPs.addBatch();
                 }
             }
@@ -725,5 +798,21 @@ public class WbOrderRepository {
     private Long getNullableLong(ResultSet rs, String column) throws SQLException {
         long value = rs.getLong(column);
         return rs.wasNull() ? null : value;
+    }
+
+    private int getOrderPrice(ResultSet rs) throws SQLException {
+        Integer convertedFinal = (Integer) rs.getObject("converted_final_price");
+        if (convertedFinal != null && convertedFinal > 0) {
+            return convertedFinal;
+        }
+        Integer convertedPrice = (Integer) rs.getObject("converted_price");
+        if (convertedPrice != null && convertedPrice > 0) {
+            return convertedPrice;
+        }
+        Integer finalPrice = (Integer) rs.getObject("final_price");
+        if (finalPrice != null && finalPrice > 0) {
+            return finalPrice;
+        }
+        return rs.getInt("price");
     }
 }

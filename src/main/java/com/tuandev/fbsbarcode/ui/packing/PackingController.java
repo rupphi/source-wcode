@@ -15,6 +15,7 @@ import javafx.fxml.FXML;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.CheckMenuItem;
+import javafx.scene.control.CustomMenuItem;
 import javafx.scene.control.ChoiceDialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuButton;
@@ -38,6 +39,7 @@ import org.kordamp.ikonli.javafx.FontIcon;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javafx.animation.PauseTransition;
 import java.awt.Desktop;
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -83,7 +85,6 @@ public class PackingController {
     @FXML private MenuButton categoryFilterMenuButton;
     @FXML private TableView<Order> newOrdersTable;
     @FXML private TableColumn<Order, Boolean> selectedTC;
-    @FXML private TableColumn<Order, Long> orderIdTC;
     @FXML private TableColumn<Order, String> orderDateTC;
     @FXML private TableColumn<Order, byte[]> imageTC;
     @FXML private TableColumn<Order, String> productTC;
@@ -103,9 +104,13 @@ public class PackingController {
     private Shop shop;
     private boolean tokenValid;
     private Consumer<WbSupplySummary> onPrintSupply;
+    private PauseTransition delayTransition;
 
     @FXML
     private void initialize() {
+        delayTransition = new PauseTransition(javafx.util.Duration.millis(800));
+        delayTransition.setOnFinished(event -> refreshFromWb());
+
         setupNewOrdersTable();
         setupNewOrderFilters();
         setupSupplyTables();
@@ -122,12 +127,15 @@ public class PackingController {
         this.shop = shop;
         this.tokenValid = tokenValid;
         selectedOrderIds.clear();
+        if (delayTransition != null) {
+            delayTransition.stop();
+        }
         if (shop == null) {
             setBoard(new PackingWorkflow.PackingBoard(List.of(), List.of(), List.of()));
             return;
         }
         if (newOrdersTab != null && newOrdersTab.isSelected()) {
-            refreshFromWb();
+            delayTransition.playFromStart();
         } else {
             refresh();
         }
@@ -296,8 +304,7 @@ public class PackingController {
         emptyNewOrdersLabel.setText(i18n.tr("packing.empty"));
         newShipmentButton.setText(i18n.tr("packing.new_shipment"));
         addToShipmentButton.setText(i18n.tr("packing.add_to_shipment"));
-        orderIdTC.setText(i18n.tr("packing.col.order_id"));
-        orderDateTC.setText(i18n.tr("packing.col.date"));
+        orderDateTC.setText(i18n.tr("packing.col.order_id"));
         imageTC.setText(i18n.tr("packing.col.photo"));
         productTC.setText(i18n.tr("packing.col.product"));
         priceTC.setText(i18n.tr("packing.col.price"));
@@ -394,11 +401,12 @@ public class PackingController {
                 setGraphic(checkBox);
             }
         });
-        orderIdTC.setCellValueFactory(data -> new ReadOnlyObjectWrapper<>(data.getValue().getId()));
         orderDateTC.setCellValueFactory(data -> new SimpleStringProperty(formatOrderDate(data.getValue().getCreatedAt())));
+        orderDateTC.setCellFactory(column -> new OrderIdDateCell());
         imageTC.setCellValueFactory(data -> new ReadOnlyObjectWrapper<>(data.getValue().getImage()));
         imageTC.setCellFactory(column -> imageCell());
-        productTC.setCellValueFactory(data -> new SimpleStringProperty(productText(data.getValue())));
+        productTC.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().getName()));
+        productTC.setCellFactory(column -> new ProductDetailsCell());
         priceTC.setCellValueFactory(data -> new SimpleStringProperty(formatPrice(data.getValue().getPrice())));
     }
 
@@ -413,9 +421,17 @@ public class PackingController {
         }
         packingTabPane.getSelectionModel().selectedItemProperty().addListener((obs, oldTab, newTab) -> {
             if (newTab == newOrdersTab && shop != null && !refreshLoading.isVisible()) {
-                refreshFromWb();
+                delayTransition.playFromStart();
+            } else {
+                delayTransition.stop();
             }
         });
+    }
+
+    public void cancelPendingRequests() {
+        if (delayTransition != null) {
+            delayTransition.stop();
+        }
     }
 
     @FXML
@@ -441,8 +457,11 @@ public class PackingController {
                 .forEach(selectedCategories::add);
         categoryFilterMenuButton.getItems().clear();
         String allCategoriesText = I18nService.getInstance().tr("packing.all_categories");
-        CheckMenuItem allItem = new CheckMenuItem(allCategoriesText);
-        allItem.setOnAction(event -> {
+        CheckBox allCheckBox = new CheckBox(allCategoriesText);
+        allCheckBox.setMaxWidth(Double.MAX_VALUE);
+        CustomMenuItem allItem = new CustomMenuItem(allCheckBox);
+        allItem.setHideOnClick(false);
+        allCheckBox.setOnAction(event -> {
             if (updatingCategoryMenu) {
                 return;
             }
@@ -453,12 +472,15 @@ public class PackingController {
         });
         categoryFilterMenuButton.getItems().add(allItem);
         for (String category : categories) {
-            CheckMenuItem item = new CheckMenuItem(category);
-            item.setOnAction(event -> {
+            CheckBox checkBox = new CheckBox(category);
+            checkBox.setMaxWidth(Double.MAX_VALUE);
+            CustomMenuItem item = new CustomMenuItem(checkBox);
+            item.setHideOnClick(false);
+            checkBox.setOnAction(event -> {
                 if (updatingCategoryMenu) {
                     return;
                 }
-                if (item.isSelected()) {
+                if (checkBox.isSelected()) {
                     selectedCategories.add(category);
                 } else {
                     selectedCategories.remove(category);
@@ -596,7 +618,9 @@ public class PackingController {
         task.setOnSucceeded(e -> {
             try (FileOutputStream output = new FileOutputStream(file)) {
                 output.write(task.getValue());
-                Desktop.getDesktop().open(file);
+                if (Desktop.isDesktopSupported()) {
+                    Desktop.getDesktop().open(file);
+                }
             } catch (IOException ex) {
                 AlertService.showError(ex.getMessage());
             }
@@ -605,18 +629,16 @@ public class PackingController {
         AppTaskExecutor.execute(task);
     }
 
-    private static String productText(Order order) {
-        String brand = nullToEmpty(order.getBrand());
-        String article = nullToEmpty(order.getArticle());
-        String size = nullToEmpty(order.getSize());
-        return nullToEmpty(order.getName()) + "\n" + brand + " - " + article + " - " + size;
-    }
 
     private static String formatPrice(Integer price) {
         if (price == null) {
             return "";
         }
-        return String.format("%.2f ₽", price / 100.0);
+        if (price % 100 == 0) {
+            return (price / 100) + " ₽";
+        } else {
+            return String.format(java.util.Locale.US, "%.2f ₽", price / 100.0);
+        }
     }
 
     private static String formatSupplyStatus(WbSupplySummary supply) {
@@ -669,11 +691,11 @@ public class PackingController {
         updatingCategoryMenu = true;
         try {
             for (javafx.scene.control.MenuItem menuItem : categoryFilterMenuButton.getItems()) {
-                if (menuItem instanceof CheckMenuItem item) {
-                    if (I18nService.getInstance().tr("packing.all_categories").equals(item.getText())) {
-                        item.setSelected(selectedCategories.isEmpty());
+                if (menuItem instanceof CustomMenuItem customItem && customItem.getContent() instanceof CheckBox checkBox) {
+                    if (I18nService.getInstance().tr("packing.all_categories").equals(checkBox.getText())) {
+                        checkBox.setSelected(selectedCategories.isEmpty());
                     } else {
-                        item.setSelected(selectedCategories.contains(item.getText()));
+                        checkBox.setSelected(selectedCategories.contains(checkBox.getText()));
                     }
                 }
             }
@@ -731,5 +753,84 @@ public class PackingController {
     @FunctionalInterface
     private interface WriteAction {
         void run() throws Exception;
+    }
+
+    private final class OrderIdDateCell extends TableCell<Order, String> {
+        private final javafx.scene.layout.VBox vbox = new javafx.scene.layout.VBox(4);
+        private final Label idLabel = new Label();
+        private final Label dateLabel = new Label();
+
+        OrderIdDateCell() {
+            idLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: -text-primary;");
+            dateLabel.setStyle("-fx-font-size: 11px; -fx-text-fill: -text-muted;");
+            vbox.getChildren().addAll(idLabel, dateLabel);
+            vbox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+            vbox.setPadding(new javafx.geometry.Insets(4, 0, 4, 0));
+        }
+
+        @Override
+        protected void updateItem(String item, boolean empty) {
+            super.updateItem(item, empty);
+            if (empty) {
+                setGraphic(null);
+                return;
+            }
+            Order order = getTableRow() == null ? null : getTableRow().getItem();
+            if (order == null) {
+                setGraphic(null);
+                return;
+            }
+            idLabel.setText(String.valueOf(order.getId()));
+            dateLabel.setText(formatOrderDate(order.getCreatedAt()));
+            setGraphic(vbox);
+        }
+    }
+
+    private final class ProductDetailsCell extends TableCell<Order, String> {
+        private final javafx.scene.layout.VBox vbox = new javafx.scene.layout.VBox(4);
+        private final Label titleLabel = new Label();
+        private final Label metaLabel = new Label();
+
+        ProductDetailsCell() {
+            titleLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: -text-primary;");
+            metaLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 11px; -fx-text-fill: -text-muted;");
+            vbox.getChildren().addAll(titleLabel, metaLabel);
+            vbox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+            vbox.setPadding(new javafx.geometry.Insets(4, 0, 4, 0));
+        }
+
+        @Override
+        protected void updateItem(String item, boolean empty) {
+            super.updateItem(item, empty);
+            if (empty) {
+                setGraphic(null);
+                return;
+            }
+            Order order = getTableRow() == null ? null : getTableRow().getItem();
+            if (order == null) {
+                setGraphic(null);
+                return;
+            }
+            titleLabel.setText(nullToEmpty(order.getName()));
+
+            String brand = nullToEmpty(order.getBrand());
+            String article = nullToEmpty(order.getArticle());
+            String size = nullToEmpty(order.getSize());
+            if (size.isEmpty()) {
+                size = nullToEmpty(order.getRuSize());
+            }
+
+            StringBuilder metaBuilder = new StringBuilder();
+            if (!brand.isEmpty()) {
+                metaBuilder.append(brand).append(" • ");
+            }
+            metaBuilder.append(article);
+            if (!size.isEmpty()) {
+                metaBuilder.append(" • Size: ").append(size);
+            }
+            metaLabel.setText(metaBuilder.toString());
+
+            setGraphic(vbox);
+        }
     }
 }
