@@ -215,7 +215,14 @@ final class WindowsCadesSignatureProvider implements ZnackSignatureProvider {
 
     static boolean safeToRetryInOtherPowerShell(CryptoProCommandRunner.Result result) {
         String diagnostic = result.diagnostic().toLowerCase(Locale.ROOT);
+        if (diagnostic.contains("stage 'sign payload'") || diagnostic.contains("stage 'write signature'")) {
+            return false;
+        }
         return diagnostic.contains("stage 'find selected certificate'")
+                || diagnostic.contains("stage 'create signer'")
+                || diagnostic.contains("stage 'assign certificate to signer'")
+                || diagnostic.contains("stage 'create signed-data object'")
+                || diagnostic.contains("stage 'load payload'")
                 || diagnostic.contains("class not registered") || diagnostic.contains("0x80040154");
     }
 
@@ -241,7 +248,7 @@ final class WindowsCadesSignatureProvider implements ZnackSignatureProvider {
 
     private static List<String> powerShell(String executable, String mode, String... arguments) {
         ArrayList<String> command = new ArrayList<>(List.of(
-                executable, "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", mode));
+                executable, "-NoLogo", "-NoProfile", "-NonInteractive", "-Sta", "-ExecutionPolicy", "Bypass", mode));
         command.addAll(List.of(arguments));
         return List.copyOf(command);
     }

@@ -231,19 +231,26 @@ class CryptoProSignatureTest {
         assertEquals(CryptoProErrorCode.SIGNING_FAILED, error.code());
     }
 
-    @Test void windowsCadesRetriesOnlyStoreDiscoveryFailuresIn32BitPowerShell() {
+    @Test void windowsCadesRetriesOnlyFailuresBeforeSigningIn32BitPowerShell() {
         CryptoProCommandRunner.Result storeFailure = new CryptoProCommandRunner.Result(1, new byte[0],
                 "CAdESCOM stage 'find selected certificate' failed: Unable to open CryptoPro certificate stores".getBytes());
+        CryptoProCommandRunner.Result signedDataFailure = new CryptoProCommandRunner.Result(1, new byte[0],
+                "CAdESCOM stage 'create signed-data object' failed: Object reference not set".getBytes());
         CryptoProCommandRunner.Result signingFailure = new CryptoProCommandRunner.Result(1, new byte[0],
-                "CAdESCOM stage 'sign payload' failed: provider error".getBytes());
+                "CAdESCOM stage 'sign payload' failed: Class not registered".getBytes());
+        CryptoProCommandRunner.Result outputFailure = new CryptoProCommandRunner.Result(1, new byte[0],
+                "CAdESCOM stage 'write signature' failed: access denied".getBytes());
 
         assertTrue(WindowsCadesSignatureProvider.safeToRetryInOtherPowerShell(storeFailure));
+        assertTrue(WindowsCadesSignatureProvider.safeToRetryInOtherPowerShell(signedDataFailure));
         assertFalse(WindowsCadesSignatureProvider.safeToRetryInOtherPowerShell(signingFailure));
+        assertFalse(WindowsCadesSignatureProvider.safeToRetryInOtherPowerShell(outputFailure));
 
         List<List<String>> commands = WindowsCadesSignatureProvider.powerShellCandidates(
                 true, Map.of("WINDIR", "C:\\Windows"), "-Command", "probe");
         assertEquals(2, commands.size());
         assertEquals("powershell.exe", commands.getFirst().getFirst());
+        assertTrue(commands.getFirst().contains("-Sta"));
         assertTrue(commands.getLast().getFirst().contains("SysWOW64"));
     }
 
