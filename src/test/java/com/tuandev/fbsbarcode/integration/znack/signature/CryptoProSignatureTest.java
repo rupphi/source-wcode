@@ -6,7 +6,6 @@ import org.bouncycastle.asn1.pkcs.*;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,8 +18,6 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class CryptoProSignatureTest {
-    @TempDir Path temp;
-
     @Test void parsesRussianAndEnglishCertmgrAndFiltersUnusable() {
         String output = """
                 SHA1 Hash: AABB
@@ -85,29 +82,34 @@ class CryptoProSignatureTest {
     }
 
     @Test void signsWithOverrideAndValidatesCms() throws Exception {
-        Path arguments = temp.resolve("arguments.txt");
-        Path signature = temp.resolve("signature.p7s");
-        Files.write(signature, cmsFixture());
-        Path fake = script("printf '%s\\n' \"$@\" > \"" + arguments + "\"\ncp \"" + signature + "\" \"${@: -1}\"");
-        CryptoProSigningResult result = new CryptoProSignatureProvider(fake.toString(), "AABB", Duration.ofSeconds(2))
+        OutputRunner runner = new OutputRunner(cmsFixture());
+        CryptoProSigningResult result = new CryptoProSignatureProvider(runner, "cryptcp", "AABB", Duration.ofSeconds(2))
                 .sign("payload".getBytes(), ZnackSignatureContext.SIGNATURE_TEST);
         assertArrayEquals(cmsFixture(), result.cms());
-        List<String> args = Files.readAllLines(arguments);
+        List<String> args = runner.command;
         assertEquals(List.of("-sign", "-uMy", "-thumbprint", "AABB", "-der", "-detached"), args.subList(0, 6));
         assertFalse(args.contains("-pin"));
         assertFalse(args.contains("-askpin"));
     }
 
     @Test void rejectsInvalidOutputAndMapsTimeout() throws Exception {
-        Path invalid = script("printf invalid > \"${@: -1}\"");
+        OutputRunner invalid = new OutputRunner("invalid".getBytes());
         CryptoProException invalidError = assertThrows(CryptoProException.class,
-                () -> new CryptoProSignatureProvider(invalid.toString(), "AABB", Duration.ofSeconds(2))
+                () -> new CryptoProSignatureProvider(invalid, "cryptcp", "AABB", Duration.ofSeconds(2))
                         .sign("payload".getBytes(), ZnackSignatureContext.SIGNATURE_TEST));
         assertEquals(CryptoProErrorCode.INVALID_SIGNATURE_OUTPUT, invalidError.code());
 
-        Path slow = script("sleep 2");
+        CryptoProCommandRunner slow = new CryptoProCommandRunner() {
+            @Override public String resolve(String override, String command) {
+                return "cryptcp";
+            }
+
+            @Override public Result run(List<String> command, Duration timeout) throws CryptoProException {
+                throw new CryptoProException(CryptoProErrorCode.TIMEOUT, "fixture timeout");
+            }
+        };
         CryptoProException timeout = assertThrows(CryptoProException.class,
-                () -> new CryptoProSignatureProvider(slow.toString(), "AABB", Duration.ofMillis(50))
+                () -> new CryptoProSignatureProvider(slow, "cryptcp", "AABB", Duration.ofMillis(50))
                         .sign("payload".getBytes(), ZnackSignatureContext.SIGNATURE_TEST));
         assertEquals(CryptoProErrorCode.TIMEOUT, timeout.code());
     }
@@ -122,11 +124,27 @@ class CryptoProSignatureTest {
         assertTrue(noKey.usable(now));
     }
 
-    private Path script(String command) throws Exception {
-        Path path = temp.resolve("fake-cryptcp");
-        Files.writeString(path, "#!/usr/bin/env bash\n" + command + "\n");
-        assertTrue(path.toFile().setExecutable(true));
-        return path;
+    private static final class OutputRunner extends CryptoProCommandRunner {
+        private final byte[] output;
+        private List<String> command = List.of();
+
+        private OutputRunner(byte[] output) {
+            this.output = output;
+        }
+
+        @Override public String resolve(String override, String command) {
+            return "cryptcp";
+        }
+
+        @Override public Result run(List<String> command, Duration timeout) throws CryptoProException {
+            this.command = List.copyOf(command.subList(1, command.size() - 2));
+            try {
+                Files.write(Path.of(command.getLast()), output);
+                return new Result(0, new byte[0], new byte[0]);
+            } catch (Exception e) {
+                throw new CryptoProException(CryptoProErrorCode.SIGNING_FAILED, "Could not write fixture signature.", e);
+            }
+        }
     }
 
     private byte[] cmsFixture() throws Exception {

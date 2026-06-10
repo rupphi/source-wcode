@@ -12,7 +12,6 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 import java.nio.file.Files;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
@@ -481,10 +480,19 @@ class ZnackGtinWorkflowTest {
     }
 
     private Settings testedSettings() throws Exception {
-        Path cryptcp = temp.resolve("cryptcp");
-        Files.writeString(cryptcp, "#!/bin/sh\nexit 0\n");
-        Files.setPosixFilePermissions(cryptcp, PosixFilePermissions.fromString("rwx------"));
+        Path cryptcp = executableFixture();
         return new Settings("", "", "oms", "connection", "", "", "", "", "certificate", "[]",
                 "", "", "", false, "", "[]", "", Instant.now(), "", cryptcp.toString(), "", 60, "");
+    }
+
+    private Path executableFixture() throws Exception {
+        String comSpec = System.getenv("COMSPEC");
+        if (comSpec != null && Files.isRegularFile(Path.of(comSpec))) {
+            return Path.of(comSpec);
+        }
+        Path cryptcp = temp.resolve("cryptcp");
+        Files.writeString(cryptcp, "#!/bin/sh\nexit 0\n");
+        assertTrue(cryptcp.toFile().setExecutable(true));
+        return cryptcp;
     }
 }

@@ -107,7 +107,7 @@ Workflow [release.yml](.github/workflows/release.yml) tự chạy khi push tag t
 Tag release sẽ chạy kiểm thử trên Windows, đóng gói EXE/MSI/portable ZIP và tải trực tiếp lên GitHub Release tại `tuanworlddev/-WCode-Znack`.
 
 ```bash
-git tag v1.0.28
+git tag v1.0.29
 git push origin main --tags
 ```
 
