@@ -2,6 +2,9 @@ package com.tuandev.fbsbarcode.integration.znack.signature;
 
 public enum CryptoProErrorCode {
     CRYPTOPRO_MISSING,
+    CRYPTCP_MISSING,
+    CERTMGR_MISSING,
+    CADESCOM_MISSING,
     TOKEN_OR_CERTIFICATE_ABSENT,
     PRIVATE_KEY_UNAVAILABLE,
     CERTIFICATE_EXPIRED,

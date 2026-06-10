@@ -408,6 +408,9 @@ public class KizMappingController {
         if (error instanceof CryptoProException crypto) {
             return tr("znack.signature.error." + switch (crypto.code()) {
                 case CRYPTOPRO_MISSING -> "cryptopro_missing";
+                case CRYPTCP_MISSING -> "cryptcp_missing";
+                case CERTMGR_MISSING -> "certmgr_missing";
+                case CADESCOM_MISSING -> "cadescom_missing";
                 case TOKEN_OR_CERTIFICATE_ABSENT -> "certificate_absent";
                 case PRIVATE_KEY_UNAVAILABLE -> "private_key";
                 case CERTIFICATE_EXPIRED -> "expired";

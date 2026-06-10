@@ -5,7 +5,6 @@ import com.tuandev.fbsbarcode.integration.znack.ZnackModels.OrderStatus;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels.Product;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels.PurchaseStage;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels.Settings;
-import com.tuandev.fbsbarcode.integration.znack.signature.CryptoProCommandRunner;
 import com.tuandev.fbsbarcode.integration.znack.signature.CryptoProSignatureProvider;
 import com.tuandev.fbsbarcode.integration.znack.signature.ZnackSignatureProvider;
 import com.tuandev.fbsbarcode.features.shop.ShopRepository;
@@ -104,7 +103,8 @@ public class ZnackPurchaseCoordinator {
         if (settings == null || !settings.autoIntroduction()) return;
         try {
             ZnackSafety.requireSigned(settings, true);
-            new CryptoProCommandRunner().resolve(settings.cryptcpPath(), "cryptcp");
+            CryptoProSignatureProvider.requireAvailable(settings.cryptcpPath(),
+                    Duration.ofSeconds(settings.resolvedCryptoProTimeoutSeconds()));
         } catch (Exception unavailable) {
             return;
         }
@@ -180,7 +180,8 @@ public class ZnackPurchaseCoordinator {
         if (settings.omsId() == null || settings.omsId().isBlank()) {
             throw new IllegalStateException("omsId is required before buying KIZ.");
         }
-        new CryptoProCommandRunner().resolve(settings.cryptcpPath(), "cryptcp");
+        CryptoProSignatureProvider.requireAvailable(settings.cryptcpPath(),
+                Duration.ofSeconds(settings.resolvedCryptoProTimeoutSeconds()));
     }
 
     private void createOrder(Settings settings, ZnackPurchasePipelineState pipeline) throws Exception {

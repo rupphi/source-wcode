@@ -37,7 +37,7 @@
        <Label fx:id="signatureTitleLabel" styleClass="h3" text="%znack.digital_signature"/>
        <Label fx:id="signatureHelpLabel" styleClass="text-muted" text="%znack.signature.help" wrapText="true"/>
        <ComboBox fx:id="signatureCertificateCombo" maxWidth="Infinity"/>
-       <HBox spacing="8"><Button fx:id="refreshCertificatesButton" onAction="#refreshCertificates" text="%znack.signature.refresh_certificates"/><Button fx:id="testSignatureButton" onAction="#testSignature" styleClass="btn-primary" text="%znack.signature.test"/></HBox>
+       <HBox spacing="8"><Button fx:id="testSignatureButton" onAction="#testSignature" styleClass="btn-primary" text="%znack.signature.test"/></HBox>
        <Label fx:id="signatureSummaryLabel" styleClass="text-muted"/>
       </VBox>
       <VBox spacing="9" styleClass="surface">

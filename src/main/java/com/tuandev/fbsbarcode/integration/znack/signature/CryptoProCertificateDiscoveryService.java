@@ -42,6 +42,7 @@ public class CryptoProCertificateDiscoveryService {
         List<CryptoProCertificateInfo> result = new ArrayList<>();
         Map<String, String> fields = new LinkedHashMap<>();
         StringBuilder raw = new StringBuilder();
+        String lastKey = null;
         for (String line : output.replace("\r", "").split("\n")) {
             Matcher matcher = FIELD.matcher(line);
             String key = matcher.matches() ? normalize(matcher.group(1)) : "";
@@ -51,8 +52,18 @@ public class CryptoProCertificateDiscoveryService {
                 addCertificate(result, fields, raw);
                 fields.clear();
                 raw.setLength(0);
+                lastKey = null;
             }
-            if (matcher.matches()) fields.put(key, matcher.group(2).trim());
+            if (matcher.matches() && lastKey != null && isMultilineField(lastKey)
+                    && Character.isWhitespace(line.charAt(0)) && isDnAttribute(key)) {
+                fields.computeIfPresent(lastKey, (ignored, value) -> value + ", " + line.trim());
+            } else if (matcher.matches()) {
+                fields.put(key, matcher.group(2).trim());
+                lastKey = key;
+            } else if (lastKey != null && isMultilineField(lastKey) && !line.isBlank()
+                    && Character.isWhitespace(line.charAt(0))) {
+                fields.computeIfPresent(lastKey, (ignored, value) -> value + ", " + line.trim());
+            }
             if (!line.isBlank()) raw.append(line.trim()).append('\n');
         }
         if (!fields.isEmpty()) addCertificate(result, fields, raw);
@@ -89,13 +100,17 @@ public class CryptoProCertificateDiscoveryService {
 
     private static Instant date(String value) {
         if (value == null || value.isBlank()) return null;
+        String normalized = value.trim().replaceFirst("\\s+(?:UTC|GMT|MSK)$", "");
         for (DateTimeFormatter formatter : List.of(DateTimeFormatter.ISO_INSTANT, DateTimeFormatter.ISO_LOCAL_DATE,
                 DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss"), DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"),
-                DateTimeFormatter.ofPattern("MM/dd/yyyy HH:mm:ss"))) {
+                DateTimeFormatter.ofPattern("MM/dd/yyyy HH:mm:ss"), DateTimeFormatter.ofPattern("dd.MM.yyyy"),
+                DateTimeFormatter.ofPattern("dd/MM/yyyy"), DateTimeFormatter.ofPattern("MM/dd/yyyy"))) {
             try {
-                if (formatter == DateTimeFormatter.ISO_INSTANT) return Instant.from(formatter.parse(value));
-                if (formatter == DateTimeFormatter.ISO_LOCAL_DATE) return LocalDate.parse(value, formatter).atStartOfDay(ZoneId.systemDefault()).toInstant();
-                return LocalDateTime.parse(value, formatter).atZone(ZoneId.systemDefault()).toInstant();
+                if (formatter == DateTimeFormatter.ISO_INSTANT) return Instant.from(formatter.parse(normalized));
+                if (formatter == DateTimeFormatter.ISO_LOCAL_DATE || !normalized.contains(":")) {
+                    return LocalDate.parse(normalized, formatter).atStartOfDay(ZoneId.systemDefault()).toInstant();
+                }
+                return LocalDateTime.parse(normalized, formatter).atZone(ZoneId.systemDefault()).toInstant();
             } catch (DateTimeParseException ignored) {}
         }
         return null;
@@ -117,6 +132,15 @@ public class CryptoProCertificateDiscoveryService {
 
     private static boolean hasSelector(Map<String, String> fields) {
         return fields.keySet().stream().anyMatch(CryptoProCertificateDiscoveryService::isSelector);
+    }
+
+    private static boolean isMultilineField(String key) {
+        return Set.of("subject", "субъект", "issuer", "издатель").contains(key);
+    }
+
+    private static boolean isDnAttribute(String key) {
+        return Set.of("cn", "o", "ou", "sn", "g", "gn", "inn", "инн", "e", "email", "emailaddress",
+                "c", "s", "st", "l", "street", "t", "ogrn", "огрн", "snils", "снилс").contains(key);
     }
 
 }

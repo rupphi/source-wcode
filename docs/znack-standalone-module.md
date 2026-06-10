@@ -33,7 +33,7 @@ Authentication tokens, derived participant identity, signatures, PINs, and priva
 
 ## Purchase Pipeline
 
-1. Validate the shop, GTIN, `omsId`, `omsConnection`, tested certificate, and CryptoPro CLI.
+1. Validate the shop, GTIN, `omsId`, `omsConnection`, tested certificate, and an available CryptoPro signing backend (`cryptcp` or Windows CAdESCOM).
 2. Sign and create the SUZ order.
 3. Poll the persisted order until codes are ready.
 4. Download codes idempotently into GTIN inventory.

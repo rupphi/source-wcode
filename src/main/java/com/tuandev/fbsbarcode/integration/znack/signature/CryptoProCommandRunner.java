@@ -9,8 +9,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -47,39 +50,83 @@ public class CryptoProCommandRunner {
     public String resolve(String override, String command) throws CryptoProException {
         if (override != null && !override.isBlank()) {
             Path configured = Path.of(override.trim());
-            if (Files.isRegularFile(configured) && Files.isExecutable(configured)) return configured.toString();
+            if (runnable(configured)) return configured.toString();
             if (configured.getParent() == null) {
                 for (Path candidate : candidates(configured.toString())) {
-                    if (Files.isRegularFile(candidate) && Files.isExecutable(candidate)) return candidate.toString();
+                    if (runnable(candidate)) return candidate.toString();
                 }
             }
-            throw new CryptoProException(CryptoProErrorCode.CRYPTOPRO_MISSING,
+            throw new CryptoProException(missingCode(command),
                     "Configured CryptoPro command is not executable: " + override.trim());
         }
         for (Path candidate : candidates(command)) {
-            if (Files.isRegularFile(candidate) && Files.isExecutable(candidate)) return candidate.toString();
+            if (runnable(candidate)) return candidate.toString();
         }
-        throw new CryptoProException(CryptoProErrorCode.CRYPTOPRO_MISSING, "CryptoPro command not found: " + command);
+        throw new CryptoProException(missingCode(command), "CryptoPro command not found: " + command);
     }
 
     List<Path> candidates(String command) {
-        String executable = isWindows() && !command.toLowerCase(Locale.ROOT).endsWith(".exe") ? command + ".exe" : command;
-        List<Path> result = new ArrayList<>();
-        String path = System.getenv("PATH");
-        if (path != null) for (String entry : path.split(java.io.File.pathSeparator)) result.add(Path.of(entry, executable));
-        if (isWindows()) {
-            for (String root : List.of("C:\\Program Files\\Crypto Pro\\CSP", "C:\\Program Files (x86)\\Crypto Pro\\CSP")) {
-                result.add(Path.of(root, executable));
+        return candidates(command, isWindows(), System.getenv());
+    }
+
+    List<Path> candidates(String command, boolean windows, Map<String, String> environment) {
+        Set<Path> result = new LinkedHashSet<>();
+        List<String> executables = executableNames(command, windows);
+        String path = environment.get("PATH");
+        if (path != null) {
+            for (String entry : path.split(java.io.File.pathSeparator)) {
+                for (String executable : executables) result.add(Path.of(entry, executable));
+            }
+        }
+        if (windows) {
+            for (String root : windowsCryptoProRoots(environment)) {
+                for (String executable : executables) result.add(Path.of(root, executable));
             }
         } else {
             for (String root : List.of("/opt/cprocsp/bin", "/opt/cprocsp/sbin",
                     "/opt/cprocsp/bin/amd64", "/opt/cprocsp/bin/aarch64", "/opt/cprocsp/bin/arm64",
                     "/opt/cprocsp/bin/ia32", "/opt/cprocsp/sbin/amd64", "/opt/cprocsp/sbin/aarch64",
                     "/opt/cprocsp/sbin/arm64", "/Applications/CryptoPro/CSP/bin")) {
-                result.add(Path.of(root, executable));
+                for (String executable : executables) result.add(Path.of(root, executable));
             }
         }
-        return result;
+        return List.copyOf(result);
+    }
+
+    private List<String> executableNames(String command, boolean windows) {
+        if (!windows || command.toLowerCase(Locale.ROOT).endsWith(".exe")) return List.of(command);
+        if ("cryptcp".equalsIgnoreCase(command)) {
+            return List.of("cryptcp.exe", "cryptcp.x64.exe", "cryptcp.x86.exe");
+        }
+        return List.of(command + ".exe");
+    }
+
+    private List<String> windowsCryptoProRoots(Map<String, String> environment) {
+        Set<String> roots = new LinkedHashSet<>();
+        addWindowsRoot(roots, environment.get("ProgramFiles"));
+        addWindowsRoot(roots, environment.get("ProgramFiles(x86)"));
+        addWindowsRoot(roots, environment.get("ProgramW6432"));
+        roots.add("C:\\Program Files\\Crypto Pro\\CSP");
+        roots.add("C:\\Program Files (x86)\\Crypto Pro\\CSP");
+        return List.copyOf(roots);
+    }
+
+    private void addWindowsRoot(Set<String> roots, String programFiles) {
+        if (programFiles != null && !programFiles.isBlank()) {
+            roots.add(Path.of(programFiles, "Crypto Pro", "CSP").toString());
+        }
+    }
+
+    private boolean runnable(Path path) {
+        return Files.isRegularFile(path) && (isWindows() || Files.isExecutable(path));
+    }
+
+    private CryptoProErrorCode missingCode(String command) {
+        return switch (command.toLowerCase(Locale.ROOT).replace(".exe", "")) {
+            case "cryptcp", "cryptcp.x64", "cryptcp.x86" -> CryptoProErrorCode.CRYPTCP_MISSING;
+            case "certmgr" -> CryptoProErrorCode.CERTMGR_MISSING;
+            default -> CryptoProErrorCode.CRYPTOPRO_MISSING;
+        };
     }
 
     private static boolean isWindows() {

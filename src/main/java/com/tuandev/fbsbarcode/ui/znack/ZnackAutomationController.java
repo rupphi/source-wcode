@@ -17,10 +17,14 @@ import javafx.util.StringConverter;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
 public class ZnackAutomationController {
+    private static final DateTimeFormatter CERTIFICATE_DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy");
     @FXML private Label titleLabel, authStatusLabel, signatureSummaryLabel;
     @FXML private Label settingsTitleLabel, omsIdLabel, omsConnectionLabel;
     @FXML private Label omsHelpTitleLabel, omsHelpDescriptionLabel, omsHelpStepsTitleLabel, omsHelpStepsLabel;
@@ -31,7 +35,7 @@ public class ZnackAutomationController {
     @FXML private TextField omsIdField, omsConnectionField, documentNumberField, documentIssueDateField, documentExpiryDateField;
     @FXML private ComboBox<CryptoProCertificateInfo> signatureCertificateCombo;
     @FXML private CheckBox autoIntroductionCheck;
-    @FXML private Button saveButton, refreshCertificatesButton, testSignatureButton;
+    @FXML private Button saveButton, testSignatureButton;
     @FXML private Button omsIdHelpButton, omsConnectionHelpButton, closeOmsHelpButton;
     @FXML private javafx.scene.layout.VBox omsHelpPane;
     @FXML private TableView<Product> productsTable;
@@ -51,6 +55,9 @@ public class ZnackAutomationController {
     private String savedFingerprint = "";
     private String currentHelpTopic;
     private boolean loading;
+    private boolean certificateDiscoveryRunning;
+    private boolean updatingCertificateSelection;
+    private long certificateDiscoveryGeneration;
 
     @FXML
     private void initialize() {
@@ -66,15 +73,25 @@ public class ZnackAutomationController {
         logSeverityColumn.setCellValueFactory(v -> text(v.getValue().severity()));
         logResultColumn.setCellValueFactory(v -> text(v.getValue().message()));
         signatureCertificateCombo.setConverter(new StringConverter<>() {
-            @Override public String toString(CryptoProCertificateInfo value) { return value == null ? "" : value.displayName(); }
+            @Override public String toString(CryptoProCertificateInfo value) { return certificateDisplay(value); }
             @Override public CryptoProCertificateInfo fromString(String value) { return null; }
         });
+        signatureCertificateCombo.setCellFactory(ignored -> certificateCell(true));
+        signatureCertificateCombo.setButtonCell(certificateCell(false));
+        signatureCertificateCombo.setOnShowing(ignored -> loadCertificates());
         for (TextField field : List.of(omsIdField, omsConnectionField, documentNumberField, documentIssueDateField, documentExpiryDateField)) {
             field.textProperty().addListener((o, old, value) -> updateSaveState());
         }
         autoIntroductionCheck.selectedProperty().addListener((o, old, value) -> updateSaveState());
         signatureCertificateCombo.valueProperty().addListener((o, old, value) -> {
+            if (updatingCertificateSelection) return;
             if (value == null) return;
+            if (!loading && !certificateSelectable(value, Instant.now())) {
+                updatingCertificateSelection = true;
+                signatureCertificateCombo.setValue(old);
+                updatingCertificateSelection = false;
+                return;
+            }
             signerCertificate = value.selector();
             if (!loading) {
                 certificateMetadata = metadata(value);
@@ -88,12 +105,16 @@ public class ZnackAutomationController {
     }
 
     public void setShop(Shop shop) {
+        invalidateCertificateDiscovery();
         repository = shop == null ? null : new ZnackRepository(new ShopContext(shop.getId(), shop.getName()));
         if (repository == null) clear(); else load();
     }
 
     public void refresh() {
-        if (repository != null) load();
+        if (repository != null) {
+            invalidateCertificateDiscovery();
+            load();
+        }
     }
 
     public void applyTranslations() {
@@ -114,7 +135,6 @@ public class ZnackAutomationController {
         omsHelpRecognizeTitleLabel.setText(tr("znack.help.recognize_title"));
         signatureTitleLabel.setText(tr("znack.digital_signature"));
         signatureHelpLabel.setText(tr("znack.signature.help"));
-        refreshCertificatesButton.setText(tr("znack.signature.refresh_certificates"));
         testSignatureButton.setText(tr("znack.signature.test"));
         defaultGoodsDocumentLabel.setText(tr("znack.default_goods_document"));
         defaultGoodsDocumentHelpLabel.setText(tr("znack.default_goods_document_help"));
@@ -135,6 +155,7 @@ public class ZnackAutomationController {
         logSeverityColumn.setText(tr("znack.field.severity"));
         logResultColumn.setText(tr("znack.field.result"));
         if (currentHelpTopic != null) showOmsHelp(currentHelpTopic);
+        signatureCertificateCombo.setButtonCell(certificateCell(false));
         updateSignatureSummary();
     }
 
@@ -187,39 +208,87 @@ public class ZnackAutomationController {
         }
     }
 
-    @FXML
-    private void refreshCertificates() {
-        try {
-            CryptoProCertificateDiscoveryService discovery = new CryptoProCertificateDiscoveryService();
-            List<CryptoProCertificateInfo> certificates = discovery.usable(
-                    discovery.discover(loaded.certmgrPath(), loaded.csptestPath(), timeout()), Instant.now());
-            String previousSelector = selectedCertificate();
-            boolean hadConfiguredCertificate = !blank(previousSelector);
-            signatureCertificateCombo.getItems().setAll(certificates);
-            CryptoProCertificateInfo previous = certificates.stream()
-                    .filter(certificate -> previousSelector.equals(certificate.selector()))
+    private void loadCertificates() {
+        if (repository == null || certificateDiscoveryRunning) return;
+        long generation = certificateDiscoveryGeneration;
+        Settings discoverySettings = loaded;
+        certificateDiscoveryRunning = true;
+        updateSignatureSummary();
+        updateSaveState();
+        Task<List<CryptoProCertificateInfo>> task = new Task<>() {
+            @Override protected List<CryptoProCertificateInfo> call() throws CryptoProException {
+                return new CryptoProCertificateDiscoveryService().discover(
+                        discoverySettings.certmgrPath(), discoverySettings.csptestPath(),
+                        Duration.ofSeconds(discoverySettings.resolvedCryptoProTimeoutSeconds()));
+            }
+        };
+        task.setOnSucceeded(event -> {
+            if (generation != certificateDiscoveryGeneration) return;
+            certificateDiscoveryRunning = false;
+            applyDiscoveredCertificates(task.getValue(), Instant.now());
+        });
+        task.setOnFailed(event -> {
+            if (generation != certificateDiscoveryGeneration) return;
+            certificateDiscoveryRunning = false;
+            updateSignatureSummary();
+            updateSaveState();
+            Throwable failure = task.getException();
+            AlertService.showError(failure instanceof CryptoProException error
+                    ? signatureError(error) : value(failure == null ? null : failure.getMessage()));
+        });
+        AppTaskExecutor.execute(task);
+    }
+
+    private void applyDiscoveredCertificates(List<CryptoProCertificateInfo> discovered, Instant now) {
+        String previousSelector = selectedCertificate();
+        CryptoProCertificateInfo current = signatureCertificateCombo.getValue();
+        boolean hadConfiguredCertificate = !blank(previousSelector);
+        List<CryptoProCertificateInfo> certificates = new ArrayList<>(orderedCertificates(discovered, now));
+        CryptoProCertificateInfo previous = findCertificate(certificates, previousSelector);
+        if (previous == null && current != null && previousSelector.equals(current.selector()) && current.expired(now)) {
+            certificates.add(current);
+            certificates = new ArrayList<>(orderedCertificates(certificates, now));
+            previous = current;
+        }
+        CryptoProCertificateInfo selection = previous;
+        if (selection == null && !hadConfiguredCertificate) {
+            selection = certificates.stream().filter(certificate -> certificateSelectable(certificate, now))
                     .findFirst().orElse(null);
-            if (previous != null) {
-                signatureCertificateCombo.setValue(previous);
-            } else if (!hadConfiguredCertificate && !certificates.isEmpty()) {
-                signatureCertificateCombo.setValue(certificates.getFirst());
-            } else {
-                signatureCertificateCombo.setValue(null);
-                signerCertificate = "";
-                certificateMetadata = "";
+        }
+
+        loading = true;
+        updatingCertificateSelection = true;
+        try {
+            signatureCertificateCombo.getItems().setAll(certificates);
+            signatureCertificateCombo.setValue(selection);
+        } finally {
+            updatingCertificateSelection = false;
+            loading = false;
+        }
+        if (selection == null) {
+            signerCertificate = "";
+            certificateMetadata = "";
+            signerTestedAt = null;
+            testedConfigurationKey = null;
+        } else {
+            signerCertificate = selection.selector();
+            certificateMetadata = metadata(selection);
+            if (selection.expired(now) || !configurationKey().equals(testedConfigurationKey)) {
                 signerTestedAt = null;
                 testedConfigurationKey = null;
-                updateSignatureSummary();
-                updateSaveState();
-                if (certificates.isEmpty()) AlertService.showError(tr("znack.signature.not_found"));
             }
-        } catch (CryptoProException e) {
-            AlertService.showError(signatureError(e));
         }
+        updateSignatureSummary();
+        updateSaveState();
+        if (discovered.isEmpty()) AlertService.showError(tr("znack.signature.not_found"));
     }
 
     @FXML
     private void testSignature() {
+        if (selectedCertificateExpired()) {
+            AlertService.showError(tr("znack.signature.error.expired"));
+            return;
+        }
         try {
             new CryptoProSignatureProvider(loaded.cryptcpPath(), selectedCertificate(), timeout())
                     .sign(("WCode Znack signature test " + Instant.now()).getBytes(StandardCharsets.UTF_8),
@@ -250,8 +319,7 @@ public class ZnackAutomationController {
         autoIntroductionCheck.setSelected(loaded.autoIntroduction());
         signatureCertificateCombo.getItems().clear();
         if (!signerCertificate.isBlank()) {
-            CryptoProCertificateInfo stored = new CryptoProCertificateInfo(signerCertificate, signerCertificate,
-                    signerCertificate, "", "", null, null, false, "CryptoPro", "");
+            CryptoProCertificateInfo stored = storedCertificate();
             signatureCertificateCombo.getItems().add(stored);
             signatureCertificateCombo.setValue(stored);
         }
@@ -297,13 +365,15 @@ public class ZnackAutomationController {
 
     private void updateSaveState() {
         saveButton.setDisable(repository == null || loading || Objects.equals(savedFingerprint, fingerprint()));
-        refreshCertificatesButton.setDisable(repository == null);
-        testSignatureButton.setDisable(repository == null);
+        signatureCertificateCombo.setDisable(repository == null);
+        testSignatureButton.setDisable(repository == null || certificateDiscoveryRunning || selectedCertificateExpired());
     }
 
     private void updateSignatureSummary() {
         if (signatureSummaryLabel == null) return;
-        signatureSummaryLabel.setText(tr(blank(signerCertificate) ? "znack.signature.not_configured"
+        signatureSummaryLabel.setText(tr(certificateDiscoveryRunning ? "znack.signature.loading"
+                : selectedCertificateExpired() ? "znack.signature.error.expired"
+                : blank(signerCertificate) ? "znack.signature.not_configured"
                 : signerTestedAt == null ? "znack.signature.not_verified" : "znack.signature.verified"));
     }
 
@@ -328,8 +398,95 @@ public class ZnackAutomationController {
         json.addProperty("selector", certificate.selector());
         json.addProperty("thumbprint", certificate.thumbprint());
         json.addProperty("subject", certificate.subject());
+        json.addProperty("issuer", certificate.issuer());
         json.addProperty("inn", certificate.inn());
+        if (certificate.validFrom() != null) json.addProperty("validFrom", certificate.validFrom().toString());
+        if (certificate.validTo() != null) json.addProperty("validTo", certificate.validTo().toString());
+        json.addProperty("hasPrivateKey", certificate.hasPrivateKey());
+        json.addProperty("provider", certificate.provider());
         return json.toString();
+    }
+
+    private CryptoProCertificateInfo storedCertificate() {
+        try {
+            JsonObject json = com.google.gson.JsonParser.parseString(certificateMetadata).getAsJsonObject();
+            return new CryptoProCertificateInfo(
+                    jsonString(json, "selector", signerCertificate),
+                    jsonString(json, "thumbprint", signerCertificate),
+                    jsonString(json, "subject", signerCertificate),
+                    jsonString(json, "issuer", ""),
+                    jsonString(json, "inn", ""),
+                    jsonInstant(json, "validFrom"),
+                    jsonInstant(json, "validTo"),
+                    json.has("hasPrivateKey") && json.get("hasPrivateKey").getAsBoolean(),
+                    jsonString(json, "provider", "CryptoPro"),
+                    "");
+        } catch (Exception ignored) {
+            return new CryptoProCertificateInfo(signerCertificate, signerCertificate, signerCertificate,
+                    "", "", null, null, false, "CryptoPro", "");
+        }
+    }
+
+    private ListCell<CryptoProCertificateInfo> certificateCell(boolean disableExpired) {
+        return new ListCell<>() {
+            @Override protected void updateItem(CryptoProCertificateInfo certificate, boolean empty) {
+                super.updateItem(certificate, empty);
+                getStyleClass().removeAll("certificate-valid", "certificate-expired");
+                setDisable(false);
+                setText(empty || certificate == null ? null : certificateDisplay(certificate));
+                setTooltip(empty || certificate == null ? null : new Tooltip(certificate.thumbprint()));
+                if (!empty && certificate != null) {
+                    boolean expired = certificate.expired(Instant.now());
+                    getStyleClass().add(expired ? "certificate-expired" : "certificate-valid");
+                    setDisable(disableExpired && expired);
+                }
+            }
+        };
+    }
+
+    static List<CryptoProCertificateInfo> orderedCertificates(List<CryptoProCertificateInfo> certificates, Instant now) {
+        return certificates.stream()
+                .sorted(Comparator.comparing((CryptoProCertificateInfo certificate) -> certificate.expired(now))
+                        .thenComparing(certificate -> value(certificate.ownerName()), String.CASE_INSENSITIVE_ORDER)
+                        .thenComparing(certificate -> value(certificate.selector()), String.CASE_INSENSITIVE_ORDER))
+                .toList();
+    }
+
+    static boolean certificateSelectable(CryptoProCertificateInfo certificate, Instant now) {
+        return certificate != null && !certificate.expired(now);
+    }
+
+    private static CryptoProCertificateInfo findCertificate(List<CryptoProCertificateInfo> certificates, String selector) {
+        return certificates.stream().filter(certificate -> selector.equals(certificate.selector())).findFirst().orElse(null);
+    }
+
+    private boolean selectedCertificateExpired() {
+        CryptoProCertificateInfo selected = signatureCertificateCombo.getValue();
+        return selected != null && selected.expired(Instant.now());
+    }
+
+    private void invalidateCertificateDiscovery() {
+        certificateDiscoveryGeneration++;
+        certificateDiscoveryRunning = false;
+    }
+
+    private String certificateDisplay(CryptoProCertificateInfo certificate) {
+        if (certificate == null) return "";
+        StringBuilder display = new StringBuilder(value(certificate.ownerName()));
+        if (!blank(certificate.inn())) display.append(" / INN ").append(certificate.inn());
+        String expiry = certificate.validToDate() == null
+                ? tr("znack.signature.expiry_unknown")
+                : certificate.validToDate().format(CERTIFICATE_DATE);
+        return display.append(" / ").append(tr("znack.signature.expires_on")).append(" ").append(expiry).toString();
+    }
+
+    private static String jsonString(JsonObject json, String key, String fallback) {
+        return json.has(key) && !json.get(key).isJsonNull() ? json.get(key).getAsString() : fallback;
+    }
+
+    private static Instant jsonInstant(JsonObject json, String key) {
+        String value = jsonString(json, key, "");
+        return value.isBlank() ? null : Instant.parse(value);
     }
 
     private Duration timeout() {
@@ -350,6 +507,9 @@ public class ZnackAutomationController {
     private String signatureError(CryptoProException error) {
         return tr("znack.signature.error." + switch (error.code()) {
             case CRYPTOPRO_MISSING -> "cryptopro_missing";
+            case CRYPTCP_MISSING -> "cryptcp_missing";
+            case CERTMGR_MISSING -> "certmgr_missing";
+            case CADESCOM_MISSING -> "cadescom_missing";
             case TOKEN_OR_CERTIFICATE_ABSENT -> "certificate_absent";
             case PRIVATE_KEY_UNAVAILABLE -> "private_key";
             case CERTIFICATE_EXPIRED -> "expired";

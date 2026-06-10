@@ -19,6 +19,7 @@ import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.control.Button;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.VBox;
@@ -143,6 +144,7 @@ class FxmlSmokeTest {
                 VBox omsHelpPane = (VBox) loader.getNamespace().get("omsHelpPane");
                 Label omsHelpTitle = (Label) loader.getNamespace().get("omsHelpTitleLabel");
                 TextField omsConnection = (TextField) loader.getNamespace().get("omsConnectionField");
+                ComboBox<?> signatureCertificate = (ComboBox<?>) loader.getNamespace().get("signatureCertificateCombo");
                 boolean initiallyDisabled = save.isDisabled();
                 boolean helpInitiallyHidden = !omsHelpPane.isVisible() && !omsHelpPane.isManaged();
                 omsIdHelp.fire();
@@ -157,8 +159,9 @@ class FxmlSmokeTest {
                 valid.set(loader.getNamespace().get("basicSettingsCard") != null
                         && loader.getNamespace().get("advancedSettingsPane") == null
                         && loader.getNamespace().get("omsConnectionField") != null
-                        && loader.getNamespace().get("signatureCertificateCombo") != null
-                        && loader.getNamespace().get("refreshCertificatesButton") != null
+                        && signatureCertificate != null
+                        && signatureCertificate.getOnShowing() != null
+                        && loader.getNamespace().get("refreshCertificatesButton") == null
                         && loader.getNamespace().get("testSignatureButton") != null
                         && loader.getNamespace().get("documentNumberField") != null
                         && loader.getNamespace().get("trueApiUrlField") == null

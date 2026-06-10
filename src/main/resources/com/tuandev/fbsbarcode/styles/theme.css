@@ -617,6 +617,15 @@
     -fx-background-color: -accent;
     -fx-text-fill: white;
 }
+.combo-box .list-cell.certificate-valid,
+.combo-box-popup .list-cell.certificate-valid {
+    -fx-text-fill: -success;
+}
+.combo-box .list-cell.certificate-expired,
+.combo-box-popup .list-cell.certificate-expired {
+    -fx-text-fill: -danger;
+    -fx-opacity: 1;
+}
 
 .combo-box .shop-combo-button-cell,
 .combo-box .shop-combo-button-cell:selected,

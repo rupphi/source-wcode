@@ -107,7 +107,7 @@ class ZnackModuleTest {
         String fxml=Files.readString(Path.of("src/main/resources/com/tuandev/fbsbarcode/ui/znack/znack-automation-view.fxml"));
         assertTrue(fxml.contains("signatureSummaryLabel"));
         assertTrue(fxml.contains("signatureCertificateCombo"));
-        assertTrue(fxml.contains("refreshCertificatesButton"));
+        assertFalse(fxml.contains("refreshCertificatesButton"));
         assertTrue(fxml.contains("testSignatureButton"));
         assertTrue(fxml.contains("omsConnectionField"));
         assertTrue(fxml.contains("documentNumberField"));
@@ -163,7 +163,7 @@ class ZnackModuleTest {
                 """).getFirst();
         assertEquals("abc",certificate.selector());
         assertTrue(certificate.hasPrivateKey());
-        assertTrue(certificate.displayName().startsWith("ООО Example / INN 7701234567 / 2027-"));
+        assertEquals("ООО Example / INN 7701234567 / 01.01.2027", certificate.displayName());
         assertEquals(ZnackSafety.UNVERIFIED_SIGNATURE,
                 assertThrows(IllegalStateException.class,()->ZnackSafety.requireSigned(
                         new Settings("","","","connection","","","","signer","cert","[]","","","",false),true)).getMessage());
@@ -385,7 +385,7 @@ class ZnackModuleTest {
     @Test void configuredCryptoProOverrideMustResolveToAnExecutable() {
         CryptoProException error=assertThrows(CryptoProException.class,
                 ()->new CryptoProCommandRunner().resolve(temp.resolve("missing-cryptcp").toString(),"cryptcp"));
-        assertEquals(CryptoProErrorCode.CRYPTOPRO_MISSING,error.code());
+        assertEquals(CryptoProErrorCode.CRYPTCP_MISSING,error.code());
     }
 
     @Test void productSyncStoresRealMetadataAndDoesNotEraseManualFallbacksWhenApiOmitsThem() throws Exception {

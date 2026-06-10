@@ -12,7 +12,9 @@ import java.nio.file.Path;
 import java.math.BigInteger;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.Base64;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -66,6 +68,24 @@ class CryptoProSignatureTest {
         assertTrue(certificate.hasPrivateKey());
     }
 
+    @Test void parsesWrappedWindowsSubjectNameAndExpiryWithTimezoneSuffix() {
+        String output = """
+                1-------
+                Subject             : INN=007814508921,
+                                      SN=ДИНЬ,
+                                      G=ТХИ МАЙ
+                SHA1 Thumbprint     : aabbccdd
+                Not valid after     : 24.06.2027 13:45:51 UTC
+                PrivateKey Link     : Yes
+                """;
+
+        CryptoProCertificateInfo certificate = new CryptoProCertificateDiscoveryService().parse(output).getFirst();
+
+        assertEquals("ДИНЬ ТХИ МАЙ", certificate.ownerName());
+        assertEquals(LocalDate.of(2027, 6, 24), certificate.validToDate());
+        assertEquals("ДИНЬ ТХИ МАЙ / INN 007814508921 / 24.06.2027", certificate.displayName());
+    }
+
     @Test void treatsCertmgrEmptyStoreExitAsNoCertificatesInsteadOfDiscoveryFailure() throws Exception {
         CryptoProCommandRunner runner = new CryptoProCommandRunner() {
             @Override public String resolve(String override, String command) {
@@ -114,6 +134,51 @@ class CryptoProSignatureTest {
         assertEquals(CryptoProErrorCode.TIMEOUT, timeout.code());
     }
 
+    @Test void fallsBackToWindowsCadesWhenCryptcpIsMissing() throws Exception {
+        CryptoProCommandRunner missingCryptcp = new CryptoProCommandRunner() {
+            @Override public String resolve(String override, String command) throws CryptoProException {
+                throw new CryptoProException(CryptoProErrorCode.CRYPTCP_MISSING, "fixture missing");
+            }
+        };
+        byte[] fixture = cmsFixture();
+        ZnackSignatureProvider fallback = (payload, context) -> new CryptoProSigningResult(fixture, "CAdESCOM");
+
+        CryptoProSigningResult result = new CryptoProSignatureProvider(
+                missingCryptcp, "", "AABB", Duration.ofSeconds(2), fallback)
+                .sign("payload".getBytes(), ZnackSignatureContext.SIGNATURE_TEST);
+
+        assertArrayEquals(fixture, result.cms());
+        assertEquals("CAdESCOM", result.diagnostic());
+    }
+
+    @Test void windowsCadesSignsThroughGeneratedLocalScriptWithoutPuttingPayloadOnCommandLine() throws Exception {
+        WindowsCadesRunner runner = new WindowsCadesRunner(cmsFixture());
+
+        CryptoProSigningResult result = new WindowsCadesSignatureProvider(runner, "AABB", Duration.ofSeconds(2))
+                .sign("secret-payload".getBytes(), ZnackSignatureContext.SUZ_POST_BODY);
+
+        assertArrayEquals(cmsFixture(), result.cms());
+        assertTrue(runner.script.contains("CAdESCOM.CadesSignedData"));
+        assertTrue(runner.script.contains("SignCades"));
+        assertArrayEquals("secret-payload".getBytes(), runner.payload);
+        assertTrue(runner.command.contains("true"));
+        assertFalse(String.join(" ", runner.command).contains("secret-payload"));
+    }
+
+    @Test void windowsCadesMapsMissingComComponent() {
+        CryptoProCommandRunner runner = new CryptoProCommandRunner() {
+            @Override public Result run(List<String> command, Duration timeout) {
+                return new Result(1, new byte[0], "Class not registered: CAdESCOM".getBytes());
+            }
+        };
+
+        CryptoProException error = assertThrows(CryptoProException.class,
+                () -> new WindowsCadesSignatureProvider(runner, "AABB", Duration.ofSeconds(2))
+                        .sign("payload".getBytes(), ZnackSignatureContext.SIGNATURE_TEST));
+
+        assertEquals(CryptoProErrorCode.CADESCOM_MISSING, error.code());
+    }
+
     @Test void certificateSelectionUsesExpiryAndTestSigningValidatesPrivateKey() {
         Instant now = Instant.now();
         CryptoProCertificateInfo expired = new CryptoProCertificateInfo("a", "a", "", "", "", null,
@@ -143,6 +208,30 @@ class CryptoProSignatureTest {
                 return new Result(0, new byte[0], new byte[0]);
             } catch (Exception e) {
                 throw new CryptoProException(CryptoProErrorCode.SIGNING_FAILED, "Could not write fixture signature.", e);
+            }
+        }
+    }
+
+    private static final class WindowsCadesRunner extends CryptoProCommandRunner {
+        private final byte[] output;
+        private List<String> command = List.of();
+        private String script = "";
+        private byte[] payload = new byte[0];
+
+        private WindowsCadesRunner(byte[] output) {
+            this.output = output;
+        }
+
+        @Override public Result run(List<String> command, Duration timeout) throws CryptoProException {
+            this.command = List.copyOf(command);
+            try {
+                int fileIndex = command.indexOf("-File");
+                script = Files.readString(Path.of(command.get(fileIndex + 1)));
+                payload = Files.readAllBytes(Path.of(command.get(fileIndex + 2)));
+                Files.writeString(Path.of(command.getLast()), Base64.getEncoder().encodeToString(output));
+                return new Result(0, new byte[0], new byte[0]);
+            } catch (Exception e) {
+                throw new CryptoProException(CryptoProErrorCode.SIGNING_FAILED, "Could not run CAdES fixture.", e);
             }
         }
     }

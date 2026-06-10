@@ -19,16 +19,25 @@ public class CryptoProSignatureProvider implements ZnackSignatureProvider {
     private final String cryptcpOverride;
     private final String certificateSelector;
     private final Duration timeout;
+    private final ZnackSignatureProvider windowsFallback;
 
     public CryptoProSignatureProvider(String cryptcpOverride, String certificateSelector, Duration timeout) {
-        this(new CryptoProCommandRunner(), cryptcpOverride, certificateSelector, timeout);
+        this(new CryptoProCommandRunner(), cryptcpOverride, certificateSelector, timeout,
+                WindowsCadesSignatureProvider.isWindows()
+                        ? new WindowsCadesSignatureProvider(certificateSelector, timeout) : null);
     }
 
     CryptoProSignatureProvider(CryptoProCommandRunner runner, String cryptcpOverride, String certificateSelector, Duration timeout) {
+        this(runner, cryptcpOverride, certificateSelector, timeout, null);
+    }
+
+    CryptoProSignatureProvider(CryptoProCommandRunner runner, String cryptcpOverride, String certificateSelector,
+                               Duration timeout, ZnackSignatureProvider windowsFallback) {
         this.runner = runner;
         this.cryptcpOverride = cryptcpOverride;
         this.certificateSelector = certificateSelector == null ? "" : certificateSelector.trim();
         this.timeout = timeout;
+        this.windowsFallback = windowsFallback;
     }
 
     @Override
@@ -59,6 +68,10 @@ public class CryptoProSignatureProvider implements ZnackSignatureProvider {
             byte[] cms = cms(raw);
             return new CryptoProSigningResult(cms, result.diagnostic());
         } catch (CryptoProException e) {
+            if ((e.code() == CryptoProErrorCode.CRYPTCP_MISSING || e.code() == CryptoProErrorCode.CRYPTOPRO_MISSING)
+                    && windowsFallback != null) {
+                return windowsFallback.sign(payload, context);
+            }
             throw e;
         } catch (Exception e) {
             throw new CryptoProException(CryptoProErrorCode.SIGNING_FAILED, "CryptoPro signing failed.", e);
@@ -66,6 +79,17 @@ public class CryptoProSignatureProvider implements ZnackSignatureProvider {
             try { if (input != null) Files.deleteIfExists(input); } catch (Exception ignored) {}
             try { if (output != null) Files.deleteIfExists(output); } catch (Exception ignored) {}
             try { if (workDir != null) Files.deleteIfExists(workDir); } catch (Exception ignored) {}
+        }
+    }
+
+    public static void requireAvailable(String cryptcpOverride, Duration timeout) throws CryptoProException {
+        try {
+            new CryptoProCommandRunner().resolve(cryptcpOverride, "cryptcp");
+        } catch (CryptoProException error) {
+            if (error.code() != CryptoProErrorCode.CRYPTCP_MISSING || !WindowsCadesSignatureProvider.isWindows()) {
+                throw error;
+            }
+            WindowsCadesSignatureProvider.requireAvailable(timeout);
         }
     }
 
