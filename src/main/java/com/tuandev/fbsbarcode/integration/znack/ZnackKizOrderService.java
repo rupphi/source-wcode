@@ -12,7 +12,7 @@ public class ZnackKizOrderService {
     public ZnackKizOrderService(ZnackApiClient api,ZnackAuthService auth,ZnackSignatureProvider signer,ZnackRepository repository){this.api=api;this.auth=auth;this.signer=signer;this.repository=repository;}
     public KizOrder buy(Settings s,String gtin,int quantity)throws Exception{
         ZnackSafety.requireSigned(s,true);
-        if(quantity<=0)throw new IllegalArgumentException("Quantity must be positive.");gtin=GtinNormalizer.normalize(gtin);long id=repository.createDraft(gtin,quantity);
+        if(quantity<=0)throw new IllegalArgumentException("Quantity must be positive.");gtin=GtinNormalizer.requireProductionOrderable(gtin);long id=repository.createDraft(gtin,quantity);
         try{
             JsonObject product=new JsonObject();product.addProperty("gtin",gtin);product.addProperty("quantity",quantity);
             product.addProperty("serialNumberType","OPERATOR");product.addProperty("templateId",10);product.addProperty("cisType","UNIT");

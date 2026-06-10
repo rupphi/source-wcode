@@ -172,7 +172,7 @@ public class ZnackPurchaseCoordinator {
 
     public void validatePrerequisites(Settings settings, String gtin, int quantity) throws Exception {
         if (quantity <= 0) throw new IllegalArgumentException("Quantity must be positive.");
-        String normalized = GtinNormalizer.normalize(gtin);
+        String normalized = GtinNormalizer.requireProductionOrderable(gtin);
         if (repository.findProducts().stream().noneMatch(p -> normalized.equals(p.gtin()))) {
             throw new IllegalArgumentException("GTIN is not registered for the selected shop.");
         }

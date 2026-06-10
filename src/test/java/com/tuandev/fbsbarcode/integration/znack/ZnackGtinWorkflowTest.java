@@ -168,6 +168,20 @@ class ZnackGtinWorkflowTest {
         assertTrue(repository.findProducts().stream().anyMatch(p -> p.gtin().equals("00000000000123")));
         assertThrows(IllegalArgumentException.class, () -> GtinNormalizer.normalize("123456789012345"));
         assertThrows(IllegalArgumentException.class, () -> GtinNormalizer.normalize("１２３"));
+        assertTrue(GtinNormalizer.isTechnicalRange("02900699308808"));
+        assertFalse(GtinNormalizer.isTechnicalRange(A));
+    }
+
+    @Test void productionPurchaseRejectsTechnical029GtinBeforeCreatingPipeline() {
+        String technical = "02900699308808";
+        repository.upsertProducts(List.of(new Product(technical, "technical", null, null, null, null, null)));
+        ZnackPurchaseCoordinator coordinator = new ZnackPurchaseCoordinator(repository, null, null, null);
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> coordinator.start(testedSettings(), technical, 1));
+
+        assertEquals(GtinNormalizer.TECHNICAL_GTIN_PURCHASE_UNSUPPORTED, error.getMessage());
+        assertTrue(repository.findActivePipeline(technical).isEmpty());
     }
 
     @Test void legacyLegalStatusesAreKeptForAuditButMadeUnavailableToInventory() throws Exception {

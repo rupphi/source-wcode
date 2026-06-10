@@ -1,6 +1,7 @@
 package com.tuandev.fbsbarcode.ui.supply;
 
 import com.tuandev.fbsbarcode.features.kizmapping.KizMappingRepository;
+import com.tuandev.fbsbarcode.integration.znack.GtinNormalizer;
 import com.tuandev.fbsbarcode.integration.znack.ZnackApiClient;
 import com.tuandev.fbsbarcode.integration.znack.ZnackAuthService;
 import com.tuandev.fbsbarcode.integration.znack.ZnackGtinInventorySummary;
@@ -581,9 +582,12 @@ public class SupplyDetailController {
         Button buy = new Button();
         buy.getStyleClass().addAll("btn-primary", "gtin-buy-button");
         buy.setGraphic(new FontIcon("fth-plus"));
-        buy.setTooltip(new Tooltip(tr("supply.gtin_inventory.buy")));
+        boolean technicalGtin = GtinNormalizer.isTechnicalRange(summary.gtin());
+        buy.setTooltip(new Tooltip(technicalGtin
+                ? tr("supply.gtin_inventory.error.technical_gtin") : tr("supply.gtin_inventory.buy")));
         buy.setAccessibleText(tr("supply.gtin_inventory.buy"));
-        buy.setDisable(isActivePipeline(summary.latestPipelineStage()) || purchasesStarting.contains(summary.gtin()));
+        buy.setDisable(technicalGtin || isActivePipeline(summary.latestPipelineStage())
+                || purchasesStarting.contains(summary.gtin()));
         buy.setOnAction(event -> showBuy(summary));
 
         HBox header = new HBox(8, identity, buy);
@@ -758,6 +762,9 @@ public class SupplyDetailController {
         }
         if ("omsId is required before buying KIZ.".equals(message)) {
             return tr("supply.gtin_inventory.error.oms_id");
+        }
+        if (GtinNormalizer.TECHNICAL_GTIN_PURCHASE_UNSUPPORTED.equals(message)) {
+            return tr("supply.gtin_inventory.error.technical_gtin");
         }
         return message.isBlank() ? tr("znack.signature.error.failed") : message;
     }

@@ -497,6 +497,7 @@ public class KizMappingController {
         private final Button buy = new Button();
         private final Button circulation = new Button();
         private final HBox box = new HBox(6, mapping, buy, circulation);
+        private final Tooltip technicalGtinTooltip = new Tooltip(tr("supply.gtin_inventory.error.technical_gtin"));
 
         private ActionsCell() {
             mapping.setText(tr("kiz_mapping.action.mapping"));
@@ -509,6 +510,9 @@ public class KizMappingController {
 
         @Override protected void updateItem(ZnackGtinInventorySummary item, boolean empty) {
             super.updateItem(item, empty);
+            boolean technical = !empty && item != null && GtinNormalizer.isTechnicalRange(item.gtin());
+            buy.setDisable(technical);
+            buy.setTooltip(technical ? technicalGtinTooltip : null);
             setGraphic(empty || item == null ? null : box);
         }
     }
