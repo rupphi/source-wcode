@@ -1,6 +1,8 @@
 package com.tuandev.fbsbarcode.integration.znack;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.tuandev.fbsbarcode.config.Database;
 import com.tuandev.fbsbarcode.features.kizmapping.KizMappingRepository;
@@ -24,6 +26,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -488,6 +491,57 @@ class ZnackGtinWorkflowTest {
 
         assertTrue(result.ready());
         assertFalse(result.allIntroduced());
+    }
+
+    @Test void readinessChecksEveryBatchAndReportsProgressForLargeOrders() throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        ZnackApiClient api = new ZnackApiClient() {
+            @Override public JsonElement productCards(String base, String token, String gtins) {
+                return JsonParser.parseString("""
+                        {"result":[{"good_name":"A","good_mark_flag":true,"good_turn_flag":true,
+                        "identified_by":[{"type":"gtin","value":"%s"}]}]}
+                        """.formatted(A));
+            }
+
+            @Override public JsonElement cisesInfo(String base, String token, JsonElement body) {
+                boolean firstBatch = requests.incrementAndGet() == 1;
+                JsonArray result = new JsonArray();
+                body.getAsJsonArray().forEach(code -> {
+                    JsonObject entry = new JsonObject();
+                    JsonObject info = new JsonObject();
+                    info.addProperty("requestedCis", code.getAsString());
+                    info.addProperty("cis", code.getAsString());
+                    if (firstBatch) {
+                        entry.addProperty("errorMessage", "КМ/КИ не найден");
+                        entry.addProperty("errorCode", "404");
+                    } else {
+                        info.addProperty("gtin", A);
+                        info.addProperty("productName", "A");
+                        info.addProperty("status", "APPLIED");
+                        info.addProperty("statusEx", "EMPTY");
+                    }
+                    entry.add("cisInfo", info);
+                    result.add(entry);
+                });
+                return result;
+            }
+        };
+        ZnackAuthService auth = new ZnackAuthService(api, (input, context) -> null) {
+            @Override public String trueApiToken(Settings ignored) { return "token"; }
+        };
+        List<KizCode> codes = IntStream.range(0, 3_000)
+                .mapToObj(index -> new KizCode(index + 1L, 1L, "code-" + index, "code-" + index, A, "block",
+                        null, null, KizInventoryStatus.AVAILABLE, KizLegalStatus.RECEIVED))
+                .toList();
+
+        ZnackIntroductionReadinessService.Readiness result =
+                new ZnackIntroductionReadinessService(api, auth, repository)
+                        .check(testedSettings(), repository.findProduct(A).orElseThrow(), codes);
+
+        assertEquals(3, requests.get());
+        assertFalse(result.ready());
+        assertTrue(result.message().contains("2000/3000 KIZ ready"));
+        assertTrue(result.message().contains("1000 pending"));
     }
 
     @Test void readinessStageIsSafeToRetryAndKeepsDownloadedCodesAvailable() throws Exception {
