@@ -191,6 +191,8 @@ class CryptoProSignatureTest {
         assertArrayEquals(cmsFixture(), result.cms());
         assertTrue(runner.script.contains("CAdESCOM.CadesSignedData"));
         assertTrue(runner.script.contains("SignCades"));
+        assertTrue(runner.script.contains("$stage = 'sign payload'"));
+        assertTrue(runner.script.contains("try { $store.Close() } catch { }"));
         assertArrayEquals("secret-payload".getBytes(), runner.payload);
         assertTrue(runner.command.contains("true"));
         assertFalse(String.join(" ", runner.command).contains("secret-payload"));

@@ -26,9 +26,13 @@ final class WindowsCadesSignatureProvider implements ZnackSignatureProvider {
               [string]$OutputPath
             )
             $ErrorActionPreference = 'Stop'
-            $store = New-Object -ComObject CAdESCOM.Store
+            $store = $null
+            $stage = 'create certificate store'
             try {
+              $store = New-Object -ComObject CAdESCOM.Store
+              $stage = 'open current-user My certificate store'
               $store.Open(2, 'My', 2)
+              $stage = 'find selected certificate'
               $normalized = ($Thumbprint -replace '\\s', '').ToUpperInvariant()
               $certificate = $null
               for ($i = 1; $i -le $store.Certificates.Count; $i++) {
@@ -39,15 +43,25 @@ final class WindowsCadesSignatureProvider implements ZnackSignatureProvider {
                 }
               }
               if ($null -eq $certificate) { throw 'Selected certificate was not found in the current-user My store.' }
+              $stage = 'create signer'
               $signer = New-Object -ComObject CAdESCOM.CPSigner
+              $stage = 'assign certificate to signer'
               $signer.Certificate = $certificate
+              $stage = 'create signed-data object'
               $signedData = New-Object -ComObject CAdESCOM.CadesSignedData
               $signedData.ContentEncoding = 1
+              $stage = 'load payload'
               $signedData.Content = [Convert]::ToBase64String([IO.File]::ReadAllBytes($InputPath))
+              $stage = 'sign payload'
               $signature = $signedData.SignCades($signer, 1, ($Detached -eq 'true'))
+              $stage = 'write signature'
               [IO.File]::WriteAllText($OutputPath, $signature, [Text.Encoding]::ASCII)
+            } catch {
+              throw "CAdESCOM stage '$stage' failed: $($_.Exception.Message)"
             } finally {
-              if ($null -ne $store) { $store.Close() }
+              if ($null -ne $store) {
+                try { $store.Close() } catch { }
+              }
             }
             """;
 
