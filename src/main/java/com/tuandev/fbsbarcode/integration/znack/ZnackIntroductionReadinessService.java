@@ -40,7 +40,7 @@ public class ZnackIntroductionReadinessService {
         for (int start = 0; start < codes.size(); start += CISES_BATCH_SIZE) {
             List<KizCode> batch = codes.subList(start, Math.min(start + CISES_BATCH_SIZE, codes.size()));
             JsonArray request = new JsonArray();
-            batch.forEach(code -> request.add(code.rawCode()));
+            batch.forEach(code -> request.add(ZnackCisNormalizer.forTrueApi(code.rawCode())));
             CisBatch result = inspectCises(api.cisesInfo(settings.resolvedTrueApiBaseUrl(), token, request),
                     product.gtin(), batch.size());
             applied += result.applied();

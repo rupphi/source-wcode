@@ -26,6 +26,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -33,6 +34,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class ZnackGtinWorkflowTest {
     private static final String A = "04601234567890";
     private static final String B = "04601234567891";
+    private static final String NORMALIZED_CIS = "010460123456789021abcdefghijklm";
+    private static final String RAW_CIS = NORMALIZED_CIS + "\u001D91ABCD\u001D92signature";
     @TempDir Path temp;
     private ZnackRepository repository;
     private KizMappingRepository mappings;
@@ -469,6 +472,41 @@ class ZnackGtinWorkflowTest {
         assertEquals(Boolean.TRUE, persisted.goodMarkFlag());
         assertEquals(Boolean.TRUE, persisted.goodTurnFlag());
         assertNotNull(persisted.readinessCheckedAt());
+    }
+
+    @Test void trueApiLookupsUseNormalizedCisWithoutTheDataMatrixCryptoTail() throws Exception {
+        assertEquals(NORMALIZED_CIS, ZnackCisNormalizer.forTrueApi(RAW_CIS));
+        assertEquals(NORMALIZED_CIS, ZnackCisNormalizer.forTrueApi("]d2" + RAW_CIS));
+        assertEquals(NORMALIZED_CIS, ZnackCisNormalizer.forTrueApi(NORMALIZED_CIS));
+
+        repository.updateProductMetadata(new Product(A, "A", "6201000000", null, null, null, null));
+        long order = repository.createDraft(A, 1);
+        repository.insertCodes(order, A, new DownloadedCodes(List.of(RAW_CIS), "block"));
+        AtomicReference<String> requested = new AtomicReference<>();
+        ZnackApiClient api = new ZnackApiClient() {
+            @Override public JsonElement productCards(String base, String token, String gtins) {
+                return JsonParser.parseString("""
+                        {"result":[{"good_name":"A","good_mark_flag":true,"good_turn_flag":true,
+                        "identified_by":[{"type":"gtin","value":"%s"}]}]}
+                        """.formatted(A));
+            }
+
+            @Override public JsonElement cisesInfo(String base, String token, JsonElement body) {
+                requested.set(body.getAsJsonArray().get(0).getAsString());
+                return JsonParser.parseString("""
+                        [{"cisInfo":{"gtin":"%s","productName":"A","status":"APPLIED","statusEx":"EMPTY"}}]
+                        """.formatted(A));
+            }
+        };
+        ZnackAuthService auth = new ZnackAuthService(api, (input, context) -> null) {
+            @Override public String trueApiToken(Settings ignored) { return "token"; }
+        };
+
+        ZnackIntroductionReadinessService.Readiness result = new ZnackIntroductionReadinessService(api, auth, repository)
+                .check(testedSettings(), repository.findProduct(A).orElseThrow(), repository.findCodes(order));
+
+        assertTrue(result.ready());
+        assertEquals(NORMALIZED_CIS, requested.get());
     }
 
     @Test void readinessRecognizesAlreadyIntroducedCodesEvenWhenProductCardIsNotReady() throws Exception {

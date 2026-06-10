@@ -373,11 +373,13 @@ class ZnackModuleTest {
         long orderId=orderWithCodes(repository);
         long documentId=repository.createDocument(orderId,"{}");
         repository.updateDocument(documentId,"doc-id","SUBMITTED",null);
+        AtomicReference<JsonElement> cisesRequest=new AtomicReference<>();
         ZnackApiClient api=new ZnackApiClient(){
             @Override public JsonElement document(String base,String token,String externalId){
                 return JsonParser.parseString("{\"status\":\"CHECKED_OK\"}");
             }
             @Override public JsonElement cisesInfo(String base,String token,JsonElement body){
+                cisesRequest.set(body);
                 return JsonParser.parseString("[{\"status\":\"INTRODUCED\"}]");
             }
         };
@@ -388,6 +390,7 @@ class ZnackModuleTest {
         assertTrue(new ZnackIntroductionService(api,auth,testSigner(),repository).confirm(
                 testedSettings("","","","connection",""),repository.findOrder(orderId).orElseThrow(),
                 repository.findCodes(orderId)));
+        assertEquals("010460123456789021abcdefghijklm",cisesRequest.get().getAsJsonArray().get(0).getAsString());
         assertEquals(OrderStatus.INTRODUCED,repository.findOrder(orderId).orElseThrow().localStatus());
     }
 
@@ -573,7 +576,9 @@ class ZnackModuleTest {
         Product product=new Product("04601234567890","Product","6201000000",null,null,null,null);
         repository.upsertProducts(List.of(product));
         long orderId=repository.createDraft("04601234567890",1);
-        repository.insertCodes(orderId,"04601234567890",new DownloadedCodes(List.of("010460123456789021abc"),"block"));
+        String normalizedCis="010460123456789021abcdefghijklm";
+        repository.insertCodes(orderId,"04601234567890",new DownloadedCodes(
+                List.of(normalizedCis+"\u001D91ABCD\u001D92signature"),"block"));
         AtomicReference<JsonObject> request=new AtomicReference<>();
         ZnackApiClient api=new ZnackApiClient(){@Override public JsonObject createDocument(String base,String token,JsonObject body){request.set(body);JsonObject response=new JsonObject();response.addProperty("document_id","doc");return response;}};
         ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
@@ -588,7 +593,7 @@ class ZnackModuleTest {
         assertEquals("7701234567",payload.get("producer_inn").getAsString());
         assertEquals("7701234567",payload.get("owner_inn").getAsString());
         assertEquals("OWN_PRODUCTION",payload.get("production_type").getAsString());
-        assertTrue(payload.getAsJsonArray("products").get(0).getAsJsonObject().has("uit_code"));
+        assertEquals(normalizedCis,payload.getAsJsonArray("products").get(0).getAsJsonObject().get("uit_code").getAsString());
         assertTrue(payload.getAsJsonArray("products").get(0).getAsJsonObject().has("tnved_code"));
         JsonObject certificate=payload.getAsJsonArray("products").get(0).getAsJsonObject().getAsJsonArray("certificate_document_data").get(0).getAsJsonObject();
         assertEquals("ЕАЭС N RU Д-TR.РА05.В.15176/24",certificate.get("certificate_number").getAsString());
@@ -730,7 +735,8 @@ class ZnackModuleTest {
         Product product=new Product("04601234567890","Product","6201000000",null,null,null,null);
         repository.upsertProducts(List.of(product));
         long order=repository.createDraft(product.gtin(),1);
-        repository.insertCodes(order,product.gtin(),new DownloadedCodes(List.of("010460123456789021abc"),"block"));
+        repository.insertCodes(order,product.gtin(),new DownloadedCodes(
+                List.of("010460123456789021abcdefghijklm\u001D91ABCD\u001D92signature"),"block"));
         return order;
     }
 
