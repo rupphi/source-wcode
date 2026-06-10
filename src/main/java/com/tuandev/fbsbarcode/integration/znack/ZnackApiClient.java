@@ -29,6 +29,9 @@ public class ZnackApiClient {
     public JsonElement products(String base, String token, int page, int limit) throws IOException {
         return get(trueApiBase(base, 4), "/product/gtin?includeSubaccount=false&limit=" + limit + "&page=" + page + "&pg=lp", token);
     }
+    public JsonElement productCards(String base, String token, String gtins) throws IOException {
+        return get(trueApiBase(base, 3), "/nk/feed-product?gtins=" + url(gtins), token);
+    }
     public JsonObject createOrder(String base,String token,String omsId,byte[] body,String signature)throws IOException{
         Request request=new Request.Builder().url(join(base,"/api/v3/order?omsId="+url(omsId))).headers(suzHeaders(token).newBuilder().add("X-Signature",signature).build())
                 .post(RequestBody.create(body,JSON)).build();
@@ -61,7 +64,7 @@ public class ZnackApiClient {
     static String apiRoot(String base) {
         return base.replaceAll("/api/v\\d+/(?:true-api|lk)/?$", "").replaceAll("/+$", "");
     }
-    static String authBase(String base) { return apiRoot(base) + "/api/v3"; }
+    static String authBase(String base) { return trueApiBase(base, 3); }
     static String trueApiBase(String base, int version) { return apiRoot(base) + "/api/v" + version + "/true-api"; }
 
     public static class ZnackApiException extends IOException {

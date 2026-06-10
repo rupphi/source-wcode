@@ -9,6 +9,7 @@ import java.util.Map;
 
 public class ZnackProductService {
     private static final int PAGE_SIZE = 10_000;
+    private static final int CATALOG_BATCH_SIZE = 25;
     private final ZnackApiClient api; private final ZnackAuthService auth; private final ZnackRepository repository;
     public ZnackProductService(ZnackApiClient api,ZnackAuthService auth,ZnackRepository repository){this.api=api;this.auth=auth;this.repository=repository;}
     public List<Product> sync(ZnackModels.Settings settings)throws Exception{
@@ -27,8 +28,51 @@ public class ZnackProductService {
             if(total==null&&received<PAGE_SIZE)break;
             if(received==0)break;
         }while(total==null||fetched<total);
+        enrichFromNationalCatalog(settings, token, byGtin);
         List<Product> products=List.copyOf(byGtin.values());
         repository.upsertProducts(products);repository.log("GTIN_SYNC",null,"INFO","Synced "+products.size()+" GTINs",200);return products;
     }
+    private void enrichFromNationalCatalog(ZnackModels.Settings settings,String token,Map<String,Product> byGtin){
+        List<String> gtins=List.copyOf(byGtin.keySet());
+        for(int start=0;start<gtins.size();start+=CATALOG_BATCH_SIZE){
+            List<String> batch=gtins.subList(start,Math.min(start+CATALOG_BATCH_SIZE,gtins.size()));
+            try{
+                JsonElement response=api.productCards(settings.resolvedTrueApiBaseUrl(),token,String.join(";",batch));
+                JsonArray cards=array(response,"result");
+                if(cards==null)continue;
+                for(JsonElement element:cards){
+                    if(!element.isJsonObject())continue;
+                    JsonObject card=element.getAsJsonObject();
+                    String name=text(card,"good_name","productName","name");
+                    String tnVed=text(card,"tnved","tnVed","tnvedCode","tnved_code");
+                    JsonArray identifiers=array(card,"identified_by");
+                    if(identifiers==null)continue;
+                    for(JsonElement identifier:identifiers){
+                        if(!identifier.isJsonObject())continue;
+                        JsonObject object=identifier.getAsJsonObject();
+                        String type=text(object,"type");
+                        String value=text(object,"value","gtin");
+                        if(!type.isBlank()&&!"gtin".equalsIgnoreCase(type))continue;
+                        try{
+                            String gtin=GtinNormalizer.normalize(value);
+                            Product current=byGtin.get(gtin);
+                            if(current!=null)byGtin.put(gtin,new Product(gtin,first(name,current.productName()),
+                                    first(tnVed,current.tnVed()),current.certificateType(),current.certificateNumber(),
+                                    current.certificateDate(),current.productionDate()));
+                        }catch(IllegalArgumentException ignored){}
+                    }
+                }
+            }catch(Exception error){
+                repository.log("GTIN_CATALOG_ENRICH",null,"WARN",error.getMessage(),null);
+            }
+        }
+    }
+    private JsonArray array(JsonElement response,String key){
+        if(response==null||response.isJsonNull())return null;
+        if(response.isJsonArray())return response.getAsJsonArray();
+        JsonObject object=response.getAsJsonObject();
+        return object.has(key)&&object.get(key).isJsonArray()?object.getAsJsonArray(key):null;
+    }
+    private String first(String preferred,String fallback){return preferred==null||preferred.isBlank()?fallback:preferred;}
     private String text(JsonObject o,String...keys){for(String k:keys)if(o.has(k)&&!o.get(k).isJsonNull())return o.get(k).getAsString();return "";}
 }

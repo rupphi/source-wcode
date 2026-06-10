@@ -45,6 +45,7 @@ public class KizMappingController {
     private ZnackRepository znackRepository;
     private Timeline refreshTimer;
     private boolean loading;
+    private boolean syncing;
     private long shopGeneration;
 
     @FXML
@@ -74,16 +75,21 @@ public class KizMappingController {
     public void setShop(Shop selected) {
         shopGeneration++;
         shop = selected;
+        syncing = false;
         znackRepository = selected == null ? null : new ZnackRepository(new ShopContext(selected.getId(), selected.getName()));
         setLoading(false);
         if (selected == null) refreshTimer.stop(); else refreshTimer.play();
         refresh();
         if (znackRepository != null) {
             ZnackRepository currentRepository = znackRepository;
-            ZnackPurchaseCoordinator currentCoordinator = ZnackPurchaseCoordinator.create(currentRepository);
             Settings currentSettings = currentRepository.getSettings();
-            runBackground(() -> currentCoordinator.resume(currentSettings));
+            runBackground(() -> ZnackPurchaseCoordinator.create(currentRepository).resume(currentSettings));
         }
+    }
+
+    public void syncOnOpen() {
+        refresh();
+        if (znackRepository != null && hasVerifiedSignature(znackRepository.getSettings())) requestSync(false);
     }
 
     public void applyTranslations() {
@@ -102,12 +108,42 @@ public class KizMappingController {
 
     @FXML
     private void onRefresh() {
-        if (znackRepository == null) return;
+        requestSync(true);
+    }
+
+    private void requestSync(boolean showErrors) {
+        if (znackRepository == null || syncing) return;
+        long generation = shopGeneration;
+        int shopId = shop.getId();
         ZnackRepository current = znackRepository;
-        runTask(() -> {
-            syncProducts(current);
-            return null;
+        Task<List<ZnackGtinInventorySummary>> task = new Task<>() {
+            @Override protected List<ZnackGtinInventorySummary> call() throws Exception {
+                try {
+                    syncProducts(current);
+                    return mappingRepository.findGtinSummaries(shopId);
+                } catch (Exception error) {
+                    current.log("GTIN_SYNC", null, "ERROR", error.getMessage(), null);
+                    throw error;
+                }
+            }
+        };
+        syncing = true;
+        setLoadingState();
+        task.setOnSucceeded(event -> {
+            if (generation != shopGeneration || shop == null || shop.getId() != shopId) return;
+            syncing = false;
+            gtinTable.getItems().setAll(task.getValue());
+            setLoadingState();
+            updateEmpty();
         });
+        task.setOnFailed(event -> {
+            if (generation != shopGeneration) return;
+            syncing = false;
+            setLoadingState();
+            if (showErrors) AlertService.showError(friendlyError(task.getException()));
+            refresh();
+        });
+        AppTaskExecutor.execute(task);
     }
 
     public void refresh() {
@@ -378,9 +414,14 @@ public class KizMappingController {
 
     private void setLoading(boolean loading) {
         this.loading = loading;
-        loadingIndicator.setVisible(loading);
-        loadingIndicator.setManaged(loading);
-        refreshButton.setDisable(loading || shop == null);
+        setLoadingState();
+    }
+
+    private void setLoadingState() {
+        boolean active = loading || syncing;
+        loadingIndicator.setVisible(active);
+        loadingIndicator.setManaged(active);
+        refreshButton.setDisable(active || shop == null);
     }
 
     private void updateEmpty() {
@@ -500,5 +541,10 @@ public class KizMappingController {
         ZnackApiClient api = new ZnackApiClient();
         new ZnackProductService(api, new ZnackAuthService(api, signer), repository).sync(settings);
         ZnackPurchaseCoordinator.create(repository).resumeEligibleIntroductions(settings);
+    }
+
+    private boolean hasVerifiedSignature(Settings settings) {
+        return settings != null && settings.signerCertificate() != null && !settings.signerCertificate().isBlank()
+                && settings.signerTestedAt() != null;
     }
 }

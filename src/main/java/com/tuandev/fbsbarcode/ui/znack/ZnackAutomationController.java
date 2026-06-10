@@ -3,6 +3,9 @@ package com.tuandev.fbsbarcode.ui.znack;
 import com.google.gson.JsonObject;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels.*;
 import com.tuandev.fbsbarcode.integration.znack.ZnackPurchaseCoordinator;
+import com.tuandev.fbsbarcode.integration.znack.ZnackApiClient;
+import com.tuandev.fbsbarcode.integration.znack.ZnackAuthService;
+import com.tuandev.fbsbarcode.integration.znack.ZnackProductService;
 import com.tuandev.fbsbarcode.integration.znack.ZnackRepository;
 import com.tuandev.fbsbarcode.integration.znack.ZnackSanitizer;
 import com.tuandev.fbsbarcode.integration.znack.signature.*;
@@ -62,7 +65,9 @@ public class ZnackAutomationController {
     private boolean certificateDiscoveryRunning;
     private boolean updatingCertificateSelection;
     private boolean reopeningCertificatePopup;
+    private boolean productSyncRunning;
     private long certificateDiscoveryGeneration;
+    private long shopGeneration;
 
     @FXML
     private void initialize() {
@@ -87,6 +92,12 @@ public class ZnackAutomationController {
         signatureCertificateCombo.setVisibleRowCount(8);
         signatureCertificateCombo.setOnShowing(ignored -> {
             if (!reopeningCertificatePopup) loadCertificates();
+        });
+        productsTab.selectedProperty().addListener((ignored, old, selected) -> {
+            if (selected) {
+                loadProductsFromDatabase();
+                requestProductSync();
+            }
         });
         for (TextField field : List.of(omsIdField, omsConnectionField, documentNumberField, documentIssueDateField, documentExpiryDateField)) {
             field.textProperty().addListener((o, old, value) -> updateSaveState());
@@ -114,9 +125,14 @@ public class ZnackAutomationController {
     }
 
     public void setShop(Shop shop) {
+        shopGeneration++;
+        productSyncRunning = false;
         invalidateCertificateDiscovery();
         repository = shop == null ? null : new ZnackRepository(new ShopContext(shop.getId(), shop.getName()));
-        if (repository == null) clear(); else load();
+        if (repository == null) clear(); else {
+            load();
+            if (productsTab.isSelected()) requestProductSync();
+        }
     }
 
     public void refresh() {
@@ -212,6 +228,7 @@ public class ZnackAutomationController {
             authStatusLabel.setText(tr("znack.status.saved"));
             updateSaveState();
             resumeEligibleIntroductions(settings);
+            if (productsTab.isSelected()) requestProductSync();
         } catch (IllegalArgumentException e) {
             AlertService.showError(e.getMessage());
         }
@@ -348,7 +365,7 @@ public class ZnackAutomationController {
             signatureCertificateCombo.getItems().add(stored);
             signatureCertificateCombo.setValue(stored);
         }
-        productsTable.getItems().setAll(repository.findProducts());
+        loadProductsFromDatabase();
         ordersTable.getItems().setAll(repository.findOrders());
         logsTable.getItems().setAll(repository.findLogs());
         testedConfigurationKey = signerTestedAt == null ? null : configurationKey();
@@ -357,6 +374,51 @@ public class ZnackAutomationController {
         authStatusLabel.setText(tr("znack.status.audit_only"));
         updateSignatureSummary();
         updateSaveState();
+    }
+
+    private void loadProductsFromDatabase() {
+        if (repository == null) productsTable.getItems().clear();
+        else productsTable.getItems().setAll(repository.findProducts());
+    }
+
+    private void requestProductSync() {
+        if (repository == null || productSyncRunning || !hasVerifiedSignature(loaded)) return;
+        long generation = shopGeneration;
+        ZnackRepository currentRepository = repository;
+        Settings currentSettings = loaded;
+        Task<List<Product>> task = new Task<>() {
+            @Override protected List<Product> call() throws Exception {
+                try {
+                    ZnackApiClient api = new ZnackApiClient();
+                    ZnackSignatureProvider signer = new CryptoProSignatureProvider(currentSettings.cryptcpPath(),
+                            currentSettings.signerCertificate(), Duration.ofSeconds(currentSettings.resolvedCryptoProTimeoutSeconds()));
+                    return new ZnackProductService(api, new ZnackAuthService(api, signer), currentRepository).sync(currentSettings);
+                } catch (Exception error) {
+                    currentRepository.log("GTIN_SYNC", null, "ERROR", error.getMessage(), null);
+                    throw error;
+                }
+            }
+        };
+        productSyncRunning = true;
+        task.setOnSucceeded(event -> {
+            if (generation != shopGeneration || currentRepository != repository) return;
+            productSyncRunning = false;
+            productsTable.getItems().setAll(task.getValue());
+            ordersTable.getItems().setAll(currentRepository.findOrders());
+            logsTable.getItems().setAll(currentRepository.findLogs());
+            resumeEligibleIntroductions(currentSettings);
+        });
+        task.setOnFailed(event -> {
+            if (generation != shopGeneration || currentRepository != repository) return;
+            productSyncRunning = false;
+            productsTable.getItems().setAll(currentRepository.findProducts());
+            logsTable.getItems().setAll(currentRepository.findLogs());
+        });
+        AppTaskExecutor.execute(task);
+    }
+
+    private boolean hasVerifiedSignature(Settings settings) {
+        return settings != null && !blank(settings.signerCertificate()) && settings.signerTestedAt() != null;
     }
 
     private Settings settings() {

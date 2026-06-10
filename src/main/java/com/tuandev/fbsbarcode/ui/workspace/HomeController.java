@@ -263,6 +263,7 @@ public class HomeController implements Initializable {
         clearKizDraft();
         setDynamicContent(kizMappingView);
         refreshKizMappingView();
+        kizMappingController.syncOnOpen();
     }
 
     private void showZnackAutomation() {

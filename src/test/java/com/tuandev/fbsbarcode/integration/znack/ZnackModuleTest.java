@@ -243,14 +243,17 @@ class ZnackModuleTest {
     }
 
     @Test void apiUsesDocumentedProductPathAndBearerHeader() throws Exception {
-        AtomicReference<String> path=new AtomicReference<>(),authorization=new AtomicReference<>();
+        AtomicReference<String> path=new AtomicReference<>(),catalogPath=new AtomicReference<>(),authorization=new AtomicReference<>();
         HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
         server.createContext("/api/v4/true-api/product/gtin",exchange->{path.set(exchange.getRequestURI().toString());authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));byte[] body="[]".getBytes();exchange.sendResponseHeaders(200,body.length);exchange.getResponseBody().write(body);exchange.close();});
+        server.createContext("/api/v3/true-api/nk/feed-product",exchange->{catalogPath.set(exchange.getRequestURI().toString());respond(exchange,"{\"result\":[]}");});
         server.start();
         try {
             String base="http://127.0.0.1:"+server.getAddress().getPort();
             new ZnackApiClient().products(base,"abc");
+            new ZnackApiClient().productCards(base,"abc","04601234567890;04601234567891");
             assertEquals("/api/v4/true-api/product/gtin?includeSubaccount=false&limit=10000&page=0&pg=lp",path.get());
+            assertEquals("/api/v3/true-api/nk/feed-product?gtins=04601234567890%3B04601234567891",catalogPath.get());
             assertEquals("Bearer abc",authorization.get());
         } finally { server.stop(0); }
     }
@@ -398,6 +401,12 @@ class ZnackModuleTest {
                         "certificate_date":"20.06.2024","production_date":"21.06.2024"}]}
                         """);
             }
+            @Override public JsonElement productCards(String base,String token,String gtins){
+                return JsonParser.parseString("""
+                        {"result":[{"good_name":"National Catalog Product","tnved":"6201000000",
+                        "identified_by":[{"type":"gtin","value":"04601234567890"}]}]}
+                        """);
+            }
         };
         ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
             @Override public String trueApiToken(Settings s){return "token";}
@@ -406,6 +415,7 @@ class ZnackModuleTest {
 
         service.sync(testedSettings("","","","connection",""));
         Product synced=repository.findProducts().getFirst();
+        assertEquals("National Catalog Product",synced.productName());
         assertEquals("6201000000",synced.tnVed());
         assertEquals("DOC-1",synced.certificateNumber());
         assertEquals("21.06.2024",synced.productionDate());
@@ -428,6 +438,9 @@ class ZnackModuleTest {
             @Override public JsonElement products(String base,String token,int page,int limit){
                 requestedPage.set(page);
                 return JsonParser.parseString("{\"results\":[{\"gtin\":\"04601234567891\",\"productName\":\"B\"}],\"total\":2}");
+            }
+            @Override public JsonElement productCards(String base,String token,String gtins){
+                return JsonParser.parseString("{\"result\":[]}");
             }
         };
         ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
@@ -454,7 +467,7 @@ class ZnackModuleTest {
     @Test void normalizesTrueApiMethodPaths() {
         String base=ZnackModels.PRODUCTION_TRUE_API;
         assertEquals("https://markirovka.crpt.ru",ZnackApiClient.apiRoot(base));
-        assertEquals("https://markirovka.crpt.ru/api/v3",ZnackApiClient.authBase(base));
+        assertEquals("https://markirovka.crpt.ru/api/v3/true-api",ZnackApiClient.authBase(base));
         assertEquals("https://markirovka.crpt.ru/api/v4/true-api",ZnackApiClient.trueApiBase(base,4));
     }
 
@@ -462,8 +475,8 @@ class ZnackModuleTest {
         AtomicReference<String> signInPath=new AtomicReference<>(),requestBody=new AtomicReference<>();
         String jwt=jwtWithInn("7701234567");
         HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
-        server.createContext("/api/v3/auth/key",exchange->respond(exchange,"{\"uuid\":\"u\",\"data\":\"challenge\"}"));
-        server.createContext("/api/v3/auth/simpleSignIn",exchange->{signInPath.set(exchange.getRequestURI().toString());requestBody.set(new String(exchange.getRequestBody().readAllBytes(),StandardCharsets.UTF_8));respond(exchange,"{\"token\":\""+jwt+"\"}");});
+        server.createContext("/api/v3/true-api/auth/key",exchange->respond(exchange,"{\"uuid\":\"u\",\"data\":\"challenge\"}"));
+        server.createContext("/api/v3/true-api/auth/simpleSignIn",exchange->{signInPath.set(exchange.getRequestURI().toString());requestBody.set(new String(exchange.getRequestBody().readAllBytes(),StandardCharsets.UTF_8));respond(exchange,"{\"token\":\""+jwt+"\"}");});
         server.start();
         try {
             String trueBase="http://127.0.0.1:"+server.getAddress().getPort()+"/api/v3/true-api";
@@ -471,7 +484,7 @@ class ZnackModuleTest {
             ZnackAuthService auth=new ZnackAuthService(new ZnackApiClient(),testSigner());
             auth.trueApiToken(settings);
             auth.suzToken(settings);
-            assertEquals("/api/v3/auth/simpleSignIn/connection",signInPath.get());
+            assertEquals("/api/v3/true-api/auth/simpleSignIn/connection",signInPath.get());
             assertFalse(requestBody.get().contains("\"inn\""));
             assertEquals("7701234567",auth.authenticatedParticipantInn());
             assertEquals("7701234567",auth.resolvedParticipantInn(settings));

@@ -227,6 +227,7 @@ public class SupplyDetailController {
     }
 
     public void syncGtinInventoryOnSupplyOpen() {
+        refreshGtinInventory();
         if (znackRepository == null || !hasVerifiedSignature(znackRepository.getSettings())) {
             return;
         }
