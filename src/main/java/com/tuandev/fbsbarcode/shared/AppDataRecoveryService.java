@@ -124,7 +124,7 @@ public final class AppDataRecoveryService {
                     || countIfTableExists(connection, "wb_orders") > 0
                     || countIfTableExists(connection, "wb_supplies") > 0
                     || countIfTableExists(connection, "print_jobs") > 0
-                    || countIfTableExists(connection, "kizs") > 0;
+                    || countIfTableExists(connection, "kiz_codes") > 0;
         } catch (SQLException ex) {
             LOGGER.warn("Unable to inspect database {}", database, ex);
             return false;

@@ -126,102 +126,111 @@ public final class KizAttachmentCoordinator {
         int completed = 0;
         int skipped = 0;
 
-        for (OrderExportWorkflow.KizAttachmentAssignment assignment : assignments) {
-            if (assignment == null || assignment.orderId() == null || assignment.orderId() <= 0) {
-                continue;
-            }
-            if (assignment.replaceExisting()) {
-                KizService.RemoveMetaResult removeResult = KizService.removeSgtinFromOrder(
-                        shop.getApiKey(),
-                        assignment.orderId()
-                );
-                if (!removeResult.success()) {
-                    if (isSkippedNonProcessingOrder(removeResult.statusCode(), removeResult.responseBody())) {
-                        skipped++;
+        try {
+            for (OrderExportWorkflow.KizAttachmentAssignment assignment : assignments) {
+                if (assignment == null || assignment.orderId() == null || assignment.orderId() <= 0) {
+                    continue;
+                }
+                if (assignment.replaceExisting()) {
+                    KizService.RemoveMetaResult removeResult = KizService.removeSgtinFromOrder(
+                            shop.getApiKey(),
+                            assignment.orderId()
+                    );
+                    if (!removeResult.success()) {
+                        if (isSkippedNonProcessingOrder(removeResult.statusCode(), removeResult.responseBody())) {
+                            skipped++;
+                            notifyProgress(key, shop, supplyId, supplyName, completed, assignments.size(), true,
+                                    "Отправка KIZ в WB " + completed + "/" + assignments.size()
+                                            + " (пропущено " + skipped + ")", failures, successfulKizs);
+                            continue;
+                        }
+
+                        String message = "Не удалось удалить старый KIZ для order " + assignment.orderId()
+                                + " (HTTP " + removeResult.statusCode() + ")";
+                        if (removeResult.responseBody() != null && !removeResult.responseBody().isBlank()) {
+                            message += ": " + removeResult.responseBody();
+                        }
+                        failures.add(message);
+                        failedAttachments.put(assignment.orderId(), message);
+                        LOGGER.warn("Background remove KIZ failed for shop {}, supply {}, order {}: {}",
+                                shop.getId(), supplyId, assignment.orderId(), message);
                         notifyProgress(key, shop, supplyId, supplyName, completed, assignments.size(), true,
-                                "Отправка KIZ в WB " + completed + "/" + assignments.size()
-                                        + " (пропущено " + skipped + ")", failures, successfulKizs);
+                                "Отправка KIZ в WB " + completed + "/" + assignments.size(), failures, successfulKizs);
                         continue;
                     }
+                }
 
-                    String message = "Не удалось удалить старый KIZ для order " + assignment.orderId()
-                            + " (HTTP " + removeResult.statusCode() + ")";
-                    if (removeResult.responseBody() != null && !removeResult.responseBody().isBlank()) {
-                        message += ": " + removeResult.responseBody();
+                KizService.AttachCodeResult result = KizService.addDataMatrixCodeToOrder(
+                        shop.getApiKey(),
+                        assignment.orderId(),
+                        assignment.kizCode()
+                );
+
+                if (result.success()) {
+                    if (assignment.sourceKiz() != null) {
+                        successfulKizs.add(assignment.sourceKiz());
                     }
-                    failures.add(message);
-                    failedAttachments.put(assignment.orderId(), message);
-                    LOGGER.warn("Background remove KIZ failed for shop {}, supply {}, order {}: {}",
-                            shop.getId(), supplyId, assignment.orderId(), message);
+                    completed++;
+                    failedAttachments.remove(assignment.orderId());
                     notifyProgress(key, shop, supplyId, supplyName, completed, assignments.size(), true,
                             "Отправка KIZ в WB " + completed + "/" + assignments.size(), failures, successfulKizs);
                     continue;
                 }
-            }
 
-            KizService.AttachCodeResult result = KizService.addDataMatrixCodeToOrder(
-                    shop.getApiKey(),
-                    assignment.orderId(),
-                    assignment.kizCode()
-            );
-
-            if (result.success()) {
-                successfulKizs.add(assignment.sourceKiz());
-                completed++;
-                failedAttachments.remove(assignment.orderId());
+                if (isSkippedNonProcessingOrder(result.statusCode(), result.responseBody())) {
+                    skipped++;
+                    notifyProgress(key, shop, supplyId, supplyName, completed, assignments.size(), true,
+                            "Отправка KIZ в WB " + completed + "/" + assignments.size()
+                                    + " (пропущено " + skipped + ")", failures, successfulKizs);
+                    continue;
+                }
+                String message;
+                if (result.statusCode() == 429) {
+                    message = "WB ограничил отправку KIZ для order " + assignment.orderId() + " (HTTP 429)";
+                } else {
+                    message = "Не удалось отправить KIZ для order " + assignment.orderId() + " (HTTP " + result.statusCode() + ")";
+                }
+                if (result.responseBody() != null && !result.responseBody().isBlank()) {
+                    message += ": " + result.responseBody();
+                }
+                failures.add(message);
+                failedAttachments.put(assignment.orderId(), message);
+                LOGGER.warn("Background attach KIZ failed for shop {}, supply {}, order {}: {}",
+                        shop.getId(), supplyId, assignment.orderId(), message);
                 notifyProgress(key, shop, supplyId, supplyName, completed, assignments.size(), true,
                         "Отправка KIZ в WB " + completed + "/" + assignments.size(), failures, successfulKizs);
-                continue;
             }
 
-            if (isSkippedNonProcessingOrder(result.statusCode(), result.responseBody())) {
-                skipped++;
-                notifyProgress(key, shop, supplyId, supplyName, completed, assignments.size(), true,
-                        "Отправка KIZ в WB " + completed + "/" + assignments.size()
-                                + " (пропущено " + skipped + ")", failures, successfulKizs);
-                continue;
-            }
-
-            String message;
-            if (result.statusCode() == 429) {
-                message = "WB ограничил отправку KIZ для order " + assignment.orderId() + " (HTTP 429)";
-            } else {
-                message = "Не удалось отправить KIZ для order " + assignment.orderId() + " (HTTP " + result.statusCode() + ")";
-            }
-            if (result.responseBody() != null && !result.responseBody().isBlank()) {
-                message += ": " + result.responseBody();
-            }
+            String finalMessage = failures.isEmpty()
+                    ? "KIZ отправлены в WB: " + completed + "/" + assignments.size()
+                            + (skipped > 0 ? ", пропущено " + skipped : "")
+                    : "KIZ отправлены частично: " + completed + "/" + assignments.size()
+                            + (skipped > 0 ? ", пропущено " + skipped : "");
+            KizAttachmentProgress completedProgress = new KizAttachmentProgress(
+                    shop.getId(),
+                    shop.getName(),
+                    supplyId,
+                    supplyName,
+                    completed,
+                    assignments.size(),
+                    false,
+                    finalMessage,
+                    List.copyOf(failures),
+                    successfulKizs.stream().map(Kiz::getCode).filter(Objects::nonNull).toList()
+            );
+            activeJobs.remove(key);
+            notifyListeners(completedProgress);
+        } catch (IOException | RuntimeException error) {
+            String message = error.getMessage() == null || error.getMessage().isBlank()
+                    ? error.getClass().getSimpleName() : error.getMessage();
             failures.add(message);
-            failedAttachments.put(assignment.orderId(), message);
-            LOGGER.warn("Background attach KIZ failed for shop {}, supply {}, order {}: {}",
-                    shop.getId(), supplyId, assignment.orderId(), message);
-            notifyProgress(key, shop, supplyId, supplyName, completed, assignments.size(), true,
-                    "Отправка KIZ в WB " + completed + "/" + assignments.size(), failures, successfulKizs);
+            notifyListeners(new KizAttachmentProgress(shop.getId(), shop.getName(), supplyId, supplyName,
+                    completed, assignments.size(), false, "KIZ attachment failed", List.copyOf(failures),
+                    successfulKizs.stream().map(Kiz::getCode).filter(Objects::nonNull).toList()));
+            throw error;
+        } finally {
+            activeJobs.remove(key);
         }
-
-        if (!successfulKizs.isEmpty()) {
-            KizService.deleteKizs(successfulKizs);
-        }
-
-        String finalMessage = failures.isEmpty()
-                ? "KIZ отправлены в WB: " + completed + "/" + assignments.size()
-                        + (skipped > 0 ? ", пропущено " + skipped : "")
-                : "KIZ отправлены частично: " + completed + "/" + assignments.size()
-                        + (skipped > 0 ? ", пропущено " + skipped : "");
-        KizAttachmentProgress completedProgress = new KizAttachmentProgress(
-                shop.getId(),
-                shop.getName(),
-                supplyId,
-                supplyName,
-                completed,
-                assignments.size(),
-                false,
-                finalMessage,
-                List.copyOf(failures),
-                successfulKizs.stream().map(Kiz::getCode).filter(Objects::nonNull).toList()
-        );
-        activeJobs.remove(key);
-        notifyListeners(completedProgress);
     }
 
     private void notifyProgress(String key,

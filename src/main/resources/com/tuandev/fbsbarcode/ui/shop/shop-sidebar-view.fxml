@@ -89,6 +89,10 @@
                 <FontIcon iconLiteral="fth-link" iconSize="16"/>
             </graphic>
         </Button>
+        <Button fx:id="znackAutomationButton" alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onZnackAutomation" prefHeight="30.0" prefWidth="190.0" text=" Znack Automation">
+            <styleClass><String fx:value="button" /><String fx:value="btn-primary" /></styleClass>
+            <graphic><FontIcon iconLiteral="fth-tag" iconSize="16"/></graphic>
+        </Button>
         <Button fx:id="btnPrintHistory" alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onPrintHistory" prefHeight="30.0" prefWidth="190.0" text=" История печати">
             <styleClass>
                 <String fx:value="button" />

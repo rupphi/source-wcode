@@ -232,17 +232,6 @@ public final class WbSchemaSupport {
                     FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
                 )
             """);
-            st.execute("""
-                CREATE TABLE IF NOT EXISTS wb_product_kiz_mappings(
-                    shop_id INTEGER NOT NULL,
-                    nm_id INTEGER NOT NULL,
-                    kiz_category_id INTEGER,
-                    updated_at TEXT NOT NULL,
-                    PRIMARY KEY (shop_id, nm_id),
-                    FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE,
-                    FOREIGN KEY (kiz_category_id) REFERENCES categories(id) ON DELETE SET NULL
-                )
-            """);
         }
 
         ensureShopColumn(conn, "wb_products_cursor_updated_at", "TEXT");
@@ -293,7 +282,6 @@ public final class WbSchemaSupport {
         ensureColumn(conn, "wb_orders", "address_longitude", "REAL");
         ensureColumn(conn, "wb_orders", "address_latitude", "REAL");
 
-        createIndexIfTableExists(conn, "idx_kizs_shop_id", "kizs", "shop_id");
         createIndexIfTableExists(conn, "idx_wb_product_cards_shop_id", "wb_product_cards", "shop_id");
         createIndexIfTableExists(conn, "idx_wb_product_sizes_shop_nm_id", "wb_product_sizes", "shop_id, nm_id");
         createIndexIfTableExists(conn, "idx_wb_product_characteristics_shop_nm_id", "wb_product_characteristics", "shop_id, nm_id");
@@ -317,7 +305,6 @@ public final class WbSchemaSupport {
         createIndexIfTableExists(conn, "idx_wb_product_size_skus_shop_chrt_id", "wb_product_size_skus", "shop_id, chrt_id");
         createIndexIfTableExists(conn, "idx_wb_sync_runs_shop_id", "wb_sync_runs", "shop_id");
         createIndexIfTableExists(conn, "idx_wb_action_log_shop_id", "wb_action_log", "shop_id");
-        createIndexIfTableExists(conn, "idx_wb_product_kiz_mappings_shop_category", "wb_product_kiz_mappings", "shop_id, kiz_category_id");
     }
 
     private static void ensureShopColumn(Connection conn, String columnName, String columnDefinition) throws SQLException {

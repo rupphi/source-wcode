@@ -23,7 +23,7 @@ public final class BuildConfig {
     }
 
     public static String getUpdateUrl() {
-        return PROPS.getProperty("app.update.url", "https://github.com/tuanworlddev/WCode");
+        return PROPS.getProperty("app.update.url", "https://github.com/tuanworlddev/-WCode-Znack");
     }
 
     private BuildConfig() {}

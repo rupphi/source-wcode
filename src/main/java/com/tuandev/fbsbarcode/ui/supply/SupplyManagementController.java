@@ -9,7 +9,4 @@ public class SupplyManagementController {
     
     @FXML
     public StackPane supplyDetailContainer;
-    
-    @FXML
-    public StackPane kizPanelContainer;
 }

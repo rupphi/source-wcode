@@ -2,8 +2,6 @@ package com.tuandev.fbsbarcode.integration.wb;
 
 import com.tuandev.fbsbarcode.features.print.history.ImageCacheRepository;
 import com.tuandev.fbsbarcode.features.print.history.PrintHistoryService;
-import com.tuandev.fbsbarcode.features.kizmapping.AutoKizMappingRepository;
-import com.tuandev.fbsbarcode.features.kizmapping.AutoKizMappingResult;
 import com.tuandev.fbsbarcode.models.Order;
 import com.tuandev.fbsbarcode.models.Shop;
 import com.tuandev.fbsbarcode.models.Sticker;
@@ -61,7 +59,6 @@ public class WbSupplyWorkflow {
     private final WbProductSyncService productSyncService = new WbProductSyncService();
     private final WbStickerService stickerService = new WbStickerService();
     private final ImageCacheRepository imageCacheRepository = new ImageCacheRepository();
-    private final AutoKizMappingRepository autoKizMappingRepository = new AutoKizMappingRepository();
 
     public List<WbSupplySummary> getSupplies(int shopId) {
         return supplyRepository.getSupplySummaries(shopId);
@@ -82,11 +79,6 @@ public class WbSupplyWorkflow {
         if (!missingNmIds.isEmpty()) {
             try {
                 productSyncService.recoverProductsByNmIds(shop, missingNmIds);
-                AutoKizMappingResult mappingResult = autoKizMappingRepository.autoCreateAndMap(shop.getId());
-                if (mappingResult.mappingsCreated() > 0 || mappingResult.categoriesCreated() > 0) {
-                    LOGGER.info("Auto KIZ mapping after product recovery for shop {} supply {} created {} categories and {} mappings",
-                            shop.getId(), supplyId, mappingResult.categoriesCreated(), mappingResult.mappingsCreated());
-                }
             } catch (WbApiException ex) {
                 if (!ex.isContentPermissionError() && !ex.isRateLimited()) {
                     throw ex;

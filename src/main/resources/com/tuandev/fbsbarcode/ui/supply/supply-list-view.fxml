@@ -18,7 +18,7 @@
                 <Button fx:id="refetchButton" mnemonicParsing="false" onAction="#onRefetch" text="%supply_list.refetch" />
             </children>
         </HBox>
-        <ComboBox fx:id="supplyComboBox" prefWidth="460.0" promptText="Выберите поставку" />
+        <ComboBox fx:id="supplyComboBox" prefWidth="460.0" maxWidth="1.7976931348623157E308" promptText="Выберите поставку" />
         <Label fx:id="emptyStateLabel" managed="false" styleClass="text-muted" text="%supply_list.empty" visible="false" wrapText="true" />
     </children>
     <padding>

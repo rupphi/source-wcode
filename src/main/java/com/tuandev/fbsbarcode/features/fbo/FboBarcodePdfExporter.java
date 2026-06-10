@@ -3,6 +3,7 @@ package com.tuandev.fbsbarcode.features.fbo;
 import com.tuandev.fbsbarcode.features.print.GenerateBarcode;
 import com.tuandev.fbsbarcode.features.print.PrintTemplate;
 import com.tuandev.fbsbarcode.models.Order;
+import com.tuandev.fbsbarcode.shared.AtomicFilePublisher;
 
 import java.io.File;
 import java.io.IOException;
@@ -30,20 +31,36 @@ public class FboBarcodePdfExporter {
                 pairNumber++;
             }
         }
-        exportPages(pages, outputFile);
+        exportPages(pages, outputFile, () -> {
+        });
     }
 
     public void exportPlan(FboPrintPlan plan, File outputFile) throws IOException {
-        exportPages(plan == null ? List.of() : plan.pages(), outputFile);
+        exportPlan(plan, outputFile, () -> {
+        });
+    }
+
+    public void exportPlan(FboPrintPlan plan, File outputFile, Runnable beforePublish) throws IOException {
+        exportPages(plan == null ? List.of() : plan.pages(), outputFile, beforePublish);
     }
 
     public void exportSinglePage(FboProductSku product, File outputFile) throws IOException {
-        exportPages(List.of(FboPrintPage.barcode(product, 1)), outputFile);
+        exportPages(List.of(FboPrintPage.barcode(product, 1)), outputFile, () -> {
+        });
     }
 
-    private void exportPages(List<FboPrintPage> pages, File outputFile) throws IOException {
-        PrintTemplate template = templateService.getDefaultTemplate();
-        GenerateBarcode.exportTemplatePages(template, toOrders(pages), outputFile);
+    private void exportPages(List<FboPrintPage> pages, File outputFile, Runnable beforePublish) throws IOException {
+        File staging = AtomicFilePublisher.stagingFile(outputFile, ".pdf");
+        try {
+            PrintTemplate template = templateService.getDefaultTemplate();
+            GenerateBarcode.exportTemplatePages(template, toOrders(pages), staging);
+            if (beforePublish != null) {
+                beforePublish.run();
+            }
+            AtomicFilePublisher.publish(staging, outputFile);
+        } finally {
+            AtomicFilePublisher.deleteQuietly(staging);
+        }
     }
 
     private List<Order> toOrders(List<FboPrintPage> pages) {

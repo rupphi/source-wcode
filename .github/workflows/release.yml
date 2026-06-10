@@ -1,4 +1,4 @@
-name: Create Release
+name: Create Windows Release
 
 on:
   push:
@@ -9,60 +9,13 @@ env:
   JAVA_DISTRIBUTION: oracle
   APP_NAME: WCode
   APP_VENDOR: TuanDev
-  PUBLIC_RELEASE_REPO: tuanworlddev/WCode
+
+permissions:
+  contents: write
 
 jobs:
-  test:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Set up JDK 25
-        uses: actions/setup-java@v5
-        with:
-          java-version: ${{ env.JAVA_VERSION }}
-          distribution: ${{ env.JAVA_DISTRIBUTION }}
-
-      - name: Run tests
-        shell: bash
-        run: ./mvnw.cmd -B clean test
-
-  prepare-public-release:
-    needs: test
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Extract version from tag
-        shell: bash
-        run: |
-          APP_VERSION=${GITHUB_REF#refs/tags/v}
-          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
-
-      - name: Create or update public release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.WCODE_RELEASE_TOKEN }}
-        run: |
-          TAG="v${APP_VERSION}"
-          TITLE="WCode v${APP_VERSION}"
-          NOTES="Public installer release for WCode ${APP_VERSION}."
-          if gh release view "$TAG" -R "$PUBLIC_RELEASE_REPO" >/dev/null 2>&1; then
-            gh release edit "$TAG" -R "$PUBLIC_RELEASE_REPO" --title "$TITLE" --notes "$NOTES" --latest
-          else
-            gh release create "$TAG" \
-              -R "$PUBLIC_RELEASE_REPO" \
-              --target main \
-              --title "$TITLE" \
-              --notes "$NOTES" \
-              --latest
-          fi
-
   build-windows:
-    needs: prepare-public-release
     runs-on: windows-latest
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@v5
 
@@ -79,9 +32,9 @@ jobs:
           echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
           echo "Building version $APP_VERSION"
 
-      - name: Build with Maven
+      - name: Run tests and build
         shell: bash
-        run: ./mvnw.cmd -B -DskipTests -Dapp.version="${{ env.APP_VERSION }}" -Dapp.vendor="${{ env.APP_VENDOR }}" clean package
+        run: ./mvnw.cmd -B -Dapp.version="${{ env.APP_VERSION }}" -Dapp.vendor="${{ env.APP_VENDOR }}" clean verify
 
       - name: Resolve built JAR
         shell: bash
@@ -93,7 +46,6 @@ jobs:
           fi
           APP_JAR=$(basename "$APP_JAR")
           echo "APP_JAR=$APP_JAR" >> "$GITHUB_ENV"
-          echo "Using built JAR $APP_JAR"
 
       - name: Prepare jpackage input
         shell: bash
@@ -106,6 +58,7 @@ jobs:
       - name: Build EXE installer
         shell: bash
         run: |
+          mkdir -p out
           jpackage --type exe \
             --name "${{ env.APP_NAME }}" \
             --input target/jpackage-input \
@@ -123,16 +76,7 @@ jobs:
             --java-options "-Djava.io.tmpdir=C:\\ProgramData\\WCode\\tmp" \
             --java-options "-Dorg.sqlite.tmpdir=C:\\ProgramData\\WCode\\tmp" \
             --jlink-options "--strip-native-commands --strip-debug --no-man-pages --no-header-files --bind-services"
-
-      - name: Rename EXE installer
-        shell: bash
-        run: |
-          EXE=$(find out -maxdepth 1 -type f -name 'WCode*.exe' | head -n 1)
-          if [ -z "$EXE" ]; then
-            echo "No EXE installer found in out/"
-            exit 1
-          fi
-          mv "$EXE" out/WCode.exe
+          mv "$(find out -maxdepth 1 -type f -name 'WCode*.exe' | head -n 1)" out/WCode.exe
 
       - name: Build MSI installer
         shell: bash
@@ -154,18 +98,9 @@ jobs:
             --java-options "-Djava.io.tmpdir=C:\\ProgramData\\WCode\\tmp" \
             --java-options "-Dorg.sqlite.tmpdir=C:\\ProgramData\\WCode\\tmp" \
             --jlink-options "--strip-native-commands --strip-debug --no-man-pages --no-header-files --bind-services"
+          mv "$(find out -maxdepth 1 -type f -name 'WCode*.msi' | head -n 1)" out/WCode.msi
 
-      - name: Rename MSI installer
-        shell: bash
-        run: |
-          MSI=$(find out -maxdepth 1 -type f -name 'WCode*.msi' | head -n 1)
-          if [ -z "$MSI" ]; then
-            echo "No MSI installer found in out/"
-            exit 1
-          fi
-          mv "$MSI" out/WCode.msi
-
-      - name: Build portable app image
+      - name: Build portable ZIP
         shell: bash
         run: |
           jpackage --type app-image \
@@ -182,219 +117,25 @@ jobs:
             --java-options "-Djava.io.tmpdir=C:\\ProgramData\\WCode\\tmp" \
             --java-options "-Dorg.sqlite.tmpdir=C:\\ProgramData\\WCode\\tmp" \
             --jlink-options "--strip-native-commands --strip-debug --no-man-pages --no-header-files --bind-services"
+          cp check-portable.bat out/WCode/check-portable.bat
 
-      - name: Add portable diagnostics helper
-        shell: bash
-        run: cp check-portable.bat out/WCode/check-portable.bat
-
-      - name: Archive portable app image
+      - name: Archive portable app
         shell: pwsh
-        run: |
-          if (Test-Path "out/WCode-portable.zip") { Remove-Item "out/WCode-portable.zip" -Force }
-          Compress-Archive -Path "out/WCode/*" -DestinationPath "out/WCode-portable.zip"
+        run: Compress-Archive -Path "out/WCode/*" -DestinationPath "out/WCode-portable.zip"
 
-      - name: Upload Windows assets to public release
+      - name: Publish GitHub release
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.WCODE_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "v${APP_VERSION}" \
+          NOTES="Windows test release for the Znack GTIN/KIZ automation workflow. Verify CryptoPro signature, OMS settings, KIZ purchase, inventory download, and introduction with a controlled test order before production use."
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --title "WCode Znack ${APP_VERSION}" --notes "$NOTES" --latest
+          else
+            gh release create "$GITHUB_REF_NAME" --title "WCode Znack ${APP_VERSION}" --notes "$NOTES" --latest
+          fi
+          gh release upload "$GITHUB_REF_NAME" \
             out/WCode.exe \
             out/WCode.msi \
             out/WCode-portable.zip \
-            -R "$PUBLIC_RELEASE_REPO" \
             --clobber
-
-  build-macos:
-    needs: prepare-public-release
-    runs-on: macos-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Set up JDK 25
-        uses: actions/setup-java@v5
-        with:
-          java-version: ${{ env.JAVA_VERSION }}
-          distribution: ${{ env.JAVA_DISTRIBUTION }}
-
-      - name: Extract version from tag
-        shell: bash
-        run: |
-          APP_VERSION=${GITHUB_REF#refs/tags/v}
-          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
-          echo "Building version $APP_VERSION"
-
-      - name: Build with Maven
-        shell: bash
-        run: ./mvnw -B -DskipTests -Dapp.version="${{ env.APP_VERSION }}" -Dapp.vendor="${{ env.APP_VENDOR }}" clean package
-
-      - name: Resolve built JAR
-        shell: bash
-        run: |
-          APP_JAR=$(find target -maxdepth 1 -type f -name 'FBSBarcode-*.jar' | head -n 1)
-          if [ -z "$APP_JAR" ]; then
-            echo "No built application JAR found in target/"
-            exit 1
-          fi
-          APP_JAR=$(basename "$APP_JAR")
-          echo "APP_JAR=$APP_JAR" >> "$GITHUB_ENV"
-          echo "Using built JAR $APP_JAR"
-
-      - name: Prepare jpackage input
-        shell: bash
-        run: |
-          rm -rf target/jpackage-input
-          mkdir -p target/jpackage-input/lib
-          cp "target/${APP_JAR}" "target/jpackage-input/${APP_JAR}"
-          cp -R target/lib/. target/jpackage-input/lib/
-
-      - name: Build DMG installer
-        shell: bash
-        run: |
-          jpackage --type dmg \
-            --name "${{ env.APP_NAME }}" \
-            --input target/jpackage-input \
-            --main-jar "${{ env.APP_JAR }}" \
-            --main-class com.tuandev.fbsbarcode.Launcher \
-            --dest out \
-            --app-version "${{ env.APP_VERSION }}" \
-            --vendor "${{ env.APP_VENDOR }}" \
-            --icon logo.icns \
-            --java-options "--enable-native-access=ALL-UNNAMED" \
-            --jlink-options "--strip-native-commands --strip-debug --no-man-pages --no-header-files --bind-services"
-
-      - name: Rename DMG installer
-        shell: bash
-        run: |
-          DMG=$(find out -maxdepth 1 -type f -name 'WCode*.dmg' | head -n 1)
-          if [ -z "$DMG" ]; then
-            echo "No DMG installer found in out/"
-            exit 1
-          fi
-          mv "$DMG" out/WCode-mac-arm64.dmg
-
-      - name: Upload macOS asset to public release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.WCODE_RELEASE_TOKEN }}
-        run: |
-          gh release upload "v${APP_VERSION}" \
-            out/WCode-mac-arm64.dmg \
-            -R "$PUBLIC_RELEASE_REPO" \
-            --clobber
-
-  build-linux:
-    needs: prepare-public-release
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Set up JDK 25
-        uses: actions/setup-java@v5
-        with:
-          java-version: ${{ env.JAVA_VERSION }}
-          distribution: ${{ env.JAVA_DISTRIBUTION }}
-
-      - name: Install jpackage dependencies
-        run: sudo apt-get update && sudo apt-get install -y fakeroot
-
-      - name: Extract version from tag
-        shell: bash
-        run: |
-          APP_VERSION=${GITHUB_REF#refs/tags/v}
-          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
-          echo "Building version $APP_VERSION"
-
-      - name: Build with Maven
-        shell: bash
-        run: ./mvnw -B -DskipTests -Dapp.version="${{ env.APP_VERSION }}" -Dapp.vendor="${{ env.APP_VENDOR }}" clean package
-
-      - name: Resolve built JAR
-        shell: bash
-        run: |
-          APP_JAR=$(find target -maxdepth 1 -type f -name 'FBSBarcode-*.jar' | head -n 1)
-          if [ -z "$APP_JAR" ]; then
-            echo "No built application JAR found in target/"
-            exit 1
-          fi
-          APP_JAR=$(basename "$APP_JAR")
-          echo "APP_JAR=$APP_JAR" >> "$GITHUB_ENV"
-          echo "Using built JAR $APP_JAR"
-
-      - name: Prepare jpackage input
-        shell: bash
-        run: |
-          rm -rf target/jpackage-input
-          mkdir -p target/jpackage-input/lib
-          cp "target/${APP_JAR}" "target/jpackage-input/${APP_JAR}"
-          cp -R target/lib/. target/jpackage-input/lib/
-
-      - name: Build DEB installer
-        shell: bash
-        run: |
-          jpackage --type deb \
-            --name "${{ env.APP_NAME }}" \
-            --input target/jpackage-input \
-            --main-jar "${{ env.APP_JAR }}" \
-            --main-class com.tuandev.fbsbarcode.Launcher \
-            --dest out \
-            --app-version "${{ env.APP_VERSION }}" \
-            --vendor "${{ env.APP_VENDOR }}" \
-            --icon src/main/resources/com/tuandev/fbsbarcode/assets/images/logo.png \
-            --linux-menu-group Utility \
-            --linux-shortcut \
-            --linux-deb-maintainer support@tuandev.com \
-            --java-options "--enable-native-access=ALL-UNNAMED" \
-            --jlink-options "--strip-native-commands --strip-debug --no-man-pages --no-header-files --bind-services"
-
-      - name: Rename DEB installer
-        shell: bash
-        run: |
-          DEB=$(find out -maxdepth 1 -type f -name 'wcode*.deb' | head -n 1)
-          if [ -z "$DEB" ]; then
-            DEB=$(find out -maxdepth 1 -type f -name 'WCode*.deb' | head -n 1)
-          fi
-          if [ -z "$DEB" ]; then
-            echo "No DEB installer found in out/"
-            exit 1
-          fi
-          mv "$DEB" out/WCode-linux-amd64.deb
-
-      - name: Upload Linux asset to public release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.WCODE_RELEASE_TOKEN }}
-        run: |
-          gh release upload "v${APP_VERSION}" \
-            out/WCode-linux-amd64.deb \
-            -R "$PUBLIC_RELEASE_REPO" \
-            --clobber
-
-  finalize-release:
-    needs:
-      - build-windows
-      - build-macos
-      - build-linux
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Extract version from tag
-        shell: bash
-        run: |
-          APP_VERSION=${GITHUB_REF#refs/tags/v}
-          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
-
-      - name: Mark public release as latest
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.WCODE_RELEASE_TOKEN }}
-        run: |
-          TAG="v${APP_VERSION}"
-          TITLE="WCode v${APP_VERSION}"
-          NOTES="Public installer release for WCode ${APP_VERSION}."
-          gh release edit "$TAG" -R "$PUBLIC_RELEASE_REPO" --title "$TITLE" --notes "$NOTES" --latest

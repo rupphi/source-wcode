@@ -1,6 +1,5 @@
 package com.tuandev.fbsbarcode;
 
-import com.tuandev.fbsbarcode.features.kiz.PdfDataMatrixReader;
 import com.tuandev.fbsbarcode.features.print.KizAttachmentCoordinator;
 import com.tuandev.fbsbarcode.integration.wb.WbSupplyWorkflow;
 import com.tuandev.fbsbarcode.shared.AlertService;
@@ -53,7 +52,6 @@ public class MainApplication extends Application {
         if (homeController != null) {
             homeController.dispose();
         }
-        PdfDataMatrixReader.shutdown();
         WbSupplyWorkflow.shutdownImageLoader();
         AppTaskExecutor.shutdown();
     }

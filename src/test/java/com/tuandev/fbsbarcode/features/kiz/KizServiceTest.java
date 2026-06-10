@@ -39,20 +39,4 @@ class KizServiceTest {
         assertNull(KizService.scannerSafeCode(null));
     }
 
-    @Test
-    void addKizsStoresRawCode() throws Exception {
-        System.setProperty("wcode.appdata.dir", tempDir.toString());
-        Database.initDatabase();
-        try (Connection conn = Database.getConnection();
-             Statement st = conn.createStatement()) {
-            st.execute("INSERT INTO shops(id, name, api_key) VALUES (1, 'Shop', 'token')");
-            st.execute("INSERT INTO categories(id, name) VALUES (10, 'Shoes')");
-        }
-
-        String scannerSafeKiz = "010465039888513821ABC" + GS + "91XYZ" + GS + "92SIGNATURE";
-
-        KizService.addKizs(1, 10, java.util.List.of(GS + scannerSafeKiz));
-
-        assertEquals(GS + scannerSafeKiz, KizService.getKizs(1, 10, 1).getFirst().getCode());
-    }
 }

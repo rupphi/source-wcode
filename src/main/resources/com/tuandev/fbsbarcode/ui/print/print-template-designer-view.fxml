@@ -12,6 +12,7 @@
 <?import javafx.scene.control.TextField?>
 <?import javafx.scene.layout.AnchorPane?>
 <?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.FlowPane?>
 <?import javafx.scene.layout.GridPane?>
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.Pane?>
@@ -28,18 +29,20 @@
                 <Label styleClass="h3" text="%template.title" />
                 <Label fx:id="templateMetaLabel" styleClass="text-muted" text="58x40 mm" />
             </HBox>
-            <HBox alignment="CENTER_LEFT" spacing="8.0">
-                <Label text="%template.type" />
-                <ComboBox fx:id="templateTypeComboBox" prefWidth="120.0" />
-                <ComboBox fx:id="templateComboBox" prefWidth="250.0" />
-                <Button mnemonicParsing="false" onAction="#onCreateTemplate" text="%template.create" />
-                <Button mnemonicParsing="false" onAction="#onDuplicateTemplate" text="%template.duplicate" />
-                <Button mnemonicParsing="false" onAction="#onRenameTemplate" text="%template.rename" />
-                <Button mnemonicParsing="false" onAction="#onDeleteTemplate" text="%template.delete" />
-                <Button mnemonicParsing="false" onAction="#onSetDefaultTemplate" text="%template.set_default" />
-                <Button mnemonicParsing="false" onAction="#onResetTemplate" text="%template.reset" />
-                <Button mnemonicParsing="false" onAction="#onSaveTemplate" styleClass="btn-primary" text="%template.save" />
-            </HBox>
+            <FlowPane hgap="8.0" vgap="8.0">
+                <children>
+                    <Label text="%template.type" />
+                    <ComboBox fx:id="templateTypeComboBox" prefWidth="120.0" />
+                    <ComboBox fx:id="templateComboBox" prefWidth="250.0" />
+                    <Button mnemonicParsing="false" onAction="#onCreateTemplate" text="%template.create" />
+                    <Button mnemonicParsing="false" onAction="#onDuplicateTemplate" text="%template.duplicate" />
+                    <Button mnemonicParsing="false" onAction="#onRenameTemplate" text="%template.rename" />
+                    <Button mnemonicParsing="false" onAction="#onDeleteTemplate" text="%template.delete" />
+                    <Button mnemonicParsing="false" onAction="#onSetDefaultTemplate" text="%template.set_default" />
+                    <Button mnemonicParsing="false" onAction="#onResetTemplate" text="%template.reset" />
+                    <Button mnemonicParsing="false" onAction="#onSaveTemplate" styleClass="btn-primary" text="%template.save" />
+                </children>
+            </FlowPane>
         </VBox>
     </top>
     <center>

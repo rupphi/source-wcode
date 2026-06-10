@@ -17,7 +17,4 @@
             </padding>
         </VBox>
     </center>
-    <right>
-        <StackPane fx:id="kizPanelContainer" minWidth="390.0" prefWidth="390.0" maxWidth="390.0" BorderPane.alignment="CENTER" />
-    </right>
 </BorderPane>

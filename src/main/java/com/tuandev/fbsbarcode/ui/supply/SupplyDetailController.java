@@ -1,7 +1,26 @@
 package com.tuandev.fbsbarcode.ui.supply;
 
+import com.tuandev.fbsbarcode.features.kizmapping.KizMappingRepository;
+import com.tuandev.fbsbarcode.integration.znack.ZnackApiClient;
+import com.tuandev.fbsbarcode.integration.znack.ZnackAuthService;
+import com.tuandev.fbsbarcode.integration.znack.ZnackGtinInventorySummary;
+import com.tuandev.fbsbarcode.integration.znack.ZnackModels.ShopContext;
+import com.tuandev.fbsbarcode.integration.znack.ZnackModels.Settings;
+import com.tuandev.fbsbarcode.integration.znack.ZnackProductService;
+import com.tuandev.fbsbarcode.integration.znack.ZnackPurchaseCoordinator;
+import com.tuandev.fbsbarcode.integration.znack.ZnackRepository;
+import com.tuandev.fbsbarcode.integration.znack.ZnackSafety;
+import com.tuandev.fbsbarcode.integration.znack.signature.CryptoProSignatureProvider;
+import com.tuandev.fbsbarcode.integration.znack.signature.CryptoProException;
+import com.tuandev.fbsbarcode.integration.znack.signature.ZnackSignatureProvider;
 import com.tuandev.fbsbarcode.models.Order;
+import com.tuandev.fbsbarcode.models.Shop;
+import com.tuandev.fbsbarcode.shared.AlertService;
+import com.tuandev.fbsbarcode.shared.AppTaskExecutor;
 import com.tuandev.fbsbarcode.shared.I18nService;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
+import javafx.concurrent.Task;
 import javafx.fxml.FXML;
 import javafx.geometry.Pos;
 import javafx.beans.property.SimpleObjectProperty;
@@ -12,19 +31,44 @@ import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
+import javafx.scene.control.TextInputDialog;
+import javafx.scene.control.Tooltip;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import org.kordamp.ikonli.javafx.FontIcon;
 
 import java.io.ByteArrayInputStream;
+import java.time.Duration;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.function.Consumer;
 
 public class SupplyDetailController {
+    private static final Set<String> ACTIVE_PURCHASE_STAGES = Set.of(
+            "VALIDATING", "CREATING_ORDER", "POLLING_ORDER", "DOWNLOADING_CODES",
+            "SUBMITTING_INTRODUCTION", "POLLING_INTRODUCTION"
+    );
+
     private boolean updatingSortControls;
+    private final KizMappingRepository gtinRepository = new KizMappingRepository();
+    private final Set<String> purchasesStarting = new HashSet<>();
+    private List<ZnackGtinInventorySummary> gtinSummaries = List.of();
+    private Shop shop;
+    private ZnackRepository znackRepository;
+    private Timeline gtinRefreshTimer;
+    private boolean gtinLoading;
+    private boolean gtinSyncing;
+    private boolean gtinSyncPending;
+    private boolean pendingSyncShowsErrors;
+    private long shopGeneration;
 
     @FXML
     private Label supplyTitleLabel;
@@ -97,6 +141,21 @@ public class SupplyDetailController {
     @FXML
     private Button deliverButton;
 
+    @FXML
+    private Label gtinInventoryTitleLabel;
+
+    @FXML
+    private Label gtinInventoryEmptyLabel;
+
+    @FXML
+    private ProgressIndicator gtinInventoryLoading;
+
+    @FXML
+    private Button gtinInventoryRefreshButton;
+
+    @FXML
+    private VBox gtinInventoryList;
+
     private Consumer<OrderSortOptions> onSortOptionsChanged;
     private Runnable onPrint;
     private Runnable onBack;
@@ -129,6 +188,14 @@ public class SupplyDetailController {
         setOrders(List.of());
         setPrintEnabled(false);
         setDeliverEnabled(false);
+        gtinRefreshTimer = new Timeline(new KeyFrame(javafx.util.Duration.seconds(5), event -> {
+            if (shop != null && !gtinLoading && !gtinSyncing) {
+                refreshGtinInventory();
+            }
+        }));
+        gtinRefreshTimer.setCycleCount(Timeline.INDEFINITE);
+        renderGtinSummaries(List.of());
+        setGtinLoading(false);
     }
 
     @FXML
@@ -150,6 +217,122 @@ public class SupplyDetailController {
         if (onDeliver != null) {
             onDeliver.run();
         }
+    }
+
+    @FXML
+    private void onRefreshGtinInventory() {
+        requestGtinSync(true);
+    }
+
+    public void syncGtinInventoryOnSupplyOpen() {
+        if (znackRepository == null || !hasVerifiedSignature(znackRepository.getSettings())) {
+            return;
+        }
+        requestGtinSync(false);
+    }
+
+    private void requestGtinSync(boolean showErrors) {
+        if (znackRepository == null) {
+            return;
+        }
+        if (gtinLoading || gtinSyncing) {
+            gtinSyncPending = true;
+            pendingSyncShowsErrors |= showErrors;
+            return;
+        }
+        long generation = shopGeneration;
+        ZnackRepository currentRepository = znackRepository;
+        Task<Void> task = new Task<>() {
+            @Override
+            protected Void call() throws Exception {
+                try {
+                    syncProducts(currentRepository);
+                } catch (Exception error) {
+                    try {
+                        currentRepository.log("GTIN_SYNC", null, "ERROR", error.getMessage(), null);
+                    } catch (RuntimeException auditError) {
+                        error.addSuppressed(auditError);
+                    }
+                    throw error;
+                }
+                return null;
+            }
+        };
+        setGtinSyncing(true);
+        task.setOnSucceeded(event -> {
+            if (generation != shopGeneration) {
+                return;
+            }
+            setGtinSyncing(false);
+            refreshGtinInventory();
+        });
+        task.setOnFailed(event -> {
+            if (generation != shopGeneration) {
+                return;
+            }
+            setGtinSyncing(false);
+            if (showErrors) {
+                AlertService.showError(friendlyError(task.getException()));
+            }
+            refreshGtinInventory();
+        });
+        AppTaskExecutor.execute(task);
+    }
+
+    public void setShop(Shop selected) {
+        shopGeneration++;
+        shop = selected;
+        purchasesStarting.clear();
+        gtinSyncPending = false;
+        pendingSyncShowsErrors = false;
+        gtinSyncing = false;
+        znackRepository = selected == null
+                ? null
+                : new ZnackRepository(new ShopContext(selected.getId(), selected.getName()));
+        setGtinLoading(false);
+        if (selected == null) {
+            gtinRefreshTimer.stop();
+        } else {
+            gtinRefreshTimer.play();
+        }
+        refreshGtinInventory();
+    }
+
+    public void refreshGtinInventory() {
+        if (gtinLoading) {
+            return;
+        }
+        if (shop == null) {
+            renderGtinSummaries(List.of());
+            setGtinLoading(false);
+            return;
+        }
+        int shopId = shop.getId();
+        long generation = shopGeneration;
+        Task<List<ZnackGtinInventorySummary>> task = new Task<>() {
+            @Override
+            protected List<ZnackGtinInventorySummary> call() {
+                return gtinRepository.findGtinSummaries(shopId);
+            }
+        };
+        setGtinLoading(true);
+        task.setOnSucceeded(event -> {
+            if (generation != shopGeneration || shop == null || shop.getId() != shopId) {
+                return;
+            }
+            renderGtinSummaries(task.getValue());
+            setGtinLoading(false);
+            startPendingGtinSync();
+        });
+        task.setOnFailed(event -> {
+            if (generation != shopGeneration) {
+                return;
+            }
+            setGtinLoading(false);
+            AlertService.showError(friendlyError(task.getException()));
+            startPendingGtinSync();
+        });
+        AppTaskExecutor.execute(task);
     }
 
     public void setSupplyInfo(String title, String meta) {
@@ -259,6 +442,10 @@ public class SupplyDetailController {
         if (stickerLoadingLabel != null && !stickerLoadingBox.isVisible()) {
             stickerLoadingLabel.setText(i18n.tr("supply.loading_stickers"));
         }
+        gtinInventoryTitleLabel.setText(i18n.tr("supply.gtin_inventory.title"));
+        gtinInventoryEmptyLabel.setText(i18n.tr("supply.gtin_inventory.empty"));
+        gtinInventoryRefreshButton.setTooltip(new Tooltip(i18n.tr("supply.gtin_inventory.refresh")));
+        renderGtinSummaries(gtinSummaries);
     }
 
     public void setPrintEnabled(boolean enabled) {
@@ -365,6 +552,245 @@ public class SupplyDetailController {
                 }
             }
         });
+    }
+
+    private void renderGtinSummaries(List<ZnackGtinInventorySummary> summaries) {
+        gtinSummaries = summaries == null ? List.of() : List.copyOf(summaries);
+        gtinInventoryList.getChildren().clear();
+        for (ZnackGtinInventorySummary summary : gtinSummaries) {
+            gtinInventoryList.getChildren().add(createGtinCard(summary));
+        }
+        updateGtinEmpty();
+    }
+
+    private VBox createGtinCard(ZnackGtinInventorySummary summary) {
+        Label code = new Label(value(summary.gtin()));
+        code.getStyleClass().add("gtin-code");
+
+        Label name = new Label(summary.productName() == null || summary.productName().isBlank()
+                ? tr("supply.gtin_inventory.unnamed") : summary.productName());
+        name.getStyleClass().add("gtin-name");
+        name.setWrapText(true);
+
+        VBox identity = new VBox(2, code, name);
+        HBox.setHgrow(identity, Priority.ALWAYS);
+
+        Button buy = new Button();
+        buy.getStyleClass().addAll("btn-primary", "gtin-buy-button");
+        buy.setGraphic(new FontIcon("fth-plus"));
+        buy.setTooltip(new Tooltip(tr("supply.gtin_inventory.buy")));
+        buy.setAccessibleText(tr("supply.gtin_inventory.buy"));
+        buy.setDisable(isActivePipeline(summary.latestPipelineStage()) || purchasesStarting.contains(summary.gtin()));
+        buy.setOnAction(event -> showBuy(summary));
+
+        HBox header = new HBox(8, identity, buy);
+        header.setAlignment(Pos.CENTER_LEFT);
+
+        Label availableCaption = new Label(tr("supply.gtin_inventory.available"));
+        availableCaption.getStyleClass().add("gtin-count-caption");
+        Label available = new Label(String.valueOf(summary.available()));
+        available.getStyleClass().addAll("badge", "badge-green");
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox statusRow = new HBox(6, availableCaption, available, spacer);
+        statusRow.setAlignment(Pos.CENTER_LEFT);
+
+        String status = first(summary.latestPipelineStage(), summary.latestOrderStatus());
+        if (!status.isBlank()) {
+            Label statusChip = new Label(localizeStatus(status));
+            statusChip.getStyleClass().addAll("badge", statusClass(status));
+            statusChip.setMaxWidth(150);
+            statusChip.setTooltip(new Tooltip(statusChip.getText()));
+            statusRow.getChildren().add(statusChip);
+        }
+
+        VBox card = new VBox(8, header, statusRow);
+        card.getStyleClass().add("gtin-inventory-card");
+        if (summary.latestError() != null && !summary.latestError().isBlank()) {
+            Tooltip.install(card, new Tooltip(summary.latestError()));
+        }
+        return card;
+    }
+
+    private void showBuy(ZnackGtinInventorySummary summary) {
+        if (znackRepository == null || shop == null) {
+            return;
+        }
+        TextInputDialog dialog = new TextInputDialog("1");
+        AlertService.applyTheme(dialog);
+        dialog.setTitle(tr("supply.gtin_inventory.buy_title"));
+        dialog.setHeaderText(summary.gtin() + "\n" + value(summary.productName()));
+        dialog.setContentText(tr("znack.field.quantity"));
+        dialog.showAndWait().ifPresent(text -> {
+            int quantity;
+            try {
+                quantity = Integer.parseInt(text.trim());
+            } catch (NumberFormatException error) {
+                AlertService.showError(tr("kiz_mapping.buy.positive"));
+                return;
+            }
+            if (quantity <= 0) {
+                AlertService.showError(tr("kiz_mapping.buy.positive"));
+                return;
+            }
+            startPurchase(summary.gtin(), quantity);
+        });
+    }
+
+    private void startPurchase(String gtin, int quantity) {
+        if (znackRepository == null || !purchasesStarting.add(gtin)) {
+            AlertService.showError(tr("supply.gtin_inventory.error.pipeline_active"));
+            return;
+        }
+        renderGtinSummaries(gtinSummaries);
+        long generation = shopGeneration;
+        ZnackRepository currentRepository = znackRepository;
+        ZnackPurchaseCoordinator coordinator = ZnackPurchaseCoordinator.create(currentRepository);
+        Settings settings = currentRepository.getSettings();
+        Task<Long> task = new Task<>() {
+            @Override
+            protected Long call() throws Exception {
+                return coordinator.start(settings, gtin, quantity);
+            }
+        };
+        task.setOnSucceeded(event -> {
+            if (generation != shopGeneration) {
+                return;
+            }
+            purchasesStarting.remove(gtin);
+            refreshGtinInventory();
+        });
+        task.setOnFailed(event -> {
+            if (generation != shopGeneration) {
+                return;
+            }
+            purchasesStarting.remove(gtin);
+            AlertService.showError(friendlyError(task.getException()));
+            refreshGtinInventory();
+        });
+        AppTaskExecutor.execute(task);
+    }
+
+    private void setGtinLoading(boolean loading) {
+        gtinLoading = loading;
+        updateGtinBusyState();
+    }
+
+    private void setGtinSyncing(boolean syncing) {
+        gtinSyncing = syncing;
+        updateGtinBusyState();
+    }
+
+    private void updateGtinBusyState() {
+        boolean busy = gtinLoading || gtinSyncing;
+        gtinInventoryLoading.setVisible(busy);
+        gtinInventoryLoading.setManaged(busy);
+        gtinInventoryRefreshButton.setDisable(busy || shop == null);
+        updateGtinEmpty();
+    }
+
+    private void updateGtinEmpty() {
+        boolean empty = !gtinLoading && !gtinSyncing && gtinSummaries.isEmpty();
+        gtinInventoryEmptyLabel.setVisible(empty);
+        gtinInventoryEmptyLabel.setManaged(empty);
+    }
+
+    private void startPendingGtinSync() {
+        if (!gtinSyncPending || gtinLoading || gtinSyncing || znackRepository == null) {
+            return;
+        }
+        boolean showErrors = pendingSyncShowsErrors;
+        gtinSyncPending = false;
+        pendingSyncShowsErrors = false;
+        requestGtinSync(showErrors);
+    }
+
+    private boolean isActivePipeline(String stage) {
+        return stage != null && ACTIVE_PURCHASE_STAGES.contains(stage.toUpperCase(Locale.ROOT));
+    }
+
+    private String statusClass(String status) {
+        String normalized = status.toUpperCase(Locale.ROOT);
+        if ("FAILED".equals(normalized) || "CANCELLED".equals(normalized)) {
+            return "badge-red";
+        }
+        return isActivePipeline(normalized) ? "badge-warning" : "badge-green";
+    }
+
+    private String localizeStatus(String status) {
+        return status == null || status.isBlank()
+                ? ""
+                : tr("znack.status_value." + status.toLowerCase(Locale.ROOT), status);
+    }
+
+    private String friendlyError(Throwable error) {
+        if (error instanceof CryptoProException crypto) {
+            return tr("znack.signature.error." + switch (crypto.code()) {
+                case CRYPTOPRO_MISSING -> "cryptopro_missing";
+                case TOKEN_OR_CERTIFICATE_ABSENT -> "certificate_absent";
+                case PRIVATE_KEY_UNAVAILABLE -> "private_key";
+                case CERTIFICATE_EXPIRED -> "expired";
+                case CANCELLED -> "cancelled";
+                case TIMEOUT -> "timeout";
+                case INVALID_SIGNATURE_OUTPUT -> "invalid_output";
+                default -> "failed";
+            });
+        }
+        String message = error == null ? "" : value(error.getMessage());
+        if (ZnackSafety.UNVERIFIED_SIGNATURE.equals(message)) {
+            return tr("znack.signature.not_verified");
+        }
+        if (ZnackSafety.MISSING_SHOP_CONFIGURATION.equals(message)) {
+            return tr("znack.error.shop_configuration");
+        }
+        if (message.startsWith("A KIZ purchase pipeline is already active")) {
+            return tr("supply.gtin_inventory.error.pipeline_active");
+        }
+        if ("omsId is required before buying KIZ.".equals(message)) {
+            return tr("supply.gtin_inventory.error.oms_id");
+        }
+        return message.isBlank() ? tr("znack.signature.error.failed") : message;
+    }
+
+    private void syncProducts(ZnackRepository repository) throws Exception {
+        Settings settings = repository.getSettings();
+        ZnackSignatureProvider signer = settings.signerCertificate() == null || settings.signerCertificate().isBlank()
+                ? ZnackSignatureProvider.unconfigured()
+                : new CryptoProSignatureProvider(settings.cryptcpPath(), settings.signerCertificate(),
+                Duration.ofSeconds(settings.resolvedCryptoProTimeoutSeconds()));
+        ZnackApiClient api = new ZnackApiClient();
+        new ZnackProductService(api, new ZnackAuthService(api, signer), repository).sync(settings);
+        ZnackPurchaseCoordinator.create(repository).resumeEligibleIntroductions(settings);
+    }
+
+    private boolean hasVerifiedSignature(Settings settings) {
+        return settings != null && settings.signerCertificate() != null && !settings.signerCertificate().isBlank()
+                && settings.signerTestedAt() != null;
+    }
+
+    public void dispose() {
+        shopGeneration++;
+        if (gtinRefreshTimer != null) {
+            gtinRefreshTimer.stop();
+        }
+        shop = null;
+        znackRepository = null;
+    }
+
+    private String tr(String key) {
+        return I18nService.getInstance().tr(key);
+    }
+
+    private String tr(String key, String fallback) {
+        return I18nService.getInstance().tr(key, fallback);
+    }
+
+    private static String first(String first, String second) {
+        return first == null || first.isBlank() ? value(second) : first;
+    }
+
+    private static String value(String value) {
+        return value == null ? "" : value;
     }
 
     private String nullToEmpty(String value) {

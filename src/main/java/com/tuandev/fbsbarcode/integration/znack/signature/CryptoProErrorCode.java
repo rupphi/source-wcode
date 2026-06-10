@@ -1,0 +1,13 @@
+package com.tuandev.fbsbarcode.integration.znack.signature;
+
+public enum CryptoProErrorCode {
+    CRYPTOPRO_MISSING,
+    TOKEN_OR_CERTIFICATE_ABSENT,
+    PRIVATE_KEY_UNAVAILABLE,
+    CERTIFICATE_EXPIRED,
+    CANCELLED,
+    TIMEOUT,
+    SIGNING_FAILED,
+    INVALID_SIGNATURE_OUTPUT,
+    DISCOVERY_FAILED
+}

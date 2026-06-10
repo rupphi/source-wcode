@@ -63,23 +63,11 @@
 
 | Loại | Link tải |
 |------|----------|
-| **EXE Installer** (khuyên dùng) | [WCode.exe](https://github.com/tuanworlddev/WCode/releases/latest/download/WCode.exe) |
-| **MSI Installer** | [WCode.msi](https://github.com/tuanworlddev/WCode/releases/latest/download/WCode.msi) |
-| **Portable (ZIP)** | [WCode-portable.zip](https://github.com/tuanworlddev/WCode/releases/latest/download/WCode-portable.zip) |
+| **EXE Installer** (khuyên dùng) | [WCode.exe](https://github.com/tuanworlddev/-WCode-Znack/releases/latest/download/WCode.exe) |
+| **MSI Installer** | [WCode.msi](https://github.com/tuanworlddev/-WCode-Znack/releases/latest/download/WCode.msi) |
+| **Portable (ZIP)** | [WCode-portable.zip](https://github.com/tuanworlddev/-WCode-Znack/releases/latest/download/WCode-portable.zip) |
 
-### macOS 🍎
-
-| Loại | Link tải |
-|------|----------|
-| **DMG Apple Silicon** | [WCode-mac-arm64.dmg](https://github.com/tuanworlddev/WCode/releases/latest/download/WCode-mac-arm64.dmg) |
-
-### Linux 🐧
-
-| Loại | Link tải |
-|------|----------|
-| **DEB Package** | [WCode-linux-amd64.deb](https://github.com/tuanworlddev/WCode/releases/latest/download/WCode-linux-amd64.deb) |
-
-> 💡 Xem tất cả phiên bản tại [trang Releases](https://github.com/tuanworlddev/WCode/releases).
+> 💡 Xem tất cả phiên bản tại [trang Releases](https://github.com/tuanworlddev/-WCode-Znack/releases).
 > Ứng dụng kiểm tra phiên bản mới trực tiếp từ GitHub Releases và trên Windows có thể tải và mở installer cập nhật ngay trong app.
 
 ## Cài đặt từ mã nguồn
@@ -92,8 +80,8 @@
 
 ```bash
 # Clone repository
-git clone https://github.com/tuanworlddev/FBSBarcode.git
-cd FBSBarcode
+git clone https://github.com/tuanworlddev/-WCode-Znack.git
+cd -WCode-Znack
 
 # Chạy ứng dụng
 ./mvnw clean javafx:run       # macOS / Linux
@@ -113,15 +101,13 @@ build.bat app-image   # Tạo thư mục portable
 
 ### Build & Release
 
-Workflow [release.yml](.github/workflows/release.yml) tự chạy khi push tag theo dạng `v*`. Pipeline dùng JDK 25 và Maven wrapper, sau đó build native package trên runner riêng của từng nền tảng:
+Workflow [release.yml](.github/workflows/release.yml) tự chạy khi push tag theo dạng `v*`. Pipeline dùng JDK 25 và Maven wrapper trên `windows-latest`, sau đó tạo:
 - `windows-latest`: tạo `WCode.exe`, `WCode.msi`, `WCode-portable.zip`
-- `macos-latest`: tạo `WCode-mac-arm64.dmg` bằng `logo.icns`
-- `ubuntu-latest`: tạo `WCode-linux-amd64.deb` bằng `jpackage`
 
-Mỗi nền tảng được upload thành artifact riêng, sau đó job publish sẽ đẩy toàn bộ asset lên GitHub Release public tại `tuanworlddev/WCode`.
+Tag release sẽ chạy kiểm thử trên Windows, đóng gói EXE/MSI/portable ZIP và tải trực tiếp lên GitHub Release tại `tuanworlddev/-WCode-Znack`.
 
 ```bash
-git tag v1.0.23
+git tag v1.0.28
 git push origin main --tags
 ```
 

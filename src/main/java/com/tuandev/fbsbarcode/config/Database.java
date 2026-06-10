@@ -15,6 +15,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 
 import com.tuandev.fbsbarcode.integration.wb.WbSchemaSupport;
+import com.tuandev.fbsbarcode.integration.znack.ZnackSchemaSupport;
 
 public class Database {
     private static final Logger LOGGER = LoggerFactory.getLogger(Database.class);
@@ -56,36 +57,6 @@ public class Database {
                     name TEXT NOT NULL,
                     api_key TEXT NOT NULL
                 )
-            """);
-
-            st.execute("""
-            CREATE TABLE IF NOT EXISTS categories(
-                id INTEGER PRIMARY KEY,
-                name TEXT NOT NULL
-            )
-            """);
-
-            boolean shopCategoriesExisted = tableExists(conn, "shop_categories");
-            st.execute("""
-            CREATE TABLE IF NOT EXISTS shop_categories(
-                shop_id INTEGER NOT NULL,
-                category_id INTEGER NOT NULL,
-                created_at TEXT NOT NULL,
-                PRIMARY KEY (shop_id, category_id),
-                FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE,
-                FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
-            )
-            """);
-
-            st.execute("""
-            CREATE TABLE IF NOT EXISTS kizs(
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                code TEXT NOT NULL,
-                shop_id INTEGER NOT NULL,
-                category_id INTEGER NOT NULL,
-                FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
-                FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
-            )
             """);
 
             st.execute("""
@@ -180,14 +151,6 @@ public class Database {
             """);
 
             st.execute("INSERT INTO config (id, type) SELECT 1, 1 WHERE NOT EXISTS (SELECT 1 FROM config WHERE id = 1)");
-            if (!shopCategoriesExisted) {
-                st.execute("""
-                        INSERT OR IGNORE INTO shop_categories (shop_id, category_id, created_at)
-                        SELECT s.id, c.id, datetime('now')
-                        FROM shops s
-                        CROSS JOIN categories c
-                        """);
-            }
             ensureColumnExists(conn, "print_jobs", "shop_name", "TEXT");
             ensureColumnExists(conn, "print_job_items", "ru_size", "TEXT");
             createIndexIfNotExists(conn, "idx_print_jobs_shop_id", "print_jobs", "shop_id");
@@ -195,10 +158,10 @@ public class Database {
             createIndexIfNotExists(conn, "idx_print_jobs_shop_printed_at", "print_jobs", "shop_id, printed_at DESC");
             createIndexIfNotExists(conn, "idx_print_job_items_print_job_id", "print_job_items", "print_job_id");
             createIndexIfNotExists(conn, "idx_print_job_items_order_id", "print_job_items", "order_id");
-            createIndexIfNotExists(conn, "idx_kizs_shop_category_id", "kizs", "shop_id, category_id");
-            createIndexIfNotExists(conn, "idx_shop_categories_category_id", "shop_categories", "category_id");
             createIndexIfNotExists(conn, "idx_image_cache_last_used_at", "image_cache", "last_used_at");
             WbSchemaSupport.initialize(conn);
+            ZnackSchemaSupport.initialize(conn);
+            dropLegacyKizTables(conn);
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
@@ -242,6 +205,15 @@ public class Database {
     private static void createIndexIfNotExists(Connection conn, String indexName, String tableName, String columns) throws SQLException {
         try (Statement statement = conn.createStatement()) {
             statement.execute("CREATE INDEX IF NOT EXISTS " + indexName + " ON " + tableName + "(" + columns + ")");
+        }
+    }
+
+    private static void dropLegacyKizTables(Connection conn) throws SQLException {
+        try (Statement statement = conn.createStatement()) {
+            statement.execute("DROP TABLE IF EXISTS wb_product_kiz_mappings");
+            statement.execute("DROP TABLE IF EXISTS kizs");
+            statement.execute("DROP TABLE IF EXISTS shop_categories");
+            statement.execute("DROP TABLE IF EXISTS categories");
         }
     }
 }

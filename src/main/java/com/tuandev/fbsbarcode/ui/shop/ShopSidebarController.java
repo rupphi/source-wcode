@@ -29,6 +29,8 @@ public class ShopSidebarController {
     @FXML
     private Button kizMappingButton;
     @FXML
+    private Button znackAutomationButton;
+    @FXML
     private MenuButton settingsMenuButton;
     @FXML
     private Menu languageMenu;
@@ -59,6 +61,7 @@ public class ShopSidebarController {
     private Runnable onDashboard;
     private Runnable onFboPacking;
     private Runnable onKizMapping;
+    private Runnable onZnackAutomation;
     private Runnable onPrintHistory;
     private Runnable onAddShop;
     private Runnable onOpenSettings;
@@ -102,6 +105,10 @@ public class ShopSidebarController {
 
     public void setOnKizMapping(Runnable onKizMapping) {
         this.onKizMapping = onKizMapping;
+    }
+
+    public void setOnZnackAutomation(Runnable onZnackAutomation) {
+        this.onZnackAutomation = onZnackAutomation;
     }
 
     public void setOnAddShop(Runnable onAddShop) {
@@ -170,6 +177,7 @@ public class ShopSidebarController {
         btnPrintHistory.setText(" " + i18n.tr("sidebar.print_history"));
         fboPackingButton.setText(" " + i18n.tr("sidebar.fbo_packing"));
         kizMappingButton.setText(" " + i18n.tr("sidebar.kiz_mapping"));
+        znackAutomationButton.setText(" " + i18n.tr("sidebar.znack_automation"));
         settingsMenuButton.setText(" " + i18n.tr("settings.menu"));
         languageMenu.setText(i18n.tr("sidebar.language"));
         themeMenu.setText(i18n.tr("settings.theme"));
@@ -213,6 +221,13 @@ public class ShopSidebarController {
     private void onKizMapping() {
         if (onKizMapping != null) {
             onKizMapping.run();
+        }
+    }
+
+    @FXML
+    private void onZnackAutomation() {
+        if (onZnackAutomation != null) {
+            onZnackAutomation.run();
         }
     }
 

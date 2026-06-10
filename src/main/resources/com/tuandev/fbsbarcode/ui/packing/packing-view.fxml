@@ -70,6 +70,9 @@
                                 </HBox>
                                 <Label fx:id="emptyNewOrdersLabel" styleClass="text-muted" text="Нет новых заказов." visible="false" managed="false" />
                                 <TableView fx:id="newOrdersTable" VBox.vgrow="ALWAYS">
+                                    <columnResizePolicy>
+                                        <TableView fx:constant="CONSTRAINED_RESIZE_POLICY" />
+                                    </columnResizePolicy>
                                     <columns>
                                         <TableColumn fx:id="selectedTC" maxWidth="46.0" minWidth="46.0" prefWidth="46.0" resizable="false" text="" />
                                         <TableColumn fx:id="orderDateTC" minWidth="160.0" prefWidth="180.0" text="Дата" />
@@ -87,6 +90,9 @@
                         <VBox spacing="10.0">
                             <children>
                                 <TableView fx:id="preparationTable" VBox.vgrow="ALWAYS">
+                                    <columnResizePolicy>
+                                        <TableView fx:constant="CONSTRAINED_RESIZE_POLICY" />
+                                    </columnResizePolicy>
                                     <columns>
                                         <TableColumn fx:id="preparationSupplyTC" minWidth="260.0" prefWidth="360.0" text="Поставка" />
                                         <TableColumn fx:id="preparationStatusTC" minWidth="110.0" prefWidth="120.0" text="Статус" />
@@ -101,6 +107,9 @@
                 <Tab fx:id="dispatchTab" text="Доставка">
                     <content>
                         <TableView fx:id="dispatchTable">
+                            <columnResizePolicy>
+                                <TableView fx:constant="CONSTRAINED_RESIZE_POLICY" />
+                            </columnResizePolicy>
                             <columns>
                                 <TableColumn fx:id="dispatchSupplyTC" minWidth="260.0" prefWidth="360.0" text="Поставка" />
                                 <TableColumn fx:id="dispatchStatusTC" minWidth="110.0" prefWidth="120.0" text="Статус" />

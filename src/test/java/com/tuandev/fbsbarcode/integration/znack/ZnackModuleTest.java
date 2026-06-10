@@ -1,0 +1,609 @@
+package com.tuandev.fbsbarcode.integration.znack;
+
+import com.google.gson.*;
+import com.sun.net.httpserver.HttpServer;
+import com.tuandev.fbsbarcode.config.Database;
+import com.tuandev.fbsbarcode.integration.znack.ZnackModels.*;
+import com.tuandev.fbsbarcode.integration.znack.signature.*;
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.Statement;
+import java.util.List;
+import java.util.Locale;
+import java.util.ResourceBundle;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class ZnackModuleTest {
+    @TempDir Path temp;
+
+    @BeforeEach void init() {
+        System.setProperty("wcode.appdata.dir", temp.toString());
+        Database.initDatabase();
+        try (Connection c=Database.getConnection(); Statement st=c.createStatement()) {
+            st.execute("INSERT INTO shops(id,name,api_key) VALUES(1,'Shop A','a')");
+            st.execute("INSERT INTO shops(id,name,api_key) VALUES(2,'Shop B','b')");
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @AfterEach void clear() { System.clearProperty("wcode.appdata.dir"); }
+
+    @Test void schemaAndSettingsDoNotPersistTokensOrSignatures() throws Exception {
+        ZnackRepository repository = repository(1, "Shop A");
+        repository.saveSettings(new Settings("true","suz","oms","conn","p","producer","owner","signer","cert",
+                "[\"{input}\",\"{output}\"]","n","d",temp.toString(),true));
+        assertEquals("oms", repository.getSettings().omsId());
+        try (Connection c=Database.getConnection(); Statement st=c.createStatement(); ResultSet rs=st.executeQuery("PRAGMA table_info(znack_settings)")) {
+            while(rs.next()) {
+                String name=rs.getString("name").toLowerCase();
+                assertFalse(name.contains("token") || name.contains("signature"));
+            }
+        }
+    }
+
+    @Test void sanitizerRedactsJsonAndHeaderStyleSecrets() {
+        String sanitized=ZnackSanitizer.message("""
+                {"token":"secret-token","signature":"secret-signature","pin":"1234"}
+                clientToken=secret-client-token Authorization: Bearer secret-bearer
+                """);
+
+        assertFalse(sanitized.contains("secret-token"));
+        assertFalse(sanitized.contains("secret-signature"));
+        assertFalse(sanitized.contains("secret-client-token"));
+        assertFalse(sanitized.contains("secret-bearer"));
+        assertFalse(sanitized.contains("1234"));
+    }
+
+    @Test void preservesRawCodesAndIgnoresDuplicateDownloads() {
+        ZnackRepository repository=repository(1, "Shop A");
+        String raw="010460123456789021abc\u001d91secret";
+        repository.upsertProducts(List.of(new Product("04601234567890","Product",null,null,null,null,null)));
+        long order=repository.createDraft("04601234567890",2);
+        assertEquals(1,repository.insertCodes(order,"04601234567890",new DownloadedCodes(List.of(raw,raw),"block")));
+        KizCode code=repository.findCodes(order).getFirst();
+        assertEquals(raw,code.rawCode());
+        assertTrue(code.displayCode().contains("<GS>"));
+    }
+
+    @Test void repositoriesIsolateProductsOrdersAndLogsButRejectGloballyDuplicateCodes() {
+        ZnackRepository a=repository(1,"Shop A"), b=repository(2,"Shop B");
+        Product product=new Product("04601234567890","Product",null,null,null,null,null);
+        a.upsertProducts(List.of(product)); b.upsertProducts(List.of(product));
+        long aOrder=a.createDraft(product.gtin(),1), bOrder=b.createDraft(product.gtin(),1);
+        String raw="010460123456789021same";
+        assertEquals(1,a.insertCodes(aOrder,product.gtin(),new DownloadedCodes(List.of(raw),"a")));
+        assertEquals(0,b.insertCodes(bOrder,product.gtin(),new DownloadedCodes(List.of(raw),"b")));
+        a.log("TEST","a","INFO","A",200); b.log("TEST","b","INFO","B",201);
+        assertTrue(a.findOrder(bOrder).isEmpty());
+        assertEquals("a",a.findCodes(aOrder).getFirst().blockId());
+        assertTrue(b.findCodes(bOrder).isEmpty());
+        assertEquals("Shop A",a.findLogs().getFirst().shopName());
+        assertEquals("Shop B",b.findLogs().getFirst().shopName());
+    }
+
+    @Test void signatureSelectionAndVerifiedStateAreShopSpecific() {
+        ZnackRepository a=repository(1,"Shop A"), b=repository(2,"Shop B");
+        Settings verifiedA=testedSettings("","","","connection","");
+        a.saveSettings(verifiedA);
+        b.saveSettings(new Settings("","","","connection","","","","signer","shop-b-cert","[]","","","",false));
+        assertEquals("certificate",a.getSettings().signerCertificate());
+        assertNotNull(a.getSettings().signerTestedAt());
+        assertEquals("shop-b-cert",b.getSettings().signerCertificate());
+        assertNull(b.getSettings().signerTestedAt());
+    }
+
+    @Test void basicSettingsContainsOnlyRealWorkflowFields() throws Exception {
+        String fxml=Files.readString(Path.of("src/main/resources/com/tuandev/fbsbarcode/ui/znack/znack-automation-view.fxml"));
+        assertTrue(fxml.contains("signatureSummaryLabel"));
+        assertTrue(fxml.contains("signatureCertificateCombo"));
+        assertTrue(fxml.contains("refreshCertificatesButton"));
+        assertTrue(fxml.contains("testSignatureButton"));
+        assertTrue(fxml.contains("omsConnectionField"));
+        assertTrue(fxml.contains("documentNumberField"));
+        assertTrue(fxml.contains("documentIssueDateField"));
+        assertTrue(fxml.contains("documentExpiryDateField"));
+        assertFalse(fxml.contains("advancedSettingsPane"));
+        assertFalse(fxml.contains("pdfFolderField"));
+        assertFalse(fxml.contains("trueApiUrlField"));
+        assertFalse(fxml.contains("suzUrlField"));
+        assertTrue(fxml.contains("omsIdField"));
+        assertTrue(fxml.contains("omsIdHelpButton"));
+        assertTrue(fxml.contains("omsConnectionHelpButton"));
+        assertTrue(fxml.contains("omsHelpPane"));
+        assertFalse(fxml.contains("buyButton"));
+        assertFalse(fxml.contains("downloadButton"));
+        assertFalse(fxml.contains("pdfButton"));
+        assertFalse(fxml.contains("introduceButton"));
+        assertFalse(fxml.contains("confirmButton"));
+        assertFalse(fxml.contains("manualCertificateSelectorField"));
+        assertFalse(fxml.contains("certmgrPathField"));
+        assertFalse(fxml.contains("cryptcpPathField"));
+        assertFalse(fxml.contains("csptestPathField"));
+        assertFalse(fxml.contains("authenticateButton"));
+        assertFalse(java.util.regex.Pattern.compile("text=\"(?!%)[^\"]+\"").matcher(fxml).find());
+    }
+
+    @Test void deletingShopCascadesAllZnackData() throws Exception {
+        ZnackRepository repository=repository(1,"Shop A");
+        repository.saveSettings(Settings.empty());
+        repository.upsertProducts(List.of(new Product("04601234567890","Product",null,null,null,null,null)));
+        repository.log("TEST",null,"INFO","test",null);
+        try(Connection c=Database.getConnection();Statement st=c.createStatement()){
+            st.executeUpdate("DELETE FROM shops WHERE id=1");
+            for(String table:List.of("znack_settings","znack_products","znack_operation_logs")){
+                try(ResultSet rs=st.executeQuery("SELECT count(*) FROM "+table+" WHERE shop_id=1")){assertTrue(rs.next());assertEquals(0,rs.getInt(1));}
+            }
+        }
+    }
+
+    @Test void parsesStandardCertificateDiscoveryJsonAndBlocksUntestedSignature() {
+        String json="""
+                [{"id":"cert-1","subject":"CN=ООО Example, O=Example","inn":"7701234567","thumbprint":"abc",
+                "issuer":"CN=CA","validFrom":"2025-01-01T00:00:00Z","validTo":"2026-01-01T00:00:00Z","hasPrivateKey":true,"provider":"CryptoPro"}]
+                """;
+        CryptoProCertificateInfo certificate=new CryptoProCertificateDiscoveryService().parse("""
+                SHA1 Hash: abc
+                Subject: CN=ООО Example, O=Example, INN=7701234567
+                Issuer: CN=CA
+                Not valid before: 01.01.2025 00:00:00
+                Not valid after: 01.01.2027 00:00:00
+                Private key: present
+                Provider: CryptoPro
+                """).getFirst();
+        assertEquals("abc",certificate.selector());
+        assertTrue(certificate.hasPrivateKey());
+        assertTrue(certificate.displayName().startsWith("ООО Example / INN 7701234567 / 2027-"));
+        assertEquals(ZnackSafety.UNVERIFIED_SIGNATURE,
+                assertThrows(IllegalStateException.class,()->ZnackSafety.requireSigned(
+                        new Settings("","","","connection","","","","signer","cert","[]","","","",false),true)).getMessage());
+    }
+
+    @Test void ambiguousLegacyMigrationArchivesWithoutAssigningData() throws Exception {
+        try(Connection c=Database.getConnection();Statement st=c.createStatement()){
+            for(String table:List.of("znack_purchase_pipelines","znack_gtin_mapping_rules","kiz_codes","znack_documents","kiz_orders","znack_products","znack_operation_logs","znack_settings")) {
+                st.execute("DROP TABLE "+table);
+            }
+            st.execute("""
+                    CREATE TABLE znack_settings(id INTEGER PRIMARY KEY,true_api_base_url TEXT,suz_base_url TEXT,oms_id TEXT,
+                    oms_connection TEXT,participant_inn TEXT,producer_inn TEXT,owner_inn TEXT,signer_executable TEXT,
+                    signer_certificate TEXT,signer_arguments_json TEXT,document_number TEXT,document_date TEXT,pdf_folder TEXT,
+                    auto_introduction INTEGER,updated_at TEXT)
+                    """);
+            st.execute("INSERT INTO znack_settings VALUES(1,'legacy','','','','','','','legacy-signer','legacy-cert','[]','','','',0,'2026-01-01T00:00:00Z')");
+            ZnackSchemaSupport.initialize(c);
+            try(ResultSet rs=st.executeQuery("SELECT count(*) FROM znack_settings")){assertTrue(rs.next());assertEquals(0,rs.getInt(1));}
+            try(ResultSet rs=st.executeQuery("SELECT true_api_base_url FROM znack_legacy_unscoped_znack_settings")){assertTrue(rs.next());assertEquals("legacy",rs.getString(1));}
+            try(ResultSet rs=st.executeQuery("SELECT value FROM app_config WHERE key='"+ZnackSchemaSupport.AMBIGUOUS_MIGRATION_NOTICE+"'")){assertTrue(rs.next());assertEquals("pending",rs.getString(1));}
+        }
+    }
+
+    @Test void legacyMigrationSkipsDuplicateCodesInsteadOfBlockingStartup() throws Exception {
+        try(Connection c=Database.getConnection();Statement st=c.createStatement()){
+            st.execute("DELETE FROM shops WHERE id=2");
+            for(String table:List.of("znack_purchase_pipelines","znack_gtin_mapping_rules","kiz_codes","znack_documents",
+                    "kiz_orders","znack_products","znack_operation_logs","znack_settings")) {
+                st.execute("DROP TABLE "+table);
+            }
+            st.execute("""
+                    CREATE TABLE znack_settings(id INTEGER PRIMARY KEY,true_api_base_url TEXT,suz_base_url TEXT,oms_id TEXT,
+                    oms_connection TEXT,participant_inn TEXT,producer_inn TEXT,owner_inn TEXT,signer_executable TEXT,
+                    signer_certificate TEXT,signer_arguments_json TEXT,document_number TEXT,document_date TEXT,pdf_folder TEXT,
+                    auto_introduction INTEGER,updated_at TEXT)
+                    """);
+            st.execute("""
+                    CREATE TABLE znack_products(gtin TEXT PRIMARY KEY,product_name TEXT,tn_ved TEXT,certificate_type TEXT,
+                    certificate_number TEXT,certificate_date TEXT,production_date TEXT,synced_at TEXT)
+                    """);
+            st.execute("""
+                    CREATE TABLE kiz_orders(id INTEGER PRIMARY KEY,external_order_id TEXT,gtin TEXT,quantity INTEGER,
+                    remote_status TEXT,local_status TEXT,error_message TEXT,created_at TEXT,updated_at TEXT)
+                    """);
+            st.execute("""
+                    CREATE TABLE kiz_codes(id INTEGER PRIMARY KEY,order_id INTEGER,raw_code TEXT,display_code TEXT,gtin TEXT,
+                    block_id TEXT,pdf_path TEXT,document_id INTEGER,status TEXT,created_at TEXT,updated_at TEXT)
+                    """);
+            st.execute("INSERT INTO znack_settings VALUES(1,'','','','','','','','','','[]','','','',0,'2026-01-01T00:00:00Z')");
+            st.execute("INSERT INTO znack_products VALUES('04601234567890','Product',NULL,NULL,NULL,NULL,NULL,'2026-01-01T00:00:00Z')");
+            st.execute("""
+                    INSERT INTO kiz_orders VALUES
+                    (1,'a','04601234567890',1,'READY','CODES_DOWNLOADED',NULL,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z'),
+                    (2,'b','04601234567890',1,'READY','CODES_DOWNLOADED',NULL,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')
+                    """);
+            st.execute("""
+                    INSERT INTO kiz_codes VALUES
+                    (1,1,'same','same','04601234567890','a',NULL,NULL,'RECEIVED','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z'),
+                    (2,2,'same','same','04601234567890','b',NULL,NULL,'RECEIVED','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')
+                    """);
+
+            ZnackSchemaSupport.initialize(c);
+
+            try(ResultSet rs=st.executeQuery("SELECT COUNT(*) FROM kiz_codes WHERE raw_code='same'")){
+                assertTrue(rs.next());
+                assertEquals(1,rs.getInt(1));
+            }
+        }
+    }
+
+    @Test void unconfiguredTypedSignerFails() {
+        byte[] input="signed input".getBytes(StandardCharsets.UTF_8);
+        CryptoProException error=assertThrows(CryptoProException.class,
+                ()->ZnackSignatureProvider.unconfigured().sign(input,ZnackSignatureContext.AUTH_CHALLENGE));
+        assertEquals(CryptoProErrorCode.CRYPTOPRO_MISSING,error.code());
+    }
+
+    @Test void apiUsesDocumentedProductPathAndBearerHeader() throws Exception {
+        AtomicReference<String> path=new AtomicReference<>(),authorization=new AtomicReference<>();
+        HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/api/v4/true-api/product/gtin",exchange->{path.set(exchange.getRequestURI().toString());authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));byte[] body="[]".getBytes();exchange.sendResponseHeaders(200,body.length);exchange.getResponseBody().write(body);exchange.close();});
+        server.start();
+        try {
+            String base="http://127.0.0.1:"+server.getAddress().getPort();
+            new ZnackApiClient().products(base,"abc");
+            assertEquals("/api/v4/true-api/product/gtin?includeSubaccount=false&limit=10000&page=0&pg=lp",path.get());
+            assertEquals("Bearer abc",authorization.get());
+        } finally { server.stop(0); }
+    }
+
+    @Test void suzOrderSendsExactSignedBodyAndDocumentedHeaders() throws Exception {
+        AtomicReference<byte[]> signed=new AtomicReference<>(),sent=new AtomicReference<>();
+        AtomicReference<String> signature=new AtomicReference<>(),clientToken=new AtomicReference<>(),authorization=new AtomicReference<>();
+        HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/api/v3/order",exchange->{
+            sent.set(exchange.getRequestBody().readAllBytes());
+            signature.set(exchange.getRequestHeaders().getFirst("X-Signature"));
+            clientToken.set(exchange.getRequestHeaders().getFirst("clientToken"));
+            authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            respond(exchange,"{\"orderId\":\"remote\"}");
+        });
+        server.start();
+        try {
+            ZnackRepository repository=repository(1,"Shop A");
+            repository.upsertProducts(List.of(new Product("04601234567890","Product",null,null,null,null,null)));
+            String base="http://127.0.0.1:"+server.getAddress().getPort();
+            ZnackSignatureProvider signer=(input,context)->{
+                assertEquals(ZnackSignatureContext.SUZ_POST_BODY,context);
+                signed.set(input.clone());
+                return new CryptoProSigningResult(new byte[]{0x30,0x02,0x01,0x00},"");
+            };
+            ZnackAuthService auth=new ZnackAuthService(new ZnackApiClient(),signer){@Override public String suzToken(Settings s){return "dynamic-client-token";}};
+            new ZnackKizOrderService(new ZnackApiClient(),auth,signer,repository)
+                    .buy(testedSettings("",base,"oms","connection",""),"04601234567890",2);
+            assertArrayEquals(signed.get(),sent.get());
+            assertEquals("MAIBAA==",signature.get());
+            assertEquals("dynamic-client-token",clientToken.get());
+            assertNull(authorization.get());
+            JsonObject order=JsonParser.parseString(new String(sent.get(),StandardCharsets.UTF_8)).getAsJsonObject();
+            assertFalse(order.has("signature"));
+            assertFalse(order.has("templateId"));
+            assertFalse(order.has("cisType"));
+            assertFalse(order.has("releaseMethodType"));
+            assertEquals("PRODUCTION",order.getAsJsonObject("attributes").get("releaseMethodType").getAsString());
+            JsonObject product=order.getAsJsonArray("products").get(0).getAsJsonObject();
+            assertEquals("OPERATOR",product.get("serialNumberType").getAsString());
+            assertEquals(10,product.get("templateId").getAsInt());
+            assertEquals("UNIT",product.get("cisType").getAsString());
+        } finally { server.stop(0); }
+    }
+
+    @Test void suzCodeDownloadUsesDocumentedClientTokenAndQueryParameters() throws Exception {
+        AtomicReference<String> path=new AtomicReference<>(),clientToken=new AtomicReference<>(),authorization=new AtomicReference<>();
+        HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/api/v3/codes",exchange->{
+            path.set(exchange.getRequestURI().toString());
+            clientToken.set(exchange.getRequestHeaders().getFirst("clientToken"));
+            authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            respond(exchange,"{\"codes\":[]}");
+        });
+        server.start();
+        try {
+            String base="http://127.0.0.1:"+server.getAddress().getPort();
+            new ZnackApiClient().codes(base,"dynamic-client-token","oms-value","order-value",12,"04601234567890");
+            assertEquals("/api/v3/codes?omsId=oms-value&orderId=order-value&quantity=12&gtin=04601234567890",path.get());
+            assertEquals("dynamic-client-token",clientToken.get());
+            assertNull(authorization.get());
+        } finally { server.stop(0); }
+    }
+
+    @Test void trueApiConfirmationUsesDocumentedPathsAndCisArrayBody() throws Exception {
+        AtomicReference<String> documentPath=new AtomicReference<>(),cisesPath=new AtomicReference<>(),cisesBody=new AtomicReference<>();
+        HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/api/v4/true-api/doc/doc-id/info",exchange->{documentPath.set(exchange.getRequestURI().toString());respond(exchange,"{}");});
+        server.createContext("/api/v3/true-api/cises/info",exchange->{cisesPath.set(exchange.getRequestURI().toString());cisesBody.set(new String(exchange.getRequestBody().readAllBytes(),StandardCharsets.UTF_8));respond(exchange,"[]");});
+        server.start();
+        try {
+            String base="http://127.0.0.1:"+server.getAddress().getPort();
+            ZnackApiClient api=new ZnackApiClient();
+            api.document(base,"token","doc-id");
+            JsonArray codes=new JsonArray();codes.add("010460123456789021abc");
+            api.cisesInfo(base,"token",codes);
+            assertEquals("/api/v4/true-api/doc/doc-id/info?pg=lp",documentPath.get());
+            assertEquals("/api/v3/true-api/cises/info?pg=lp",cisesPath.get());
+            assertEquals(codes,JsonParser.parseString(cisesBody.get()));
+        } finally { server.stop(0); }
+    }
+
+    @Test void introductionConfirmationAcceptsDirectDocumentStatusResponseWithoutRepeatedDocumentId() throws Exception {
+        ZnackRepository repository=repository(1,"Shop A");
+        long orderId=orderWithCodes(repository);
+        long documentId=repository.createDocument(orderId,"{}");
+        repository.updateDocument(documentId,"doc-id","SUBMITTED",null);
+        ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonElement document(String base,String token,String externalId){
+                return JsonParser.parseString("{\"status\":\"CHECKED_OK\"}");
+            }
+            @Override public JsonElement cisesInfo(String base,String token,JsonElement body){
+                return JsonParser.parseString("[{\"status\":\"INTRODUCED\"}]");
+            }
+        };
+        ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+            @Override public String trueApiToken(Settings s){return "token";}
+        };
+
+        assertTrue(new ZnackIntroductionService(api,auth,testSigner(),repository).confirm(
+                testedSettings("","","","connection",""),repository.findOrder(orderId).orElseThrow(),
+                repository.findCodes(orderId)));
+        assertEquals(OrderStatus.INTRODUCED,repository.findOrder(orderId).orElseThrow().localStatus());
+    }
+
+    @Test void introductionConfirmationDoesNotDoubleCountParentAndChildStatuses() throws Exception {
+        ZnackRepository repository=repository(1,"Shop A");
+        Product product=new Product("04601234567890","Product","6201000000",null,null,null,null);
+        repository.upsertProducts(List.of(product));
+        long orderId=repository.createDraft(product.gtin(),2);
+        repository.insertCodes(orderId,product.gtin(),new DownloadedCodes(List.of("one","two"),"block"));
+        long documentId=repository.createDocument(orderId,"{}");
+        repository.updateDocument(documentId,"doc-id","SUBMITTED",null);
+        ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonElement document(String base,String token,String externalId){
+                return JsonParser.parseString("{\"status\":\"CHECKED_OK\"}");
+            }
+            @Override public JsonElement cisesInfo(String base,String token,JsonElement body){
+                return JsonParser.parseString("{\"status\":\"INTRODUCED\",\"items\":[{\"status\":\"INTRODUCED\"}]}");
+            }
+        };
+        ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+            @Override public String trueApiToken(Settings s){return "token";}
+        };
+
+        assertFalse(new ZnackIntroductionService(api,auth,testSigner(),repository).confirm(
+                testedSettings("","","","connection",""),repository.findOrder(orderId).orElseThrow(),
+                repository.findCodes(orderId)));
+        assertNotEquals(OrderStatus.INTRODUCED,repository.findOrder(orderId).orElseThrow().localStatus());
+    }
+
+    @Test void configuredCryptoProOverrideMustResolveToAnExecutable() {
+        CryptoProException error=assertThrows(CryptoProException.class,
+                ()->new CryptoProCommandRunner().resolve(temp.resolve("missing-cryptcp").toString(),"cryptcp"));
+        assertEquals(CryptoProErrorCode.CRYPTOPRO_MISSING,error.code());
+    }
+
+    @Test void productSyncStoresRealMetadataAndDoesNotEraseManualFallbacksWhenApiOmitsThem() throws Exception {
+        ZnackRepository repository=repository(1,"Shop A");
+        ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonElement products(String base,String token){
+                return JsonParser.parseString("""
+                        {"results":[{"gtin":"04601234567890","productName":"Product","tnvedCode":"6201000000",
+                        "certificate_type":"DECLARATION","certificate_number":"DOC-1",
+                        "certificate_date":"20.06.2024","production_date":"21.06.2024"}]}
+                        """);
+            }
+        };
+        ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+            @Override public String trueApiToken(Settings s){return "token";}
+        };
+        ZnackProductService service=new ZnackProductService(api,auth,repository);
+
+        service.sync(testedSettings("","","","connection",""));
+        Product synced=repository.findProducts().getFirst();
+        assertEquals("6201000000",synced.tnVed());
+        assertEquals("DOC-1",synced.certificateNumber());
+        assertEquals("21.06.2024",synced.productionDate());
+
+        repository.updateProductMetadata(new Product(synced.gtin(),synced.productName(),"manual-tnved",
+                synced.certificateType(),synced.certificateNumber(),synced.certificateDate(),synced.productionDate()));
+        repository.upsertProducts(List.of(new Product(synced.gtin(),"Updated name",null,null,null,null,null)));
+        Product preserved=repository.findProducts().getFirst();
+        assertEquals("Updated name",preserved.productName());
+        assertEquals("manual-tnved",preserved.tnVed());
+    }
+
+    @Test void productSyncFetchesEveryReportedPage() throws Exception {
+        ZnackRepository repository=repository(1,"Shop A");
+        AtomicInteger requestedPage=new AtomicInteger(-1);
+        ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonElement products(String base,String token){
+                return JsonParser.parseString("{\"results\":[{\"gtin\":\"04601234567890\",\"productName\":\"A\"}],\"total\":2}");
+            }
+            @Override public JsonElement products(String base,String token,int page,int limit){
+                requestedPage.set(page);
+                return JsonParser.parseString("{\"results\":[{\"gtin\":\"04601234567891\",\"productName\":\"B\"}],\"total\":2}");
+            }
+        };
+        ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+            @Override public String trueApiToken(Settings s){return "token";}
+        };
+
+        List<Product> products=new ZnackProductService(api,auth,repository)
+                .sync(testedSettings("","","","connection",""));
+
+        assertEquals(1,requestedPage.get());
+        assertEquals(List.of("04601234567890","04601234567891"),products.stream().map(Product::gtin).toList());
+        assertEquals(2,repository.findProducts().size());
+    }
+
+    @Test void blankHostsResolveToProductionWithoutReplacingCustomHosts() {
+        Settings blank=Settings.empty();
+        assertEquals(ZnackModels.PRODUCTION_TRUE_API,blank.resolvedTrueApiBaseUrl());
+        assertEquals(ZnackModels.PRODUCTION_SUZ,blank.resolvedSuzBaseUrl());
+        Settings custom=new Settings("https://true.example/custom","https://suz.example/custom","","","","","","","","[]","","","",false);
+        assertEquals("https://true.example/custom",custom.resolvedTrueApiBaseUrl());
+        assertEquals("https://suz.example/custom",custom.resolvedSuzBaseUrl());
+    }
+
+    @Test void normalizesTrueApiMethodPaths() {
+        String base=ZnackModels.PRODUCTION_TRUE_API;
+        assertEquals("https://markirovka.crpt.ru",ZnackApiClient.apiRoot(base));
+        assertEquals("https://markirovka.crpt.ru/api/v3",ZnackApiClient.authBase(base));
+        assertEquals("https://markirovka.crpt.ru/api/v4/true-api",ZnackApiClient.trueApiBase(base,4));
+    }
+
+    @Test void trueAndSuzAuthenticationUseTrueApiHostOmitBlankInnAndDeriveParticipant() throws Exception {
+        AtomicReference<String> signInPath=new AtomicReference<>(),requestBody=new AtomicReference<>();
+        String jwt=jwtWithInn("7701234567");
+        HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/api/v3/auth/key",exchange->respond(exchange,"{\"uuid\":\"u\",\"data\":\"challenge\"}"));
+        server.createContext("/api/v3/auth/simpleSignIn",exchange->{signInPath.set(exchange.getRequestURI().toString());requestBody.set(new String(exchange.getRequestBody().readAllBytes(),StandardCharsets.UTF_8));respond(exchange,"{\"token\":\""+jwt+"\"}");});
+        server.start();
+        try {
+            String trueBase="http://127.0.0.1:"+server.getAddress().getPort()+"/api/v3/true-api";
+            Settings settings=testedSettings(trueBase,"http://unused.example","","connection","");
+            ZnackAuthService auth=new ZnackAuthService(new ZnackApiClient(),testSigner());
+            auth.trueApiToken(settings);
+            auth.suzToken(settings);
+            assertEquals("/api/v3/auth/simpleSignIn/connection",signInPath.get());
+            assertFalse(requestBody.get().contains("\"inn\""));
+            assertEquals("7701234567",auth.authenticatedParticipantInn());
+            assertEquals("7701234567",auth.resolvedParticipantInn(settings));
+            assertEquals("781234567890",ZnackAuthService.certificateInn("{\"inn\":\"781234567890\"}"));
+            Settings override=testedSettings(trueBase,"","","","781234567890");
+            assertEquals("781234567890",auth.resolvedParticipantInn(override));
+        } finally { server.stop(0); }
+    }
+
+    @Test void ownProductionIntroductionUsesSnakeCaseAndParticipantFallbacks() throws Exception {
+        ZnackRepository repository=repository(1, "Shop A");
+        Product product=new Product("04601234567890","Product","6201000000",null,null,null,null);
+        repository.upsertProducts(List.of(product));
+        long orderId=repository.createDraft("04601234567890",1);
+        repository.insertCodes(orderId,"04601234567890",new DownloadedCodes(List.of("010460123456789021abc"),"block"));
+        AtomicReference<JsonObject> request=new AtomicReference<>();
+        ZnackApiClient api=new ZnackApiClient(){@Override public JsonObject createDocument(String base,String token,JsonObject body){request.set(body);JsonObject response=new JsonObject();response.addProperty("document_id","doc");return response;}};
+        ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+            @Override public String trueApiToken(Settings s){return "token";}
+            @Override public String resolvedParticipantInn(Settings s){return "7701234567";}
+        };
+        Settings settings=settingsWithDocument("",false,"ЕАЭС N RU Д-TR.РА05.В.15176/24","20.06.2024","16.06.2029");
+        new ZnackIntroductionService(api,auth,testSigner(),repository).submit(settings,repository.findOrder(orderId).orElseThrow(),product,repository.findCodes(orderId));
+        String encoded=request.get().get("product_document").getAsString();
+        JsonObject payload=JsonParser.parseString(new String(java.util.Base64.getDecoder().decode(encoded),StandardCharsets.UTF_8)).getAsJsonObject();
+        assertEquals("7701234567",payload.get("participant_inn").getAsString());
+        assertEquals("7701234567",payload.get("producer_inn").getAsString());
+        assertEquals("7701234567",payload.get("owner_inn").getAsString());
+        assertEquals("OWN_PRODUCTION",payload.get("production_type").getAsString());
+        assertTrue(payload.getAsJsonArray("products").get(0).getAsJsonObject().has("uit_code"));
+        assertTrue(payload.getAsJsonArray("products").get(0).getAsJsonObject().has("tnved_code"));
+        JsonObject certificate=payload.getAsJsonArray("products").get(0).getAsJsonObject().getAsJsonArray("certificate_document_data").get(0).getAsJsonObject();
+        assertEquals("ЕАЭС N RU Д-TR.РА05.В.15176/24",certificate.get("certificate_number").getAsString());
+        assertEquals("20.06.2024",certificate.get("certificate_date").getAsString());
+        assertEquals("16.06.2029",certificate.get("certificate_expiration_date").getAsString());
+    }
+
+    @Test void introductionSigningFailureDoesNotCreateBlockingDocument() {
+        ZnackRepository repository=repository(1,"Shop A");
+        long orderId=orderWithCodes(repository);
+        ZnackSignatureProvider failingSigner=(input,context)->{
+            throw new CryptoProException(CryptoProErrorCode.TOKEN_OR_CERTIFICATE_ABSENT,"token unavailable");
+        };
+        ZnackAuthService auth=new ZnackAuthService(new ZnackApiClient(),failingSigner){
+            @Override public String resolvedParticipantInn(Settings s){return "7701234567";}
+        };
+
+        assertThrows(CryptoProException.class,()->new ZnackIntroductionService(
+                new ZnackApiClient(),auth,failingSigner,repository).submit(
+                settingsWithDocument("",true,"DOC-1","20.06.2024","20.06.2029"),
+                repository.findOrder(orderId).orElseThrow(),repository.findProducts().getFirst(),
+                repository.findCodes(orderId)));
+        assertTrue(repository.findLatestDocument(orderId).isEmpty());
+    }
+
+    @Test void znackTranslationsIncludeRequiredWorkflowKeys() {
+        for(Locale locale:List.of(Locale.ENGLISH,Locale.forLanguageTag("ru"),Locale.forLanguageTag("vi"),Locale.CHINESE)){
+            ResourceBundle bundle=ResourceBundle.getBundle("com.tuandev.fbsbarcode.i18n.messages",locale);
+            assertFalse(bundle.getString("znack.settings.basic").isBlank());
+            assertFalse(bundle.getString("znack.save_authenticate").isBlank());
+            assertFalse(bundle.getString("common.help").isBlank());
+            assertFalse(bundle.getString("znack.help.oms_id.steps").isBlank());
+            assertFalse(bundle.getString("znack.help.oms_connection.steps").isBlank());
+            assertFalse(bundle.getString("znack.help.oms_id.warning").isBlank());
+            assertFalse(bundle.getString("znack.help.oms_connection.warning").isBlank());
+            assertFalse(bundle.getString("supply.gtin_inventory.title").isBlank());
+            assertFalse(bundle.getString("supply.gtin_inventory.buy_title").isBlank());
+            assertFalse(bundle.getString("supply.gtin_inventory.error.pipeline_active").isBlank());
+        }
+        assertEquals("Получите omsConnection в СУЗ: Управление заказами → Устройства → Идентификатор соединения.",
+                ResourceBundle.getBundle("com.tuandev.fbsbarcode.i18n.messages",Locale.forLanguageTag("ru")).getString("znack.oms_connection_help"));
+        assertEquals("Không tìm thấy chữ ký điện tử. Vui lòng cắm USB token, kiểm tra CryptoPro rồi thử lại.",
+                ResourceBundle.getBundle("com.tuandev.fbsbarcode.i18n.messages",Locale.forLanguageTag("vi")).getString("znack.signature.not_found"));
+    }
+
+    @Test void mapsBufferStatuses() {
+        assertEquals(OrderStatus.WAITING_CODES,new BufferStatus("PENDING",0,false,null).localStatus());
+        assertEquals(OrderStatus.CODES_READY,new BufferStatus("READY",1,false,null).localStatus());
+        assertEquals(OrderStatus.FAILED,new BufferStatus("REJECTED",0,true,"bad").localStatus());
+    }
+
+    @Test void defaultGoodsDocumentsAreShopScopedAndDatesAreStrict() {
+        ZnackRepository a=repository(1,"Shop A"),b=repository(2,"Shop B");
+        Settings aSettings=settingsWithDocument(temp.toString(),true,"ЕАЭС N RU Д-TR.РА05.В.15176/24","20.06.2024","16.06.2029");
+        a.saveSettings(aSettings);b.saveSettings(Settings.empty());
+        assertEquals("ЕАЭС N RU Д-TR.РА05.В.15176/24",a.getSettings().documentNumber());
+        assertEquals("16.06.2029",a.getSettings().documentExpiryDate());
+        assertTrue(b.getSettings().documentNumber().isBlank());
+        assertTrue(aSettings.hasDefaultGoodsDocument());
+        assertDoesNotThrow(aSettings::validateGoodsDocumentDates);
+        assertThrows(IllegalArgumentException.class,()->settingsWithDocument("",true,"doc","00.00.0000","16.06.2029").validateGoodsDocumentDates());
+        assertThrows(IllegalArgumentException.class,()->settingsWithDocument("",true,"doc","2024-06-20","16.06.2029").validateGoodsDocumentDates());
+        assertThrows(IllegalArgumentException.class,()->settingsWithDocument("",true,"doc","20.06.2029","16.06.2029").validateGoodsDocumentDates());
+    }
+
+    private static String jwtWithInn(String inn){
+        return "header."+java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(("{\"participant_inn\":\""+inn+"\"}").getBytes(StandardCharsets.UTF_8))+".signature";
+    }
+
+    private static ZnackRepository repository(int id, String name) {
+        return new ZnackRepository(new ShopContext(id, name));
+    }
+
+    private static Settings testedSettings(String trueBase, String suzBase, String omsId, String connection, String participantInn) {
+        return new Settings(trueBase,suzBase,omsId,connection,participantInn,"","","signer","certificate","[]",
+                "","","",false,"","[]","certificate",java.time.Instant.now());
+    }
+
+    private static ZnackSignatureProvider testSigner() {
+        return (input, context) -> new CryptoProSigningResult(new byte[]{0x30, 0x02, 0x01, 0x00}, "");
+    }
+
+    private static Settings settingsWithDocument(String pdfFolder,boolean auto,String number,String issue,String expiry) {
+        return new Settings("","","oms","connection","","","","","certificate","[]",number,issue,pdfFolder,auto,
+                "","[]","certificate",java.time.Instant.now(),"","","",60,expiry);
+    }
+
+    private static long orderWithCodes(ZnackRepository repository) {
+        Product product=new Product("04601234567890","Product","6201000000",null,null,null,null);
+        repository.upsertProducts(List.of(product));
+        long order=repository.createDraft(product.gtin(),1);
+        repository.insertCodes(order,product.gtin(),new DownloadedCodes(List.of("010460123456789021abc"),"block"));
+        return order;
+    }
+
+    private static ZnackIntroductionService introductionCounter(ZnackRepository repository,AtomicInteger count) {
+        return new ZnackIntroductionService(new ZnackApiClient(),new ZnackAuthService(new ZnackApiClient(),testSigner()),testSigner(),repository){
+            @Override public long submit(Settings s,KizOrder order,Product product,List<KizCode> codes){count.incrementAndGet();return 1;}
+        };
+    }
+
+    private static void respond(com.sun.net.httpserver.HttpExchange exchange,String value)throws java.io.IOException{
+        byte[] body=value.getBytes(StandardCharsets.UTF_8);exchange.sendResponseHeaders(200,body.length);exchange.getResponseBody().write(body);exchange.close();
+    }
+}

@@ -11,15 +11,15 @@ import com.tuandev.fbsbarcode.features.fbo.FboPrintPlan;
 import com.tuandev.fbsbarcode.features.packing.PackingWorkflow;
 import com.tuandev.fbsbarcode.integration.wb.WbSupplySummary;
 import com.tuandev.fbsbarcode.integration.wb.WbSupplyWorkflow;
+import com.tuandev.fbsbarcode.integration.znack.ZnackPurchaseCoordinator;
+import com.tuandev.fbsbarcode.integration.znack.ZnackGtinInventoryService;
 import com.tuandev.fbsbarcode.integration.wb.WbSyncReport;
 import com.tuandev.fbsbarcode.integration.wb.WbSyncWorkflow;
 import com.tuandev.fbsbarcode.integration.wb.WbTokenInspector;
-import com.tuandev.fbsbarcode.models.Category;
 import com.tuandev.fbsbarcode.models.Order;
 import com.tuandev.fbsbarcode.models.Shop;
 import com.tuandev.fbsbarcode.shared.AlertService;
 import com.tuandev.fbsbarcode.shared.AppTaskExecutor;
-import com.tuandev.fbsbarcode.features.kiz.CategoryWorkflow;
 import com.tuandev.fbsbarcode.shared.ConfigService;
 import com.tuandev.fbsbarcode.shared.FxmlViewLoader;
 import com.tuandev.fbsbarcode.shared.AppPaths;
@@ -47,7 +47,6 @@ import com.tuandev.fbsbarcode.features.supply.SupplyLoadWorkflow;
 import com.tuandev.fbsbarcode.ui.history.PrintHistoryController;
 import com.tuandev.fbsbarcode.ui.dashboard.DashboardController;
 import com.tuandev.fbsbarcode.ui.fbo.FboPackingController;
-import com.tuandev.fbsbarcode.ui.kiz.KizPanelController;
 import com.tuandev.fbsbarcode.ui.kizmapping.KizMappingController;
 import com.tuandev.fbsbarcode.ui.packing.PackingController;
 import com.tuandev.fbsbarcode.ui.shop.ShopSidebarController;
@@ -55,6 +54,7 @@ import com.tuandev.fbsbarcode.ui.supply.OrderSortOptions;
 import com.tuandev.fbsbarcode.ui.supply.SupplyDetailController;
 import com.tuandev.fbsbarcode.ui.supply.SupplyListController;
 import com.tuandev.fbsbarcode.ui.supply.SupplyManagementController;
+import com.tuandev.fbsbarcode.ui.znack.ZnackAutomationController;
 import javafx.concurrent.Task;
 import javafx.animation.FadeTransition;
 import javafx.animation.PauseTransition;
@@ -99,7 +99,6 @@ public class HomeController implements Initializable {
 
     private final OrderExportWorkflow orderExportWorkflow = new OrderExportWorkflow();
     private final ShopWorkflow shopWorkflow = new ShopWorkflow();
-    private final CategoryWorkflow categoryWorkflow = new CategoryWorkflow();
     private final WbSyncWorkflow wbSyncWorkflow = new WbSyncWorkflow();
     private final WbSupplyWorkflow wbSupplyWorkflow = new WbSupplyWorkflow();
     private final PackingWorkflow packingWorkflow = new PackingWorkflow();
@@ -133,19 +132,20 @@ public class HomeController implements Initializable {
     private VBox packingView;
     private VBox fboPackingView;
     private Node kizMappingView;
+    private Node znackAutomationView;
     private SupplyManagementController supplyManagementController;
     private DashboardController dashboardController;
     private PrintHistoryController printHistoryController;
     private PackingController packingController;
     private FboPackingController fboPackingController;
     private KizMappingController kizMappingController;
+    private ZnackAutomationController znackAutomationController;
 
     private FileChooser fileChooser;
     private ShopSidebarController shopSidebarController;
     private WorkspaceHeaderController workspaceHeaderController;
     private SupplyListController supplyListController;
     private SupplyDetailController supplyDetailController;
-    private KizPanelController kizPanelController;
     private WbSupplySummary loadedSupplySummary;
     private final PauseTransition fboSearchDebounce = new PauseTransition(javafx.util.Duration.millis(250));
     private static final int FBO_PAGE_SIZE = 50;
@@ -162,6 +162,14 @@ public class HomeController implements Initializable {
     @Override
     public void initialize(URL url, ResourceBundle resourceBundle) {
         Database.initDatabase();
+        new ZnackGtinInventoryService().releaseRecoverableReservations();
+        Task<Void> resumeZnackPipelines = new Task<>() {
+            @Override protected Void call() {
+                ZnackPurchaseCoordinator.resumeAllPersisted();
+                return null;
+            }
+        };
+        AppTaskExecutor.execute(resumeZnackPipelines);
         printTemplateService.ensureDefaultTemplateExists();
         appActivated = printAuthorizationService.isAuthorized();
 
@@ -175,7 +183,6 @@ public class HomeController implements Initializable {
         initializeHeader();
         loadDynamicViews();
         initializeSupplyViews();
-        initializeKizPanel();
         initializeBackgroundKizProgress();
         i18nService.addListener(languageListener);
 
@@ -221,8 +228,11 @@ public class HomeController implements Initializable {
         FXMLLoader kizMappingLoader = FxmlViewLoader.loader(KizMappingController.class, "kiz-mapping-view.fxml");
         kizMappingView = FxmlViewLoader.load(kizMappingLoader);
         kizMappingController = kizMappingLoader.getController();
-        kizMappingController.setOnKizInventoryChanged(this::loadCategories);
         kizMappingController.applyTranslations();
+
+        FXMLLoader znackLoader = FxmlViewLoader.loader(ZnackAutomationController.class, "znack-automation-view.fxml");
+        znackAutomationView = FxmlViewLoader.load(znackLoader);
+        znackAutomationController = znackLoader.getController();
     }
 
     private void showPrintHistory() {
@@ -253,6 +263,12 @@ public class HomeController implements Initializable {
         clearKizDraft();
         setDynamicContent(kizMappingView);
         refreshKizMappingView();
+    }
+
+    private void showZnackAutomation() {
+        clearKizDraft();
+        setDynamicContent(znackAutomationView);
+        znackAutomationController.setShop(state.getSelectedShop());
     }
 
     private void refreshPrintHistory() {
@@ -454,10 +470,7 @@ public class HomeController implements Initializable {
             @Override
             protected Void call() throws Exception {
                 FboPrintPlan plan = fboKizPrintPlanner.plan(shop.getId(), items);
-                fboBarcodePdfExporter.exportPlan(plan, file);
-                if (!plan.usedKizs().isEmpty()) {
-                    KizService.deleteKizs(plan.usedKizs());
-                }
+                exportFboPlan(shop.getId(), plan, file);
                 return null;
             }
         };
@@ -467,7 +480,6 @@ public class HomeController implements Initializable {
         });
         task.setOnSucceeded(event -> {
             fboPackingController.clearQuantities();
-            loadCategories();
             tryOpenFile(file);
         });
         AppTaskExecutor.execute(task);
@@ -493,10 +505,7 @@ public class HomeController implements Initializable {
             @Override
             protected Void call() throws Exception {
                 FboPrintPlan plan = fboKizPrintPlanner.plan(shop.getId(), List.of(new FboBarcodePrintItem(product, 1)));
-                fboBarcodePdfExporter.exportPlan(plan, file);
-                if (!plan.usedKizs().isEmpty()) {
-                    KizService.deleteKizs(plan.usedKizs());
-                }
+                exportFboPlan(shop.getId(), plan, file);
                 return null;
             }
         };
@@ -505,10 +514,24 @@ public class HomeController implements Initializable {
             AlertService.showError(task.getException().getMessage());
         });
         task.setOnSucceeded(event -> {
-            loadCategories();
             tryOpenFile(file);
         });
         AppTaskExecutor.execute(task);
+    }
+
+    private void exportFboPlan(int shopId, FboPrintPlan plan, File file) throws IOException {
+        boolean[] inventoryConsumed = {false};
+        try {
+            fboBarcodePdfExporter.exportPlan(plan, file, () -> {
+                KizService.deleteKizs(shopId, plan.usedKizs());
+                inventoryConsumed[0] = true;
+            });
+        } catch (IOException | RuntimeException error) {
+            if (!inventoryConsumed[0]) {
+                KizService.releaseKizs(shopId, plan.usedKizs());
+            }
+            throw error;
+        }
     }
 
     private void checkForUpdates() {
@@ -879,7 +902,6 @@ public class HomeController implements Initializable {
                     OrderExportWorkflow.ExportResult result = exportTask.getValue();
                     state.setLoadedOrdersRaw(result.exportedOrders());
                     applySortAndDisplayOrders();
-                    loadCategories();
                     clearKizDraft();
                     tryOpenFile(orderDetailsFile);
                     tryOpenFile(file);
@@ -1013,154 +1035,6 @@ public class HomeController implements Initializable {
         AppTaskExecutor.execute(task);
     }
 
-    private void loadCategories() {
-        Shop shop = state.getSelectedShop();
-        if (shop == null) {
-            kizPanelController.clearCategories();
-            return;
-        }
-        Task<List<Category>> task = new Task<>() {
-            @Override
-            protected List<Category> call() throws Exception {
-                return categoryWorkflow.loadCategories(shop.getId());
-            }
-        };
-        task.setOnSucceeded(e -> {
-            if (!isCurrentShop(shop.getId())) {
-                return;
-            }
-            List<Category> categories = task.getValue();
-            kizPanelController.setCategories(categories, this::importKizForCategory, this::editCategory,
-                    this::confirmClearKizCount, this::confirmDeleteCategory);
-        });
-        task.setOnFailed(e -> AlertService.showError(task.getException().getMessage()));
-        AppTaskExecutor.execute(task);
-    }
-
-    private void importKizForCategory(Category category) {
-        Shop shop = state.getSelectedShop();
-        if (shop == null || category == null) {
-            return;
-        }
-        fileChooser.setTitle(i18nService.tr("filechooser.open_pdf"));
-        fileChooser.getExtensionFilters().setAll(new FileChooser.ExtensionFilter(i18nService.tr("filechooser.pdf"), "*.pdf"));
-        File file = fileChooser.showOpenDialog(null);
-        if (file == null) {
-            return;
-        }
-
-        Task<Integer> task = new Task<>() {
-            @Override
-            protected Integer call() throws Exception {
-                return categoryWorkflow.importKizFromPdf(file, shop, category);
-            }
-        };
-        task.setOnRunning(ex -> {
-            markShopRunning(shop.getId(), true);
-            setSupplyKizPanelLoading(true);
-        });
-        task.setOnSucceeded(ex -> {
-            markShopRunning(shop.getId(), false);
-            setSupplyKizPanelLoading(false);
-            if (isCurrentShop(shop.getId())) {
-                loadCategories();
-            }
-        });
-        task.setOnFailed(ex -> {
-            markShopRunning(shop.getId(), false);
-            setSupplyKizPanelLoading(false);
-            AlertService.showError(task.getException().getMessage());
-        });
-        AppTaskExecutor.execute(task);
-    }
-
-    private void confirmDeleteCategory(Category category) {
-        Shop shop = state.getSelectedShop();
-        if (shop == null || category == null) {
-            return;
-        }
-
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        AlertService.applyTheme(alert);
-        alert.setTitle(i18nService.tr("category.delete.title"));
-        alert.setHeaderText(MessageFormat.format(i18nService.tr("category.delete.header"), category.getName()));
-        ButtonType buttonTypeConfirm = new ButtonType(i18nService.tr("common.delete"), ButtonBar.ButtonData.YES);
-        ButtonType buttonTypeCancel = new ButtonType(i18nService.tr("common.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
-        alert.getButtonTypes().setAll(buttonTypeConfirm, buttonTypeCancel);
-
-        Optional<ButtonType> result = alert.showAndWait();
-        if (result.isPresent() && result.get() == buttonTypeConfirm) {
-            categoryWorkflow.deleteCategory(shop, category);
-            loadCategories();
-        }
-    }
-
-    private void confirmClearKizCount(Category category) {
-        Shop shop = state.getSelectedShop();
-        if (shop == null || category == null || category.getCountKiz() <= 0) {
-            return;
-        }
-
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        AlertService.applyTheme(alert);
-        alert.setTitle(i18nService.tr("category.clear.title"));
-        alert.setHeaderText(MessageFormat.format(i18nService.tr("category.clear.header"), category.getName()));
-        ButtonType buttonTypeConfirm = new ButtonType(i18nService.tr("category.clear.confirm"), ButtonBar.ButtonData.YES);
-        ButtonType buttonTypeCancel = new ButtonType(i18nService.tr("common.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
-        alert.getButtonTypes().setAll(buttonTypeConfirm, buttonTypeCancel);
-
-        Optional<ButtonType> result = alert.showAndWait();
-        if (result.isPresent() && result.get() == buttonTypeConfirm) {
-            categoryWorkflow.clearKizCount(shop, category);
-            loadCategories();
-        }
-    }
-
-    private void setSupplyKizPanelLoading(boolean loading) {
-        if (kizPanelController != null) {
-            kizPanelController.setLoading(loading);
-        }
-    }
-
-    private void onAddCategory() {
-        Shop shop = requireSelectedShop();
-        if (shop == null) {
-            return;
-        }
-        try {
-            Optional<Category> categoryResult = categoryWorkflow.requestCreateCategory(shop.getId());
-            if (categoryResult.isPresent()) {
-                int rowCount = categoryWorkflow.createCategory(shop, categoryResult.get());
-                if (rowCount > 0) {
-                    loadCategories();
-                }
-            }
-        } catch (NumberFormatException e) {
-            AlertService.showError(i18nService.tr("category.error.id_number"));
-        } catch (SQLException e) {
-            LOGGER.error("Không thể thêm category", e);
-            AlertService.showError(i18nService.tr("category.error.id_exists"));
-        }
-    }
-
-    private void editCategory(Category category) {
-        Shop shop = state.getSelectedShop();
-        if (shop == null || category == null) {
-            return;
-        }
-        try {
-            Optional<Category> categoryResult = categoryWorkflow.requestEditCategory(category);
-            if (categoryResult.isPresent() && categoryWorkflow.updateCategoryName(categoryResult.get()) > 0) {
-                loadCategories();
-            }
-        } catch (NumberFormatException ex) {
-            AlertService.showError(i18nService.tr("category.error.id_number"));
-        } catch (SQLException ex) {
-            LOGGER.error("Không thể sửa category", ex);
-            AlertService.showError(ex.getMessage());
-        }
-    }
-
     private void selectShopById(int shopId) {
         selectShopByIdIfExists(shopId);
     }
@@ -1179,10 +1053,18 @@ public class HomeController implements Initializable {
 
     private void selectShop(Shop shop) {
         state.setSelectedShop(shop);
+        if (znackAutomationController != null) {
+            znackAutomationController.setShop(shop);
+        }
+        if (kizMappingController != null) {
+            kizMappingController.setShop(shop);
+        }
+        if (supplyDetailController != null) {
+            supplyDetailController.setShop(shop);
+        }
         ConfigService.setLastSelectedShopId(shop.getId());
         renderShops();
         boolean tokenValid = applySelectedShopTokenState(shop, true);
-        loadCategories();
         resetLoadedSupply();
         showWorkspace();
         updateHeaderState();
@@ -1194,9 +1076,6 @@ public class HomeController implements Initializable {
         }
         if (isFboPackingVisible()) {
             refreshFboView();
-        }
-        if (isKizMappingVisible()) {
-            refreshKizMappingView();
         }
         refreshSupplyList();
         refreshPackingView();
@@ -1258,7 +1137,6 @@ public class HomeController implements Initializable {
             markShopRunning(shop.getId(), false);
             markProductKizSyncing(shop.getId(), false);
             if (isCurrentShop(shop.getId())) {
-                loadCategories();
             }
             refreshSupplyListIfCurrent(shop.getId());
             if (isPackingVisible()) {
@@ -1326,6 +1204,7 @@ public class HomeController implements Initializable {
         supplyDetailController.setLoading(true);
         refreshCurrentKizAttachmentProgress();
         supplyDetailController.setSupplyInfo(formatSupplyTitle(supply), "");
+        supplyDetailController.syncGtinInventoryOnSupplyOpen();
 
         Task<List<Order>> localTask = new Task<>() {
             @Override
@@ -1461,6 +1340,7 @@ public class HomeController implements Initializable {
         shopSidebarController.setOnPacking(this::showPacking);
         shopSidebarController.setOnFboPacking(this::showFboPacking);
         shopSidebarController.setOnKizMapping(this::showKizMapping);
+        shopSidebarController.setOnZnackAutomation(this::showZnackAutomation);
         shopSidebarController.setOnPrintHistory(this::showPrintHistory);
         shopSidebarController.setOnCheckVersion(this::checkVersionManually);
         shopSidebarController.setOnActivation(this::showActivationDialog);
@@ -1507,16 +1387,8 @@ public class HomeController implements Initializable {
         supplyDetailController.setOnBack(this::showPacking);
         supplyDetailController.setOnDeliver(this::deliverLoadedSupply);
         supplyDetailController.applyTranslations();
+        supplyDetailController.setShop(state.getSelectedShop());
         supplyManagementController.supplyDetailContainer.getChildren().setAll(supplyDetailRoot);
-    }
-
-    private void initializeKizPanel() {
-        FXMLLoader loader = FxmlViewLoader.loader(KizPanelController.class, "kiz-panel-view.fxml");
-        VBox root = FxmlViewLoader.load(loader);
-        kizPanelController = loader.getController();
-        kizPanelController.setOnAddCategory(this::onAddCategory);
-        kizPanelController.applyTranslations();
-        supplyManagementController.kizPanelContainer.getChildren().setAll(root);
     }
 
     private void renderShops() {
@@ -1547,6 +1419,9 @@ public class HomeController implements Initializable {
         if (kizMappingController != null) {
             kizMappingController.applyTranslations();
         }
+        if (znackAutomationController != null) {
+            znackAutomationController.applyTranslations();
+        }
         if (printHistoryController != null) {
             printHistoryController.applyTranslations();
         }
@@ -1562,14 +1437,10 @@ public class HomeController implements Initializable {
                 );
             }
         }
-        if (kizPanelController != null) {
-            kizPanelController.applyTranslations();
-        }
     }
 
     private void clearWorkspaceView() {
         contentPane.setVisible(false);
-        kizPanelController.clearCategories();
         clearSupplyViews();
         updateHeaderState();
     }
@@ -1580,6 +1451,7 @@ public class HomeController implements Initializable {
             supplyListController.setLoading(false);
         }
         if (supplyDetailController != null) {
+            supplyDetailController.setShop(null);
             supplyDetailController.showEmptyState("", "");
             supplyDetailController.setLoading(false);
             refreshCurrentKizAttachmentProgress();
@@ -1592,6 +1464,9 @@ public class HomeController implements Initializable {
         }
         if (kizMappingController != null) {
             kizMappingController.setShop(null);
+        }
+        if (znackAutomationController != null) {
+            znackAutomationController.setShop(null);
         }
         resetLoadedSupply();
     }
@@ -1812,7 +1687,6 @@ public class HomeController implements Initializable {
         }
         if (!progress.active()) {
             if (isCurrentShop(progress.shopId())) {
-                loadCategories();
             }
             if (matchesCurrentSupply(progress.shopId(), progress.supplyId())) {
                 removeCompletedKizAssignments(progress.successfulKizCodes());
@@ -1951,6 +1825,9 @@ public class HomeController implements Initializable {
             return;
         }
         disposed = true;
+        if (supplyDetailController != null) {
+            supplyDetailController.dispose();
+        }
         i18nService.removeListener(languageListener);
         kizAttachmentCoordinator.removeListener(kizProgressListener);
     }

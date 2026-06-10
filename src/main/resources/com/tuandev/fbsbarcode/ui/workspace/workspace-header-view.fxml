@@ -45,7 +45,7 @@
         <Pane HBox.hgrow="ALWAYS" />
         <ProgressIndicator fx:id="syncLoadingIndicator" managed="false" maxHeight="18.0" maxWidth="18.0" prefHeight="18.0" prefWidth="18.0" visible="false" />
         <Label fx:id="syncLoadingLabel" managed="false" styleClass="text-muted" text="%header.sync_products_kiz" visible="false" />
-        <Button fx:id="syncButton" mnemonicParsing="false" onAction="#onSync" prefHeight="34.0" prefWidth="130.0" text=" Синхронизировать WB">
+        <Button fx:id="syncButton" mnemonicParsing="false" onAction="#onSync" prefHeight="34.0" text=" Синхронизировать WB">
             <styleClass>
                 <String fx:value="button" />
                 <String fx:value="btn-primary" />

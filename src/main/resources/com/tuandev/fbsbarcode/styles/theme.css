@@ -170,6 +170,27 @@
     -fx-padding: 16px;
 }
 
+.help-button {
+    -fx-padding: 6 10;
+    -fx-min-width: 64;
+}
+
+.help-pane {
+    -fx-border-color: -accent;
+    -fx-border-width: 1;
+    -fx-border-radius: 8;
+}
+
+.help-warning {
+    -fx-text-fill: -warning;
+    -fx-font-weight: 700;
+}
+
+.text-strong {
+    -fx-text-fill: -text-primary;
+    -fx-font-weight: 700;
+}
+
 .chart-pie-label {
     -fx-fill: -text-primary;
 }
@@ -188,6 +209,83 @@
     -fx-border-color: -border-color;
     -fx-border-radius: 12px;
     -fx-padding: 12px;
+}
+
+.gtin-inventory-pane {
+    -fx-background-color: -bg-tertiary;
+}
+
+.gtin-inventory-pane .scroll-pane,
+.gtin-inventory-pane .scroll-pane > .viewport {
+    -fx-background-color: transparent;
+}
+
+.gtin-inventory-card {
+    -fx-background-color: -bg-secondary;
+    -fx-background-radius: 9px;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 9px;
+    -fx-padding: 10px;
+}
+
+.gtin-code {
+    -fx-font-family: "Monospaced";
+    -fx-font-size: 13px;
+    -fx-font-weight: 800;
+    -fx-text-fill: -text-primary;
+}
+
+.gtin-name {
+    -fx-font-size: 12px;
+    -fx-text-fill: -text-secondary;
+}
+
+.gtin-count-caption {
+    -fx-font-size: 11px;
+    -fx-text-fill: -text-muted;
+}
+
+.gtin-buy-button {
+    -fx-min-width: 32px;
+    -fx-pref-width: 32px;
+    -fx-max-width: 32px;
+    -fx-min-height: 32px;
+    -fx-pref-height: 32px;
+    -fx-max-height: 32px;
+    -fx-padding: 0;
+    -fx-background-radius: 16px;
+    -fx-border-radius: 16px;
+}
+
+.gtin-buy-button:disabled {
+    -fx-opacity: 0.45;
+}
+
+/* Znack workflow */
+.znack-root {
+    -fx-background-color: -bg-primary;
+}
+
+.znack-root .scroll-pane,
+.znack-root .scroll-pane > .viewport {
+    -fx-background-color: transparent;
+}
+
+.znack-root .surface {
+    -fx-background-color: -bg-tertiary;
+}
+
+.znack-root .text-field,
+.znack-root .combo-box {
+    -fx-min-height: 38px;
+}
+
+.znack-root .button {
+    -fx-min-height: 36px;
+}
+
+.znack-root .btn-primary:disabled {
+    -fx-opacity: 0.42;
 }
 
 .filter-bar,
@@ -725,6 +823,13 @@
     -fx-border-color: -border-color;
     -fx-border-radius: 8px;
     -fx-background-radius: 8px;
+}
+
+.app-dialog-pane .text-field.error,
+.app-dialog-pane .password-field.error,
+.text-field.error,
+.password-field.error {
+    -fx-border-color: -danger;
 }
 
 .app-dialog-pane .combo-box .list-cell {

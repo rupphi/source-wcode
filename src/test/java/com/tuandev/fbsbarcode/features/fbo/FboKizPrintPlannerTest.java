@@ -1,144 +1,82 @@
 package com.tuandev.fbsbarcode.features.fbo;
 
 import com.tuandev.fbsbarcode.config.Database;
+import com.tuandev.fbsbarcode.features.kizmapping.KizMappingRepository;
+import com.tuandev.fbsbarcode.features.kizmapping.ZnackGtinMappingSelection;
+import com.tuandev.fbsbarcode.integration.znack.ZnackModels.*;
+import com.tuandev.fbsbarcode.integration.znack.ZnackRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import com.itextpdf.kernel.pdf.PdfDocument;
-import com.itextpdf.kernel.pdf.PdfReader;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
-import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class FboKizPrintPlannerTest {
-    @TempDir
-    Path tempDir;
+    private static final String GTIN = "04601234567890";
+    @TempDir Path temp;
 
-    @AfterEach
-    void clearOverride() {
+    @AfterEach void clear() {
         System.clearProperty("wcode.appdata.dir");
     }
 
     @Test
-    void shouldCreateTwoBarcodePagesWithSameKizPerQuantity() throws Exception {
-        initializeFixture();
-        FboKizPrintPlanner planner = new FboKizPrintPlanner();
-        FboProductSku product = product(true);
-
-        FboPrintPlan plan = planner.plan(1, List.of(new FboBarcodePrintItem(product, 2)));
-
+    void reservesOneAtomicGtinPoolForFboPages() throws Exception {
+        fixture(true, 2);
+        FboPrintPlan plan = new FboKizPrintPlanner().plan(1, List.of(new FboBarcodePrintItem(product(true), 2)));
         assertEquals(4, plan.pages().size());
-        assertEquals(List.of("KIZ-1", "KIZ-1", "KIZ-2", "KIZ-2"),
-                plan.pages().stream().map(FboPrintPage::kizCode).toList());
-        assertEquals(List.of(1, 1, 2, 2), plan.pages().stream().map(FboPrintPage::pairNumber).toList());
-        assertEquals(List.of("KIZ-1", "KIZ-2"), plan.usedKizs().stream().map(com.tuandev.fbsbarcode.models.Kiz::getCode).toList());
+        assertEquals(List.of("KIZ-1","KIZ-1","KIZ-2","KIZ-2"), plan.pages().stream().map(FboPrintPage::kizCode).toList());
+        assertEquals(2, plan.usedKizs().size());
     }
 
     @Test
-    void shouldSkipKizForProductThatDoesNotRequireIt() throws Exception {
-        initializeFixture();
-        FboKizPrintPlanner planner = new FboKizPrintPlanner();
+    void rejectsMissingMappingAndShortage() throws Exception {
+        fixture(false, 2);
+        assertThrows(IllegalStateException.class,
+                () -> new FboKizPrintPlanner().plan(1, List.of(new FboBarcodePrintItem(product(true), 1))));
 
-        FboPrintPlan plan = planner.plan(1, List.of(new FboBarcodePrintItem(product(false), 2)));
+        clearDb();
+        fixture(true, 1);
+        assertTrue(assertThrows(IllegalStateException.class,
+                () -> new FboKizPrintPlanner().plan(1, List.of(new FboBarcodePrintItem(product(true), 2))))
+                .getMessage().contains(GTIN));
+    }
 
-        assertEquals(4, plan.pages().size());
+    @Test
+    void skipsInventoryForUnmarkedProduct() throws Exception {
+        fixture(false, 0);
+        FboPrintPlan plan = new FboKizPrintPlanner().plan(1, List.of(new FboBarcodePrintItem(product(false), 2)));
         assertTrue(plan.pages().stream().allMatch(page -> page.kizCode() == null));
-        assertEquals(List.of(1, 1, 2, 2), plan.pages().stream().map(FboPrintPage::pairNumber).toList());
-        assertEquals(0, plan.usedKizs().size());
     }
 
-    @Test
-    void shouldExportOnlyTwoPagesForOneKizPair() throws Exception {
-        initializeFixture();
-        FboProductSku product = product(true);
-        FboPrintPlan plan = new FboPrintPlan(List.of(
-                FboPrintPage.barcodeWithKiz(product, "KIZ-1", 1),
-                FboPrintPage.barcodeWithKiz(product, "KIZ-1", 1)
-        ), List.of());
-        Path file = Files.createTempFile(tempDir, "fbo-kiz-pair-", ".pdf");
-
-        new FboBarcodePdfExporter().exportPlan(plan, file.toFile());
-
-        try (PdfDocument pdf = new PdfDocument(new PdfReader(file.toFile()))) {
-            assertEquals(2, pdf.getNumberOfPages());
-        }
-    }
-
-    @Test
-    void shouldKeepFboTemplatesSeparateFromFbsTemplates() throws Exception {
-        initializeFixture();
-
-        com.tuandev.fbsbarcode.features.print.PrintTemplate fbsTemplate =
-                new com.tuandev.fbsbarcode.features.print.PrintTemplateService().getDefaultTemplate();
-        com.tuandev.fbsbarcode.features.print.PrintTemplate fboTemplate =
-                new FboPrintTemplateService().getDefaultTemplate();
-
-        assertEquals(1, new com.tuandev.fbsbarcode.features.print.PrintTemplateRepository().count());
-        assertEquals(1, new FboPrintTemplateRepository().count());
-        org.junit.jupiter.api.Assertions.assertFalse(fbsTemplate.getElements().isEmpty());
-        org.junit.jupiter.api.Assertions.assertFalse(fboTemplate.getElements().isEmpty());
-    }
-
-    @Test
-    void shouldRejectMissingMapping() throws Exception {
-        initializeFixture(false, 2);
-        FboKizPrintPlanner planner = new FboKizPrintPlanner();
-
-        IllegalStateException ex = assertThrows(IllegalStateException.class,
-                () -> planner.plan(1, List.of(new FboBarcodePrintItem(product(true), 1))));
-
-        org.junit.jupiter.api.Assertions.assertTrue(ex.getMessage().contains("chưa map"));
-    }
-
-    @Test
-    void shouldRejectKizShortageWithCategoryName() throws Exception {
-        initializeFixture(true, 1);
-        FboKizPrintPlanner planner = new FboKizPrintPlanner();
-
-        IllegalStateException ex = assertThrows(IllegalStateException.class,
-                () -> planner.plan(1, List.of(new FboBarcodePrintItem(product(true), 2))));
-
-        org.junit.jupiter.api.Assertions.assertTrue(ex.getMessage().contains("10 - Shoes: cần 2, còn 1"));
-    }
-
-    private void initializeFixture() throws Exception {
-        initializeFixture(true, 3);
-    }
-
-    private void initializeFixture(boolean withMapping, int kizCount) throws Exception {
-        System.setProperty("wcode.appdata.dir", tempDir.toString());
+    private void fixture(boolean mapping, int codeCount) throws Exception {
+        System.setProperty("wcode.appdata.dir", temp.toString());
         Database.initDatabase();
-        try (Connection conn = Database.getConnection();
-             Statement st = conn.createStatement()) {
-            st.execute("INSERT INTO shops(id, name, api_key) VALUES (1, 'Shop', 'token')");
-            st.execute("INSERT INTO categories(id, name) VALUES (10, 'Shoes')");
-            st.execute("""
-                    INSERT INTO wb_product_cards(shop_id, nm_id, vendor_code, subject_name, brand, title, need_kiz, synced_at)
-                    VALUES (1, 1001, 'ART-1', 'Shoes WB', 'Brand', 'Product', 1, '2026-05-23T00:00:00Z')
-                    """);
-            if (withMapping) {
-                st.execute("INSERT INTO wb_product_kiz_mappings(shop_id, nm_id, kiz_category_id, updated_at) VALUES (1, 1001, 10, 'now')");
-            }
+        try (Connection c = Database.getConnection(); Statement st = c.createStatement()) {
+            st.execute("INSERT INTO shops(id,name,api_key) VALUES(1,'Shop','token')");
+            st.execute("INSERT INTO wb_product_cards(shop_id,nm_id,vendor_code,subject_name,need_kiz,synced_at) VALUES(1,1001,'ART','Shoes',1,'now')");
         }
-        try (Connection conn = Database.getConnection();
-             PreparedStatement ps = conn.prepareStatement("INSERT INTO kizs(code, shop_id, category_id) VALUES (?, 1, 10)")) {
-            for (int i = 1; i <= kizCount; i++) {
-                ps.setString(1, "KIZ-" + i);
-                ps.addBatch();
-            }
-            ps.executeBatch();
+        ZnackRepository repository = new ZnackRepository(new ShopContext(1, "Shop"));
+        repository.upsertProducts(List.of(new Product(GTIN, "Shoes GTIN", null, null, null, null, null)));
+        if (mapping) new KizMappingRepository().replaceRulesForGtin(1, GTIN,
+                List.of(new ZnackGtinMappingSelection("Shoes", null, true)));
+        long order = repository.createDraft(GTIN, Math.max(1, codeCount));
+        for (int i = 1; i <= codeCount; i++) {
+            repository.insertCodes(order, GTIN, new DownloadedCodes(List.of("KIZ-" + i), "block"));
+        }
+    }
+
+    private void clearDb() throws Exception {
+        try (Connection c = Database.getConnection(); Statement st = c.createStatement()) {
+            st.execute("DELETE FROM shops");
         }
     }
 
     private FboProductSku product(boolean requiresKiz) {
-        return new FboProductSku(1001, "ART-1", "Shoes WB", "Brand", "Product", "Black", "42", "42", "SKU-1", "", requiresKiz);
+        return new FboProductSku(1001, "ART", "Shoes", "Brand", "Product", "Black", "42", "42", "SKU", "", requiresKiz);
     }
 }

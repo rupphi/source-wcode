@@ -37,16 +37,18 @@ public class ShopDialogService {
         ButtonType cancelBtn = new ButtonType(I18nService.getInstance().tr("common.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
         dialog.getDialogPane().getButtonTypes().addAll(cancelBtn, submitBtn);
 
+        javafx.scene.Node okButton = dialog.getDialogPane().lookupButton(submitBtn);
+        okButton.addEventFilter(javafx.event.ActionEvent.ACTION, event -> {
+            if (!controller.validate()) {
+                event.consume();
+            }
+        });
+
         Optional<ButtonType> result = dialog.showAndWait();
         if (result.isEmpty() || result.get() != submitBtn) {
             return Optional.empty();
         }
 
-        Shop shop = controller.toShop();
-        if (shop.getName() == null || shop.getName().isBlank() || shop.getApiKey() == null || shop.getApiKey().isBlank()) {
-            return Optional.empty();
-        }
-
-        return Optional.of(shop);
+        return Optional.of(controller.toShop());
     }
 }

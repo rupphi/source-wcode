@@ -1,766 +1,496 @@
 package com.tuandev.fbsbarcode.ui.kizmapping;
 
-import com.tuandev.fbsbarcode.features.fbo.FboProductImageService;
-import com.tuandev.fbsbarcode.features.kiz.CategoryWorkflow;
-import com.tuandev.fbsbarcode.features.kizmapping.KizMappingExcelService;
-import com.tuandev.fbsbarcode.features.kizmapping.KizMappingImportResult;
-import com.tuandev.fbsbarcode.features.kizmapping.KizMappingProduct;
 import com.tuandev.fbsbarcode.features.kizmapping.KizMappingRepository;
-import com.tuandev.fbsbarcode.features.kizmapping.KizMappingSearchCriteria;
-import com.tuandev.fbsbarcode.models.Category;
+import com.tuandev.fbsbarcode.features.kizmapping.ZnackGtinMappingSelection;
+import com.tuandev.fbsbarcode.integration.znack.*;
+import com.tuandev.fbsbarcode.integration.znack.ZnackModels.*;
+import com.tuandev.fbsbarcode.integration.znack.signature.CryptoProSignatureProvider;
+import com.tuandev.fbsbarcode.integration.znack.signature.CryptoProException;
+import com.tuandev.fbsbarcode.integration.znack.signature.ZnackSignatureProvider;
 import com.tuandev.fbsbarcode.models.Shop;
 import com.tuandev.fbsbarcode.shared.AlertService;
 import com.tuandev.fbsbarcode.shared.AppTaskExecutor;
-import com.tuandev.fbsbarcode.shared.FxmlViewLoader;
 import com.tuandev.fbsbarcode.shared.I18nService;
-import javafx.application.Platform;
-import javafx.beans.property.ReadOnlyStringWrapper;
-import javafx.beans.property.SimpleObjectProperty;
-import javafx.collections.FXCollections;
-import javafx.collections.ObservableList;
+import javafx.beans.property.SimpleIntegerProperty;
+import javafx.beans.property.SimpleStringProperty;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
-import javafx.fxml.FXMLLoader;
-import javafx.geometry.Pos;
-import javafx.scene.control.Alert;
-import javafx.scene.control.Button;
-import javafx.scene.control.ButtonBar;
-import javafx.scene.control.ButtonType;
-import javafx.scene.control.CheckBox;
-import javafx.scene.control.CustomMenuItem;
-import javafx.scene.control.Label;
-import javafx.scene.control.MenuButton;
-import javafx.scene.control.ProgressIndicator;
-import javafx.scene.control.ScrollPane;
-import javafx.scene.control.TableCell;
-import javafx.scene.control.TableColumn;
-import javafx.scene.control.TableView;
-import javafx.scene.control.TextField;
-import javafx.scene.image.Image;
-import javafx.scene.image.ImageView;
-import javafx.scene.layout.Region;
-import javafx.scene.layout.StackPane;
+import javafx.scene.control.*;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
-import javafx.stage.FileChooser;
-import com.tuandev.fbsbarcode.ui.kiz.KizPanelController;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.awt.Desktop;
-import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.IOException;
-import java.sql.SQLException;
-import java.text.MessageFormat;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
+import java.util.Set;
 
 public class KizMappingController {
-    private static final Logger LOGGER = LoggerFactory.getLogger(KizMappingController.class);
-    private static final int IMAGE_WIDTH = 48;
-    private static final int IMAGE_HEIGHT = 64;
-    private static final int SUBJECT_VISIBLE_ROWS = 10;
-    private static final int SUBJECT_ROW_HEIGHT = 30;
-    private static final int PAGE_SIZE = 50;
-
-    @FXML private Label titleLabel;
-    @FXML private TextField searchField;
-    @FXML private MenuButton subjectMenuButton;
-    @FXML private MenuButton genderMenuButton;
-    @FXML private Button clearFiltersButton;
+    @FXML private Label titleLabel, emptyStateLabel;
+    @FXML private Button refreshButton;
     @FXML private ProgressIndicator loadingIndicator;
-    @FXML private Label loadingLabel;
-    @FXML private Label emptyStateLabel;
-    @FXML private VBox kizPanelContainer;
-    @FXML private TableView<KizMappingRow> productTable;
-    @FXML private TableColumn<KizMappingRow, KizMappingRow> imageColumn;
-    @FXML private TableColumn<KizMappingRow, KizMappingRow> detailsColumn;
-    @FXML private TableColumn<KizMappingRow, KizMappingRow> categoryIdColumn;
+    @FXML private TableView<ZnackGtinInventorySummary> gtinTable;
+    @FXML private TableColumn<ZnackGtinInventorySummary,String> gtinColumn, nameColumn, mappingColumn;
+    @FXML private TableColumn<ZnackGtinInventorySummary,Number> availableColumn;
+    @FXML private TableColumn<ZnackGtinInventorySummary,String> pipelineColumn, errorColumn, syncedColumn;
+    @FXML private TableColumn<ZnackGtinInventorySummary,ZnackGtinInventorySummary> actionsColumn;
 
-    private final KizMappingRepository repository = new KizMappingRepository();
-    private final FboProductImageService imageService = new FboProductImageService();
-    private final CategoryWorkflow categoryWorkflow = new CategoryWorkflow();
-    private final ObservableList<KizMappingRow> rows = FXCollections.observableArrayList();
-    private final List<String> selectedSubjects = new ArrayList<>();
-    private final List<String> selectedGenders = new ArrayList<>();
-    private final List<CheckBox> subjectCheckBoxes = new ArrayList<>();
-    private final List<CheckBox> genderCheckBoxes = new ArrayList<>();
-    private final FileChooser pdfFileChooser = new FileChooser();
-    private final java.util.Map<Integer, Integer> categoryKizCounts = new java.util.HashMap<>();
-    private final java.util.Map<Integer, Integer> categoryDisplayIdsById = new java.util.HashMap<>();
-    private final java.util.Map<Integer, Integer> categoryIdsByDisplayId = new java.util.HashMap<>();
-    private KizPanelController kizPanelController;
+    private final KizMappingRepository mappingRepository = new KizMappingRepository();
     private Shop shop;
+    private ZnackRepository znackRepository;
+    private Timeline refreshTimer;
     private boolean loading;
-    private boolean hasMore;
-    private boolean suppressSearchEvents;
-    private Runnable onKizInventoryChanged;
+    private long shopGeneration;
 
     @FXML
     private void initialize() {
-        productTable.setItems(rows);
-        productTable.setEditable(true);
-        configureColumns();
-        initializeKizPanel();
-        searchField.textProperty().addListener((obs, oldValue, newValue) -> {
-            updateClearFiltersVisibility();
-            if (!suppressSearchEvents) {
-                reload();
-            }
-        });
-        productTable.skinProperty().addListener((obs, oldValue, newValue) ->
-                productTable.lookupAll(".scroll-bar").forEach(node -> {
-                    if (node instanceof javafx.scene.control.ScrollBar bar && bar.getOrientation() == javafx.geometry.Orientation.VERTICAL) {
-                        bar.valueProperty().addListener((valueObs, previousScroll, currentScroll) -> {
-                            if (hasMore && !loading && currentScroll.doubleValue() >= 0.70) {
-                                loadProducts(true);
-                            }
-                        });
-                    }
-                })
-        );
+        gtinColumn.setCellValueFactory(v -> new SimpleStringProperty(v.getValue().gtin()));
+        nameColumn.setCellValueFactory(v -> new SimpleStringProperty(value(v.getValue().productName())));
+        mappingColumn.setCellValueFactory(v -> new SimpleStringProperty(v.getValue().mappingRuleCount() == 0
+                ? tr("kiz_mapping.status.unmapped") : tr("kiz_mapping.status.mapped")));
+        availableColumn.setCellValueFactory(v -> new SimpleIntegerProperty(v.getValue().available()));
+        pipelineColumn.setCellValueFactory(v -> new SimpleStringProperty(localizeStatus(first(
+                v.getValue().latestPipelineStage(), v.getValue().latestOrderStatus()))));
+        mappingColumn.setCellFactory(column -> statusCell("badge-green", "badge-gray"));
+        pipelineColumn.setCellFactory(column -> statusCell("badge-warning", "badge-gray"));
+        errorColumn.setCellValueFactory(v -> new SimpleStringProperty(value(v.getValue().latestError())));
+        syncedColumn.setCellValueFactory(v -> new SimpleStringProperty(v.getValue().syncedAt() == null
+                ? "" : v.getValue().syncedAt().toString()));
+        actionsColumn.setCellValueFactory(v -> new javafx.beans.property.SimpleObjectProperty<>(v.getValue()));
+        actionsColumn.setCellFactory(column -> new ActionsCell());
+        refreshTimer = new Timeline(new KeyFrame(javafx.util.Duration.seconds(5), event -> {
+            if (shop != null && !loading) refresh();
+        }));
+        refreshTimer.setCycleCount(Timeline.INDEFINITE);
         applyTranslations();
-        updateButtons();
+        setLoading(false);
     }
 
-    public void setShop(Shop shop) {
-        this.shop = shop;
-        rows.clear();
-        if (shop == null && kizPanelController != null) {
-            kizPanelController.clearCategories();
-        }
-        if (shop == null) {
-            clearCategoryCaches();
-        }
-        setSubjects(shop == null ? List.of() : repository.findSubjects(shop.getId()));
-        setGenders(shop == null ? List.of() : repository.findGenders(shop.getId()));
-        updateButtons();
-        if (shop != null) {
-            loadCategories();
-            reload();
-        }
-    }
-
-    public void setOnKizInventoryChanged(Runnable onKizInventoryChanged) {
-        this.onKizInventoryChanged = onKizInventoryChanged;
-    }
-
-    public void refresh() {
-        if (shop != null) {
-            setSubjects(repository.findSubjects(shop.getId()));
-            setGenders(repository.findGenders(shop.getId()));
-            loadCategories();
-            reload();
+    public void setShop(Shop selected) {
+        shopGeneration++;
+        shop = selected;
+        znackRepository = selected == null ? null : new ZnackRepository(new ShopContext(selected.getId(), selected.getName()));
+        setLoading(false);
+        if (selected == null) refreshTimer.stop(); else refreshTimer.play();
+        refresh();
+        if (znackRepository != null) {
+            ZnackRepository currentRepository = znackRepository;
+            ZnackPurchaseCoordinator currentCoordinator = ZnackPurchaseCoordinator.create(currentRepository);
+            Settings currentSettings = currentRepository.getSettings();
+            runBackground(() -> currentCoordinator.resume(currentSettings));
         }
     }
 
     public void applyTranslations() {
-        I18nService i18n = I18nService.getInstance();
-        titleLabel.setText(i18n.tr("kiz_mapping.title"));
-        searchField.setPromptText(i18n.tr("kiz_mapping.search"));
-        loadingLabel.setText(i18n.tr("kiz_mapping.loading"));
-        emptyStateLabel.setText(i18n.tr("kiz_mapping.empty"));
-        imageColumn.setText(i18n.tr("kiz_mapping.column.image"));
-        detailsColumn.setText(i18n.tr("kiz_mapping.column.details"));
-        categoryIdColumn.setText(i18n.tr("kiz_mapping.column.kiz_category"));
-        if (kizPanelController != null) {
-            kizPanelController.applyTranslations();
-        }
-        updateSubjectText();
-        updateGenderText();
+        titleLabel.setText(tr("kiz_mapping.title"));
+        refreshButton.setText(tr("kiz_mapping.refresh"));
+        gtinColumn.setText(tr("znack.field.gtin"));
+        nameColumn.setText(tr("znack.field.name"));
+        mappingColumn.setText(tr("kiz_mapping.column.mapping"));
+        availableColumn.setText(tr("kiz_mapping.column.available"));
+        pipelineColumn.setText(tr("kiz_mapping.column.pipeline"));
+        errorColumn.setText(tr("kiz_mapping.column.error"));
+        syncedColumn.setText(tr("kiz_mapping.column.synced"));
+        actionsColumn.setText(tr("kiz_mapping.column.actions"));
+        emptyStateLabel.setText(tr("kiz_mapping.empty_gtin"));
     }
 
     @FXML
-    private void onClearFilters() {
-        suppressSearchEvents = true;
-        searchField.clear();
-        selectedSubjects.clear();
-        selectedGenders.clear();
-        subjectCheckBoxes.forEach(item -> item.setSelected(false));
-        genderCheckBoxes.forEach(item -> item.setSelected(false));
-        suppressSearchEvents = false;
-        updateSubjectText();
-        updateGenderText();
-        updateClearFiltersVisibility();
-        reload();
-    }
-
-    // Excel features removed
-
-    private void reload() {
-        loadProducts(false);
-    }
-
-    private void initializeKizPanel() {
-        if (kizPanelContainer == null) {
-            return;
-        }
-        FXMLLoader loader = FxmlViewLoader.loader(KizPanelController.class, "kiz-panel-view.fxml");
-        VBox root = FxmlViewLoader.load(loader);
-        kizPanelController = loader.getController();
-        kizPanelController.setOnAddCategory(this::onAddCategory);
-        kizPanelController.applyTranslations();
-        kizPanelContainer.getChildren().setAll(root);
-    }
-
-    private void loadCategories() {
-        if (kizPanelController == null) {
-            return;
-        }
-        Shop currentShop = shop;
-        if (currentShop == null) {
-            kizPanelController.clearCategories();
-            return;
-        }
-        Task<List<Category>> task = new Task<>() {
-            @Override
-            protected List<Category> call() {
-                return categoryWorkflow.loadCategories(currentShop.getId());
-            }
-        };
-        task.setOnSucceeded(event -> {
-            if (shop == null || shop.getId() != currentShop.getId()) {
-                return;
-            }
-            List<Category> categories = task.getValue() == null ? List.of() : task.getValue();
-            clearCategoryCaches();
-            for (Category c : categories) {
-                categoryKizCounts.put(c.getId(), c.getCountKiz());
-                categoryDisplayIdsById.put(c.getId(), c.getDisplayId());
-                categoryIdsByDisplayId.put(c.getDisplayId(), c.getId());
-            }
-            productTable.refresh();
-            kizPanelController.setCategories(categories, this::importKizForCategory, this::editCategory,
-                    this::confirmClearKizCount, this::confirmDeleteCategory);
+    private void onRefresh() {
+        if (znackRepository == null) return;
+        ZnackRepository current = znackRepository;
+        runTask(() -> {
+            syncProducts(current);
+            return null;
         });
-        task.setOnFailed(event -> AlertService.showError(task.getException().getMessage()));
-        AppTaskExecutor.execute(task);
     }
 
-    private void onAddCategory() {
+    public void refresh() {
+        if (loading) return;
         if (shop == null) {
+            gtinTable.getItems().clear();
+            updateEmpty();
             return;
         }
-        try {
-            Optional<Category> categoryResult = categoryWorkflow.requestCreateCategory(shop.getId());
-            if (categoryResult.isPresent() && categoryWorkflow.createCategory(shop, categoryResult.get()) > 0) {
-                loadCategories();
-                notifyKizInventoryChanged();
-            }
-        } catch (NumberFormatException ex) {
-            AlertService.showError(I18nService.getInstance().tr("category.error.id_number"));
-        } catch (SQLException ex) {
-            LOGGER.error("Không thể thêm KIZ category", ex);
-            AlertService.showError(I18nService.getInstance().tr("category.error.id_exists"));
-        }
-    }
-
-    private void editCategory(Category category) {
-        if (shop == null || category == null) {
-            return;
-        }
-        try {
-            Optional<Category> categoryResult = categoryWorkflow.requestEditCategory(category);
-            if (categoryResult.isPresent() && categoryWorkflow.updateCategoryName(categoryResult.get()) > 0) {
-                loadCategories();
-                notifyKizInventoryChanged();
-            }
-        } catch (NumberFormatException ex) {
-            AlertService.showError(I18nService.getInstance().tr("category.error.id_number"));
-        } catch (SQLException ex) {
-            LOGGER.error("Không thể sửa KIZ category", ex);
-            AlertService.showError(ex.getMessage());
-        }
-    }
-
-    private void importKizForCategory(Category category) {
-        Shop currentShop = shop;
-        if (currentShop == null || category == null) {
-            return;
-        }
-        I18nService i18n = I18nService.getInstance();
-        pdfFileChooser.setTitle(i18n.tr("filechooser.open_pdf"));
-        pdfFileChooser.getExtensionFilters().setAll(new FileChooser.ExtensionFilter(i18n.tr("filechooser.pdf"), "*.pdf"));
-        File file = pdfFileChooser.showOpenDialog(null);
-        if (file == null) {
-            return;
-        }
-
-        Task<Integer> task = new Task<>() {
-            @Override
-            protected Integer call() throws Exception {
-                return categoryWorkflow.importKizFromPdf(file, currentShop, category);
+        int shopId = shop.getId();
+        long generation = shopGeneration;
+        Task<List<ZnackGtinInventorySummary>> task = new Task<>() {
+            @Override protected List<ZnackGtinInventorySummary> call() {
+                return mappingRepository.findGtinSummaries(shopId);
             }
         };
         setLoading(true);
-        setKizPanelLoading(true);
-        task.setOnSucceeded(event -> {
-            setLoading(false);
-            setKizPanelLoading(false);
-            if (shop != null && shop.getId() == currentShop.getId()) {
-                loadCategories();
-                notifyKizInventoryChanged();
+        task.setOnSucceeded(e -> {
+            if (generation == shopGeneration && shop != null && shop.getId() == shopId) {
+                gtinTable.getItems().setAll(task.getValue());
+                setLoading(false);
+                updateEmpty();
             }
         });
-        task.setOnFailed(event -> {
-            setLoading(false);
-            setKizPanelLoading(false);
-            AlertService.showError(task.getException().getMessage());
-        });
-        AppTaskExecutor.execute(task);
-    }
-
-    private void clearCategoryCaches() {
-        categoryKizCounts.clear();
-        categoryDisplayIdsById.clear();
-        categoryIdsByDisplayId.clear();
-    }
-
-    private void confirmDeleteCategory(Category category) {
-        if (shop == null || category == null) {
-            return;
-        }
-        I18nService i18n = I18nService.getInstance();
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        AlertService.applyTheme(alert);
-        alert.setTitle(i18n.tr("category.delete.title"));
-        alert.setHeaderText(java.text.MessageFormat.format(i18n.tr("category.delete.header"), category.getName()));
-        ButtonType confirm = new ButtonType(i18n.tr("common.delete"), ButtonBar.ButtonData.YES);
-        ButtonType cancel = new ButtonType(i18n.tr("common.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
-        alert.getButtonTypes().setAll(confirm, cancel);
-        Optional<ButtonType> result = alert.showAndWait();
-        if (result.isPresent() && result.get() == confirm) {
-            categoryWorkflow.deleteCategory(shop, category);
-            loadCategories();
-            notifyKizInventoryChanged();
-        }
-    }
-
-    private void confirmClearKizCount(Category category) {
-        if (shop == null || category == null || category.getCountKiz() <= 0) {
-            return;
-        }
-        I18nService i18n = I18nService.getInstance();
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        AlertService.applyTheme(alert);
-        alert.setTitle(i18n.tr("category.clear.title"));
-        alert.setHeaderText(MessageFormat.format(i18n.tr("category.clear.header"), category.getName()));
-        ButtonType confirm = new ButtonType(i18n.tr("category.clear.confirm"), ButtonBar.ButtonData.YES);
-        ButtonType cancel = new ButtonType(i18n.tr("common.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
-        alert.getButtonTypes().setAll(confirm, cancel);
-        Optional<ButtonType> result = alert.showAndWait();
-        if (result.isPresent() && result.get() == confirm) {
-            categoryWorkflow.clearKizCount(shop, category);
-            loadCategories();
-            notifyKizInventoryChanged();
-        }
-    }
-
-    private void notifyKizInventoryChanged() {
-        if (onKizInventoryChanged != null) {
-            onKizInventoryChanged.run();
-        }
-    }
-
-    private void setKizPanelLoading(boolean loading) {
-        if (kizPanelController != null) {
-            kizPanelController.setLoading(loading);
-        }
-    }
-
-    private void loadProducts(boolean append) {
-        if (shop == null || loading) {
-            return;
-        }
-        int offset = append ? rows.size() : 0;
-        KizMappingSearchCriteria criteria = currentCriteria(PAGE_SIZE + 1, offset);
-        Task<List<KizMappingProduct>> task = new Task<>() {
-            @Override
-            protected List<KizMappingProduct> call() {
-                return repository.search(criteria);
+        task.setOnFailed(e -> {
+            if (generation == shopGeneration) {
+                setLoading(false);
+                AlertService.showError(task.getException().getMessage());
             }
-        };
-        setLoading(true);
-        task.setOnSucceeded(event -> {
-            setLoading(false);
-            List<KizMappingProduct> loaded = task.getValue() == null ? List.of() : task.getValue();
-            hasMore = loaded.size() > PAGE_SIZE;
-            List<KizMappingProduct> page = hasMore ? loaded.subList(0, PAGE_SIZE) : loaded;
-            if (!append) {
-                rows.clear();
-            }
-            page.stream().map(KizMappingRow::new).forEach(rows::add);
-            updateEmptyState();
-        });
-        task.setOnFailed(event -> {
-            setLoading(false);
-            LOGGER.error("Không thể tải KIZ mapping", task.getException());
-            AlertService.showError(task.getException().getMessage());
         });
         AppTaskExecutor.execute(task);
     }
 
-    private void setSubjects(List<String> subjects) {
-        subjectMenuButton.getItems().clear();
-        subjectCheckBoxes.clear();
-        selectedSubjects.clear();
-        VBox menuContent = new VBox(2);
-        if (subjects != null) {
-            for (String subject : subjects) {
-                CheckBox item = new CheckBox(subject);
-                item.getStyleClass().add("fbo-category-check");
-                item.selectedProperty().addListener((obs, wasSelected, selected) -> {
-                    if (selected) {
-                        selectedSubjects.add(subject);
-                    } else {
-                        selectedSubjects.remove(subject);
-                    }
-                    updateSubjectText();
-                    updateClearFiltersVisibility();
-                    if (!suppressSearchEvents) {
-                        reload();
-                    }
-                });
-                subjectCheckBoxes.add(item);
-                menuContent.getChildren().add(item);
-            }
-        }
-        ScrollPane scrollPane = new ScrollPane(menuContent);
-        scrollPane.setFitToWidth(true);
-        scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-        scrollPane.setPrefViewportWidth(220);
-        scrollPane.setPrefViewportHeight(Math.min(SUBJECT_VISIBLE_ROWS, Math.max(1, subjectCheckBoxes.size())) * SUBJECT_ROW_HEIGHT);
-        CustomMenuItem menuItem = new CustomMenuItem(scrollPane, false);
-        subjectMenuButton.getItems().setAll(menuItem);
-        updateSubjectText();
-        updateClearFiltersVisibility();
-    }
-
-    private void setGenders(List<String> genders) {
-        genderMenuButton.getItems().clear();
-        genderCheckBoxes.clear();
-        selectedGenders.clear();
-        VBox menuContent = new VBox(2);
-        if (genders != null) {
-            for (String gender : genders) {
-                CheckBox item = new CheckBox(gender);
-                item.getStyleClass().add("fbo-category-check");
-                item.selectedProperty().addListener((obs, wasSelected, selected) -> {
-                    if (selected) {
-                        selectedGenders.add(gender);
-                    } else {
-                        selectedGenders.remove(gender);
-                    }
-                    updateGenderText();
-                    updateClearFiltersVisibility();
-                    if (!suppressSearchEvents) {
-                        reload();
-                    }
-                });
-                genderCheckBoxes.add(item);
-                menuContent.getChildren().add(item);
-            }
-        }
-        ScrollPane scrollPane = new ScrollPane(menuContent);
-        scrollPane.setFitToWidth(true);
-        scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-        scrollPane.setPrefViewportWidth(160);
-        scrollPane.setPrefViewportHeight(Math.min(SUBJECT_VISIBLE_ROWS, Math.max(1, genderCheckBoxes.size())) * SUBJECT_ROW_HEIGHT);
-        CustomMenuItem menuItem = new CustomMenuItem(scrollPane, false);
-        genderMenuButton.getItems().setAll(menuItem);
-        updateGenderText();
-        updateClearFiltersVisibility();
-    }
-
-    private void configureColumns() {
-        imageColumn.setCellValueFactory(cell -> new SimpleObjectProperty<>(cell.getValue()));
-        imageColumn.setCellFactory(column -> new ImageCell());
-
-        detailsColumn.setCellValueFactory(cell -> new SimpleObjectProperty<>(cell.getValue()));
-        detailsColumn.setCellFactory(column -> new ProductDetailsCell());
-
-        categoryIdColumn.setCellValueFactory(cell -> new SimpleObjectProperty<>(cell.getValue()));
-        categoryIdColumn.setCellFactory(column -> new CategoryCell());
-    }
-
-    private void saveRow(KizMappingRow row, Integer categoryId) {
-        if (shop == null) {
-            return;
-        }
-        KizMappingSearchCriteria criteria = currentCriteria(0, 0);
-        boolean bulkSave = categoryId != null && hasActiveFilters();
-        Task<Integer> task = new Task<>() {
-            @Override
-            protected Integer call() {
-                if (bulkSave) {
-                    return repository.saveMappingForFilter(criteria, categoryId);
+    private void showMapping(ZnackGtinInventorySummary summary) {
+        if (shop == null || summary == null) return;
+        int shopId = shop.getId();
+        long generation = shopGeneration;
+        Task<MappingDialogData> task = new Task<>() {
+            @Override protected MappingDialogData call() {
+                List<String> subjects = mappingRepository.findSubjects(shopId);
+                Map<String, SelectionState> state = loadState(shopId, summary.gtin());
+                Map<String, List<String>> gendersBySubject = new LinkedHashMap<>();
+                Map<String, Map<String, String>> ownersBySubject = new LinkedHashMap<>();
+                for (String subject : subjects) {
+                    gendersBySubject.put(subject, mappingRepository.findGendersForSubject(shopId, subject));
+                    ownersBySubject.put(subject, mappingRepository.findOwnersForSubject(shopId, subject));
                 }
-                repository.saveMapping(criteria.shopId(), row.product().nmId(), categoryId);
-                return 1;
+                return new MappingDialogData(subjects, state, gendersBySubject, ownersBySubject);
             }
         };
-        row.setSaveState(1);
+        setLoading(true);
         task.setOnSucceeded(event -> {
-            if (shop == null || shop.getId() != criteria.shopId()) {
-                return;
-            }
-            if (bulkSave) {
-                rows.stream()
-                        .filter(visibleRow -> matchesCurrentFilters(visibleRow.product()))
-                        .forEach(visibleRow -> visibleRow.setCategoryId(categoryId));
-            } else {
-                row.setCategoryId(categoryId);
-            }
-            row.setSaveState(2);
-            productTable.refresh();
-            if (bulkSave) {
-                reload();
-            }
+            if (generation != shopGeneration || shop == null || shop.getId() != shopId) return;
+            setLoading(false);
+            openMappingDialog(shopId, summary, task.getValue());
         });
         task.setOnFailed(event -> {
-            row.setSaveState(-1);
-            productTable.refresh();
-            AlertService.showError(task.getException().getMessage());
+            if (generation != shopGeneration) return;
+            setLoading(false);
+            AlertService.showError(friendlyError(task.getException()));
         });
         AppTaskExecutor.execute(task);
     }
 
-    private Integer displayIdForCategoryId(Integer categoryId) {
-        if (categoryId == null) {
+    private void openMappingDialog(int shopId, ZnackGtinInventorySummary summary, MappingDialogData data) {
+        Dialog<List<ZnackGtinMappingSelection>> dialog = new Dialog<>();
+        AlertService.applyTheme(dialog);
+        dialog.setTitle(tr("kiz_mapping.mapping.title"));
+        ButtonType save = new ButtonType(tr("common.save"), ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().setAll(save, ButtonType.CANCEL);
+
+        ListView<String> subjects = new ListView<>();
+        subjects.getItems().setAll(data.subjects());
+        VBox genders = new VBox(8);
+        Map<String, SelectionState> state = data.state();
+        subjects.getSelectionModel().selectedItemProperty().addListener((o, old, subject) ->
+                renderGenders(summary.gtin(), subject, genders, state, data));
+        if (!subjects.getItems().isEmpty()) subjects.getSelectionModel().selectFirst();
+        SplitPane content = new SplitPane(subjects, new ScrollPane(genders));
+        content.setPrefSize(720, 460);
+        dialog.getDialogPane().setContent(content);
+        dialog.setResultConverter(button -> button == save ? flatten(state) : null);
+        dialog.showAndWait().ifPresent(selections -> runTask(() -> {
+            mappingRepository.replaceRulesForGtin(shopId, summary.gtin(), selections);
             return null;
-        }
-        return categoryDisplayIdsById.getOrDefault(categoryId, categoryId);
+        }));
     }
 
-    private Integer categoryIdForDisplayId(Integer displayId) {
-        if (displayId == null) {
+    private Map<String, SelectionState> loadState(int shopId, String gtin) {
+        Map<String, SelectionState> result = new LinkedHashMap<>();
+        for (ZnackGtinMappingRule rule : mappingRepository.findRulesForGtin(shopId, gtin)) {
+            SelectionState value = result.computeIfAbsent(rule.subjectName(), ignored -> new SelectionState(false));
+            value.wildcard = rule.wildcardGender();
+            if (!rule.wildcardGender()) value.genders.add(rule.genderValue());
+        }
+        return result;
+    }
+
+    private void renderGenders(String gtin, String subject, VBox box, Map<String, SelectionState> state,
+                               MappingDialogData data) {
+        box.getChildren().clear();
+        if (subject == null) return;
+        Map<String, String> owners = data.ownersBySubject().getOrDefault(subject, Map.of());
+        List<String> availableGenders = data.gendersBySubject().getOrDefault(subject, List.of());
+        Set<String> otherOwners = owners.values().stream().filter(owner -> owner != null && !owner.equals(gtin))
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        SelectionState selection = state.get(subject);
+        if (selection == null) {
+            selection = new SelectionState(otherOwners.isEmpty());
+            if (!otherOwners.isEmpty()) {
+                for (String gender : availableGenders) {
+                    if (!owners.containsKey(gender) && !owners.containsKey(KizMappingRepository.WILDCARD_GENDER)) {
+                        selection.genders.add(gender);
+                    }
+                }
+            }
+            state.put(subject, selection);
+        }
+        SelectionState activeSelection = selection;
+        CheckBox all = new CheckBox(tr("kiz_mapping.gender.all"));
+        all.setSelected(activeSelection.wildcard);
+        String wildcardOwner = owners.get(KizMappingRepository.WILDCARD_GENDER);
+        all.setDisable(!otherOwners.isEmpty());
+        if (all.isDisabled()) all.setText(all.getText() + " · " + String.join(", ", otherOwners));
+        box.getChildren().add(all);
+        List<CheckBox> genderChecks = new ArrayList<>();
+        for (String gender : availableGenders) {
+            String owner = first(owners.get(gender), wildcardOwner);
+            boolean ownedByOther = owner != null && !owner.equals(gtin);
+            CheckBox check = new CheckBox(displayGender(gender) + (owner != null && !owner.equals(gtin) ? " · " + owner : ""));
+            check.setSelected(activeSelection.wildcard || activeSelection.genders.contains(gender));
+            check.setDisable(activeSelection.wildcard || ownedByOther);
+            check.getProperties().put("ownedByOther", ownedByOther);
+            check.selectedProperty().addListener((o, old, selected) -> {
+                if (selected) activeSelection.genders.add(gender); else activeSelection.genders.remove(gender);
+            });
+            genderChecks.add(check);
+            box.getChildren().add(check);
+        }
+        all.selectedProperty().addListener((o, old, selected) -> {
+            activeSelection.wildcard = selected;
+            if (selected) activeSelection.genders.clear();
+            genderChecks.forEach(check -> {
+                check.setDisable(selected || Boolean.TRUE.equals(check.getProperties().get("ownedByOther")));
+                check.setSelected(selected);
+            });
+        });
+    }
+
+    private void showBuy(ZnackGtinInventorySummary summary) {
+        TextInputDialog dialog = new TextInputDialog("1");
+        AlertService.applyTheme(dialog);
+        dialog.setTitle(tr("kiz_mapping.buy.title"));
+        dialog.setHeaderText(summary.gtin());
+        dialog.setContentText(tr("znack.field.quantity"));
+        dialog.showAndWait().ifPresent(text -> {
+            try {
+                int quantity = Integer.parseInt(text.trim());
+                if (quantity <= 0) {
+                    AlertService.showError(tr("kiz_mapping.buy.positive"));
+                    return;
+                }
+                ZnackRepository currentRepository = znackRepository;
+                ZnackPurchaseCoordinator currentCoordinator = ZnackPurchaseCoordinator.create(currentRepository);
+                Settings currentSettings = currentRepository.getSettings();
+                runTask(() -> {
+                    currentCoordinator.start(currentSettings, summary.gtin(), quantity);
+                    return null;
+                });
+            } catch (NumberFormatException e) {
+                AlertService.showError(tr("kiz_mapping.buy.positive"));
+            }
+        });
+    }
+
+    private void showCirculationData(ZnackGtinInventorySummary summary) {
+        if (znackRepository == null || summary == null) return;
+        ZnackRepository currentRepository = znackRepository;
+        long generation = shopGeneration;
+        Task<Product> task = new Task<>() {
+            @Override protected Product call() {
+                return currentRepository.findProduct(summary.gtin()).orElse(null);
+            }
+        };
+        setLoading(true);
+        task.setOnSucceeded(event -> {
+            if (generation != shopGeneration) return;
+            setLoading(false);
+            Product product = task.getValue();
+            if (product == null) {
+                AlertService.showError(tr("kiz_mapping.error.gtin_missing"));
+                refresh();
+                return;
+            }
+            openCirculationDialog(currentRepository, summary, product);
+        });
+        task.setOnFailed(event -> {
+            if (generation != shopGeneration) return;
+            setLoading(false);
+            AlertService.showError(friendlyError(task.getException()));
+        });
+        AppTaskExecutor.execute(task);
+    }
+
+    private void openCirculationDialog(ZnackRepository currentRepository, ZnackGtinInventorySummary summary,
+                                       Product current) {
+        Dialog<Product> dialog = new Dialog<>();
+        AlertService.applyTheme(dialog);
+        dialog.setTitle(tr("kiz_mapping.circulation.title"));
+        TextField tnVed = new TextField(value(current.tnVed()));
+        tnVed.setPromptText(tr("znack.field.tn_ved"));
+        TextField productionDate = new TextField(value(current.productionDate()));
+        productionDate.setPromptText(tr("znack.field.production_date"));
+        VBox content = new VBox(8, new Label(summary.gtin() + " · " + value(current.productName())), tnVed, productionDate);
+        dialog.getDialogPane().setContent(content);
+        ButtonType save = new ButtonType(tr("common.save"), ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().setAll(save, ButtonType.CANCEL);
+        dialog.setResultConverter(button -> button == save
+                ? new Product(current.gtin(), current.productName(), tnVed.getText(), current.certificateType(),
+                current.certificateNumber(), current.certificateDate(), productionDate.getText()) : null);
+        dialog.showAndWait().ifPresent(product -> runTask(() -> {
+            currentRepository.updateProductMetadata(product);
+            Settings settings = currentRepository.getSettings();
+            ZnackPurchaseCoordinator.create(currentRepository).resumeEligibleIntroductions(settings);
             return null;
-        }
-        return categoryIdsByDisplayId.get(displayId);
+        }));
     }
 
-    private KizMappingSearchCriteria currentCriteria(int limit, int offset) {
-        return new KizMappingSearchCriteria(shop.getId(), searchField.getText(), List.copyOf(selectedSubjects),
-                List.copyOf(selectedGenders), limit, offset);
+    private List<ZnackGtinMappingSelection> flatten(Map<String, SelectionState> state) {
+        List<ZnackGtinMappingSelection> result = new ArrayList<>();
+        state.forEach((subject, selection) -> {
+            if (selection.wildcard) result.add(new ZnackGtinMappingSelection(subject, null, true));
+            else selection.genders.forEach(gender -> result.add(new ZnackGtinMappingSelection(subject, gender, false)));
+        });
+        return result;
     }
 
-    private boolean hasActiveFilters() {
-        return (searchField.getText() != null && !searchField.getText().isBlank())
-                || !selectedSubjects.isEmpty()
-                || !selectedGenders.isEmpty();
+    private void runTask(ThrowingSupplier action) {
+        long generation = shopGeneration;
+        Task<Void> task = new Task<>() {
+            @Override protected Void call() throws Exception { return action.get(); }
+        };
+        setLoading(true);
+        task.setOnSucceeded(e -> {
+            if (generation != shopGeneration) return;
+            setLoading(false);
+            refresh();
+        });
+        task.setOnFailed(e -> {
+            if (generation != shopGeneration) return;
+            setLoading(false);
+            AlertService.showError(friendlyError(task.getException()));
+            refresh();
+        });
+        AppTaskExecutor.execute(task);
     }
 
-    private boolean matchesCurrentFilters(KizMappingProduct product) {
-        if (product == null) {
-            return false;
-        }
-        String query = searchField.getText() == null ? "" : searchField.getText().trim().toLowerCase(java.util.Locale.ROOT);
-        if (!query.isBlank()
-                && !String.valueOf(product.nmId()).contains(query)
-                && !nullToEmpty(product.vendorCode()).toLowerCase(java.util.Locale.ROOT).contains(query)
-                && !nullToEmpty(product.title()).toLowerCase(java.util.Locale.ROOT).contains(query)) {
-            return false;
-        }
-        if (!selectedSubjects.isEmpty() && !selectedSubjects.contains(product.subjectName())) {
-            return false;
-        }
-        return selectedGenders.isEmpty() || selectedGenders.contains(product.gender());
+    private void runBackground(Runnable action) {
+        long generation = shopGeneration;
+        Task<Void> task = new Task<>() {
+            @Override protected Void call() { action.run(); return null; }
+        };
+        task.setOnSucceeded(e -> {
+            if (generation == shopGeneration) refresh();
+        });
+        AppTaskExecutor.execute(task);
     }
 
     private void setLoading(boolean loading) {
         this.loading = loading;
         loadingIndicator.setVisible(loading);
         loadingIndicator.setManaged(loading);
-        loadingLabel.setVisible(loading);
-        loadingLabel.setManaged(loading);
-        updateButtons();
+        refreshButton.setDisable(loading || shop == null);
     }
 
-    private void updateButtons() {
-        // Excel buttons removed
-    }
-
-    private void updateSubjectText() {
-        I18nService i18n = I18nService.getInstance();
-        subjectMenuButton.setText(selectedSubjects.isEmpty()
-                ? i18n.tr("kiz_mapping.subjects")
-                : i18n.tr("kiz_mapping.subjects") + " (" + selectedSubjects.size() + ")");
-    }
-
-    private void updateGenderText() {
-        I18nService i18n = I18nService.getInstance();
-        genderMenuButton.setText(selectedGenders.isEmpty()
-                ? i18n.tr("kiz_mapping.genders")
-                : i18n.tr("kiz_mapping.genders") + " (" + selectedGenders.size() + ")");
-    }
-
-    private void updateClearFiltersVisibility() {
-        boolean hasFilters = hasActiveFilters();
-        clearFiltersButton.setVisible(hasFilters);
-        clearFiltersButton.setManaged(hasFilters);
-    }
-
-    private void updateEmptyState() {
-        boolean empty = rows.isEmpty() && !loading;
+    private void updateEmpty() {
+        boolean empty = gtinTable.getItems().isEmpty();
         emptyStateLabel.setVisible(empty);
         emptyStateLabel.setManaged(empty);
     }
 
-    private String nullToEmpty(String value) {
+    private String displayGender(String gender) {
+        return KizMappingRepository.UNSPECIFIED_GENDER.equals(gender) ? tr("kiz_mapping.gender.unspecified") : gender;
+    }
+
+    private static String first(String first, String second) {
+        return first == null || first.isBlank() ? value(second) : first;
+    }
+
+    private static String value(String value) {
         return value == null ? "" : value;
     }
 
-    private final class ProductDetailsCell extends TableCell<KizMappingRow, KizMappingRow> {
-        private final VBox vbox = new VBox(4);
-        private final Label titleLabel = new Label();
-        private final Label metaLabel = new Label();
-
-        ProductDetailsCell() {
-            titleLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: -text-primary;");
-            metaLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 11px; -fx-text-fill: -text-muted;");
-            vbox.getChildren().addAll(titleLabel, metaLabel);
-            vbox.setAlignment(Pos.CENTER_LEFT);
-            vbox.setPadding(new javafx.geometry.Insets(4, 0, 4, 0));
-        }
-
-        @Override
-        protected void updateItem(KizMappingRow row, boolean empty) {
-            super.updateItem(row, empty);
-            if (empty || row == null || row.product() == null) {
-                setGraphic(null);
-                return;
-            }
-            KizMappingProduct p = row.product();
-            titleLabel.setText(nullToEmpty(p.title()));
-
-            String brand = nullToEmpty(p.brand());
-            String vendorCode = nullToEmpty(p.vendorCode());
-            String size = nullToEmpty(p.size());
-
-            StringBuilder metaBuilder = new StringBuilder();
-            if (!brand.isEmpty()) {
-                metaBuilder.append(brand).append(" • ");
-            }
-            metaBuilder.append(vendorCode);
-            if (!size.isEmpty()) {
-                metaBuilder.append(" • Size: ").append(size);
-            }
-            metaLabel.setText(metaBuilder.toString());
-
-            setGraphic(vbox);
-        }
+    private String tr(String key) {
+        return I18nService.getInstance().tr(key);
     }
 
-    private final class ImageCell extends TableCell<KizMappingRow, KizMappingRow> {
-        private final ImageView imageView = new ImageView();
-        private final Region placeholder = new Region();
-        private final StackPane container = new StackPane(placeholder, imageView);
-        private String currentUrl;
-
-        ImageCell() {
-            placeholder.getStyleClass().add("fbo-image-placeholder");
-            placeholder.setMinSize(IMAGE_WIDTH, IMAGE_HEIGHT);
-            placeholder.setPrefSize(IMAGE_WIDTH, IMAGE_HEIGHT);
-            imageView.setFitWidth(IMAGE_WIDTH);
-            imageView.setFitHeight(IMAGE_HEIGHT);
-            imageView.setPreserveRatio(true);
-            container.setAlignment(Pos.CENTER);
-        }
-
-        @Override
-        protected void updateItem(KizMappingRow row, boolean empty) {
-            super.updateItem(row, empty);
-            if (empty || row == null) {
-                currentUrl = null;
-                imageView.setImage(null);
-                setGraphic(null);
-                return;
-            }
-            currentUrl = row.product().imageUrl();
-            imageView.setImage(null);
-            imageView.setVisible(false);
-            placeholder.setVisible(true);
-            setGraphic(container);
-            if (currentUrl == null || currentUrl.isBlank()) {
-                return;
-            }
-            String requestedUrl = currentUrl;
-            imageService.loadImage(requestedUrl).whenComplete((bytes, error) ->
-                    Platform.runLater(() -> {
-                        if (bytes == null || bytes.length == 0 || currentUrl == null || !currentUrl.equals(requestedUrl)) {
-                            return;
-                        }
-                        imageView.setImage(new Image(new ByteArrayInputStream(bytes)));
-                        imageView.setVisible(true);
-                        placeholder.setVisible(false);
-                    }));
-        }
-    }
-
-    private final class CategoryCell extends TableCell<KizMappingRow, KizMappingRow> {
-        private final TextField field = new TextField();
-        private KizMappingRow currentRow;
-        private boolean updating;
-
-        CategoryCell() {
-            field.getStyleClass().add("fbo-quantity-field");
-            field.setPrefWidth(58);
-            field.setAlignment(Pos.CENTER);
-            field.setOnAction(event -> commit());
-            field.focusedProperty().addListener((obs, wasFocused, focused) -> {
-                if (!focused) {
-                    commit();
-                }
+    private String friendlyError(Throwable error) {
+        if (error instanceof CryptoProException crypto) {
+            return tr("znack.signature.error." + switch (crypto.code()) {
+                case CRYPTOPRO_MISSING -> "cryptopro_missing";
+                case TOKEN_OR_CERTIFICATE_ABSENT -> "certificate_absent";
+                case PRIVATE_KEY_UNAVAILABLE -> "private_key";
+                case CERTIFICATE_EXPIRED -> "expired";
+                case CANCELLED -> "cancelled";
+                case TIMEOUT -> "timeout";
+                case INVALID_SIGNATURE_OUTPUT -> "invalid_output";
+                default -> "failed";
             });
-            field.textProperty().addListener((obs, oldValue, newValue) -> {
-                if (updating) {
+        }
+        if (ZnackSafety.UNVERIFIED_SIGNATURE.equals(error.getMessage())) return tr("znack.signature.not_verified");
+        if (ZnackSafety.MISSING_SHOP_CONFIGURATION.equals(error.getMessage())) return tr("znack.error.shop_configuration");
+        return error.getMessage();
+    }
+
+    private String localizeStatus(String status) {
+        return status == null || status.isBlank() ? "" : I18nService.getInstance()
+                .tr("znack.status_value." + status.toLowerCase(java.util.Locale.ROOT), status);
+    }
+
+    private TableCell<ZnackGtinInventorySummary, String> statusCell(String activeClass, String emptyClass) {
+        return new TableCell<>() {
+            private final Label chip = new Label();
+            @Override protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null || item.isBlank()) {
+                    setGraphic(null);
                     return;
                 }
-                String digits = newValue == null ? "" : newValue.replaceAll("\\D", "");
-                if (!digits.equals(newValue)) {
-                    field.setText(digits);
-                }
-            });
+                chip.setText(item);
+                chip.getStyleClass().setAll("badge", item.equals(tr("kiz_mapping.status.unmapped")) ? emptyClass : activeClass);
+                setGraphic(chip);
+            }
+        };
+    }
+
+    private final class ActionsCell extends TableCell<ZnackGtinInventorySummary, ZnackGtinInventorySummary> {
+        private final Button mapping = new Button();
+        private final Button buy = new Button();
+        private final Button circulation = new Button();
+        private final HBox box = new HBox(6, mapping, buy, circulation);
+
+        private ActionsCell() {
+            mapping.setText(tr("kiz_mapping.action.mapping"));
+            buy.setText(tr("kiz_mapping.action.buy"));
+            circulation.setText(tr("kiz_mapping.action.circulation"));
+            mapping.setOnAction(e -> showMapping(getItem()));
+            buy.setOnAction(e -> showBuy(getItem()));
+            circulation.setOnAction(e -> showCirculationData(getItem()));
         }
 
-        @Override
-        protected void updateItem(KizMappingRow row, boolean empty) {
-            super.updateItem(row, empty);
-            currentRow = row;
-            if (empty || row == null) {
-                setGraphic(null);
-                return;
-            }
-            updating = true;
-            Integer displayId = displayIdForCategoryId(row.getCategoryId());
-            field.setText(displayId == null ? "" : String.valueOf(displayId));
-            updating = false;
-            setGraphic(field);
+        @Override protected void updateItem(ZnackGtinInventorySummary item, boolean empty) {
+            super.updateItem(item, empty);
+            setGraphic(empty || item == null ? null : box);
         }
+    }
 
-        private void commit() {
-            if (currentRow == null || updating) {
-                return;
-            }
-            Integer displayId = parse(field.getText());
-            Integer categoryId = categoryIdForDisplayId(displayId);
-            if (displayId != null && categoryId == null) {
-                AlertService.showError("Không tồn tại KIZ ID trong shop hiện tại: " + displayId);
-                productTable.refresh();
-                return;
-            }
-            if (java.util.Objects.equals(categoryId, currentRow.getCategoryId())) {
-                return;
-            }
-            saveRow(currentRow, categoryId);
-        }
+    private static final class SelectionState {
+        private boolean wildcard;
+        private final Set<String> genders = new LinkedHashSet<>();
 
-        private Integer parse(String value) {
-            if (value == null || value.isBlank()) {
-                return null;
-            }
-            return Integer.parseInt(value);
+        private SelectionState(boolean wildcard) {
+            this.wildcard = wildcard;
         }
+    }
+
+    private record MappingDialogData(List<String> subjects,
+                                     Map<String, SelectionState> state,
+                                     Map<String, List<String>> gendersBySubject,
+                                     Map<String, Map<String, String>> ownersBySubject) {
+    }
+
+    @FunctionalInterface private interface ThrowingSupplier {
+        Void get() throws Exception;
+    }
+
+    private void syncProducts(ZnackRepository repository) throws Exception {
+        Settings settings = repository.getSettings();
+        ZnackSignatureProvider signer = settings.signerCertificate() == null || settings.signerCertificate().isBlank()
+                ? ZnackSignatureProvider.unconfigured()
+                : new CryptoProSignatureProvider(settings.cryptcpPath(), settings.signerCertificate(),
+                Duration.ofSeconds(settings.resolvedCryptoProTimeoutSeconds()));
+        ZnackApiClient api = new ZnackApiClient();
+        new ZnackProductService(api, new ZnackAuthService(api, signer), repository).sync(settings);
+        ZnackPurchaseCoordinator.create(repository).resumeEligibleIntroductions(settings);
     }
 }

@@ -1,11 +1,10 @@
 package com.tuandev.fbsbarcode.ui;
 
 import com.tuandev.fbsbarcode.shared.FxmlViewLoader;
+import com.tuandev.fbsbarcode.config.Database;
+import com.tuandev.fbsbarcode.models.Shop;
 import com.tuandev.fbsbarcode.ui.history.PrintHistoryController;
 import com.tuandev.fbsbarcode.ui.dashboard.DashboardController;
-import com.tuandev.fbsbarcode.ui.kiz.CategoryDialogController;
-import com.tuandev.fbsbarcode.ui.kiz.CategoryItemController;
-import com.tuandev.fbsbarcode.ui.kiz.KizPanelController;
 import com.tuandev.fbsbarcode.ui.kizmapping.KizMappingController;
 import com.tuandev.fbsbarcode.ui.packing.PackingController;
 import com.tuandev.fbsbarcode.ui.print.PrintTemplateDesignerController;
@@ -15,15 +14,22 @@ import com.tuandev.fbsbarcode.ui.supply.SupplyDetailController;
 import com.tuandev.fbsbarcode.ui.supply.SupplyListController;
 import com.tuandev.fbsbarcode.ui.workspace.HomeController;
 import com.tuandev.fbsbarcode.ui.workspace.WorkspaceHeaderController;
+import com.tuandev.fbsbarcode.ui.znack.ZnackAutomationController;
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.TextField;
+import javafx.scene.layout.VBox;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.Statement;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -49,6 +55,10 @@ class FxmlSmokeTest {
             Platform.runLater(latch::countDown);
             assertTrue(latch.await(5, TimeUnit.SECONDS));
         }
+        Database.initDatabase();
+        try (Connection connection = Database.getConnection(); Statement statement = connection.createStatement()) {
+            statement.execute("INSERT OR IGNORE INTO shops(id,name,api_key) VALUES(1,'Shop A','a')");
+        }
     }
 
     @AfterAll
@@ -66,12 +76,10 @@ class FxmlSmokeTest {
         assertLoads(SupplyDetailController.class, "supply-detail-view.fxml");
         assertLoads(PackingController.class, "packing-view.fxml");
         assertLoads(PrintHistoryController.class, "print-history-view.fxml");
-        assertLoads(KizPanelController.class, "kiz-panel-view.fxml");
         assertLoads(KizMappingController.class, "kiz-mapping-view.fxml");
+        assertLoads(ZnackAutomationController.class, "znack-automation-view.fxml");
         assertLoads(PrintTemplateDesignerController.class, "print-template-designer-view.fxml");
         assertLoads(ShopDialogController.class, "shop-dialog.fxml");
-        assertLoads(CategoryDialogController.class, "category-dialog.fxml");
-        assertLoads(CategoryItemController.class, "category-item.fxml");
     }
 
     @Test
@@ -85,7 +93,8 @@ class FxmlSmokeTest {
                 Parent root = FxmlViewLoader.load(loader);
                 found.set(root.lookup("#dashboardButton") != null
                         && root.lookup("#packingButton") != null
-                        && root.lookup("#kizMappingButton") != null);
+                        && root.lookup("#kizMappingButton") != null
+                        && root.lookup("#znackAutomationButton") != null);
             } finally {
                 latch.countDown();
             }
@@ -93,6 +102,76 @@ class FxmlSmokeTest {
 
         assertTrue(latch.await(5, TimeUnit.SECONDS));
         assertTrue(found.get(), "Sidebar should contain the primary navigation buttons");
+    }
+
+    @Test
+    void supplyDetailShouldExposeZnackGtinInventoryPane() throws Exception {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicBoolean valid = new AtomicBoolean(false);
+        Platform.runLater(() -> {
+            try {
+                FXMLLoader loader = FxmlViewLoader.loader(SupplyDetailController.class, "supply-detail-view.fxml");
+                FxmlViewLoader.load(loader);
+                valid.set(loader.getNamespace().get("gtinInventoryPane") != null
+                        && loader.getNamespace().get("gtinInventoryList") != null
+                        && loader.getNamespace().get("gtinInventoryRefreshButton") != null
+                        && loader.getNamespace().get("gtinInventoryLoading") != null
+                        && loader.getNamespace().get("gtinInventoryEmptyLabel") != null);
+            } finally {
+                latch.countDown();
+            }
+        });
+
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+        assertTrue(valid.get(), "Supply detail should expose the Znack GTIN inventory pane");
+    }
+
+    @Test
+    void znackSettingsShouldExposeOnlyBasicWorkflowAndEnableSaveAfterChange() throws Exception {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicBoolean valid = new AtomicBoolean(false);
+        Platform.runLater(() -> {
+            try {
+                FXMLLoader loader = FxmlViewLoader.loader(ZnackAutomationController.class, "znack-automation-view.fxml");
+                FxmlViewLoader.load(loader);
+                ZnackAutomationController controller = loader.getController();
+                controller.setShop(new Shop(1, "Shop A", "a"));
+                Button save = (Button) loader.getNamespace().get("saveButton");
+                Button omsIdHelp = (Button) loader.getNamespace().get("omsIdHelpButton");
+                Button omsConnectionHelp = (Button) loader.getNamespace().get("omsConnectionHelpButton");
+                Button closeOmsHelp = (Button) loader.getNamespace().get("closeOmsHelpButton");
+                VBox omsHelpPane = (VBox) loader.getNamespace().get("omsHelpPane");
+                Label omsHelpTitle = (Label) loader.getNamespace().get("omsHelpTitleLabel");
+                TextField omsConnection = (TextField) loader.getNamespace().get("omsConnectionField");
+                boolean initiallyDisabled = save.isDisabled();
+                boolean helpInitiallyHidden = !omsHelpPane.isVisible() && !omsHelpPane.isManaged();
+                omsIdHelp.fire();
+                boolean omsIdHelpShown = omsHelpPane.isVisible() && omsHelpPane.isManaged()
+                        && omsHelpTitle.getText().contains("omsId");
+                omsConnectionHelp.fire();
+                boolean omsConnectionHelpShown = omsHelpPane.isVisible()
+                        && omsHelpTitle.getText().contains("omsConnection");
+                closeOmsHelp.fire();
+                boolean helpClosed = !omsHelpPane.isVisible() && !omsHelpPane.isManaged();
+                omsConnection.setText("changed-connection");
+                valid.set(loader.getNamespace().get("basicSettingsCard") != null
+                        && loader.getNamespace().get("advancedSettingsPane") == null
+                        && loader.getNamespace().get("omsConnectionField") != null
+                        && loader.getNamespace().get("signatureCertificateCombo") != null
+                        && loader.getNamespace().get("refreshCertificatesButton") != null
+                        && loader.getNamespace().get("testSignatureButton") != null
+                        && loader.getNamespace().get("documentNumberField") != null
+                        && loader.getNamespace().get("trueApiUrlField") == null
+                        && loader.getNamespace().get("omsIdField") != null
+                        && helpInitiallyHidden && omsIdHelpShown && omsConnectionHelpShown && helpClosed
+                        && loader.getNamespace().get("authenticateButton") == null
+                        && initiallyDisabled && !save.isDisabled());
+            } finally {
+                latch.countDown();
+            }
+        });
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+        assertTrue(valid.get());
     }
 
     private void assertLoads(Class<?> resourceOwner, String resourceName) throws Exception {
