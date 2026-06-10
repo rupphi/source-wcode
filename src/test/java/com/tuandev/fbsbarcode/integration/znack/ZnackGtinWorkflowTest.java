@@ -425,6 +425,41 @@ class ZnackGtinWorkflowTest {
         assertTrue(repository.findLatestDocument(order).isEmpty());
     }
 
+    @Test void legacyHttp422IntroductionIsRetriedOnceAfterEndpointCorrection() throws Exception {
+        Settings base = testedSettings();
+        Settings auto = new Settings(base.trueApiBaseUrl(), base.suzBaseUrl(), base.omsId(), base.omsConnection(),
+                base.participantInn(), base.producerInn(), base.ownerInn(), base.signerExecutable(),
+                base.signerCertificate(), base.signerArgumentsJson(), "DOC-1", "20.06.2024", "", true,
+                base.certificateListExecutable(), base.certificateListArgumentsJson(), base.certificateMetadataJson(),
+                base.signerTestedAt(), base.certmgrPath(), base.cryptcpPath(), base.csptestPath(),
+                base.cryptoProTimeoutSeconds(), "", "CONFORMITY_DECLARATION");
+        repository.updateProductMetadata(new Product(A, "A", "6201000000", null, null, null, null));
+        long order = repository.createDraft(A, 1);
+        repository.insertCodes(order, A, new DownloadedCodes(List.of("legacy-http-422"), "block"));
+        long pipeline = repository.createPipeline(A, 1);
+        repository.updatePipeline(pipeline, order, PurchaseStage.FAILED, "Znack API request failed (HTTP 422)");
+        long document = repository.createDocument(order, "{}");
+        repository.updateDocument(document, null, "FAILED", "Znack API request failed (HTTP 422)");
+        AtomicInteger submissions = new AtomicInteger();
+        ZnackIntroductionService introduction = new ZnackIntroductionService(null, null, null, repository) {
+            @Override public long submit(Settings ignored, KizOrder ignoredOrder, Product ignoredProduct,
+                                         List<KizCode> ignoredCodes) {
+                submissions.incrementAndGet();
+                return 2;
+            }
+        };
+        ZnackPurchaseCoordinator coordinator = new ZnackPurchaseCoordinator(repository, null, null, introduction) {
+            @Override void schedule(long ignoredPipeline) {
+            }
+        };
+
+        coordinator.resumeEligibleIntroductions(auto);
+        coordinator.resumeEligibleIntroductions(auto);
+
+        assertEquals(1, submissions.get());
+        assertEquals(PurchaseStage.POLLING_INTRODUCTION, repository.findPipeline(pipeline).orElseThrow().stage());
+    }
+
     @Test void resumedIntroductionKeepsWaitingStageAfterReadinessNetworkFailure() throws Exception {
         Settings base = testedSettings();
         Settings auto = new Settings(base.trueApiBaseUrl(), base.suzBaseUrl(), base.omsId(), base.omsConnection(),

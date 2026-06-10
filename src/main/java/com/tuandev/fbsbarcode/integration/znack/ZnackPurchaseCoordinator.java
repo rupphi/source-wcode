@@ -117,7 +117,9 @@ public class ZnackPurchaseCoordinator {
         } catch (Exception unavailable) {
             return;
         }
-        for (ZnackPurchasePipelineState pipeline : repository.findSkippedIntroductionPipelines()) {
+        List<ZnackPurchasePipelineState> candidates = new java.util.ArrayList<>(repository.findSkippedIntroductionPipelines());
+        candidates.addAll(repository.findLegacyRejectedIntroductionPipelines());
+        for (ZnackPurchasePipelineState pipeline : candidates) {
             Product product = repository.findProducts().stream()
                     .filter(item -> item.gtin().equals(pipeline.gtin()))
                     .findFirst().orElse(null);
@@ -176,7 +178,7 @@ public class ZnackPurchaseCoordinator {
                 } else if (current != PurchaseStage.CREATING_ORDER && current != PurchaseStage.FAILED) {
                     repository.updatePipeline(pipelineId, null, PurchaseStage.FAILED, e.getMessage());
                 }
-                repository.log("PURCHASE_PIPELINE", pipeline.gtin(), "ERROR", e.getMessage(), null);
+                repository.log("PURCHASE_PIPELINE", pipeline.gtin(), "ERROR", e.getMessage(), httpStatus(e));
                 throw e;
             }
         } finally {
@@ -286,6 +288,11 @@ public class ZnackPurchaseCoordinator {
                 repository.updatePipeline(pipeline.id(), order.id(), PurchaseStage.POLLING_INTRODUCTION, null);
                 return;
             }
+            if ("FAILED".equals(existing.status()) && repository.latestDocumentIsLegacyHttpRejection(order.id())) {
+                existing = null;
+            }
+        }
+        if (existing != null) {
             String error = "Introduction submission result is ambiguous; automatic retry is blocked.";
             repository.updatePipeline(pipeline.id(), order.id(), PurchaseStage.FAILED, error);
             throw new IllegalStateException(error);
@@ -342,5 +349,9 @@ public class ZnackPurchaseCoordinator {
 
     private String pipelineKey(long pipelineId) {
         return repository.shop().shopId() + ":" + pipelineId;
+    }
+
+    private Integer httpStatus(Exception error) {
+        return error instanceof ZnackApiClient.ZnackApiException apiError ? apiError.statusCode() : null;
     }
 }

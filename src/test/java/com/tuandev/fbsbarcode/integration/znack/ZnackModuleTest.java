@@ -346,6 +346,26 @@ class ZnackModuleTest {
         } finally { server.stop(0); }
     }
 
+    @Test void documentCreationUsesTrueApiPath() throws Exception {
+        AtomicReference<String> path=new AtomicReference<>(),authorization=new AtomicReference<>();
+        HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/api/v3/true-api/lk/documents/create",exchange->{
+            path.set(exchange.getRequestURI().toString());
+            authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            respond(exchange,"{\"uuid\":\"document-uuid\"}");
+        });
+        server.start();
+        try {
+            String base="http://127.0.0.1:"+server.getAddress().getPort()+"/api/v3/true-api";
+
+            JsonObject response=new ZnackApiClient().createDocument(base,"true-api-token",new JsonObject());
+
+            assertEquals("/api/v3/true-api/lk/documents/create?pg=lp",path.get());
+            assertEquals("Bearer true-api-token",authorization.get());
+            assertEquals("document-uuid",response.get("uuid").getAsString());
+        } finally { server.stop(0); }
+    }
+
     @Test void cisesInfoReturnsStructuredNotFoundBodyForReadinessPolling() throws Exception {
         HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
         server.createContext("/api/v3/true-api/cises/info",exchange->{
@@ -580,7 +600,7 @@ class ZnackModuleTest {
         repository.insertCodes(orderId,"04601234567890",new DownloadedCodes(
                 List.of(normalizedCis+"\u001D91ABCD\u001D92signature"),"block"));
         AtomicReference<JsonObject> request=new AtomicReference<>();
-        ZnackApiClient api=new ZnackApiClient(){@Override public JsonObject createDocument(String base,String token,JsonObject body){request.set(body);JsonObject response=new JsonObject();response.addProperty("document_id","doc");return response;}};
+        ZnackApiClient api=new ZnackApiClient(){@Override public JsonObject createDocument(String base,String token,JsonObject body){request.set(body);JsonObject response=new JsonObject();response.addProperty("uuid","doc");return response;}};
         ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
             @Override public String trueApiToken(Settings s){return "token";}
             @Override public String resolvedParticipantInn(Settings s){return "7701234567";}
@@ -600,6 +620,30 @@ class ZnackModuleTest {
         assertEquals("20.06.2024",certificate.get("certificate_date").getAsString());
         assertEquals("CONFORMITY_DECLARATION",certificate.get("certificate_type").getAsString());
         assertFalse(certificate.has("certificate_expiration_date"));
+        assertEquals("doc",repository.findLatestDocument(orderId).orElseThrow().externalDocumentId());
+    }
+
+    @Test void definitiveIntroductionApiRejectionIsNotMarkedAsAmbiguous() {
+        ZnackRepository repository=repository(1,"Shop A");
+        long orderId=orderWithCodes(repository);
+        ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonObject createDocument(String base,String token,JsonObject body)throws java.io.IOException{
+                throw new ZnackApiClient.ZnackApiException("Znack API request failed",422,
+                        "{\"error\":\"document unavailable\"}");
+            }
+        };
+        ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+            @Override public String trueApiToken(Settings s){return "token";}
+            @Override public String resolvedParticipantInn(Settings s){return "7701234567";}
+        };
+
+        assertThrows(ZnackApiClient.ZnackApiException.class,()->new ZnackIntroductionService(
+                api,auth,testSigner(),repository).submit(
+                settingsWithDocument("",true,"DOC-1","20.06.2024","20.06.2029"),
+                repository.findOrder(orderId).orElseThrow(),repository.findProducts().getFirst(),
+                repository.findCodes(orderId)));
+
+        assertEquals("REJECTED",repository.findLatestDocument(orderId).orElseThrow().status());
     }
 
     @Test void introductionSigningFailureDoesNotCreateBlockingDocument() {

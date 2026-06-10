@@ -41,7 +41,7 @@ public class ZnackApiClient {
     public JsonElement codes(String base,String token,String omsId,String orderId,int quantity,String gtin)throws IOException{
         return suzGet(base,"/api/v3/codes?omsId="+url(omsId)+"&orderId="+url(orderId)+"&quantity="+quantity+"&gtin="+url(gtin),token);
     }
-    public JsonObject createDocument(String base,String token,JsonObject body)throws IOException{return post(apiRoot(base),"/api/v3/lk/documents/create?pg=lp",token,body).getAsJsonObject();}
+    public JsonObject createDocument(String base,String token,JsonObject body)throws IOException{return post(trueApiBase(base,3),"/lk/documents/create?pg=lp",token,body).getAsJsonObject();}
     public JsonElement document(String base,String token,String documentId)throws IOException{
         return get(trueApiBase(base,4),"/doc/"+url(documentId)+"/info?pg=lp",token);
     }
