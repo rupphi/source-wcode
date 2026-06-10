@@ -22,7 +22,7 @@ public class ZnackProductService {
             JsonArray array=response.isJsonArray()?response.getAsJsonArray():response.getAsJsonObject().getAsJsonArray("results");
             if(response.isJsonObject()&&response.getAsJsonObject().has("total")&&!response.getAsJsonObject().get("total").isJsonNull())total=response.getAsJsonObject().get("total").getAsInt();
             if(array!=null)for(JsonElement e:array){JsonObject o=e.getAsJsonObject();String gtin=text(o,"gtin","productGtin");if(!gtin.isBlank()){String normalized=GtinNormalizer.normalize(gtin);if(GtinNormalizer.isTechnicalRange(normalized)){technical++;continue;}byGtin.put(normalized,new Product(
-                    normalized,text(o,"productName","name"),text(o,"tnVed","tnved","tnvedCode","tnved_code"),
+                    normalized,text(o,"productName","name"),tnVed(o),
                     text(o,"certificateType","certificate_type"),text(o,"certificateNumber","certificate_number"),
                     text(o,"certificateDate","certificate_date"),text(o,"productionDate","production_date"),
                     bool(o,"goodMarkFlag","good_mark_flag"),bool(o,"goodTurnFlag","good_turn_flag"),
@@ -50,7 +50,7 @@ public class ZnackProductService {
                     if(!element.isJsonObject())continue;
                     JsonObject card=element.getAsJsonObject();
                     String name=text(card,"good_name","productName","name");
-                    String tnVed=text(card,"tnved","tnVed","tnvedCode","tnved_code");
+                    String tnVed=tnVed(card);
                     JsonArray identifiers=array(card,"identified_by");
                     if(identifiers==null)continue;
                     for(JsonElement identifier:identifiers){
@@ -86,6 +86,30 @@ public class ZnackProductService {
     }
     private String first(String preferred,String fallback){return preferred==null||preferred.isBlank()||"-".equals(preferred.trim())?fallback:preferred;}
     private Boolean first(Boolean preferred,Boolean fallback){return preferred==null?fallback:preferred;}
+    private String tnVed(JsonObject product){
+        String direct=text(product,"tnVedCode10","tnvedCode10","tnVed10","tnved10","tnved_code_10","tnved_10",
+                "tnVedEaes","productTnved","product_tnved","goodsTnvedCode","tnVed","tnved","tnVedCode",
+                "tnvedCode","tnved_code","tnVedEaesGroup");
+        String fullCode=attribute(product,13933,"Код ТНВЭД","FEACN code");
+        String group=attribute(product,3959,"Группа ТНВЭД","FEACN group");
+        return compact(first(fullCode,first(direct,group)));
+    }
+    private String attribute(JsonObject product,int id,String...names){
+        JsonArray attributes=array(product,"good_attrs");
+        if(attributes==null)attributes=array(product,"goodAttrs");
+        if(attributes==null)return "";
+        for(JsonElement element:attributes){
+            if(!element.isJsonObject())continue;
+            JsonObject attribute=element.getAsJsonObject();
+            String attrId=text(attribute,"attr_id","attrId");
+            String attrName=text(attribute,"attr_name","attrName");
+            boolean matchesId=String.valueOf(id).equals(attrId);
+            boolean matchesName=java.util.Arrays.stream(names).anyMatch(name->name.equalsIgnoreCase(attrName));
+            if(matchesId||matchesName)return text(attribute,"attr_value","attrValue","value");
+        }
+        return "";
+    }
+    private String compact(String value){return value==null?"":value.replaceAll("\\s+","").trim();}
     private Boolean bool(JsonObject o,String...keys){for(String k:keys)if(o.has(k)&&!o.get(k).isJsonNull()){JsonElement value=o.get(k);if(value.isJsonPrimitive()){JsonPrimitive primitive=value.getAsJsonPrimitive();if(primitive.isBoolean())return primitive.getAsBoolean();String text=primitive.getAsString();if("true".equalsIgnoreCase(text)||"1".equals(text))return true;if("false".equalsIgnoreCase(text)||"0".equals(text))return false;}}return null;}
     private String text(JsonObject o,String...keys){for(String k:keys)if(o.has(k)&&!o.get(k).isJsonNull()){JsonElement value=o.get(k);return value.isJsonPrimitive()?value.getAsString():value.toString();}return "";}
 }

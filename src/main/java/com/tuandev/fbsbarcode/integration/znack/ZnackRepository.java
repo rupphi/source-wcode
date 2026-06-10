@@ -73,7 +73,7 @@ public final class ZnackRepository {
                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(shop_id,gtin) DO UPDATE SET
                   product_name=COALESCE(NULLIF(excluded.product_name,''),znack_products.product_name),
-                  tn_ved=COALESCE(NULLIF(znack_products.tn_ved,''),excluded.tn_ved),
+                  tn_ved=COALESCE(NULLIF(excluded.tn_ved,''),znack_products.tn_ved),
                   certificate_type=COALESCE(NULLIF(znack_products.certificate_type,''),excluded.certificate_type),
                   certificate_number=COALESCE(NULLIF(znack_products.certificate_number,''),excluded.certificate_number),
                   certificate_date=COALESCE(NULLIF(znack_products.certificate_date,''),excluded.certificate_date),

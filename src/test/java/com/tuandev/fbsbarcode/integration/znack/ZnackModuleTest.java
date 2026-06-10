@@ -403,14 +403,18 @@ class ZnackModuleTest {
         ZnackApiClient api=new ZnackApiClient(){
             @Override public JsonElement products(String base,String token){
                 return JsonParser.parseString("""
-                        {"results":[{"gtin":"04601234567890","productName":"Product","tnvedCode":"6201000000",
+                        {"results":[{"gtin":"04601234567890","productName":"Product",
                         "certificate_type":"DECLARATION","certificate_number":"DOC-1",
                         "certificate_date":"20.06.2024","production_date":"21.06.2024"}]}
                         """);
             }
             @Override public JsonElement productCards(String base,String token,String gtins){
                 return JsonParser.parseString("""
-                        {"result":[{"good_name":"National Catalog Product","tnved":"6201000000",
+                        {"result":[{"good_name":"National Catalog Product",
+                        "good_attrs":[
+                          {"attr_id":3959,"attr_name":"Группа ТНВЭД","attr_value":"6202"},
+                          {"attr_id":13933,"attr_name":"Код ТНВЭД","attr_value":"6202 30 00 00"}
+                        ],
                         "identified_by":[{"type":"gtin","value":"04601234567890"}]}]}
                         """);
             }
@@ -423,7 +427,7 @@ class ZnackModuleTest {
         service.sync(testedSettings("","","","connection",""));
         Product synced=repository.findProducts().getFirst();
         assertEquals("National Catalog Product",synced.productName());
-        assertEquals("6201000000",synced.tnVed());
+        assertEquals("6202300000",synced.tnVed());
         assertEquals("DOC-1",synced.certificateNumber());
         assertEquals("21.06.2024",synced.productionDate());
 
@@ -433,6 +437,9 @@ class ZnackModuleTest {
         Product preserved=repository.findProducts().getFirst();
         assertEquals("Updated name",preserved.productName());
         assertEquals("manual-tnved",preserved.tnVed());
+
+        repository.upsertProducts(List.of(new Product(synced.gtin(),"Updated name","6202400000",null,null,null,null)));
+        assertEquals("6202400000",repository.findProducts().getFirst().tnVed());
     }
 
     @Test void productSyncFetchesEveryReportedPage() throws Exception {
@@ -440,11 +447,11 @@ class ZnackModuleTest {
         AtomicInteger requestedPage=new AtomicInteger(-1);
         ZnackApiClient api=new ZnackApiClient(){
             @Override public JsonElement products(String base,String token){
-                return JsonParser.parseString("{\"results\":[{\"gtin\":\"04601234567890\",\"productName\":\"A\"}],\"total\":2}");
+                return JsonParser.parseString("{\"results\":[{\"gtin\":\"04601234567890\",\"productName\":\"A\",\"tnVedCode10\":\"6101000000\"}],\"total\":2}");
             }
             @Override public JsonElement products(String base,String token,int page,int limit){
                 requestedPage.set(page);
-                return JsonParser.parseString("{\"results\":[{\"gtin\":\"04601234567891\",\"productName\":\"B\"}],\"total\":2}");
+                return JsonParser.parseString("{\"results\":[{\"gtin\":\"04601234567891\",\"productName\":\"B\",\"tnVedEaes\":\"6202000000\"}],\"total\":2}");
             }
             @Override public JsonElement productCards(String base,String token,String gtins){
                 return JsonParser.parseString("{\"result\":[]}");
@@ -459,6 +466,7 @@ class ZnackModuleTest {
 
         assertEquals(1,requestedPage.get());
         assertEquals(List.of("04601234567890","04601234567891"),products.stream().map(Product::gtin).toList());
+        assertEquals(List.of("6101000000","6202000000"),products.stream().map(Product::tnVed).toList());
         assertEquals(2,repository.findProducts().size());
     }
 
