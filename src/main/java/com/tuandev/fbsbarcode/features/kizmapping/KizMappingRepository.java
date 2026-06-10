@@ -89,7 +89,7 @@ public class KizMappingRepository {
     public Map<String, String> findOwnersForSubject(int shopId, String subjectName) {
         String sql = """
                 SELECT gender_value,gtin FROM znack_gtin_mapping_rules
-                WHERE shop_id=? AND subject_name=?
+                WHERE shop_id=? AND subject_name=? AND gtin NOT LIKE '029%'
                 """;
         try (Connection c = Database.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setInt(1, shopId);
@@ -105,12 +105,17 @@ public class KizMappingRepository {
     }
 
     public void replaceRulesForGtin(int shopId, String gtin, List<ZnackGtinMappingSelection> selections) {
-        String normalized = GtinNormalizer.normalize(gtin);
+        String normalized = GtinNormalizer.requireProductionOrderable(gtin);
         List<ZnackGtinMappingSelection> safe = normalizeSelections(selections);
         try (Connection c = Database.getConnection(); Statement tx = c.createStatement()) {
             tx.execute("BEGIN IMMEDIATE");
             try {
                 requireProduct(c, shopId, normalized);
+                try (PreparedStatement cleanup = c.prepareStatement(
+                        "DELETE FROM znack_gtin_mapping_rules WHERE shop_id=? AND gtin LIKE '029%'")) {
+                    cleanup.setInt(1, shopId);
+                    cleanup.executeUpdate();
+                }
                 validateNoConflicts(c, shopId, normalized, safe);
                 try (PreparedStatement delete = c.prepareStatement(
                         "DELETE FROM znack_gtin_mapping_rules WHERE shop_id=? AND gtin=?")) {
@@ -160,11 +165,13 @@ public class KizMappingRepository {
                           ON ch.shop_id=c.shop_id AND ch.nm_id=c.nm_id AND ch.characteristic_id=?
                         LEFT JOIN znack_gtin_mapping_rules exact
                           ON exact.shop_id=c.shop_id AND exact.subject_name=c.subject_name
+                         AND exact.gtin NOT LIKE '029%'
                          AND exact.wildcard_gender=0
                          AND exact.gender_value=COALESCE(NULLIF(TRIM(COALESCE(json_extract(ch.value_json,'$[0]'),
                              json_extract(ch.value_json,'$'))),''),?)
                         LEFT JOIN znack_gtin_mapping_rules wildcard
                           ON wildcard.shop_id=c.shop_id AND wildcard.subject_name=c.subject_name
+                         AND wildcard.gtin NOT LIKE '029%'
                          AND wildcard.wildcard_gender=1
                         WHERE c.shop_id=? AND c.nm_id IN (
                         """ + placeholders + ")";
@@ -225,7 +232,7 @@ public class KizMappingRepository {
                   p.synced_at
                 FROM znack_products p
                 LEFT JOIN kiz_codes c ON c.shop_id=p.shop_id AND c.gtin=p.gtin
-                WHERE p.shop_id=?
+                WHERE p.shop_id=? AND p.gtin NOT LIKE '029%'
                 GROUP BY p.shop_id,p.gtin,p.product_name,p.synced_at
                 ORDER BY p.gtin
                 """;

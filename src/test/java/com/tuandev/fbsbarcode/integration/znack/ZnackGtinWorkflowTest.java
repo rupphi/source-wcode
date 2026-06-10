@@ -184,6 +184,31 @@ class ZnackGtinWorkflowTest {
         assertTrue(repository.findActivePipeline(technical).isEmpty());
     }
 
+    @Test void technicalGtinWithAuditHistoryIsRetainedButHiddenFromOperationalLists() throws Exception {
+        String technical = "02900699308808";
+        repository.upsertProducts(List.of(new Product(technical, "technical", null, null, null, null, null)));
+        repository.createDraft(technical, 1);
+        try (Connection c = Database.getConnection(); Statement st = c.createStatement()) {
+            st.execute("""
+                    INSERT INTO znack_gtin_mapping_rules
+                    (shop_id,gtin,subject_name,gender_value,wildcard_gender,created_at,updated_at)
+                    VALUES(1,'02900699308808','Shoes','*',1,'now','now')
+                    """);
+        }
+
+        assertEquals(0, repository.pruneTechnicalProducts());
+        assertTrue(repository.findProducts().stream().noneMatch(product -> technical.equals(product.gtin())));
+        assertTrue(mappings.findGtinSummaries(1).stream().noneMatch(summary -> technical.equals(summary.gtin())));
+        assertTrue(mappings.findMappings(1, List.of(1L)).isEmpty());
+        assertThrows(IllegalArgumentException.class, () -> mappings.replaceRulesForGtin(1, technical,
+                List.of(new ZnackGtinMappingSelection("Shoes", null, true))));
+        try (Connection c = Database.getConnection(); ResultSet rs = c.createStatement().executeQuery(
+                "SELECT COUNT(*) FROM znack_products WHERE shop_id=1 AND gtin='" + technical + "'")) {
+            assertTrue(rs.next());
+            assertEquals(1, rs.getInt(1));
+        }
+    }
+
     @Test void legacyLegalStatusesAreKeptForAuditButMadeUnavailableToInventory() throws Exception {
         long order = repository.createDraft(A, 1);
         repository.insertCodes(order, A, new DownloadedCodes(List.of("legacy"), "b"));

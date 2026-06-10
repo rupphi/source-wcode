@@ -79,7 +79,24 @@ public final class ZnackRepository {
                 """;
         try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement(sql)){c.setAutoCommit(false);for(Product p:products){int i=1;ps.setInt(i++,shop.shopId());ps.setString(i++,GtinNormalizer.normalize(p.gtin()));ps.setString(i++,p.productName());ps.setString(i++,p.tnVed());ps.setString(i++,p.certificateType());ps.setString(i++,p.certificateNumber());ps.setString(i++,p.certificateDate());ps.setString(i++,p.productionDate());ps.setString(i,Instant.now().toString());ps.addBatch();}ps.executeBatch();c.commit();}catch(SQLException e){throw new RuntimeException(e);}
     }
-    public List<Product> findProducts(){try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement("SELECT * FROM znack_products WHERE shop_id=? ORDER BY gtin")){ps.setInt(1,shop.shopId());try(ResultSet r=ps.executeQuery()){List<Product> o=new ArrayList<>();while(r.next())o.add(new Product(r.getString("gtin"),r.getString("product_name"),r.getString("tn_ved"),r.getString("certificate_type"),r.getString("certificate_number"),r.getString("certificate_date"),r.getString("production_date")));return o;}}catch(SQLException e){throw new RuntimeException(e);}}
+    public int pruneTechnicalProducts(){
+        String deleteProducts="""
+                DELETE FROM znack_products
+                WHERE shop_id=? AND gtin LIKE '029%'
+                  AND NOT EXISTS(SELECT 1 FROM kiz_orders o WHERE o.shop_id=znack_products.shop_id AND o.gtin=znack_products.gtin)
+                  AND NOT EXISTS(SELECT 1 FROM znack_purchase_pipelines p WHERE p.shop_id=znack_products.shop_id AND p.gtin=znack_products.gtin)
+                """;
+        try(Connection c=Database.getConnection()){
+            c.setAutoCommit(false);
+            try(PreparedStatement mappings=c.prepareStatement("DELETE FROM znack_gtin_mapping_rules WHERE shop_id=? AND gtin LIKE '029%'");
+                PreparedStatement products=c.prepareStatement(deleteProducts)){
+                mappings.setInt(1,shop.shopId());mappings.executeUpdate();
+                products.setInt(1,shop.shopId());int removed=products.executeUpdate();
+                c.commit();return removed;
+            }catch(SQLException e){c.rollback();throw e;}
+        }catch(SQLException e){throw new RuntimeException(e);}
+    }
+    public List<Product> findProducts(){try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement("SELECT * FROM znack_products WHERE shop_id=? AND gtin NOT LIKE '029%' ORDER BY gtin")){ps.setInt(1,shop.shopId());try(ResultSet r=ps.executeQuery()){List<Product> o=new ArrayList<>();while(r.next())o.add(new Product(r.getString("gtin"),r.getString("product_name"),r.getString("tn_ved"),r.getString("certificate_type"),r.getString("certificate_number"),r.getString("certificate_date"),r.getString("production_date")));return o;}}catch(SQLException e){throw new RuntimeException(e);}}
     public Optional<Product> findProduct(String gtin){try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement("SELECT * FROM znack_products WHERE shop_id=? AND gtin=?")){ps.setInt(1,shop.shopId());ps.setString(2,GtinNormalizer.normalize(gtin));try(ResultSet r=ps.executeQuery()){return r.next()?Optional.of(new Product(r.getString("gtin"),r.getString("product_name"),r.getString("tn_ved"),r.getString("certificate_type"),r.getString("certificate_number"),r.getString("certificate_date"),r.getString("production_date"))):Optional.empty();}}catch(SQLException e){throw new RuntimeException(e);}}
     public void updateProductMetadata(Product p){execute("UPDATE znack_products SET tn_ved=?,certificate_type=?,certificate_number=?,certificate_date=?,production_date=? WHERE shop_id=? AND gtin=?",ps->{ps.setString(1,p.tnVed());ps.setString(2,p.certificateType());ps.setString(3,p.certificateNumber());ps.setString(4,p.certificateDate());ps.setString(5,p.productionDate());ps.setInt(6,shop.shopId());ps.setString(7,GtinNormalizer.normalize(p.gtin()));});}
 

@@ -455,6 +455,40 @@ class ZnackModuleTest {
         assertEquals(2,repository.findProducts().size());
     }
 
+    @Test void productSyncIgnoresTechnicalGtinsAndDeletesUnreferencedExistingOnes() throws Exception {
+        ZnackRepository repository=repository(1,"Shop A");
+        String technical="02900699308808";
+        repository.upsertProducts(List.of(new Product(technical,"Old technical",null,null,null,null,null)));
+        ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonElement products(String base,String token){
+                return JsonParser.parseString("""
+                        {"results":[
+                          {"gtin":"02900699308808","productName":"Technical"},
+                          {"gtin":"04601234567890","productName":"Orderable"}
+                        ]}
+                        """);
+            }
+            @Override public JsonElement productCards(String base,String token,String gtins){
+                assertEquals("04601234567890",gtins);
+                return JsonParser.parseString("{\"result\":[]}");
+            }
+        };
+        ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+            @Override public String trueApiToken(Settings s){return "token";}
+        };
+
+        List<Product> products=new ZnackProductService(api,auth,repository)
+                .sync(testedSettings("","","","connection",""));
+
+        assertEquals(List.of("04601234567890"),products.stream().map(Product::gtin).toList());
+        assertEquals(List.of("04601234567890"),repository.findProducts().stream().map(Product::gtin).toList());
+        try(Connection c=Database.getConnection();Statement st=c.createStatement();ResultSet rs=st.executeQuery(
+                "SELECT COUNT(*) FROM znack_products WHERE gtin LIKE '029%'")){
+            assertTrue(rs.next());
+            assertEquals(0,rs.getInt(1));
+        }
+    }
+
     @Test void blankHostsResolveToProductionWithoutReplacingCustomHosts() {
         Settings blank=Settings.empty();
         assertEquals(ZnackModels.PRODUCTION_TRUE_API,blank.resolvedTrueApiBaseUrl());
