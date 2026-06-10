@@ -32,14 +32,17 @@ import java.util.Objects;
 
 public class ZnackAutomationController {
     private static final DateTimeFormatter CERTIFICATE_DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+    private static final List<String> DOCUMENT_TYPES = List.of(
+            "CONFORMITY_DECLARATION", "CONFORMITY_CERTIFICATE", "STATE_REGISTRATION_CERTIFICATE");
     @FXML private Label titleLabel, authStatusLabel, signatureSummaryLabel;
     @FXML private Label settingsTitleLabel, omsIdLabel, omsConnectionLabel;
     @FXML private Label omsHelpTitleLabel, omsHelpDescriptionLabel, omsHelpStepsTitleLabel, omsHelpStepsLabel;
     @FXML private Label omsHelpRecognizeTitleLabel, omsHelpRecognizeLabel, omsHelpWarningLabel;
     @FXML private Label signatureTitleLabel, signatureHelpLabel, defaultGoodsDocumentLabel, defaultGoodsDocumentHelpLabel;
-    @FXML private Label documentNumberLabel, documentIssueDateLabel, documentExpiryDateLabel;
+    @FXML private Label documentTypeLabel, documentNumberLabel, documentIssueDateLabel;
     @FXML private Tab settingsTab, productsTab, ordersTab, logsTab;
-    @FXML private TextField omsIdField, omsConnectionField, documentNumberField, documentIssueDateField, documentExpiryDateField;
+    @FXML private TextField omsIdField, omsConnectionField, documentNumberField, documentIssueDateField;
+    @FXML private ComboBox<String> documentTypeCombo;
     @FXML private ComboBox<CryptoProCertificateInfo> signatureCertificateCombo;
     @FXML private CheckBox autoIntroductionCheck;
     @FXML private Button saveButton, testSignatureButton;
@@ -90,6 +93,13 @@ public class ZnackAutomationController {
         signatureCertificateCombo.setCellFactory(ignored -> certificateCell(true));
         signatureCertificateCombo.setButtonCell(certificateCell(false));
         signatureCertificateCombo.setVisibleRowCount(8);
+        documentTypeCombo.getItems().setAll(DOCUMENT_TYPES);
+        documentTypeCombo.setConverter(new StringConverter<>() {
+            @Override public String toString(String value) { return documentTypeDisplay(value); }
+            @Override public String fromString(String value) { return null; }
+        });
+        documentTypeCombo.setCellFactory(ignored -> documentTypeCell());
+        documentTypeCombo.setButtonCell(documentTypeCell());
         signatureCertificateCombo.setOnShowing(ignored -> {
             if (!reopeningCertificatePopup) loadCertificates();
         });
@@ -99,9 +109,10 @@ public class ZnackAutomationController {
                 requestProductSync();
             }
         });
-        for (TextField field : List.of(omsIdField, omsConnectionField, documentNumberField, documentIssueDateField, documentExpiryDateField)) {
+        for (TextField field : List.of(omsIdField, omsConnectionField, documentNumberField, documentIssueDateField)) {
             field.textProperty().addListener((o, old, value) -> updateSaveState());
         }
+        documentTypeCombo.valueProperty().addListener((o, old, value) -> updateSaveState());
         autoIntroductionCheck.selectedProperty().addListener((o, old, value) -> updateSaveState());
         signatureCertificateCombo.valueProperty().addListener((o, old, value) -> {
             if (updatingCertificateSelection) return;
@@ -163,9 +174,9 @@ public class ZnackAutomationController {
         testSignatureButton.setText(tr("znack.signature.test"));
         defaultGoodsDocumentLabel.setText(tr("znack.default_goods_document"));
         defaultGoodsDocumentHelpLabel.setText(tr("znack.default_goods_document_help"));
+        documentTypeLabel.setText(tr("znack.document_type"));
         documentNumberLabel.setText(tr("znack.document_number"));
         documentIssueDateLabel.setText(tr("znack.document_issue_date"));
-        documentExpiryDateLabel.setText(tr("znack.document_expiry_date"));
         autoIntroductionCheck.setText(tr("znack.auto_introduction"));
         saveButton.setText(tr("znack.save"));
         productGtinColumn.setText(tr("znack.field.gtin"));
@@ -220,7 +231,7 @@ public class ZnackAutomationController {
             return;
         }
         try {
-            settings.validateGoodsDocumentDates();
+            settings.validateDefaultGoodsDocument();
             repository.saveSettings(settings);
             repository.log("SETTINGS_SAVE", null, "INFO", "SAVED", null);
             loaded = settings;
@@ -357,7 +368,7 @@ public class ZnackAutomationController {
         omsConnectionField.setText(value(loaded.omsConnection()));
         documentNumberField.setText(value(loaded.documentNumber()));
         documentIssueDateField.setText(value(loaded.documentDate()));
-        documentExpiryDateField.setText(value(loaded.documentExpiryDate()));
+        documentTypeCombo.setValue(blank(loaded.documentType()) ? null : loaded.documentType());
         autoIntroductionCheck.setSelected(loaded.autoIntroduction());
         signatureCertificateCombo.getItems().clear();
         if (!signerCertificate.isBlank()) {
@@ -428,13 +439,14 @@ public class ZnackAutomationController {
                 documentIssueDateField.getText(), loaded.pdfFolder(), autoIntroductionCheck.isSelected(),
                 loaded.certificateListExecutable(), loaded.certificateListArgumentsJson(), certificateMetadata,
                 signerTestedAt, loaded.certmgrPath(), loaded.cryptcpPath(), loaded.csptestPath(),
-                loaded.resolvedCryptoProTimeoutSeconds(), documentExpiryDateField.getText());
+                loaded.resolvedCryptoProTimeoutSeconds(), loaded.documentExpiryDate(), documentTypeCombo.getValue());
     }
 
     private void clear() {
         loading = true;
         loaded = Settings.empty();
-        for (TextField field : List.of(omsIdField, omsConnectionField, documentNumberField, documentIssueDateField, documentExpiryDateField)) field.clear();
+        for (TextField field : List.of(omsIdField, omsConnectionField, documentNumberField, documentIssueDateField)) field.clear();
+        documentTypeCombo.setValue(null);
         signatureCertificateCombo.getItems().clear();
         productsTable.getItems().clear();
         ordersTable.getItems().clear();
@@ -466,8 +478,8 @@ public class ZnackAutomationController {
 
     private String fingerprint() {
         return String.join("\u001f", value(omsIdField.getText()), value(omsConnectionField.getText()), selectedCertificate(),
-                value(documentNumberField.getText()), value(documentIssueDateField.getText()),
-                value(documentExpiryDateField.getText()), String.valueOf(autoIntroductionCheck.isSelected()),
+                value(documentTypeCombo.getValue()), value(documentNumberField.getText()), value(documentIssueDateField.getText()),
+                String.valueOf(autoIntroductionCheck.isSelected()),
                 value(certificateMetadata), signerTestedAt == null ? "" : signerTestedAt.toString());
     }
 
@@ -565,6 +577,19 @@ public class ZnackAutomationController {
                 ? tr("znack.signature.expiry_unknown")
                 : certificate.validToDate().format(CERTIFICATE_DATE);
         return display.append(" / ").append(tr("znack.signature.expires_on")).append(" ").append(expiry).toString();
+    }
+
+    private ListCell<String> documentTypeCell() {
+        return new ListCell<>() {
+            @Override protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty ? null : documentTypeDisplay(item));
+            }
+        };
+    }
+
+    private String documentTypeDisplay(String value) {
+        return blank(value) ? "" : tr("znack.document_type." + value.toLowerCase(java.util.Locale.ROOT));
     }
 
     private static String jsonString(JsonObject json, String key, String fallback) {

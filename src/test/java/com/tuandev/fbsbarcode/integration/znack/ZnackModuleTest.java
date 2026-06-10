@@ -112,7 +112,8 @@ class ZnackModuleTest {
         assertTrue(fxml.contains("omsConnectionField"));
         assertTrue(fxml.contains("documentNumberField"));
         assertTrue(fxml.contains("documentIssueDateField"));
-        assertTrue(fxml.contains("documentExpiryDateField"));
+        assertTrue(fxml.contains("documentTypeCombo"));
+        assertFalse(fxml.contains("documentExpiryDateField"));
         assertFalse(fxml.contains("advancedSettingsPane"));
         assertFalse(fxml.contains("pdfFolderField"));
         assertFalse(fxml.contains("trueApiUrlField"));
@@ -128,6 +129,12 @@ class ZnackModuleTest {
         assertFalse(fxml.contains("confirmButton"));
         assertFalse(fxml.contains("manualCertificateSelectorField"));
         assertFalse(fxml.contains("certmgrPathField"));
+        String mapping=Files.readString(Path.of("src/main/resources/com/tuandev/fbsbarcode/ui/kizmapping/kiz-mapping-view.fxml"));
+        assertFalse(mapping.contains("syncedColumn"));
+        String supply=Files.readString(Path.of("src/main/resources/com/tuandev/fbsbarcode/ui/supply/supply-detail-view.fxml"));
+        assertTrue(supply.contains("minWidth=\"360.0\""));
+        assertTrue(supply.contains("prefWidth=\"420.0\""));
+        assertTrue(supply.contains("maxWidth=\"520.0\""));
         assertFalse(fxml.contains("cryptcpPathField"));
         assertFalse(fxml.contains("csptestPathField"));
         assertFalse(fxml.contains("authenticateButton"));
@@ -553,7 +560,8 @@ class ZnackModuleTest {
         JsonObject certificate=payload.getAsJsonArray("products").get(0).getAsJsonObject().getAsJsonArray("certificate_document_data").get(0).getAsJsonObject();
         assertEquals("ЕАЭС N RU Д-TR.РА05.В.15176/24",certificate.get("certificate_number").getAsString());
         assertEquals("20.06.2024",certificate.get("certificate_date").getAsString());
-        assertEquals("16.06.2029",certificate.get("certificate_expiration_date").getAsString());
+        assertEquals("CONFORMITY_DECLARATION",certificate.get("certificate_type").getAsString());
+        assertFalse(certificate.has("certificate_expiration_date"));
     }
 
     @Test void introductionSigningFailureDoesNotCreateBlockingDocument() {
@@ -590,6 +598,10 @@ class ZnackModuleTest {
             assertFalse(bundle.getString("supply.gtin_inventory.title").isBlank());
             assertFalse(bundle.getString("supply.gtin_inventory.buy_title").isBlank());
             assertFalse(bundle.getString("supply.gtin_inventory.error.pipeline_active").isBlank());
+            assertFalse(bundle.getString("znack.document_type").isBlank());
+            assertFalse(bundle.getString("znack.document_type.conformity_declaration").isBlank());
+            assertFalse(bundle.getString("kiz_mapping.mapping.summary").isBlank());
+            assertFalse(bundle.getString("znack.status_value.waiting_introduction_readiness").isBlank());
         }
         assertEquals("Получите omsConnection в СУЗ: Управление заказами → Устройства → Идентификатор соединения.",
                 ResourceBundle.getBundle("com.tuandev.fbsbarcode.i18n.messages",Locale.forLanguageTag("ru")).getString("znack.oms_connection_help"));
@@ -619,12 +631,42 @@ class ZnackModuleTest {
         a.saveSettings(aSettings);b.saveSettings(Settings.empty());
         assertEquals("ЕАЭС N RU Д-TR.РА05.В.15176/24",a.getSettings().documentNumber());
         assertEquals("16.06.2029",a.getSettings().documentExpiryDate());
+        assertEquals("CONFORMITY_DECLARATION",a.getSettings().documentType());
         assertTrue(b.getSettings().documentNumber().isBlank());
         assertTrue(aSettings.hasDefaultGoodsDocument());
         assertDoesNotThrow(aSettings::validateGoodsDocumentDates);
         assertThrows(IllegalArgumentException.class,()->settingsWithDocument("",true,"doc","00.00.0000","16.06.2029").validateGoodsDocumentDates());
         assertThrows(IllegalArgumentException.class,()->settingsWithDocument("",true,"doc","2024-06-20","16.06.2029").validateGoodsDocumentDates());
-        assertThrows(IllegalArgumentException.class,()->settingsWithDocument("",true,"doc","20.06.2029","16.06.2029").validateGoodsDocumentDates());
+        assertDoesNotThrow(()->settingsWithDocument("",true,"doc","20.06.2029","not-used").validateGoodsDocumentDates());
+    }
+
+    @Test void gtinDocumentOverrideUsesWholeDocumentAndNeverPartiallyFallsBackToShopDefault() {
+        Settings defaults=settingsWithDocument("",true,"DEFAULT","20.06.2024","");
+        Product inherited=new Product("04601234567890","Product","6201000000",null,null,null,null);
+        Product overridden=new Product("04601234567890","Product","6201000000","CONFORMITY_CERTIFICATE",
+                "OVERRIDE","21.06.2024",null);
+        Product partial=new Product("04601234567890","Product","6201000000",null,"PARTIAL",null,null);
+
+        assertEquals("DEFAULT",inherited.resolvedGoodsDocument(defaults).number());
+        assertEquals("OVERRIDE",overridden.resolvedGoodsDocument(defaults).number());
+        assertFalse(partial.resolvedGoodsDocument(defaults).complete());
+        assertEquals("document type, document issue date",partial.resolvedGoodsDocument(defaults).missingFields());
+    }
+
+    @Test void introductionColumnsAreAddedIdempotentlyWithoutRemovingExistingData() throws Exception {
+        ZnackRepository repository=repository(1,"Shop A");
+        repository.upsertProducts(List.of(new Product("04601234567890","Product",null,null,null,null,null)));
+        try(Connection c=Database.getConnection()){
+            ZnackSchemaSupport.initialize(c);
+            ZnackSchemaSupport.initialize(c);
+        }
+        try(Connection c=Database.getConnection();Statement st=c.createStatement()){
+            assertTrue(hasColumn(st,"znack_settings","document_type"));
+            assertTrue(hasColumn(st,"znack_products","good_mark_flag"));
+            assertTrue(hasColumn(st,"znack_products","good_turn_flag"));
+            assertTrue(hasColumn(st,"znack_products","readiness_checked_at"));
+        }
+        assertEquals("Product",repository.findProducts().getFirst().productName());
     }
 
     private static String jwtWithInn(String inn){
@@ -646,7 +688,7 @@ class ZnackModuleTest {
 
     private static Settings settingsWithDocument(String pdfFolder,boolean auto,String number,String issue,String expiry) {
         return new Settings("","","oms","connection","","","","","certificate","[]",number,issue,pdfFolder,auto,
-                "","[]","certificate",java.time.Instant.now(),"","","",60,expiry);
+                "","[]","certificate",java.time.Instant.now(),"","","",60,expiry,"CONFORMITY_DECLARATION");
     }
 
     private static long orderWithCodes(ZnackRepository repository) {
@@ -655,6 +697,13 @@ class ZnackModuleTest {
         long order=repository.createDraft(product.gtin(),1);
         repository.insertCodes(order,product.gtin(),new DownloadedCodes(List.of("010460123456789021abc"),"block"));
         return order;
+    }
+
+    private static boolean hasColumn(Statement statement,String table,String column)throws java.sql.SQLException{
+        try(ResultSet rs=statement.executeQuery("PRAGMA table_info("+table+")")){
+            while(rs.next())if(column.equalsIgnoreCase(rs.getString("name")))return true;
+            return false;
+        }
     }
 
     private static ZnackIntroductionService introductionCounter(ZnackRepository repository,AtomicInteger count) {

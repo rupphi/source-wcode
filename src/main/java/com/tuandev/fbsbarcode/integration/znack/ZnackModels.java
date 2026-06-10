@@ -17,7 +17,7 @@ public final class ZnackModels {
     public enum OrderStatus {
         DRAFT, SUBMITTED, WAITING_CODES, CODES_READY, CODES_DOWNLOADED, PDF_GENERATED,
         INTRODUCTION_SKIPPED_MISSING_DOCUMENTS, INTRODUCTION_SKIPPED_MISSING_METADATA,
-        INTRO_SENT, INTRODUCED, FAILED, CANCELLED
+        WAITING_INTRODUCTION_READINESS, INTRO_SENT, INTRODUCED, FAILED, CANCELLED
     }
 
     public enum KizInventoryStatus {
@@ -31,7 +31,8 @@ public final class ZnackModels {
     public enum PurchaseStage {
         VALIDATING, CREATING_ORDER, POLLING_ORDER, DOWNLOADING_CODES,
         INTRODUCTION_SKIPPED_MISSING_DOCUMENTS, INTRODUCTION_SKIPPED_MISSING_METADATA,
-        SUBMITTING_INTRODUCTION, POLLING_INTRODUCTION, INTRODUCED, COMPLETED, FAILED
+        WAITING_INTRODUCTION_READINESS, SUBMITTING_INTRODUCTION, POLLING_INTRODUCTION,
+        INTRODUCED, COMPLETED, FAILED
     }
 
     public record ShopContext(int shopId, String shopName) {
@@ -48,7 +49,7 @@ public final class ZnackModels {
                            String certificateListExecutable, String certificateListArgumentsJson,
                            String certificateMetadataJson, Instant signerTestedAt,
                            String certmgrPath, String cryptcpPath, String csptestPath, int cryptoProTimeoutSeconds,
-                           String documentExpiryDate) {
+                           String documentExpiryDate, String documentType) {
         private static final DateTimeFormatter GOODS_DOCUMENT_DATE =
                 DateTimeFormatter.ofPattern("dd.MM.uuuu").withResolverStyle(ResolverStyle.STRICT);
 
@@ -58,7 +59,7 @@ public final class ZnackModels {
                         String documentDate, String pdfFolder, boolean autoIntroduction) {
             this(trueApiBaseUrl, suzBaseUrl, omsId, omsConnection, participantInn, producerInn, ownerInn,
                     signerExecutable, signerCertificate, signerArgumentsJson, documentNumber, documentDate,
-                    pdfFolder, autoIntroduction, "", "[]", "", null, "", "", "", 60, "");
+                    pdfFolder, autoIntroduction, "", "[]", "", null, "", "", "", 60, "", "");
         }
 
         public Settings(String trueApiBaseUrl, String suzBaseUrl, String omsId, String omsConnection,
@@ -70,7 +71,7 @@ public final class ZnackModels {
             this(trueApiBaseUrl, suzBaseUrl, omsId, omsConnection, participantInn, producerInn, ownerInn,
                     signerExecutable, signerCertificate, signerArgumentsJson, documentNumber, documentDate,
                     pdfFolder, autoIntroduction, certificateListExecutable, certificateListArgumentsJson,
-                    certificateMetadataJson, signerTestedAt, "", "", "", 60, "");
+                    certificateMetadataJson, signerTestedAt, "", "", "", 60, "", "");
         }
 
         public Settings(String trueApiBaseUrl, String suzBaseUrl, String omsId, String omsConnection,
@@ -84,12 +85,27 @@ public final class ZnackModels {
                     signerExecutable, signerCertificate, signerArgumentsJson, documentNumber, documentDate,
                     pdfFolder, autoIntroduction, certificateListExecutable, certificateListArgumentsJson,
                     certificateMetadataJson, signerTestedAt, certmgrPath, cryptcpPath, csptestPath,
-                    cryptoProTimeoutSeconds, "");
+                    cryptoProTimeoutSeconds, "", "");
+        }
+
+        public Settings(String trueApiBaseUrl, String suzBaseUrl, String omsId, String omsConnection,
+                        String participantInn, String producerInn, String ownerInn, String signerExecutable,
+                        String signerCertificate, String signerArgumentsJson, String documentNumber,
+                        String documentDate, String pdfFolder, boolean autoIntroduction,
+                        String certificateListExecutable, String certificateListArgumentsJson,
+                        String certificateMetadataJson, Instant signerTestedAt,
+                        String certmgrPath, String cryptcpPath, String csptestPath, int cryptoProTimeoutSeconds,
+                        String documentExpiryDate) {
+            this(trueApiBaseUrl, suzBaseUrl, omsId, omsConnection, participantInn, producerInn, ownerInn,
+                    signerExecutable, signerCertificate, signerArgumentsJson, documentNumber, documentDate,
+                    pdfFolder, autoIntroduction, certificateListExecutable, certificateListArgumentsJson,
+                    certificateMetadataJson, signerTestedAt, certmgrPath, cryptcpPath, csptestPath,
+                    cryptoProTimeoutSeconds, documentExpiryDate, "");
         }
 
         public static Settings empty() {
             return new Settings("", "", "", "", "", "", "", "", "", "[]", "", "", "", false,
-                    "", "[]", "", null, "", "", "", 60, "");
+                    "", "[]", "", null, "", "", "", 60, "", "");
         }
 
         public String resolvedTrueApiBaseUrl() {
@@ -105,19 +121,26 @@ public final class ZnackModels {
         }
 
         public boolean hasDefaultGoodsDocument() {
-            return !blank(documentNumber) && !blank(documentDate) && !blank(documentExpiryDate);
+            return defaultGoodsDocument().complete();
+        }
+
+        public GoodsDocument defaultGoodsDocument() {
+            return new GoodsDocument(documentType, documentNumber, documentDate);
         }
 
         public void validateGoodsDocumentDates() {
-            validateDate(documentDate, "Document issue date");
-            validateDate(documentExpiryDate, "Document expiry date");
-            if (!blank(documentDate) && !blank(documentExpiryDate)
-                    && parseDate(documentExpiryDate).isBefore(parseDate(documentDate))) {
-                throw new IllegalArgumentException("Document expiry date must not be before the issue date.");
+            validateGoodsDocumentDate(documentDate, "Document issue date");
+        }
+
+        public void validateDefaultGoodsDocument() {
+            validateGoodsDocumentDates();
+            GoodsDocument document = defaultGoodsDocument();
+            if (document.anyValue() && !document.complete()) {
+                throw new IllegalArgumentException("Missing " + document.missingFields() + ".");
             }
         }
 
-        private static void validateDate(String value, String field) {
+        public static void validateGoodsDocumentDate(String value, String field) {
             if (blank(value)) return;
             try { parseDate(value); }
             catch (DateTimeParseException e) {
@@ -135,7 +158,46 @@ public final class ZnackModels {
     }
 
     public record Product(String gtin, String productName, String tnVed, String certificateType,
-                          String certificateNumber, String certificateDate, String productionDate) {
+                          String certificateNumber, String certificateDate, String productionDate,
+                          Boolean goodMarkFlag, Boolean goodTurnFlag, String cardStatus,
+                          String cardDetailedStatus, Instant readinessCheckedAt) {
+        public Product(String gtin, String productName, String tnVed, String certificateType,
+                       String certificateNumber, String certificateDate, String productionDate) {
+            this(gtin, productName, tnVed, certificateType, certificateNumber, certificateDate, productionDate,
+                    null, null, "", "", null);
+        }
+
+        public boolean hasDocumentOverride() {
+            return !blank(certificateType) || !blank(certificateNumber) || !blank(certificateDate);
+        }
+
+        public GoodsDocument resolvedGoodsDocument(Settings settings) {
+            return hasDocumentOverride()
+                    ? new GoodsDocument(certificateType, certificateNumber, certificateDate)
+                    : settings.defaultGoodsDocument();
+        }
+
+        public boolean cardReadyForIntroduction() {
+            return Boolean.TRUE.equals(goodMarkFlag) && Boolean.TRUE.equals(goodTurnFlag);
+        }
+    }
+
+    public record GoodsDocument(String type, String number, String date) {
+        public boolean anyValue() {
+            return !blank(type) || !blank(number) || !blank(date);
+        }
+
+        public boolean complete() {
+            return !blank(type) && !blank(number) && !blank(date);
+        }
+
+        public String missingFields() {
+            List<String> missing = new java.util.ArrayList<>();
+            if (blank(type)) missing.add("document type");
+            if (blank(number)) missing.add("document number");
+            if (blank(date)) missing.add("document issue date");
+            return String.join(", ", missing);
+        }
     }
 
     public record KizOrder(long id, String externalOrderId, String gtin, int quantity, String remoteStatus,
@@ -170,5 +232,9 @@ public final class ZnackModels {
         public DownloadedCodes {
             codes = codes == null ? List.of() : List.copyOf(codes);
         }
+    }
+
+    private static boolean blank(String value) {
+        return value == null || value.isBlank();
     }
 }

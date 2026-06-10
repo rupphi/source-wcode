@@ -57,7 +57,7 @@ import java.util.function.Consumer;
 public class SupplyDetailController {
     private static final Set<String> ACTIVE_PURCHASE_STAGES = Set.of(
             "VALIDATING", "CREATING_ORDER", "POLLING_ORDER", "DOWNLOADING_CODES",
-            "SUBMITTING_INTRODUCTION", "POLLING_INTRODUCTION"
+            "WAITING_INTRODUCTION_READINESS", "SUBMITTING_INTRODUCTION", "POLLING_INTRODUCTION"
     );
 
     private boolean updatingSortControls;
@@ -614,6 +614,10 @@ public class SupplyDetailController {
         VBox card = new VBox(8, header, statusRow);
         card.getStyleClass().add("gtin-inventory-card");
         if (summary.latestError() != null && !summary.latestError().isBlank()) {
+            Label detail = new Label(summary.latestError());
+            detail.getStyleClass().add("text-muted");
+            detail.setWrapText(true);
+            card.getChildren().add(detail);
             Tooltip.install(card, new Tooltip(summary.latestError()));
         }
         return card;

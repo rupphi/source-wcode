@@ -21,6 +21,7 @@ public final class ZnackSchemaSupport {
         }
         createTables(connection);
         addCryptoProColumns(connection);
+        addIntroductionColumns(connection);
         addInventoryColumns(connection);
         migrateInventoryStatuses(connection);
         enforceGlobalCodeUniqueness(connection);
@@ -94,7 +95,9 @@ public final class ZnackSchemaSupport {
                     FROM znack_legacy_unscoped_znack_settings
                     """.formatted(shopId));
             if (tableExists(c, "znack_legacy_unscoped_znack_products")) st.execute("""
-                    INSERT INTO znack_products SELECT %d,gtin,product_name,tn_ved,certificate_type,certificate_number,
+                    INSERT INTO znack_products(shop_id,gtin,product_name,tn_ved,certificate_type,certificate_number,
+                    certificate_date,production_date,synced_at)
+                    SELECT %d,gtin,product_name,tn_ved,certificate_type,certificate_number,
                     certificate_date,production_date,synced_at FROM znack_legacy_unscoped_znack_products
                     """.formatted(shopId));
             if (tableExists(c, "znack_legacy_unscoped_kiz_orders")) st.execute("""
@@ -142,13 +145,15 @@ public final class ZnackSchemaSupport {
                     auto_introduction INTEGER NOT NULL DEFAULT 0,certificate_list_executable TEXT,
                     certificate_list_arguments_json TEXT,certificate_metadata_json TEXT,signer_tested_at TEXT,
                     certmgr_path TEXT,cryptcp_path TEXT,csptest_path TEXT,cryptopro_timeout_seconds INTEGER NOT NULL DEFAULT 60,
-                    document_expiry_date TEXT,updated_at TEXT NOT NULL,
+                    document_expiry_date TEXT,document_type TEXT,updated_at TEXT NOT NULL,
                     FOREIGN KEY(shop_id) REFERENCES shops(id) ON DELETE CASCADE)
                     """);
             st.execute("""
                     CREATE TABLE IF NOT EXISTS znack_products(
                     shop_id INTEGER NOT NULL,gtin TEXT NOT NULL,product_name TEXT,tn_ved TEXT,certificate_type TEXT,
-                    certificate_number TEXT,certificate_date TEXT,production_date TEXT,synced_at TEXT NOT NULL,
+                    certificate_number TEXT,certificate_date TEXT,production_date TEXT,good_mark_flag INTEGER,
+                    good_turn_flag INTEGER,card_status TEXT,card_detailed_status TEXT,readiness_checked_at TEXT,
+                    synced_at TEXT NOT NULL,
                     PRIMARY KEY(shop_id,gtin),FOREIGN KEY(shop_id) REFERENCES shops(id) ON DELETE CASCADE)
                     """);
             st.execute("""
@@ -245,6 +250,30 @@ public final class ZnackSchemaSupport {
                         OR (certificate_list_executable IS NOT NULL AND certificate_list_executable<>'' AND lower(certificate_list_executable) NOT LIKE '%certmgr%')
                       THEN NULL ELSE signer_tested_at END
                     """);
+        }
+    }
+
+    private static void addIntroductionColumns(Connection c) throws SQLException {
+        try (Statement st = c.createStatement()) {
+            if (tableExists(c, "znack_settings") && !hasColumn(c, "znack_settings", "document_type")) {
+                st.execute("ALTER TABLE znack_settings ADD COLUMN document_type TEXT");
+            }
+            if (!tableExists(c, "znack_products")) return;
+            if (!hasColumn(c, "znack_products", "good_mark_flag")) {
+                st.execute("ALTER TABLE znack_products ADD COLUMN good_mark_flag INTEGER");
+            }
+            if (!hasColumn(c, "znack_products", "good_turn_flag")) {
+                st.execute("ALTER TABLE znack_products ADD COLUMN good_turn_flag INTEGER");
+            }
+            if (!hasColumn(c, "znack_products", "card_status")) {
+                st.execute("ALTER TABLE znack_products ADD COLUMN card_status TEXT");
+            }
+            if (!hasColumn(c, "znack_products", "card_detailed_status")) {
+                st.execute("ALTER TABLE znack_products ADD COLUMN card_detailed_status TEXT");
+            }
+            if (!hasColumn(c, "znack_products", "readiness_checked_at")) {
+                st.execute("ALTER TABLE znack_products ADD COLUMN readiness_checked_at TEXT");
+            }
         }
     }
 

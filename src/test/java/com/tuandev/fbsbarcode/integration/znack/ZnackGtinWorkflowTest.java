@@ -1,5 +1,7 @@
 package com.tuandev.fbsbarcode.integration.znack;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
 import com.tuandev.fbsbarcode.config.Database;
 import com.tuandev.fbsbarcode.features.kizmapping.KizMappingRepository;
 import com.tuandev.fbsbarcode.features.kizmapping.ZnackGtinMappingSelection;
@@ -16,6 +18,7 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.List;
+import java.util.Map;
 import java.time.Instant;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -63,6 +66,34 @@ class ZnackGtinWorkflowTest {
         assertEquals(B, mappings.findMappings(1,List.of(2L)).get(2L));
         assertThrows(IllegalStateException.class, () -> mappings.replaceRulesForGtin(1, B,
                 List.of(new ZnackGtinMappingSelection("Shoes","Male",false))));
+    }
+
+    @Test void oneGtinCanOwnMultipleCategoryGenderPairsWhileAnotherOwnsOtherPairs() throws Exception {
+        try (Connection c = Database.getConnection(); Statement st = c.createStatement()) {
+            st.execute("""
+                    INSERT INTO wb_product_cards(shop_id,nm_id,subject_name,need_kiz,synced_at) VALUES
+                    (1,10,'Pants',1,'now'),(1,11,'Pants',1,'now'),
+                    (1,12,'Sports pants',1,'now'),(1,13,'Sports pants',1,'now')
+                    """);
+            st.execute("""
+                    INSERT INTO wb_product_characteristics(shop_id,nm_id,characteristic_id,name,value_json) VALUES
+                    (1,10,204557,'Gender','["Female"]'),(1,11,204557,'Gender','["Male"]'),
+                    (1,12,204557,'Gender','["Female"]'),(1,13,204557,'Gender','["Male"]')
+                    """);
+        }
+        mappings.replaceRulesForGtin(1, A, List.of(
+                new ZnackGtinMappingSelection("Pants", "Female", false),
+                new ZnackGtinMappingSelection("Sports pants", null, true)));
+        mappings.replaceRulesForGtin(1, B, List.of(new ZnackGtinMappingSelection("Pants", "Male", false)));
+
+        Map<Long, String> resolved = mappings.findMappings(1, List.of(10L, 11L, 12L, 13L));
+        assertEquals(A, resolved.get(10L));
+        assertEquals(B, resolved.get(11L));
+        assertEquals(A, resolved.get(12L));
+        assertEquals(A, resolved.get(13L));
+        assertEquals(2, mappings.findRulesForGtin(1, A).size());
+        assertThrows(IllegalStateException.class, () -> mappings.replaceRulesForGtin(1, B,
+                List.of(new ZnackGtinMappingSelection("Sports pants", "Male", false))));
     }
 
     @Test void inventoryReservationConsumptionAndReleaseNeverDuplicate() throws Exception {
@@ -331,7 +362,7 @@ class ZnackGtinWorkflowTest {
                 base.signerCertificate(), base.signerArgumentsJson(), "DOC-1", "20.06.2024", "", true,
                 base.certificateListExecutable(), base.certificateListArgumentsJson(), base.certificateMetadataJson(),
                 base.signerTestedAt(), base.certmgrPath(), base.cryptcpPath(), base.csptestPath(),
-                base.cryptoProTimeoutSeconds(), "20.06.2029");
+                base.cryptoProTimeoutSeconds(), "20.06.2029", "CONFORMITY_DECLARATION");
         repository.updateProductMetadata(new Product(A, "A", "6201000000", null, null, null, "21.06.2024"));
         long order = repository.createDraft(A, 1);
         repository.insertCodes(order, A, new DownloadedCodes(List.of("resume-introduction"), "block"));
@@ -364,7 +395,7 @@ class ZnackGtinWorkflowTest {
                 base.signerCertificate(), base.signerArgumentsJson(), "DOC-1", "20.06.2024", "", true,
                 base.certificateListExecutable(), base.certificateListArgumentsJson(), base.certificateMetadataJson(),
                 base.signerTestedAt(), base.certmgrPath(), base.cryptcpPath(), base.csptestPath(),
-                base.cryptoProTimeoutSeconds(), "20.06.2029");
+                base.cryptoProTimeoutSeconds(), "20.06.2029", "CONFORMITY_DECLARATION");
         repository.updateProductMetadata(new Product(A, "A", "6201000000", null, null, null, "21.06.2024"));
         long order = repository.createDraft(A, 1);
         repository.insertCodes(order, A, new DownloadedCodes(List.of("retry-introduction"), "block"));
@@ -386,6 +417,130 @@ class ZnackGtinWorkflowTest {
         assertEquals(PurchaseStage.INTRODUCTION_SKIPPED_MISSING_DOCUMENTS,
                 repository.findPipeline(pipeline).orElseThrow().stage());
         assertTrue(repository.findLatestDocument(order).isEmpty());
+    }
+
+    @Test void resumedIntroductionKeepsWaitingStageAfterReadinessNetworkFailure() throws Exception {
+        Settings base = testedSettings();
+        Settings auto = new Settings(base.trueApiBaseUrl(), base.suzBaseUrl(), base.omsId(), base.omsConnection(),
+                base.participantInn(), base.producerInn(), base.ownerInn(), base.signerExecutable(),
+                base.signerCertificate(), base.signerArgumentsJson(), "DOC-1", "20.06.2024", "", true,
+                base.certificateListExecutable(), base.certificateListArgumentsJson(), base.certificateMetadataJson(),
+                base.signerTestedAt(), base.certmgrPath(), base.cryptcpPath(), base.csptestPath(),
+                base.cryptoProTimeoutSeconds(), "", "CONFORMITY_DECLARATION");
+        repository.updateProductMetadata(new Product(A, "A", "6201000000", null, null, null, null));
+        long order = repository.createDraft(A, 1);
+        repository.insertCodes(order, A, new DownloadedCodes(List.of("network-retry-code"), "block"));
+        long pipeline = repository.createPipeline(A, 1);
+        repository.updatePipeline(pipeline, order, PurchaseStage.INTRODUCTION_SKIPPED_MISSING_METADATA, null);
+        ZnackIntroductionReadinessService readiness = new ZnackIntroductionReadinessService(null, null, repository) {
+            @Override public Readiness check(Settings ignoredSettings, Product ignoredProduct,
+                                             List<KizCode> ignoredCodes) throws Exception {
+                throw new java.io.IOException("temporary readiness failure");
+            }
+        };
+        ZnackPurchaseCoordinator coordinator = new ZnackPurchaseCoordinator(repository, null, null, null, readiness) {
+            @Override void schedule(long ignoredPipeline) {
+            }
+        };
+
+        coordinator.resumeEligibleIntroductions(auto);
+
+        ZnackPurchasePipelineState persisted = repository.findPipeline(pipeline).orElseThrow();
+        assertEquals(PurchaseStage.WAITING_INTRODUCTION_READINESS, persisted.stage());
+        assertEquals("temporary readiness failure", persisted.errorMessage());
+    }
+
+    @Test void readinessAcceptsAppliedCodesWithoutProductNameAndPersistsCardFlags() throws Exception {
+        repository.updateProductMetadata(new Product(A, "A", "6201000000", null, null, null, null));
+        long order = repository.createDraft(A, 1);
+        repository.insertCodes(order, A, new DownloadedCodes(List.of("ready-code"), "block"));
+        ZnackIntroductionReadinessService readiness = readinessService(true, "APPLIED", "EMPTY", "-");
+
+        ZnackIntroductionReadinessService.Readiness result = readiness.check(
+                testedSettings(), repository.findProduct(A).orElseThrow(), repository.findCodes(order));
+
+        assertTrue(result.ready());
+        assertFalse(result.allIntroduced());
+        assertTrue(result.message().contains("Product name"));
+        Product persisted = repository.findProduct(A).orElseThrow();
+        assertEquals(Boolean.TRUE, persisted.goodMarkFlag());
+        assertEquals(Boolean.TRUE, persisted.goodTurnFlag());
+        assertNotNull(persisted.readinessCheckedAt());
+    }
+
+    @Test void readinessRecognizesAlreadyIntroducedCodesEvenWhenProductCardIsNotReady() throws Exception {
+        long order = repository.createDraft(A, 1);
+        repository.insertCodes(order, A, new DownloadedCodes(List.of("introduced-code"), "block"));
+
+        ZnackIntroductionReadinessService.Readiness result = readinessService(false, "INTRODUCED", "BLOCKED", "A")
+                .check(testedSettings(), repository.findProduct(A).orElseThrow(), repository.findCodes(order));
+
+        assertTrue(result.allIntroduced());
+        assertFalse(result.ready());
+    }
+
+    @Test void readinessAcceptsSingleObjectCisesResponse() throws Exception {
+        long order = repository.createDraft(A, 1);
+        repository.insertCodes(order, A, new DownloadedCodes(List.of("single-object-code"), "block"));
+
+        ZnackIntroductionReadinessService.Readiness result = readinessService(true, "APPLIED", "EMPTY", "A", true)
+                .check(testedSettings(), repository.findProduct(A).orElseThrow(), repository.findCodes(order));
+
+        assertTrue(result.ready());
+        assertFalse(result.allIntroduced());
+    }
+
+    @Test void readinessStageIsSafeToRetryAndKeepsDownloadedCodesAvailable() throws Exception {
+        Settings base = testedSettings();
+        Settings auto = new Settings(base.trueApiBaseUrl(), base.suzBaseUrl(), base.omsId(), base.omsConnection(),
+                base.participantInn(), base.producerInn(), base.ownerInn(), base.signerExecutable(),
+                base.signerCertificate(), base.signerArgumentsJson(), "DOC-1", "20.06.2024", "", true,
+                base.certificateListExecutable(), base.certificateListArgumentsJson(), base.certificateMetadataJson(),
+                base.signerTestedAt(), base.certmgrPath(), base.cryptcpPath(), base.csptestPath(),
+                base.cryptoProTimeoutSeconds(), "", "CONFORMITY_DECLARATION");
+        repository.updateProductMetadata(new Product(A, "A", "6201000000", null, null, null, null));
+        long order = repository.createDraft(A, 1);
+        repository.insertCodes(order, A, new DownloadedCodes(List.of("waiting-code"), "block"));
+        long pipeline = repository.createPipeline(A, 1);
+        repository.updatePipeline(pipeline, order, PurchaseStage.WAITING_INTRODUCTION_READINESS, null);
+        ZnackPurchaseCoordinator coordinator = new ZnackPurchaseCoordinator(repository, null, null, null,
+                readinessService(true, "EMITTED", "EMPTY", "A")) {
+            @Override void schedule(long ignoredPipeline) {
+            }
+        };
+
+        coordinator.advance(auto, pipeline);
+
+        ZnackPurchasePipelineState persisted = repository.findPipeline(pipeline).orElseThrow();
+        assertEquals(PurchaseStage.WAITING_INTRODUCTION_READINESS, persisted.stage());
+        assertTrue(persisted.errorMessage().contains("EMITTED"));
+        assertEquals(1, new ZnackGtinInventoryService().availableCount(1, A));
+    }
+
+    @Test void readinessStageCompletesIdempotentlyWhenCodesWereIntroducedManually() throws Exception {
+        Settings base = testedSettings();
+        Settings auto = new Settings(base.trueApiBaseUrl(), base.suzBaseUrl(), base.omsId(), base.omsConnection(),
+                base.participantInn(), base.producerInn(), base.ownerInn(), base.signerExecutable(),
+                base.signerCertificate(), base.signerArgumentsJson(), "", "", "", true,
+                base.certificateListExecutable(), base.certificateListArgumentsJson(), base.certificateMetadataJson(),
+                base.signerTestedAt(), base.certmgrPath(), base.cryptcpPath(), base.csptestPath(),
+                base.cryptoProTimeoutSeconds(), "", "");
+        long order = repository.createDraft(A, 1);
+        repository.insertCodes(order, A, new DownloadedCodes(List.of("manual-code"), "block"));
+        long pipeline = repository.createPipeline(A, 1);
+        repository.updatePipeline(pipeline, order, PurchaseStage.WAITING_INTRODUCTION_READINESS, null);
+        ZnackPurchaseCoordinator coordinator = new ZnackPurchaseCoordinator(repository, null, null, null,
+                readinessService(false, "INTRODUCED", "BLOCKED", "A")) {
+            @Override void schedule(long ignoredPipeline) {
+            }
+        };
+
+        coordinator.advance(auto, pipeline);
+
+        assertEquals(PurchaseStage.INTRODUCED, repository.findPipeline(pipeline).orElseThrow().stage());
+        assertEquals(OrderStatus.INTRODUCED, repository.findOrder(order).orElseThrow().localStatus());
+        assertEquals(KizLegalStatus.IN_CIRCULATION, repository.findCodes(order).getFirst().legalStatus());
+        assertEquals(1, new ZnackGtinInventoryService().availableCount(1, A));
     }
 
     @Test void incompleteCodeDownloadRemainsActiveUntilAllCodesArePresent() throws Exception {
@@ -516,6 +671,36 @@ class ZnackGtinWorkflowTest {
                 return repository.findOrder(id).orElseThrow();
             }
         };
+    }
+
+    private ZnackIntroductionReadinessService readinessService(boolean cardReady, String status, String statusEx,
+                                                               String productName) {
+        return readinessService(cardReady, status, statusEx, productName, false);
+    }
+
+    private ZnackIntroductionReadinessService readinessService(boolean cardReady, String status, String statusEx,
+                                                               String productName, boolean singleObjectResponse) {
+        ZnackApiClient api = new ZnackApiClient() {
+            @Override public JsonElement productCards(String base, String token, String gtins) {
+                return JsonParser.parseString("""
+                        {"result":[{"good_name":"%s","good_mark_flag":%s,"good_turn_flag":%s,
+                        "good_status":"published","identified_by":[{"type":"gtin","value":"%s"}]}]}
+                        """.formatted(productName, cardReady, cardReady, A));
+            }
+
+            @Override public JsonElement cisesInfo(String base, String token, JsonElement body) {
+                String code = body.getAsJsonArray().get(0).getAsString();
+                String entry = """
+                        {"cisInfo":{"requestedCis":"%s","cis":"%s","gtin":"%s","productName":"%s",
+                        "status":"%s","statusEx":"%s"}}
+                        """.formatted(code, code, A, productName, status, statusEx);
+                return JsonParser.parseString(singleObjectResponse ? entry : "[" + entry + "]");
+            }
+        };
+        ZnackAuthService auth = new ZnackAuthService(api, (input, context) -> null) {
+            @Override public String trueApiToken(Settings ignored) { return "token"; }
+        };
+        return new ZnackIntroductionReadinessService(api, auth, repository);
     }
 
     private Settings testedSettings() throws Exception {

@@ -35,13 +35,21 @@ public class ZnackPurchaseCoordinator {
     private final ZnackKizOrderService orders;
     private final ZnackKizCodeService codes;
     private final ZnackIntroductionService introduction;
+    private final ZnackIntroductionReadinessService readiness;
 
     public ZnackPurchaseCoordinator(ZnackRepository repository, ZnackKizOrderService orders,
                                     ZnackKizCodeService codes, ZnackIntroductionService introduction) {
+        this(repository, orders, codes, introduction, null);
+    }
+
+    public ZnackPurchaseCoordinator(ZnackRepository repository, ZnackKizOrderService orders,
+                                    ZnackKizCodeService codes, ZnackIntroductionService introduction,
+                                    ZnackIntroductionReadinessService readiness) {
         this.repository = repository;
         this.orders = orders;
         this.codes = codes;
         this.introduction = introduction;
+        this.readiness = readiness;
     }
 
     public static ZnackPurchaseCoordinator create(ZnackRepository repository) {
@@ -54,7 +62,8 @@ public class ZnackPurchaseCoordinator {
         ZnackAuthService auth = new ZnackAuthService(api, signer);
         return new ZnackPurchaseCoordinator(repository, new ZnackKizOrderService(api, auth, signer, repository),
                 new ZnackKizCodeService(api, auth, repository),
-                new ZnackIntroductionService(api, auth, signer, repository));
+                new ZnackIntroductionService(api, auth, signer, repository),
+                new ZnackIntroductionReadinessService(api, auth, repository));
     }
 
     public static void resumeAllPersisted() {
@@ -118,12 +127,15 @@ public class ZnackPurchaseCoordinator {
             }
             synchronized (CREATE_LOCK) {
                 if (repository.findActivePipeline(pipeline.gtin()).isPresent()) continue;
-                repository.updatePipeline(pipeline.id(), pipeline.orderId(), PurchaseStage.SUBMITTING_INTRODUCTION, null);
+                repository.updatePipeline(pipeline.id(), pipeline.orderId(), PurchaseStage.WAITING_INTRODUCTION_READINESS, null);
             }
             try {
                 advance(settings, pipeline.id());
             } catch (Exception e) {
-                if (repository.findLatestDocument(pipeline.orderId()).isEmpty()) {
+                PurchaseStage current = repository.findPipeline(pipeline.id())
+                        .map(ZnackPurchasePipelineState::stage).orElse(pipeline.stage());
+                if (current != PurchaseStage.WAITING_INTRODUCTION_READINESS
+                        && repository.findLatestDocument(pipeline.orderId()).isEmpty()) {
                     repository.updatePipeline(pipeline.id(), pipeline.orderId(), pipeline.stage(), e.getMessage());
                 }
                 repository.log("INTRODUCTION_RESUME", pipeline.gtin(), "ERROR", e.getMessage(), null);
@@ -143,6 +155,7 @@ public class ZnackPurchaseCoordinator {
                     case VALIDATING -> createOrder(settings, pipeline);
                     case POLLING_ORDER -> pollOrder(settings, pipeline);
                     case DOWNLOADING_CODES -> downloadCodes(settings, pipeline);
+                    case WAITING_INTRODUCTION_READINESS -> checkIntroductionReadiness(settings, pipeline);
                     case SUBMITTING_INTRODUCTION -> submitIntroduction(settings, pipeline);
                     case POLLING_INTRODUCTION -> pollIntroduction(settings, pipeline);
                     case CREATING_ORDER -> throw new ZnackOrderCreationAmbiguousException(
@@ -154,6 +167,7 @@ public class ZnackPurchaseCoordinator {
                 PurchaseStage current = repository.findPipeline(pipelineId).map(ZnackPurchasePipelineState::stage)
                         .orElse(PurchaseStage.FAILED);
                 if (current == PurchaseStage.POLLING_ORDER || current == PurchaseStage.DOWNLOADING_CODES
+                        || current == PurchaseStage.WAITING_INTRODUCTION_READINESS
                         || current == PurchaseStage.POLLING_INTRODUCTION) {
                     repository.updatePipeline(pipelineId, null, current, e.getMessage());
                 } else if (current == PurchaseStage.CREATING_ORDER
@@ -217,16 +231,48 @@ public class ZnackPurchaseCoordinator {
         }
         Product product = product(pipeline.gtin());
         if (!hasGoodsDocument(settings, product)) {
-            repository.updateOrder(orderId, null, null, OrderStatus.INTRODUCTION_SKIPPED_MISSING_DOCUMENTS, null);
+            String error = missingGoodsDocument(product, settings);
+            repository.updateOrder(orderId, null, null, OrderStatus.INTRODUCTION_SKIPPED_MISSING_DOCUMENTS, error);
             repository.updatePipeline(pipeline.id(), orderId,
-                    PurchaseStage.INTRODUCTION_SKIPPED_MISSING_DOCUMENTS, null);
+                    PurchaseStage.INTRODUCTION_SKIPPED_MISSING_DOCUMENTS, error);
             return;
         }
         if (product.tnVed() == null || product.tnVed().isBlank()) {
-            repository.updateOrder(orderId, null, null, OrderStatus.INTRODUCTION_SKIPPED_MISSING_METADATA, null);
+            String error = "Missing TN VED.";
+            repository.updateOrder(orderId, null, null, OrderStatus.INTRODUCTION_SKIPPED_MISSING_METADATA, error);
             repository.updatePipeline(pipeline.id(), orderId,
-                    PurchaseStage.INTRODUCTION_SKIPPED_MISSING_METADATA, null);
+                    PurchaseStage.INTRODUCTION_SKIPPED_MISSING_METADATA, error);
             return;
+        }
+        repository.updateOrder(orderId, null, null, OrderStatus.WAITING_INTRODUCTION_READINESS, null);
+        repository.updatePipeline(pipeline.id(), orderId, PurchaseStage.WAITING_INTRODUCTION_READINESS, null);
+        checkIntroductionReadiness(settings, repository.findPipeline(pipeline.id()).orElseThrow());
+    }
+
+    private void checkIntroductionReadiness(Settings settings, ZnackPurchasePipelineState pipeline) throws Exception {
+        long orderId = requiredOrderId(pipeline);
+        if (!settings.autoIntroduction()) {
+            repository.updateOrder(orderId, null, null, OrderStatus.CODES_DOWNLOADED, null);
+            repository.updatePipeline(pipeline.id(), orderId, PurchaseStage.COMPLETED, null);
+            return;
+        }
+        List<ZnackModels.KizCode> downloadedCodes = repository.findCodes(orderId);
+        ZnackIntroductionReadinessService.Readiness result = readiness == null
+                ? ZnackIntroductionReadinessService.Readiness.ready(null)
+                : readiness.check(settings, product(pipeline.gtin()), downloadedCodes);
+        if (result.allIntroduced()) {
+            repository.markCodes(orderId, ZnackModels.KizLegalStatus.IN_CIRCULATION, null, null);
+            repository.updateOrder(orderId, null, null, OrderStatus.INTRODUCED, null);
+            repository.updatePipeline(pipeline.id(), orderId, PurchaseStage.INTRODUCED, null);
+            return;
+        }
+        if (!result.ready()) {
+            repository.updateOrder(orderId, null, null, OrderStatus.WAITING_INTRODUCTION_READINESS, result.message());
+            repository.updatePipeline(pipeline.id(), orderId, PurchaseStage.WAITING_INTRODUCTION_READINESS, result.message());
+            return;
+        }
+        if (result.message() != null && !result.message().isBlank()) {
+            repository.log("INTRODUCTION_READINESS", pipeline.gtin(), "WARN", result.message(), null);
         }
         repository.updatePipeline(pipeline.id(), orderId, PurchaseStage.SUBMITTING_INTRODUCTION, null);
         submitIntroduction(settings, repository.findPipeline(pipeline.id()).orElseThrow());
@@ -267,9 +313,11 @@ public class ZnackPurchaseCoordinator {
     }
 
     private boolean hasGoodsDocument(Settings settings, Product product) {
-        return settings.hasDefaultGoodsDocument()
-                || (product.certificateNumber() != null && !product.certificateNumber().isBlank()
-                && product.certificateDate() != null && !product.certificateDate().isBlank());
+        return product.resolvedGoodsDocument(settings).complete();
+    }
+
+    private String missingGoodsDocument(Product product, Settings settings) {
+        return "Missing " + product.resolvedGoodsDocument(settings).missingFields() + ".";
     }
 
     void schedule(long pipelineId) {
@@ -277,7 +325,8 @@ public class ZnackPurchaseCoordinator {
         if (pipeline == null || !pipeline.active() || pipeline.stage() == PurchaseStage.CREATING_ORDER) return;
         String key = pipelineKey(pipelineId);
         if (!SCHEDULED.add(key)) return;
-        long delaySeconds = pipeline.errorMessage() == null || pipeline.errorMessage().isBlank() ? 5 : 30;
+        long delaySeconds = pipeline.stage() == PurchaseStage.WAITING_INTRODUCTION_READINESS
+                ? 30 : pipeline.errorMessage() == null || pipeline.errorMessage().isBlank() ? 5 : 30;
         POLLER.schedule(() -> {
             try {
                 Settings latestSettings = repository.getSettings();

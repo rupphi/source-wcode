@@ -18,12 +18,13 @@ public class ZnackIntroductionService {
         if(product.tnVed()==null||product.tnVed().isBlank())throw new IllegalStateException("TN VED is required before introduction.");
         String participant=required(auth.resolvedParticipantInn(s),"Participant INN is required for introduction.");
         String producer=valueOr(s.producerInn(),participant),owner=valueOr(s.ownerInn(),participant);
+        GoodsDocument goodsDocument=product.resolvedGoodsDocument(s);
+        if(!goodsDocument.complete())throw new IllegalStateException("Missing "+goodsDocument.missingFields()+".");
+        Settings.validateGoodsDocumentDate(goodsDocument.date(),"Document issue date");
         JsonObject payload=new JsonObject();payload.addProperty("participant_inn",participant);payload.addProperty("producer_inn",producer);payload.addProperty("owner_inn",owner);payload.addProperty("production_type","OWN_PRODUCTION");
         if(product.productionDate()!=null&&!product.productionDate().isBlank())payload.addProperty("production_date",product.productionDate());
         JsonArray items=new JsonArray();for(KizCode code:codes){JsonObject item=new JsonObject();item.addProperty("uit_code",code.rawCode());item.addProperty("tnved_code",product.tnVed());
-            String number=valueOr(s.documentNumber(),product.certificateNumber()),issueDate=valueOr(s.documentDate(),product.certificateDate());
-            if(number!=null&&!number.isBlank()){JsonObject certificate=new JsonObject();certificate.addProperty("certificate_type",valueOr(product.certificateType(),"CONFORMITY_DECLARATION"));certificate.addProperty("certificate_number",number);certificate.addProperty("certificate_date",issueDate);
-                if(s.documentExpiryDate()!=null&&!s.documentExpiryDate().isBlank())certificate.addProperty("certificate_expiration_date",s.documentExpiryDate().trim());
+            if(goodsDocument.complete()){JsonObject certificate=new JsonObject();certificate.addProperty("certificate_type",goodsDocument.type().trim());certificate.addProperty("certificate_number",goodsDocument.number().trim());certificate.addProperty("certificate_date",goodsDocument.date().trim());
                 JsonArray certificates=new JsonArray();certificates.add(certificate);item.add("certificate_document_data",certificates);}items.add(item);}
         payload.add("products",items);byte[] documentBytes=payload.toString().getBytes(StandardCharsets.UTF_8);
         byte[] sig=signer.sign(documentBytes, ZnackSignatureContext.TRUE_API_DOCUMENT).cms();String token=auth.trueApiToken(s);

@@ -6,6 +6,7 @@ import com.tuandev.fbsbarcode.integration.znack.ZnackModels.Product;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.time.Instant;
 
 public class ZnackProductService {
     private static final int PAGE_SIZE = 10_000;
@@ -23,7 +24,10 @@ public class ZnackProductService {
             if(array!=null)for(JsonElement e:array){JsonObject o=e.getAsJsonObject();String gtin=text(o,"gtin","productGtin");if(!gtin.isBlank()){String normalized=GtinNormalizer.normalize(gtin);if(GtinNormalizer.isTechnicalRange(normalized)){technical++;continue;}byGtin.put(normalized,new Product(
                     normalized,text(o,"productName","name"),text(o,"tnVed","tnved","tnvedCode","tnved_code"),
                     text(o,"certificateType","certificate_type"),text(o,"certificateNumber","certificate_number"),
-                    text(o,"certificateDate","certificate_date"),text(o,"productionDate","production_date")));}}
+                    text(o,"certificateDate","certificate_date"),text(o,"productionDate","production_date"),
+                    bool(o,"goodMarkFlag","good_mark_flag"),bool(o,"goodTurnFlag","good_turn_flag"),
+                    text(o,"goodStatus","good_status","cardStatus"),text(o,"goodDetailedStatus","good_detailed_status"),
+                    null));}}
             int received=array==null?0:array.size();fetched+=received;page++;
             if(total==null&&received<PAGE_SIZE)break;
             if(received==0)break;
@@ -32,7 +36,7 @@ public class ZnackProductService {
         List<Product> products=List.copyOf(byGtin.values());
         repository.upsertProducts(products);int removed=repository.pruneTechnicalProducts();
         repository.log("GTIN_SYNC",null,"INFO","Synced "+products.size()+" orderable GTINs; ignored "+technical+
-                " technical GTINs; removed "+removed+" unreferenced technical GTINs",200);return products;
+                " technical GTINs; removed "+removed+" unreferenced technical GTINs",200);return repository.findProducts();
     }
     private void enrichFromNationalCatalog(ZnackModels.Settings settings,String token,Map<String,Product> byGtin){
         List<String> gtins=List.copyOf(byGtin.keySet());
@@ -60,7 +64,12 @@ public class ZnackProductService {
                             Product current=byGtin.get(gtin);
                             if(current!=null)byGtin.put(gtin,new Product(gtin,first(name,current.productName()),
                                     first(tnVed,current.tnVed()),current.certificateType(),current.certificateNumber(),
-                                    current.certificateDate(),current.productionDate()));
+                                    current.certificateDate(),current.productionDate(),
+                                    first(bool(card,"goodMarkFlag","good_mark_flag"),current.goodMarkFlag()),
+                                    first(bool(card,"goodTurnFlag","good_turn_flag"),current.goodTurnFlag()),
+                                    first(text(card,"goodStatus","good_status","cardStatus"),current.cardStatus()),
+                                    first(text(card,"goodDetailedStatus","good_detailed_status"),current.cardDetailedStatus()),
+                                    Instant.now()));
                         }catch(IllegalArgumentException ignored){}
                     }
                 }
@@ -75,6 +84,8 @@ public class ZnackProductService {
         JsonObject object=response.getAsJsonObject();
         return object.has(key)&&object.get(key).isJsonArray()?object.getAsJsonArray(key):null;
     }
-    private String first(String preferred,String fallback){return preferred==null||preferred.isBlank()?fallback:preferred;}
-    private String text(JsonObject o,String...keys){for(String k:keys)if(o.has(k)&&!o.get(k).isJsonNull())return o.get(k).getAsString();return "";}
+    private String first(String preferred,String fallback){return preferred==null||preferred.isBlank()||"-".equals(preferred.trim())?fallback:preferred;}
+    private Boolean first(Boolean preferred,Boolean fallback){return preferred==null?fallback:preferred;}
+    private Boolean bool(JsonObject o,String...keys){for(String k:keys)if(o.has(k)&&!o.get(k).isJsonNull()){JsonElement value=o.get(k);if(value.isJsonPrimitive()){JsonPrimitive primitive=value.getAsJsonPrimitive();if(primitive.isBoolean())return primitive.getAsBoolean();String text=primitive.getAsString();if("true".equalsIgnoreCase(text)||"1".equals(text))return true;if("false".equalsIgnoreCase(text)||"0".equals(text))return false;}}return null;}
+    private String text(JsonObject o,String...keys){for(String k:keys)if(o.has(k)&&!o.get(k).isJsonNull()){JsonElement value=o.get(k);return value.isJsonPrimitive()?value.getAsString():value.toString();}return "";}
 }

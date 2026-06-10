@@ -90,7 +90,7 @@
                         </VBox>
                     </children>
                 </StackPane>
-                <VBox fx:id="gtinInventoryPane" maxWidth="340.0" minWidth="280.0" prefWidth="300.0" spacing="10.0" styleClass="surface, gtin-inventory-pane">
+                <VBox fx:id="gtinInventoryPane" maxWidth="520.0" minWidth="360.0" prefWidth="420.0" spacing="10.0" styleClass="surface, gtin-inventory-pane">
                     <children>
                         <HBox alignment="CENTER_LEFT" spacing="8.0">
                             <children>

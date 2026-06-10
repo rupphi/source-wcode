@@ -27,7 +27,7 @@ public final class ZnackRepository {
                         r.getString("pdf_folder"),r.getInt("auto_introduction")!=0,r.getString("certificate_list_executable"),
                         r.getString("certificate_list_arguments_json"),r.getString("certificate_metadata_json"),instant(r.getString("signer_tested_at")),
                         r.getString("certmgr_path"),r.getString("cryptcp_path"),r.getString("csptest_path"),r.getInt("cryptopro_timeout_seconds"),
-                        r.getString("document_expiry_date"));
+                        r.getString("document_expiry_date"),r.getString("document_type"));
             }
         }catch(SQLException e){throw new RuntimeException(e);}
     }
@@ -38,8 +38,8 @@ public final class ZnackRepository {
                 producer_inn,owner_inn,signer_executable,signer_certificate,signer_arguments_json,document_number,
                 document_date,pdf_folder,auto_introduction,certificate_list_executable,certificate_list_arguments_json,
                 certificate_metadata_json,signer_tested_at,certmgr_path,cryptcp_path,csptest_path,cryptopro_timeout_seconds,
-                document_expiry_date,updated_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                document_expiry_date,document_type,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(shop_id) DO UPDATE SET true_api_base_url=excluded.true_api_base_url,suz_base_url=excluded.suz_base_url,
                 oms_id=excluded.oms_id,oms_connection=excluded.oms_connection,participant_inn=excluded.participant_inn,
                 producer_inn=excluded.producer_inn,owner_inn=excluded.owner_inn,signer_executable=excluded.signer_executable,
@@ -49,7 +49,8 @@ public final class ZnackRepository {
                 certificate_list_arguments_json=excluded.certificate_list_arguments_json,certificate_metadata_json=excluded.certificate_metadata_json,
                 signer_tested_at=excluded.signer_tested_at,certmgr_path=excluded.certmgr_path,cryptcp_path=excluded.cryptcp_path,
                 csptest_path=excluded.csptest_path,cryptopro_timeout_seconds=excluded.cryptopro_timeout_seconds,
-                document_expiry_date=excluded.document_expiry_date,updated_at=excluded.updated_at
+                document_expiry_date=excluded.document_expiry_date,document_type=excluded.document_type,
+                updated_at=excluded.updated_at
                 """;
         try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement(sql)){
             int i=1;ps.setInt(i++,shop.shopId());ps.setString(i++,s.trueApiBaseUrl());ps.setString(i++,s.suzBaseUrl());ps.setString(i++,s.omsId());
@@ -59,6 +60,7 @@ public final class ZnackRepository {
             ps.setString(i++,s.certificateListExecutable());ps.setString(i++,s.certificateListArgumentsJson());ps.setString(i++,s.certificateMetadataJson());
             ps.setString(i++,s.signerTestedAt()==null?null:s.signerTestedAt().toString());ps.setString(i++,s.certmgrPath());ps.setString(i++,s.cryptcpPath());
             ps.setString(i++,s.csptestPath());ps.setInt(i++,s.resolvedCryptoProTimeoutSeconds());ps.setString(i++,s.documentExpiryDate());
+            ps.setString(i++,s.documentType());
             ps.setString(i,Instant.now().toString());ps.executeUpdate();
         }catch(SQLException e){throw new RuntimeException(e);}
     }
@@ -66,18 +68,24 @@ public final class ZnackRepository {
     public void upsertProducts(List<Product> products){
         String sql="""
                 INSERT INTO znack_products(shop_id,gtin,product_name,tn_ved,certificate_type,certificate_number,
-                                           certificate_date,production_date,synced_at)
-                VALUES(?,?,?,?,?,?,?,?,?)
+                                           certificate_date,production_date,good_mark_flag,good_turn_flag,
+                                           card_status,card_detailed_status,readiness_checked_at,synced_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(shop_id,gtin) DO UPDATE SET
                   product_name=COALESCE(NULLIF(excluded.product_name,''),znack_products.product_name),
-                  tn_ved=COALESCE(NULLIF(excluded.tn_ved,''),znack_products.tn_ved),
-                  certificate_type=COALESCE(NULLIF(excluded.certificate_type,''),znack_products.certificate_type),
-                  certificate_number=COALESCE(NULLIF(excluded.certificate_number,''),znack_products.certificate_number),
-                  certificate_date=COALESCE(NULLIF(excluded.certificate_date,''),znack_products.certificate_date),
-                  production_date=COALESCE(NULLIF(excluded.production_date,''),znack_products.production_date),
+                  tn_ved=COALESCE(NULLIF(znack_products.tn_ved,''),excluded.tn_ved),
+                  certificate_type=COALESCE(NULLIF(znack_products.certificate_type,''),excluded.certificate_type),
+                  certificate_number=COALESCE(NULLIF(znack_products.certificate_number,''),excluded.certificate_number),
+                  certificate_date=COALESCE(NULLIF(znack_products.certificate_date,''),excluded.certificate_date),
+                  production_date=COALESCE(NULLIF(znack_products.production_date,''),excluded.production_date),
+                  good_mark_flag=COALESCE(excluded.good_mark_flag,znack_products.good_mark_flag),
+                  good_turn_flag=COALESCE(excluded.good_turn_flag,znack_products.good_turn_flag),
+                  card_status=COALESCE(NULLIF(excluded.card_status,''),znack_products.card_status),
+                  card_detailed_status=COALESCE(NULLIF(excluded.card_detailed_status,''),znack_products.card_detailed_status),
+                  readiness_checked_at=COALESCE(excluded.readiness_checked_at,znack_products.readiness_checked_at),
                   synced_at=excluded.synced_at
                 """;
-        try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement(sql)){c.setAutoCommit(false);for(Product p:products){int i=1;ps.setInt(i++,shop.shopId());ps.setString(i++,GtinNormalizer.normalize(p.gtin()));ps.setString(i++,p.productName());ps.setString(i++,p.tnVed());ps.setString(i++,p.certificateType());ps.setString(i++,p.certificateNumber());ps.setString(i++,p.certificateDate());ps.setString(i++,p.productionDate());ps.setString(i,Instant.now().toString());ps.addBatch();}ps.executeBatch();c.commit();}catch(SQLException e){throw new RuntimeException(e);}
+        try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement(sql)){c.setAutoCommit(false);for(Product p:products){int i=1;ps.setInt(i++,shop.shopId());ps.setString(i++,GtinNormalizer.normalize(p.gtin()));ps.setString(i++,p.productName());ps.setString(i++,p.tnVed());ps.setString(i++,p.certificateType());ps.setString(i++,p.certificateNumber());ps.setString(i++,p.certificateDate());ps.setString(i++,p.productionDate());nullableBoolean(ps,i++,p.goodMarkFlag());nullableBoolean(ps,i++,p.goodTurnFlag());ps.setString(i++,p.cardStatus());ps.setString(i++,p.cardDetailedStatus());ps.setString(i++,p.readinessCheckedAt()==null?null:p.readinessCheckedAt().toString());ps.setString(i,Instant.now().toString());ps.addBatch();}ps.executeBatch();c.commit();}catch(SQLException e){throw new RuntimeException(e);}
     }
     public int pruneTechnicalProducts(){
         String deleteProducts="""
@@ -96,9 +104,10 @@ public final class ZnackRepository {
             }catch(SQLException e){c.rollback();throw e;}
         }catch(SQLException e){throw new RuntimeException(e);}
     }
-    public List<Product> findProducts(){try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement("SELECT * FROM znack_products WHERE shop_id=? AND gtin NOT LIKE '029%' ORDER BY gtin")){ps.setInt(1,shop.shopId());try(ResultSet r=ps.executeQuery()){List<Product> o=new ArrayList<>();while(r.next())o.add(new Product(r.getString("gtin"),r.getString("product_name"),r.getString("tn_ved"),r.getString("certificate_type"),r.getString("certificate_number"),r.getString("certificate_date"),r.getString("production_date")));return o;}}catch(SQLException e){throw new RuntimeException(e);}}
-    public Optional<Product> findProduct(String gtin){try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement("SELECT * FROM znack_products WHERE shop_id=? AND gtin=?")){ps.setInt(1,shop.shopId());ps.setString(2,GtinNormalizer.normalize(gtin));try(ResultSet r=ps.executeQuery()){return r.next()?Optional.of(new Product(r.getString("gtin"),r.getString("product_name"),r.getString("tn_ved"),r.getString("certificate_type"),r.getString("certificate_number"),r.getString("certificate_date"),r.getString("production_date"))):Optional.empty();}}catch(SQLException e){throw new RuntimeException(e);}}
+    public List<Product> findProducts(){try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement("SELECT * FROM znack_products WHERE shop_id=? AND gtin NOT LIKE '029%' ORDER BY gtin")){ps.setInt(1,shop.shopId());try(ResultSet r=ps.executeQuery()){List<Product> o=new ArrayList<>();while(r.next())o.add(product(r));return o;}}catch(SQLException e){throw new RuntimeException(e);}}
+    public Optional<Product> findProduct(String gtin){try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement("SELECT * FROM znack_products WHERE shop_id=? AND gtin=?")){ps.setInt(1,shop.shopId());ps.setString(2,GtinNormalizer.normalize(gtin));try(ResultSet r=ps.executeQuery()){return r.next()?Optional.of(product(r)):Optional.empty();}}catch(SQLException e){throw new RuntimeException(e);}}
     public void updateProductMetadata(Product p){execute("UPDATE znack_products SET tn_ved=?,certificate_type=?,certificate_number=?,certificate_date=?,production_date=? WHERE shop_id=? AND gtin=?",ps->{ps.setString(1,p.tnVed());ps.setString(2,p.certificateType());ps.setString(3,p.certificateNumber());ps.setString(4,p.certificateDate());ps.setString(5,p.productionDate());ps.setInt(6,shop.shopId());ps.setString(7,GtinNormalizer.normalize(p.gtin()));});}
+    public void updateProductReadiness(Product p){execute("UPDATE znack_products SET product_name=COALESCE(NULLIF(?,''),product_name),good_mark_flag=?,good_turn_flag=?,card_status=?,card_detailed_status=?,readiness_checked_at=? WHERE shop_id=? AND gtin=?",ps->{ps.setString(1,p.productName());nullableBoolean(ps,2,p.goodMarkFlag());nullableBoolean(ps,3,p.goodTurnFlag());ps.setString(4,p.cardStatus());ps.setString(5,p.cardDetailedStatus());ps.setString(6,p.readinessCheckedAt()==null?null:p.readinessCheckedAt().toString());ps.setInt(7,shop.shopId());ps.setString(8,GtinNormalizer.normalize(p.gtin()));});}
 
     public long createDraft(String gtin,int quantity){String now=Instant.now().toString();try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement("INSERT INTO kiz_orders(shop_id,gtin,quantity,local_status,created_at,updated_at) VALUES(?,?,?,?,?,?)",Statement.RETURN_GENERATED_KEYS)){ps.setInt(1,shop.shopId());ps.setString(2,GtinNormalizer.normalize(gtin));ps.setInt(3,quantity);ps.setString(4,OrderStatus.DRAFT.name());ps.setString(5,now);ps.setString(6,now);ps.executeUpdate();try(ResultSet r=ps.getGeneratedKeys()){r.next();return r.getLong(1);}}catch(SQLException e){throw new RuntimeException(e);}}
     public void updateOrder(long id,String external,String remote,OrderStatus status,String error){execute("UPDATE kiz_orders SET external_order_id=COALESCE(?,external_order_id),remote_status=?,local_status=?,error_message=?,updated_at=? WHERE shop_id=? AND id=?",ps->{ps.setString(1,external);ps.setString(2,remote);ps.setString(3,status.name());ps.setString(4,ZnackSanitizer.message(error));ps.setString(5,Instant.now().toString());ps.setInt(6,shop.shopId());ps.setLong(7,id);});}
@@ -125,8 +134,11 @@ public final class ZnackRepository {
 
     private void execute(String sql,SqlBinder binder){try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement(sql)){binder.bind(ps);ps.executeUpdate();}catch(SQLException e){throw new RuntimeException(e);}}
     private KizOrder order(ResultSet r)throws SQLException{return new KizOrder(r.getLong("id"),r.getString("external_order_id"),r.getString("gtin"),r.getInt("quantity"),r.getString("remote_status"),OrderStatus.valueOf(r.getString("local_status")),r.getString("error_message"),Instant.parse(r.getString("created_at")),Instant.parse(r.getString("updated_at")));}
+    private Product product(ResultSet r)throws SQLException{return new Product(r.getString("gtin"),r.getString("product_name"),r.getString("tn_ved"),r.getString("certificate_type"),r.getString("certificate_number"),r.getString("certificate_date"),r.getString("production_date"),nullableBoolean(r,"good_mark_flag"),nullableBoolean(r,"good_turn_flag"),r.getString("card_status"),r.getString("card_detailed_status"),instant(r.getString("readiness_checked_at")));}
     private KizCode code(ResultSet r)throws SQLException{long d=r.getLong("document_id");Long documentId=r.wasNull()?null:d;String legal=r.getString("legal_status");return new KizCode(r.getLong("id"),r.getLong("order_id"),r.getString("raw_code"),r.getString("display_code"),r.getString("gtin"),r.getString("block_id"),r.getString("pdf_path"),documentId,KizInventoryStatus.valueOf(r.getString("status")),legal==null||legal.isBlank()?null:KizLegalStatus.valueOf(legal));}
     private ZnackPurchasePipelineState pipeline(ResultSet r)throws SQLException{long orderId=r.getLong("order_id");boolean orderNull=r.wasNull();return new ZnackPurchasePipelineState(r.getLong("id"),r.getInt("shop_id"),r.getString("gtin"),r.getInt("quantity"),orderNull?null:orderId,PurchaseStage.valueOf(r.getString("stage")),r.getString("error_message"),Instant.parse(r.getString("created_at")),Instant.parse(r.getString("updated_at")));}
     private static Instant instant(String value){return value==null||value.isBlank()?null:Instant.parse(value);}
+    private static Boolean nullableBoolean(ResultSet r,String column)throws SQLException{int value=r.getInt(column);return r.wasNull()?null:value!=0;}
+    private static void nullableBoolean(PreparedStatement ps,int index,Boolean value)throws SQLException{if(value==null)ps.setNull(index,Types.INTEGER);else ps.setInt(index,value?1:0);}
     @FunctionalInterface private interface SqlBinder{void bind(PreparedStatement ps)throws SQLException;}
 }

@@ -21,7 +21,6 @@
    <TableColumn fx:id="availableColumn" prefWidth="90" text="%kiz_mapping.column.available"/>
    <TableColumn fx:id="pipelineColumn" prefWidth="180" text="%kiz_mapping.column.pipeline"/>
    <TableColumn fx:id="errorColumn" prefWidth="220" text="%kiz_mapping.column.error"/>
-   <TableColumn fx:id="syncedColumn" prefWidth="175" text="%kiz_mapping.column.synced"/>
    <TableColumn fx:id="actionsColumn" prefWidth="290" text="%kiz_mapping.column.actions"/>
   </columns>
  </TableView>

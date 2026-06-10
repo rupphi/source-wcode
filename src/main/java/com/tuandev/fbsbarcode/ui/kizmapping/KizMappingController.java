@@ -31,13 +31,15 @@ import java.util.Map;
 import java.util.Set;
 
 public class KizMappingController {
+    private static final List<String> DOCUMENT_TYPES = List.of(
+            "CONFORMITY_DECLARATION", "CONFORMITY_CERTIFICATE", "STATE_REGISTRATION_CERTIFICATE");
     @FXML private Label titleLabel, emptyStateLabel;
     @FXML private Button refreshButton;
     @FXML private ProgressIndicator loadingIndicator;
     @FXML private TableView<ZnackGtinInventorySummary> gtinTable;
     @FXML private TableColumn<ZnackGtinInventorySummary,String> gtinColumn, nameColumn, mappingColumn;
     @FXML private TableColumn<ZnackGtinInventorySummary,Number> availableColumn;
-    @FXML private TableColumn<ZnackGtinInventorySummary,String> pipelineColumn, errorColumn, syncedColumn;
+    @FXML private TableColumn<ZnackGtinInventorySummary,String> pipelineColumn, errorColumn;
     @FXML private TableColumn<ZnackGtinInventorySummary,ZnackGtinInventorySummary> actionsColumn;
 
     private final KizMappingRepository mappingRepository = new KizMappingRepository();
@@ -53,15 +55,14 @@ public class KizMappingController {
         gtinColumn.setCellValueFactory(v -> new SimpleStringProperty(v.getValue().gtin()));
         nameColumn.setCellValueFactory(v -> new SimpleStringProperty(value(v.getValue().productName())));
         mappingColumn.setCellValueFactory(v -> new SimpleStringProperty(v.getValue().mappingRuleCount() == 0
-                ? tr("kiz_mapping.status.unmapped") : tr("kiz_mapping.status.mapped")));
+                ? tr("kiz_mapping.status.unmapped")
+                : v.getValue().mappingRuleCount() + " " + tr("kiz_mapping.status.rules")));
         availableColumn.setCellValueFactory(v -> new SimpleIntegerProperty(v.getValue().available()));
         pipelineColumn.setCellValueFactory(v -> new SimpleStringProperty(localizeStatus(first(
                 v.getValue().latestPipelineStage(), v.getValue().latestOrderStatus()))));
         mappingColumn.setCellFactory(column -> statusCell("badge-green", "badge-gray"));
         pipelineColumn.setCellFactory(column -> statusCell("badge-warning", "badge-gray"));
         errorColumn.setCellValueFactory(v -> new SimpleStringProperty(value(v.getValue().latestError())));
-        syncedColumn.setCellValueFactory(v -> new SimpleStringProperty(v.getValue().syncedAt() == null
-                ? "" : v.getValue().syncedAt().toString()));
         actionsColumn.setCellValueFactory(v -> new javafx.beans.property.SimpleObjectProperty<>(v.getValue()));
         actionsColumn.setCellFactory(column -> new ActionsCell());
         refreshTimer = new Timeline(new KeyFrame(javafx.util.Duration.seconds(5), event -> {
@@ -101,7 +102,6 @@ public class KizMappingController {
         availableColumn.setText(tr("kiz_mapping.column.available"));
         pipelineColumn.setText(tr("kiz_mapping.column.pipeline"));
         errorColumn.setText(tr("kiz_mapping.column.error"));
-        syncedColumn.setText(tr("kiz_mapping.column.synced"));
         actionsColumn.setText(tr("kiz_mapping.column.actions"));
         emptyStateLabel.setText(tr("kiz_mapping.empty_gtin"));
     }
@@ -218,14 +218,27 @@ public class KizMappingController {
         ListView<String> subjects = new ListView<>();
         subjects.getItems().setAll(data.subjects());
         VBox genders = new VBox(8);
+        VBox selectedRules = new VBox(8);
         Map<String, SelectionState> state = data.state();
-        subjects.getSelectionModel().selectedItemProperty().addListener((o, old, subject) ->
-                renderGenders(summary.gtin(), subject, genders, state, data));
+        Runnable[] refresh = new Runnable[1];
+        refresh[0] = () -> {
+            subjects.refresh();
+            renderGenders(summary.gtin(), subjects.getSelectionModel().getSelectedItem(), genders, state, data,
+                    refresh[0]);
+            renderSelectedRules(selectedRules, state, refresh[0]);
+        };
+        subjects.setCellFactory(ignored -> categoryCell(summary.gtin(), state, data, refresh[0]));
+        subjects.getSelectionModel().selectedItemProperty().addListener((o, old, subject) -> refresh[0].run());
         if (!subjects.getItems().isEmpty()) subjects.getSelectionModel().selectFirst();
-        SplitPane content = new SplitPane(subjects, new ScrollPane(genders));
-        content.setPrefSize(720, 460);
+        VBox subjectPane = titledPane(tr("kiz_mapping.mapping.categories"), subjects);
+        VBox genderPane = titledPane(tr("kiz_mapping.mapping.genders"), new ScrollPane(genders));
+        VBox summaryPane = titledPane(tr("kiz_mapping.mapping.summary"), new ScrollPane(selectedRules));
+        SplitPane content = new SplitPane(subjectPane, genderPane, summaryPane);
+        content.setDividerPositions(0.32, 0.68);
+        content.setPrefSize(980, 520);
         dialog.getDialogPane().setContent(content);
         dialog.setResultConverter(button -> button == save ? flatten(state) : null);
+        refresh[0].run();
         dialog.showAndWait().ifPresent(selections -> runTask(() -> {
             mappingRepository.replaceRulesForGtin(shopId, summary.gtin(), selections);
             return null;
@@ -242,8 +255,57 @@ public class KizMappingController {
         return result;
     }
 
+    private ListCell<String> categoryCell(String gtin, Map<String, SelectionState> state, MappingDialogData data,
+                                          Runnable refresh) {
+        return new ListCell<>() {
+            private final CheckBox enabled = new CheckBox();
+            private final Label name = new Label();
+            private final Label count = new Label();
+            private final HBox content = new HBox(8, enabled, name, new javafx.scene.layout.Pane(), count);
+            private boolean updating;
+            {
+                HBox.setHgrow(content.getChildren().get(2), javafx.scene.layout.Priority.ALWAYS);
+                count.getStyleClass().add("text-muted");
+                enabled.setOnAction(event -> {
+                    if (updating || getItem() == null) return;
+                    if (enabled.isSelected()) enableSubject(gtin, getItem(), state, data);
+                    else state.remove(getItem());
+                    refresh.run();
+                });
+            }
+            @Override protected void updateItem(String subject, boolean empty) {
+                super.updateItem(subject, empty);
+                if (empty || subject == null) {
+                    setGraphic(null);
+                    return;
+                }
+                updating = true;
+                SelectionState selection = state.get(subject);
+                enabled.setSelected(selection != null && !selection.empty());
+                updating = false;
+                name.setText(subject);
+                count.setText(selectionCount(selection));
+                setGraphic(content);
+            }
+        };
+    }
+
+    private void enableSubject(String gtin, String subject, Map<String, SelectionState> state, MappingDialogData data) {
+        Map<String, String> owners = data.ownersBySubject().getOrDefault(subject, Map.of());
+        boolean hasOtherOwner = owners.values().stream().anyMatch(owner -> owner != null && !owner.equals(gtin));
+        SelectionState selection = new SelectionState(!hasOtherOwner);
+        if (hasOtherOwner) {
+            String wildcardOwner = owners.get(KizMappingRepository.WILDCARD_GENDER);
+            for (String gender : data.gendersBySubject().getOrDefault(subject, List.of())) {
+                String owner = first(owners.get(gender), wildcardOwner);
+                if (owner == null || owner.equals(gtin)) selection.genders.add(gender);
+            }
+        }
+        if (!selection.empty()) state.put(subject, selection);
+    }
+
     private void renderGenders(String gtin, String subject, VBox box, Map<String, SelectionState> state,
-                               MappingDialogData data) {
+                               MappingDialogData data, Runnable refresh) {
         box.getChildren().clear();
         if (subject == null) return;
         Map<String, String> owners = data.ownersBySubject().getOrDefault(subject, Map.of());
@@ -251,46 +313,83 @@ public class KizMappingController {
         Set<String> otherOwners = owners.values().stream().filter(owner -> owner != null && !owner.equals(gtin))
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
         SelectionState selection = state.get(subject);
+        boolean enabled = selection != null;
         if (selection == null) {
-            selection = new SelectionState(otherOwners.isEmpty());
-            if (!otherOwners.isEmpty()) {
-                for (String gender : availableGenders) {
-                    if (!owners.containsKey(gender) && !owners.containsKey(KizMappingRepository.WILDCARD_GENDER)) {
-                        selection.genders.add(gender);
-                    }
-                }
-            }
-            state.put(subject, selection);
+            Label help = new Label(tr("kiz_mapping.mapping.enable_category"));
+            help.getStyleClass().add("text-muted");
+            help.setWrapText(true);
+            box.getChildren().add(help);
+            selection = new SelectionState(false);
         }
         SelectionState activeSelection = selection;
         CheckBox all = new CheckBox(tr("kiz_mapping.gender.all"));
         all.setSelected(activeSelection.wildcard);
         String wildcardOwner = owners.get(KizMappingRepository.WILDCARD_GENDER);
-        all.setDisable(!otherOwners.isEmpty());
-        if (all.isDisabled()) all.setText(all.getText() + " · " + String.join(", ", otherOwners));
+        all.setDisable(!enabled || !otherOwners.isEmpty());
+        if (!otherOwners.isEmpty()) all.setText(all.getText() + " · " + String.join(", ", otherOwners));
         box.getChildren().add(all);
-        List<CheckBox> genderChecks = new ArrayList<>();
         for (String gender : availableGenders) {
             String owner = first(owners.get(gender), wildcardOwner);
             boolean ownedByOther = owner != null && !owner.equals(gtin);
             CheckBox check = new CheckBox(displayGender(gender) + (owner != null && !owner.equals(gtin) ? " · " + owner : ""));
             check.setSelected(activeSelection.wildcard || activeSelection.genders.contains(gender));
-            check.setDisable(activeSelection.wildcard || ownedByOther);
+            check.setDisable(!enabled || activeSelection.wildcard || ownedByOther);
             check.getProperties().put("ownedByOther", ownedByOther);
             check.selectedProperty().addListener((o, old, selected) -> {
                 if (selected) activeSelection.genders.add(gender); else activeSelection.genders.remove(gender);
+                if (activeSelection.empty()) state.remove(subject);
+                refresh.run();
             });
-            genderChecks.add(check);
             box.getChildren().add(check);
         }
         all.selectedProperty().addListener((o, old, selected) -> {
             activeSelection.wildcard = selected;
             if (selected) activeSelection.genders.clear();
-            genderChecks.forEach(check -> {
-                check.setDisable(selected || Boolean.TRUE.equals(check.getProperties().get("ownedByOther")));
-                check.setSelected(selected);
-            });
+            if (activeSelection.empty()) state.remove(subject);
+            refresh.run();
         });
+    }
+
+    private void renderSelectedRules(VBox box, Map<String, SelectionState> state, Runnable refresh) {
+        box.getChildren().clear();
+        state.forEach((subject, selection) -> {
+            if (selection.empty()) return;
+            Label name = new Label(subject);
+            name.getStyleClass().add("text-strong");
+            Label genders = new Label(selection.wildcard
+                    ? tr("kiz_mapping.gender.all")
+                    : selection.genders.stream().map(this::displayGender).collect(java.util.stream.Collectors.joining(", ")));
+            genders.getStyleClass().add("text-muted");
+            genders.setWrapText(true);
+            Button remove = new Button(tr("common.delete"));
+            remove.setOnAction(event -> {
+                state.remove(subject);
+                refresh.run();
+            });
+            HBox row = new HBox(8, new VBox(3, name, genders), new javafx.scene.layout.Pane(), remove);
+            HBox.setHgrow(row.getChildren().get(1), javafx.scene.layout.Priority.ALWAYS);
+            row.getStyleClass().add("surface");
+            box.getChildren().add(row);
+        });
+        if (box.getChildren().isEmpty()) {
+            Label empty = new Label(tr("kiz_mapping.mapping.summary_empty"));
+            empty.getStyleClass().add("text-muted");
+            empty.setWrapText(true);
+            box.getChildren().add(empty);
+        }
+    }
+
+    private VBox titledPane(String title, javafx.scene.Node content) {
+        Label label = new Label(title);
+        label.getStyleClass().add("h3");
+        VBox pane = new VBox(8, label, content);
+        VBox.setVgrow(content, javafx.scene.layout.Priority.ALWAYS);
+        return pane;
+    }
+
+    private String selectionCount(SelectionState selection) {
+        if (selection == null || selection.empty()) return "";
+        return selection.wildcard ? tr("kiz_mapping.gender.all") : String.valueOf(selection.genders.size());
     }
 
     private void showBuy(ZnackGtinInventorySummary summary) {
@@ -357,13 +456,49 @@ public class KizMappingController {
         tnVed.setPromptText(tr("znack.field.tn_ved"));
         TextField productionDate = new TextField(value(current.productionDate()));
         productionDate.setPromptText(tr("znack.field.production_date"));
-        VBox content = new VBox(8, new Label(summary.gtin() + " · " + value(current.productName())), tnVed, productionDate);
+        ComboBox<String> documentType = new ComboBox<>();
+        documentType.getItems().setAll(DOCUMENT_TYPES);
+        if (!value(current.certificateType()).isBlank() && !documentType.getItems().contains(current.certificateType())) {
+            documentType.getItems().add(current.certificateType());
+        }
+        documentType.setValue(value(current.certificateType()).isBlank() ? null : current.certificateType());
+        documentType.setConverter(new javafx.util.StringConverter<>() {
+            @Override public String toString(String value) { return documentTypeDisplay(value); }
+            @Override public String fromString(String value) { return null; }
+        });
+        TextField documentNumber = new TextField(value(current.certificateNumber()));
+        TextField documentDate = new TextField(value(current.certificateDate()));
+        documentDate.setPromptText(tr("znack.date_prompt"));
+        VBox content = new VBox(8,
+                new Label(summary.gtin() + " · " + value(current.productName())),
+                new Label(tr("znack.field.tn_ved")), tnVed,
+                new Label(tr("znack.field.production_date")), productionDate,
+                new Label(tr("kiz_mapping.circulation.document_override")),
+                new Label(tr("znack.document_type")), documentType,
+                new Label(tr("znack.document_number")), documentNumber,
+                new Label(tr("znack.document_issue_date")), documentDate);
         dialog.getDialogPane().setContent(content);
         ButtonType save = new ButtonType(tr("common.save"), ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().setAll(save, ButtonType.CANCEL);
         dialog.setResultConverter(button -> button == save
-                ? new Product(current.gtin(), current.productName(), tnVed.getText(), current.certificateType(),
-                current.certificateNumber(), current.certificateDate(), productionDate.getText()) : null);
+                ? new Product(current.gtin(), current.productName(), tnVed.getText(), documentType.getValue(),
+                documentNumber.getText(), documentDate.getText(), productionDate.getText(), current.goodMarkFlag(),
+                current.goodTurnFlag(), current.cardStatus(), current.cardDetailedStatus(), current.readinessCheckedAt())
+                : null);
+        dialog.getDialogPane().lookupButton(save).addEventFilter(javafx.event.ActionEvent.ACTION, event -> {
+            GoodsDocument override = new GoodsDocument(documentType.getValue(), documentNumber.getText(), documentDate.getText());
+            if (override.anyValue() && !override.complete()) {
+                AlertService.showError("Missing " + override.missingFields() + ".");
+                event.consume();
+                return;
+            }
+            try {
+                Settings.validateGoodsDocumentDate(override.date(), "Document issue date");
+            } catch (IllegalArgumentException error) {
+                AlertService.showError(error.getMessage());
+                event.consume();
+            }
+        });
         dialog.showAndWait().ifPresent(product -> runTask(() -> {
             currentRepository.updateProductMetadata(product);
             Settings settings = currentRepository.getSettings();
@@ -432,6 +567,10 @@ public class KizMappingController {
 
     private String displayGender(String gender) {
         return KizMappingRepository.UNSPECIFIED_GENDER.equals(gender) ? tr("kiz_mapping.gender.unspecified") : gender;
+    }
+
+    private String documentTypeDisplay(String type) {
+        return type == null || type.isBlank() ? "" : tr("znack.document_type." + type.toLowerCase(java.util.Locale.ROOT));
     }
 
     private static String first(String first, String second) {
@@ -523,6 +662,10 @@ public class KizMappingController {
 
         private SelectionState(boolean wildcard) {
             this.wildcard = wildcard;
+        }
+
+        private boolean empty() {
+            return !wildcard && genders.isEmpty();
         }
     }
 
