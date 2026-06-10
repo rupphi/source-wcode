@@ -22,6 +22,15 @@ final class WindowsCadesSignatureProvider implements ZnackSignatureProvider {
             $signedData = New-Object -ComObject CAdESCOM.CadesSignedData
             if ($null -eq $signedData) { throw 'CAdESCOM.CadesSignedData is unavailable.' }
             """;
+    private static final String VBS_PROBE_SCRIPT = """
+            On Error Resume Next
+            Dim signedData
+            Set signedData = CreateObject("CAdESCOM.CadesSignedData")
+            If Err.Number <> 0 Or signedData Is Nothing Then
+              WScript.StdErr.WriteLine "CAdESCOM.CadesSignedData is unavailable: " & Err.Description
+              WScript.Quit 1
+            End If
+            """;
     private static final String SIGN_SCRIPT = """
             param(
               [string]$InputPath,
@@ -96,6 +105,145 @@ final class WindowsCadesSignatureProvider implements ZnackSignatureProvider {
               }
             }
             """;
+    private static final String VBS_SIGN_SCRIPT = """
+            Option Explicit
+            Dim inputPath, thumbprint, detached, outputPath
+            inputPath = WScript.Arguments(0)
+            thumbprint = NormalizeThumbprint(WScript.Arguments(1))
+            detached = LCase(WScript.Arguments(2)) = "true"
+            outputPath = WScript.Arguments(3)
+
+            Dim store, certificate, signer, signedData, signature, storeErrors, stage
+            Set store = Nothing
+            Set certificate = Nothing
+            storeErrors = ""
+            stage = "find selected certificate"
+
+            FindCertificate "CAdESCOM current-user My", "CAdESCOM.Store", 2, thumbprint, store, certificate, storeErrors
+            If certificate Is Nothing Then FindCertificate "CAdESCOM private-key containers", "CAdESCOM.Store", 100, thumbprint, store, certificate, storeErrors
+            If certificate Is Nothing Then FindCertificate "CAPICOM current-user My", "CAPICOM.Store", 2, thumbprint, store, certificate, storeErrors
+            If certificate Is Nothing Then Fail stage, "Selected certificate was not found. Store attempts: " & storeErrors
+
+            On Error Resume Next
+            Err.Clear
+            stage = "create signer"
+            Set signer = CreateObject("CAdESCOM.CPSigner")
+            CheckStage stage
+
+            Err.Clear
+            stage = "assign certificate to signer"
+            signer.Certificate = certificate
+            CheckStage stage
+
+            Err.Clear
+            stage = "create signed-data object"
+            Set signedData = CreateObject("CAdESCOM.CadesSignedData")
+            CheckStage stage
+
+            Err.Clear
+            stage = "load payload"
+            signedData.ContentEncoding = 1
+            signedData.Content = ReadBase64File(inputPath)
+            CheckStage stage
+
+            Err.Clear
+            stage = "sign payload"
+            signature = signedData.SignCades(signer, 1, detached)
+            CheckStage stage
+
+            Err.Clear
+            stage = "write signature"
+            WriteAsciiFile outputPath, signature
+            CheckStage stage
+            If Not store Is Nothing Then store.Close
+            Err.Clear
+            WScript.Quit 0
+
+            Sub FindCertificate(label, progId, location, normalized, ByRef selectedStore, ByRef selectedCertificate, ByRef errors)
+              On Error Resume Next
+              Dim candidateStore, candidate, openError
+              Set candidateStore = Nothing
+              Err.Clear
+              Set candidateStore = CreateObject(progId)
+              If Err.Number <> 0 Or candidateStore Is Nothing Then
+                AppendError errors, label & ": " & Err.Description
+                Err.Clear
+                Exit Sub
+              End If
+
+              Err.Clear
+              candidateStore.Open location
+              If Err.Number <> 0 Then
+                openError = Err.Description
+                Err.Clear
+                candidateStore.Open location, "My", 2
+                If Err.Number <> 0 Then
+                  AppendError errors, label & ": " & openError & "; " & Err.Description
+                  Err.Clear
+                  candidateStore.Close
+                  Exit Sub
+                End If
+              End If
+
+              For Each candidate In candidateStore.Certificates
+                If NormalizeThumbprint(candidate.Thumbprint) = normalized Then
+                  Set selectedStore = candidateStore
+                  Set selectedCertificate = candidate
+                  Exit Sub
+                End If
+              Next
+              AppendError errors, label & ": selected certificate not found"
+              candidateStore.Close
+              Err.Clear
+            End Sub
+
+            Function NormalizeThumbprint(value)
+              NormalizeThumbprint = UCase(Replace(Replace(Replace(CStr(value), " ", ""), vbTab, ""), vbCrLf, ""))
+            End Function
+
+            Function ReadBase64File(path)
+              On Error Resume Next
+              Dim stream, document, node
+              Set stream = CreateObject("ADODB.Stream")
+              stream.Type = 1
+              stream.Open
+              stream.LoadFromFile path
+              Set document = CreateObject("Msxml2.DOMDocument.6.0")
+              Set node = document.createElement("base64")
+              node.dataType = "bin.base64"
+              node.nodeTypedValue = stream.Read
+              stream.Close
+              ReadBase64File = Replace(Replace(node.Text, vbCr, ""), vbLf, "")
+            End Function
+
+            Sub WriteAsciiFile(path, content)
+              On Error Resume Next
+              Dim fileSystem, output
+              Set fileSystem = CreateObject("Scripting.FileSystemObject")
+              Set output = fileSystem.CreateTextFile(path, True, False)
+              output.Write content
+              output.Close
+            End Sub
+
+            Sub AppendError(ByRef errors, value)
+              If Len(errors) > 0 Then errors = errors & "; "
+              errors = errors & value
+            End Sub
+
+            Sub CheckStage(currentStage)
+              If Err.Number <> 0 Then
+                Dim message
+                message = Err.Description
+                Err.Clear
+                Fail currentStage, message
+              End If
+            End Sub
+
+            Sub Fail(currentStage, message)
+              WScript.StdErr.WriteLine "CAdESCOM stage '" & currentStage & "' failed: " & message
+              WScript.Quit 1
+            End Sub
+            """;
 
     private final CryptoProCommandRunner runner;
     private final String certificateSelector;
@@ -120,8 +268,21 @@ final class WindowsCadesSignatureProvider implements ZnackSignatureProvider {
         try {
             result = runWithPowerShellFallback(new CryptoProCommandRunner(), "-Command",
                     new String[]{PROBE_SCRIPT}, timeout);
+            if (result.exitCode() != 0 && safeToRetryInOtherPowerShell(result)) {
+                Path probe = Files.createTempFile("wcode-cades-probe-", ".vbs");
+                try {
+                    Files.writeString(probe, VBS_PROBE_SCRIPT, StandardCharsets.UTF_8);
+                    result = runWithCscriptFallback(new CryptoProCommandRunner(),
+                            new String[]{probe.toString()}, timeout);
+                } finally {
+                    Files.deleteIfExists(probe);
+                }
+            }
         } catch (CryptoProException error) {
             throw unavailable(error);
+        } catch (Exception error) {
+            throw unavailable(new CryptoProException(CryptoProErrorCode.CADESCOM_MISSING,
+                    "Could not probe CryptoPro CAdESCOM.", error));
         }
         if (result.exitCode() != 0) throw unavailable(result);
     }
@@ -135,16 +296,30 @@ final class WindowsCadesSignatureProvider implements ZnackSignatureProvider {
         Path workDir = null;
         Path input = null;
         Path output = null;
-        Path script = null;
+        Path powerShellScript = null;
+        Path vbsScript = null;
         try {
             workDir = Files.createTempDirectory("wcode-cades-");
             input = workDir.resolve("payload.bin");
             output = workDir.resolve("signature.p7s");
-            script = workDir.resolve("sign.ps1");
+            powerShellScript = workDir.resolve("sign.ps1");
+            vbsScript = workDir.resolve("sign.vbs");
             Files.write(input, payload);
-            Files.writeString(script, SIGN_SCRIPT, StandardCharsets.UTF_8);
-            CryptoProCommandRunner.Result result = runWithPowerShellFallback(runner, "-File", new String[]{script.toString(),
+            Files.writeString(powerShellScript, SIGN_SCRIPT, StandardCharsets.UTF_8);
+            Files.writeString(vbsScript, VBS_SIGN_SCRIPT, StandardCharsets.UTF_8);
+            CryptoProCommandRunner.Result result = runWithPowerShellFallback(runner, "-File", new String[]{powerShellScript.toString(),
                     input.toString(), certificateSelector, Boolean.toString(context.detached()), output.toString()}, timeout);
+            if (result.exitCode() != 0 && safeToRetryInOtherPowerShell(result)) {
+                try {
+                    CryptoProCommandRunner.Result vbsResult = runWithCscriptFallback(runner, new String[]{vbsScript.toString(),
+                            input.toString(), certificateSelector, Boolean.toString(context.detached()), output.toString()}, timeout);
+                    result = vbsResult.exitCode() == 0 ? vbsResult : combined(result, vbsResult);
+                } catch (CryptoProException vbsUnavailable) {
+                    if (vbsUnavailable.code() != CryptoProErrorCode.CRYPTOPRO_MISSING) throw vbsUnavailable;
+                    result = combined(result, new CryptoProCommandRunner.Result(1, new byte[0],
+                            ZnackSanitizer.error(vbsUnavailable).getBytes(StandardCharsets.UTF_8)));
+                }
+            }
             if (result.exitCode() != 0) throw failure(result);
             byte[] raw = Files.isRegularFile(output) ? Files.readAllBytes(output) : new byte[0];
             return new CryptoProSigningResult(CryptoProSignatureProvider.cms(raw), result.diagnostic());
@@ -159,7 +334,8 @@ final class WindowsCadesSignatureProvider implements ZnackSignatureProvider {
         } finally {
             try { if (input != null) Files.deleteIfExists(input); } catch (Exception ignored) {}
             try { if (output != null) Files.deleteIfExists(output); } catch (Exception ignored) {}
-            try { if (script != null) Files.deleteIfExists(script); } catch (Exception ignored) {}
+            try { if (powerShellScript != null) Files.deleteIfExists(powerShellScript); } catch (Exception ignored) {}
+            try { if (vbsScript != null) Files.deleteIfExists(vbsScript); } catch (Exception ignored) {}
             try { if (workDir != null) Files.deleteIfExists(workDir); } catch (Exception ignored) {}
         }
     }
@@ -195,13 +371,27 @@ final class WindowsCadesSignatureProvider implements ZnackSignatureProvider {
     private static CryptoProCommandRunner.Result runWithPowerShellFallback(CryptoProCommandRunner runner, String mode,
                                                                            String[] arguments, Duration timeout)
             throws CryptoProException {
+        return runWithHostFallback(runner, powerShellCandidates(mode, arguments), timeout);
+    }
+
+    private static CryptoProCommandRunner.Result runWithCscriptFallback(CryptoProCommandRunner runner,
+                                                                        String[] arguments, Duration timeout)
+            throws CryptoProException {
+        return runWithHostFallback(runner, cscriptCandidates(isWindows(), System.getenv(), arguments), timeout);
+    }
+
+    private static CryptoProCommandRunner.Result runWithHostFallback(CryptoProCommandRunner runner,
+                                                                     List<List<String>> commands, Duration timeout)
+            throws CryptoProException {
         CryptoProCommandRunner.Result lastResult = null;
         CryptoProException lastError = null;
-        for (List<String> command : powerShellCandidates(mode, arguments)) {
+        for (List<String> command : commands) {
             try {
                 CryptoProCommandRunner.Result result = runner.run(command, timeout);
-                if (result.exitCode() == 0 || !safeToRetryInOtherPowerShell(result)) return result;
-                lastResult = result;
+                if (result.exitCode() == 0) return result;
+                CryptoProCommandRunner.Result labeled = labeled(command.getFirst(), result);
+                if (!safeToRetryInOtherPowerShell(result)) return labeled;
+                lastResult = lastResult == null ? labeled : combined(lastResult, labeled);
             } catch (CryptoProException error) {
                 if (error.code() != CryptoProErrorCode.CRYPTOPRO_MISSING) throw error;
                 lastError = error;
@@ -211,6 +401,20 @@ final class WindowsCadesSignatureProvider implements ZnackSignatureProvider {
         throw lastError == null
                 ? new CryptoProException(CryptoProErrorCode.CRYPTOPRO_MISSING, "Windows PowerShell was not found.")
                 : lastError;
+    }
+
+    private static CryptoProCommandRunner.Result labeled(String host, CryptoProCommandRunner.Result result) {
+        String diagnostic = "Windows signing host " + host + ": " + result.diagnostic();
+        return new CryptoProCommandRunner.Result(result.exitCode(), new byte[0],
+                diagnostic.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static CryptoProCommandRunner.Result combined(CryptoProCommandRunner.Result first,
+                                                           CryptoProCommandRunner.Result second) {
+        String diagnostic = "Previous Windows signing host: " + first.diagnostic()
+                + System.lineSeparator() + "Last Windows signing host: " + second.diagnostic();
+        return new CryptoProCommandRunner.Result(second.exitCode(), new byte[0],
+                diagnostic.getBytes(StandardCharsets.UTF_8));
     }
 
     static boolean safeToRetryInOtherPowerShell(CryptoProCommandRunner.Result result) {
@@ -243,6 +447,25 @@ final class WindowsCadesSignatureProvider implements ZnackSignatureProvider {
         }
         List<List<String>> result = new ArrayList<>();
         for (String executable : executables) result.add(powerShell(executable, mode, arguments));
+        return List.copyOf(result);
+    }
+
+    static List<List<String>> cscriptCandidates(boolean windows, Map<String, String> environment, String... arguments) {
+        Set<String> executables = new LinkedHashSet<>();
+        executables.add("cscript.exe");
+        if (windows) {
+            String windowsRoot = environment.get("WINDIR");
+            if (windowsRoot == null || windowsRoot.isBlank()) windowsRoot = environment.get("SystemRoot");
+            if (windowsRoot != null && !windowsRoot.isBlank()) {
+                executables.add(Path.of(windowsRoot, "SysWOW64", "cscript.exe").toString());
+            }
+        }
+        List<List<String>> result = new ArrayList<>();
+        for (String executable : executables) {
+            ArrayList<String> command = new ArrayList<>(List.of(executable, "//Nologo"));
+            command.addAll(List.of(arguments));
+            result.add(List.copyOf(command));
+        }
         return List.copyOf(result);
     }
 

@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -202,6 +203,21 @@ class CryptoProSignatureTest {
         assertFalse(String.join(" ", runner.command).contains("secret-payload"));
     }
 
+    @Test void windowsCadesFallsBackToNativeVbsHostWhenPowerShellInteropFailsBeforeSigning() throws Exception {
+        VbsFallbackRunner runner = new VbsFallbackRunner(cmsFixture());
+
+        CryptoProSigningResult result = new WindowsCadesSignatureProvider(runner, "AABB", Duration.ofSeconds(2))
+                .sign("secret-payload".getBytes(), ZnackSignatureContext.SUZ_POST_BODY);
+
+        assertArrayEquals(cmsFixture(), result.cms());
+        assertTrue(runner.vbsScript.contains("CreateObject(\"CAdESCOM.CadesSignedData\")"));
+        assertTrue(runner.vbsScript.contains("signature = signedData.SignCades"));
+        assertTrue(runner.vbsScript.contains("CAdESCOM private-key containers"));
+        assertArrayEquals("secret-payload".getBytes(), runner.payload);
+        assertTrue(runner.commands.stream().anyMatch(command -> command.getFirst().equals("powershell.exe")));
+        assertTrue(runner.commands.stream().anyMatch(command -> command.getFirst().equals("cscript.exe")));
+    }
+
     @Test void windowsCadesMapsMissingComComponent() {
         CryptoProCommandRunner runner = new CryptoProCommandRunner() {
             @Override public Result run(List<String> command, Duration timeout) {
@@ -252,6 +268,13 @@ class CryptoProSignatureTest {
         assertEquals("powershell.exe", commands.getFirst().getFirst());
         assertTrue(commands.getFirst().contains("-Sta"));
         assertTrue(commands.getLast().getFirst().contains("SysWOW64"));
+
+        List<List<String>> cscriptCommands = WindowsCadesSignatureProvider.cscriptCandidates(
+                true, Map.of("WINDIR", "C:\\Windows"), "sign.vbs", "payload.bin");
+        assertEquals(2, cscriptCommands.size());
+        assertEquals("cscript.exe", cscriptCommands.getFirst().getFirst());
+        assertTrue(cscriptCommands.getFirst().contains("//Nologo"));
+        assertTrue(cscriptCommands.getLast().getFirst().contains("SysWOW64"));
     }
 
     @Test void certificateSelectionUsesExpiryAndTestSigningValidatesPrivateKey() {
@@ -323,6 +346,34 @@ class CryptoProSignatureTest {
                 return new Result(0, new byte[0], new byte[0]);
             } catch (Exception e) {
                 throw new CryptoProException(CryptoProErrorCode.SIGNING_FAILED, "Could not run CAdES fixture.", e);
+            }
+        }
+    }
+
+    private static final class VbsFallbackRunner extends CryptoProCommandRunner {
+        private final byte[] output;
+        private final List<List<String>> commands = new ArrayList<>();
+        private String vbsScript = "";
+        private byte[] payload = new byte[0];
+
+        private VbsFallbackRunner(byte[] output) {
+            this.output = output;
+        }
+
+        @Override public Result run(List<String> command, Duration timeout) throws CryptoProException {
+            commands.add(List.copyOf(command));
+            if (command.getFirst().toLowerCase().contains("powershell")) {
+                return new Result(1, new byte[0],
+                        "CAdESCOM stage 'create signed-data object' failed: Object reference not set".getBytes());
+            }
+            try {
+                vbsScript = Files.readString(Path.of(command.get(2)));
+                payload = Files.readAllBytes(Path.of(command.get(3)));
+                Files.writeString(Path.of(command.getLast()), Base64.getEncoder().encodeToString(output));
+                return new Result(0, new byte[0], new byte[0]);
+            } catch (Exception e) {
+                throw new CryptoProException(CryptoProErrorCode.SIGNING_FAILED,
+                        "Could not run VBS CAdES fixture.", e);
             }
         }
     }
