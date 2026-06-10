@@ -16,6 +16,7 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -192,7 +193,9 @@ class CryptoProSignatureTest {
         assertTrue(runner.script.contains("CAdESCOM.CadesSignedData"));
         assertTrue(runner.script.contains("SignCades"));
         assertTrue(runner.script.contains("$stage = 'sign payload'"));
-        assertTrue(runner.script.contains("New-Object -ComObject CAPICOM.Store"));
+        assertTrue(runner.script.contains("ProgId = 'CAPICOM.Store'"));
+        assertTrue(runner.script.contains("$candidateStore.Open(100)"));
+        assertTrue(runner.script.contains("$candidateStore.Open($attempt.Location)"));
         assertTrue(runner.script.contains("try { $store.Close() } catch { }"));
         assertArrayEquals("secret-payload".getBytes(), runner.payload);
         assertTrue(runner.command.contains("true"));
@@ -226,6 +229,22 @@ class CryptoProSignatureTest {
                         .sign("payload".getBytes(), ZnackSignatureContext.SIGNATURE_TEST));
 
         assertEquals(CryptoProErrorCode.SIGNING_FAILED, error.code());
+    }
+
+    @Test void windowsCadesRetriesOnlyStoreDiscoveryFailuresIn32BitPowerShell() {
+        CryptoProCommandRunner.Result storeFailure = new CryptoProCommandRunner.Result(1, new byte[0],
+                "CAdESCOM stage 'find selected certificate' failed: Unable to open CryptoPro certificate stores".getBytes());
+        CryptoProCommandRunner.Result signingFailure = new CryptoProCommandRunner.Result(1, new byte[0],
+                "CAdESCOM stage 'sign payload' failed: provider error".getBytes());
+
+        assertTrue(WindowsCadesSignatureProvider.safeToRetryInOtherPowerShell(storeFailure));
+        assertFalse(WindowsCadesSignatureProvider.safeToRetryInOtherPowerShell(signingFailure));
+
+        List<List<String>> commands = WindowsCadesSignatureProvider.powerShellCandidates(
+                true, Map.of("WINDIR", "C:\\Windows"), "-Command", "probe");
+        assertEquals(2, commands.size());
+        assertEquals("powershell.exe", commands.getFirst().getFirst());
+        assertTrue(commands.getLast().getFirst().contains("SysWOW64"));
     }
 
     @Test void certificateSelectionUsesExpiryAndTestSigningValidatesPrivateKey() {

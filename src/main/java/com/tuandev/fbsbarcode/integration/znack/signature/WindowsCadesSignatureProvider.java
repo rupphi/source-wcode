@@ -8,8 +8,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 final class WindowsCadesSignatureProvider implements ZnackSignatureProvider {
     private static final Logger LOGGER = LoggerFactory.getLogger(WindowsCadesSignatureProvider.class);
@@ -27,36 +31,50 @@ final class WindowsCadesSignatureProvider implements ZnackSignatureProvider {
             )
             $ErrorActionPreference = 'Stop'
             $store = $null
-            $stage = 'create certificate store'
+            $certificate = $null
+            $stage = 'find selected certificate'
             try {
-              $stage = 'open current-user My certificate store'
-              try {
-                $store = New-Object -ComObject CAdESCOM.Store
-                $store.Open(2, 'My', 2)
-              } catch {
-                $cadesStoreError = $_.Exception.Message
-                if ($null -ne $store) {
-                  try { $store.Close() } catch { }
-                }
-                $store = $null
-                try {
-                  $store = New-Object -ComObject CAPICOM.Store
-                  $store.Open(2, 'My', 2)
-                } catch {
-                  throw "CAdESCOM.Store failed: $cadesStoreError; CAPICOM.Store failed: $($_.Exception.Message)"
-                }
-              }
-              $stage = 'find selected certificate'
               $normalized = ($Thumbprint -replace '\\s', '').ToUpperInvariant()
-              $certificate = $null
-              for ($i = 1; $i -le $store.Certificates.Count; $i++) {
-                $candidate = $store.Certificates.Item($i)
-                if ((($candidate.Thumbprint -replace '\\s', '').ToUpperInvariant()) -eq $normalized) {
-                  $certificate = $candidate
-                  break
+              $openedAnyStore = $false
+              $storeErrors = New-Object System.Collections.Generic.List[string]
+              $attempts = @(
+                @{ Label = 'CAdESCOM current-user My'; ProgId = 'CAdESCOM.Store'; Location = 2 },
+                @{ Label = 'CAdESCOM private-key containers'; ProgId = 'CAdESCOM.Store'; Location = 100 },
+                @{ Label = 'CAPICOM current-user My'; ProgId = 'CAPICOM.Store'; Location = 2 }
+              )
+              foreach ($attempt in $attempts) {
+                $candidateStore = $null
+                try {
+                  $candidateStore = New-Object -ComObject $attempt.ProgId
+                  if ($attempt.Location -eq 100) {
+                    try { $candidateStore.Open(100) } catch { $candidateStore.Open(100, 'My', 2) }
+                  } else {
+                    try { $candidateStore.Open($attempt.Location) } catch { $candidateStore.Open($attempt.Location, 'My', 2) }
+                  }
+                  $openedAnyStore = $true
+                  for ($i = 1; $i -le $candidateStore.Certificates.Count; $i++) {
+                    $candidate = $candidateStore.Certificates.Item($i)
+                    if ((($candidate.Thumbprint -replace '\\s', '').ToUpperInvariant()) -eq $normalized) {
+                      $store = $candidateStore
+                      $certificate = $candidate
+                      break
+                    }
+                  }
+                  if ($null -ne $certificate) { break }
+                  $storeErrors.Add("$($attempt.Label): selected certificate not found")
+                } catch {
+                  $storeErrors.Add("$($attempt.Label): $($_.Exception.Message)")
+                } finally {
+                  if ($null -ne $candidateStore -and $candidateStore -ne $store) {
+                    try { $candidateStore.Close() } catch { }
+                  }
                 }
               }
-              if ($null -eq $certificate) { throw 'Selected certificate was not found in the current-user My store.' }
+              if ($null -eq $certificate) {
+                $summary = [string]::Join('; ', $storeErrors)
+                if ($openedAnyStore) { throw "Selected certificate was not found. Store attempts: $summary" }
+                throw "Unable to open CryptoPro certificate stores. Store attempts: $summary"
+              }
               $stage = 'create signer'
               $signer = New-Object -ComObject CAdESCOM.CPSigner
               $stage = 'assign certificate to signer'
@@ -100,7 +118,8 @@ final class WindowsCadesSignatureProvider implements ZnackSignatureProvider {
     static void requireAvailable(Duration timeout) throws CryptoProException {
         CryptoProCommandRunner.Result result;
         try {
-            result = new CryptoProCommandRunner().run(powerShell("-Command", PROBE_SCRIPT), timeout);
+            result = runWithPowerShellFallback(new CryptoProCommandRunner(), "-Command",
+                    new String[]{PROBE_SCRIPT}, timeout);
         } catch (CryptoProException error) {
             throw unavailable(error);
         }
@@ -124,8 +143,8 @@ final class WindowsCadesSignatureProvider implements ZnackSignatureProvider {
             script = workDir.resolve("sign.ps1");
             Files.write(input, payload);
             Files.writeString(script, SIGN_SCRIPT, StandardCharsets.UTF_8);
-            CryptoProCommandRunner.Result result = runner.run(powerShell("-File", script.toString(),
-                    input.toString(), certificateSelector, Boolean.toString(context.detached()), output.toString()), timeout);
+            CryptoProCommandRunner.Result result = runWithPowerShellFallback(runner, "-File", new String[]{script.toString(),
+                    input.toString(), certificateSelector, Boolean.toString(context.detached()), output.toString()}, timeout);
             if (result.exitCode() != 0) throw failure(result);
             byte[] raw = Files.isRegularFile(output) ? Files.readAllBytes(output) : new byte[0];
             return new CryptoProSigningResult(CryptoProSignatureProvider.cms(raw), result.diagnostic());
@@ -173,9 +192,56 @@ final class WindowsCadesSignatureProvider implements ZnackSignatureProvider {
                 "CryptoPro CAdESCOM signing component is unavailable.", error);
     }
 
-    private static List<String> powerShell(String mode, String... arguments) {
-        java.util.ArrayList<String> command = new java.util.ArrayList<>(List.of(
-                "powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", mode));
+    private static CryptoProCommandRunner.Result runWithPowerShellFallback(CryptoProCommandRunner runner, String mode,
+                                                                           String[] arguments, Duration timeout)
+            throws CryptoProException {
+        CryptoProCommandRunner.Result lastResult = null;
+        CryptoProException lastError = null;
+        for (List<String> command : powerShellCandidates(mode, arguments)) {
+            try {
+                CryptoProCommandRunner.Result result = runner.run(command, timeout);
+                if (result.exitCode() == 0 || !safeToRetryInOtherPowerShell(result)) return result;
+                lastResult = result;
+            } catch (CryptoProException error) {
+                if (error.code() != CryptoProErrorCode.CRYPTOPRO_MISSING) throw error;
+                lastError = error;
+            }
+        }
+        if (lastResult != null) return lastResult;
+        throw lastError == null
+                ? new CryptoProException(CryptoProErrorCode.CRYPTOPRO_MISSING, "Windows PowerShell was not found.")
+                : lastError;
+    }
+
+    static boolean safeToRetryInOtherPowerShell(CryptoProCommandRunner.Result result) {
+        String diagnostic = result.diagnostic().toLowerCase(Locale.ROOT);
+        return diagnostic.contains("stage 'find selected certificate'")
+                || diagnostic.contains("class not registered") || diagnostic.contains("0x80040154");
+    }
+
+    private static List<List<String>> powerShellCandidates(String mode, String... arguments) {
+        return powerShellCandidates(isWindows(), System.getenv(), mode, arguments);
+    }
+
+    static List<List<String>> powerShellCandidates(boolean windows, Map<String, String> environment,
+                                                    String mode, String... arguments) {
+        Set<String> executables = new LinkedHashSet<>();
+        executables.add("powershell.exe");
+        if (windows) {
+            String windowsRoot = environment.get("WINDIR");
+            if (windowsRoot == null || windowsRoot.isBlank()) windowsRoot = environment.get("SystemRoot");
+            if (windowsRoot != null && !windowsRoot.isBlank()) {
+                executables.add(Path.of(windowsRoot, "SysWOW64", "WindowsPowerShell", "v1.0", "powershell.exe").toString());
+            }
+        }
+        List<List<String>> result = new ArrayList<>();
+        for (String executable : executables) result.add(powerShell(executable, mode, arguments));
+        return List.copyOf(result);
+    }
+
+    private static List<String> powerShell(String executable, String mode, String... arguments) {
+        ArrayList<String> command = new ArrayList<>(List.of(
+                executable, "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", mode));
         command.addAll(List.of(arguments));
         return List.copyOf(command);
     }
