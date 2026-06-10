@@ -19,9 +19,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class ZnackPurchaseCoordinator {
     private static final Logger LOGGER = LoggerFactory.getLogger(ZnackPurchaseCoordinator.class);
+    private static final Pattern LEGACY_DOCUMENT_ID = Pattern.compile(
+            "(?i)Not a JSON Object:\\s*[\"']?([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})[\"']?");
     private static final Object CREATE_LOCK = new Object();
     private static final ScheduledExecutorService POLLER = Executors.newSingleThreadScheduledExecutor(runnable -> {
         Thread thread = new Thread(runnable, "znack-purchase-pipeline");
@@ -119,6 +123,7 @@ public class ZnackPurchaseCoordinator {
         }
         List<ZnackPurchasePipelineState> candidates = new java.util.ArrayList<>(repository.findSkippedIntroductionPipelines());
         candidates.addAll(repository.findLegacyRejectedIntroductionPipelines());
+        candidates.addAll(repository.findLegacyPrimitiveDocumentResponsePipelines());
         for (ZnackPurchasePipelineState pipeline : candidates) {
             Product product = repository.findProducts().stream()
                     .filter(item -> item.gtin().equals(pipeline.gtin()))
@@ -178,6 +183,8 @@ public class ZnackPurchaseCoordinator {
                 } else if (current != PurchaseStage.CREATING_ORDER && current != PurchaseStage.FAILED) {
                     repository.updatePipeline(pipelineId, null, PurchaseStage.FAILED, e.getMessage());
                 }
+                LOGGER.error("Znack purchase pipeline failed. shopId={}, pipelineId={}, gtin={}, stage={}, details={}",
+                        repository.shop().shopId(), pipelineId, pipeline.gtin(), current, ZnackSanitizer.error(e), e);
                 repository.log("PURCHASE_PIPELINE", pipeline.gtin(), "ERROR", e.getMessage(), httpStatus(e));
                 throw e;
             }
@@ -288,6 +295,16 @@ public class ZnackPurchaseCoordinator {
                 repository.updatePipeline(pipeline.id(), order.id(), PurchaseStage.POLLING_INTRODUCTION, null);
                 return;
             }
+            String recoveredDocumentId = legacyDocumentId(existing.errorMessage());
+            if (!recoveredDocumentId.isBlank()) {
+                repository.updateDocument(existing.id(), recoveredDocumentId, "SUBMITTED", null);
+                repository.markCodes(order.id(), ZnackModels.KizLegalStatus.INTRO_SENT, null, existing.id());
+                repository.updateOrder(order.id(), null, null, OrderStatus.INTRO_SENT, null);
+                repository.updatePipeline(pipeline.id(), order.id(), PurchaseStage.POLLING_INTRODUCTION, null);
+                LOGGER.info("Recovered Znack document ID {} from a legacy primitive response for order {}.",
+                        recoveredDocumentId, order.id());
+                return;
+            }
             if ("FAILED".equals(existing.status()) && repository.latestDocumentIsLegacyHttpRejection(order.id())) {
                 existing = null;
             }
@@ -353,5 +370,11 @@ public class ZnackPurchaseCoordinator {
 
     private Integer httpStatus(Exception error) {
         return error instanceof ZnackApiClient.ZnackApiException apiError ? apiError.statusCode() : null;
+    }
+
+    private String legacyDocumentId(String error) {
+        if (error == null || error.isBlank()) return "";
+        Matcher matcher = LEGACY_DOCUMENT_ID.matcher(error);
+        return matcher.find() ? matcher.group(1) : "";
     }
 }

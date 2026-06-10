@@ -30,7 +30,7 @@ public class ZnackIntroductionService {
         byte[] sig=signer.sign(documentBytes, ZnackSignatureContext.TRUE_API_DOCUMENT).cms();String token=auth.trueApiToken(s);
         JsonObject request=new JsonObject();request.addProperty("document_format","MANUAL");request.addProperty("type","LP_INTRODUCE_GOODS");request.addProperty("product_document",Base64.getEncoder().encodeToString(documentBytes));request.addProperty("signature",Base64.getEncoder().encodeToString(sig));
         long documentId=repository.createDocument(order.id(),payload.toString());
-        try{JsonObject response=api.createDocument(s.resolvedTrueApiBaseUrl(),token,request);String external=required(text(response,"uuid","document_id","documentId","id"),"Znack document response did not contain a document ID.");
+        try{String external=required(api.createDocument(s.resolvedTrueApiBaseUrl(),token,request),"Znack document response did not contain a document ID.");
             repository.updateDocument(documentId,external,"SUBMITTED",null);repository.markCodes(order.id(),KizLegalStatus.INTRO_SENT,null,documentId);repository.updateOrder(order.id(),null,null,OrderStatus.INTRO_SENT,null);return documentId;
         }catch(Exception e){repository.updateDocument(documentId,null,e instanceof ZnackApiClient.ZnackApiException?"REJECTED":"FAILED",e.getMessage());throw e;}
     }

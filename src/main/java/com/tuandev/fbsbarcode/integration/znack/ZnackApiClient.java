@@ -2,6 +2,8 @@ package com.tuandev.fbsbarcode.integration.znack;
 
 import com.google.gson.*;
 import okhttp3.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.URLEncoder;
@@ -9,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 public class ZnackApiClient {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ZnackApiClient.class);
     private static final MediaType JSON = MediaType.parse("application/json");
     private final OkHttpClient client;
     private final Gson gson = new Gson();
@@ -41,7 +44,17 @@ public class ZnackApiClient {
     public JsonElement codes(String base,String token,String omsId,String orderId,int quantity,String gtin)throws IOException{
         return suzGet(base,"/api/v3/codes?omsId="+url(omsId)+"&orderId="+url(orderId)+"&quantity="+quantity+"&gtin="+url(gtin),token);
     }
-    public JsonObject createDocument(String base,String token,JsonObject body)throws IOException{return post(trueApiBase(base,3),"/lk/documents/create?pg=lp",token,body).getAsJsonObject();}
+    public String createDocument(String base,String token,JsonObject body)throws IOException{
+        String endpoint=join(trueApiBase(base,3),"/lk/documents/create?pg=lp");
+        JsonElement response=post(trueApiBase(base,3),"/lk/documents/create?pg=lp",token,body);
+        String documentId=documentId(response);
+        if(!documentId.isBlank())return documentId;
+        String raw=response==null?"null":response.toString();
+        LOGGER.error("Znack API returned an unexpected document creation response. url={}, responseBody={}",
+                endpoint,ZnackSanitizer.diagnostic(raw));
+        throw new IOException("Znack document creation response did not contain a document ID. Response: "
+                +ZnackSanitizer.message(raw));
+    }
     public JsonElement document(String base,String token,String documentId)throws IOException{
         return get(trueApiBase(base,4),"/doc/"+url(documentId)+"/info?pg=lp",token);
     }
@@ -60,10 +73,33 @@ public class ZnackApiClient {
     private JsonElement execute(Request request,boolean allowNotFoundBody)throws IOException{
         try(Response response=client.newCall(request).execute()){
             String body=response.body()==null?"":response.body().string();
-            if(!response.isSuccessful()&&!(allowNotFoundBody&&response.code()==404&&!body.isBlank()))
+            if(!response.isSuccessful()&&!(allowNotFoundBody&&response.code()==404&&!body.isBlank())){
+                LOGGER.error("Znack API request failed. method={}, url={}, httpStatus={}, contentType={}, responseBody={}",
+                        request.method(),request.url(),response.code(),response.header("Content-Type",""),
+                        ZnackSanitizer.diagnostic(body));
                 throw new ZnackApiException("Znack API request failed",response.code(),body);
-            return body.isBlank()?JsonNull.INSTANCE:JsonParser.parseString(body);
+            }
+            if(body.isBlank())return JsonNull.INSTANCE;
+            try{
+                return JsonParser.parseString(body);
+            }catch(JsonParseException e){
+                LOGGER.error("Znack API returned invalid JSON. method={}, url={}, httpStatus={}, contentType={}, responseBody={}",
+                        request.method(),request.url(),response.code(),response.header("Content-Type",""),
+                        ZnackSanitizer.diagnostic(body),e);
+                throw new IOException("Znack API returned invalid JSON (HTTP "+response.code()+"): "
+                        +ZnackSanitizer.message(body),e);
+            }
         }
+    }
+    private String documentId(JsonElement response){
+        if(response==null||response.isJsonNull())return "";
+        if(response.isJsonPrimitive())return response.getAsString().trim();
+        if(!response.isJsonObject())return "";
+        JsonObject object=response.getAsJsonObject();
+        for(String key:new String[]{"uuid","document_id","documentId","id"})
+            if(object.has(key)&&!object.get(key).isJsonNull()&&object.get(key).isJsonPrimitive())
+                return object.get(key).getAsString().trim();
+        return "";
     }
     private static String join(String base,String path){return base.replaceAll("/+$","")+path;}
     private static String url(String v){return URLEncoder.encode(v == null ? "" : v, StandardCharsets.UTF_8);}

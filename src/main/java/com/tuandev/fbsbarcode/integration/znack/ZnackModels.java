@@ -212,7 +212,8 @@ public final class ZnackModels {
                           KizLegalStatus legalStatus) {
     }
 
-    public record Document(long id, long orderId, String payloadJson, String externalDocumentId, String status) {
+    public record Document(long id, long orderId, String payloadJson, String externalDocumentId, String status,
+                           String errorMessage) {
     }
 
     public record OperationLog(long id, int shopId, String shopName, String action, String entityReference,

@@ -65,6 +65,17 @@ class ZnackModuleTest {
         assertFalse(sanitized.contains("1234"));
     }
 
+    @Test void diagnosticSanitizerKeepsFullErrorButStillRedactsSecrets() {
+        String detail="Ошибка проверки документа. ".repeat(80);
+        String raw=detail+" token=secret-token";
+
+        String diagnostic=ZnackSanitizer.diagnostic(raw);
+
+        assertTrue(diagnostic.length()>1000);
+        assertTrue(diagnostic.startsWith(detail));
+        assertFalse(diagnostic.contains("secret-token"));
+    }
+
     @Test void preservesRawCodesAndIgnoresDuplicateDownloads() {
         ZnackRepository repository=repository(1, "Shop A");
         String raw="010460123456789021abc\u001d91secret";
@@ -352,17 +363,31 @@ class ZnackModuleTest {
         server.createContext("/api/v3/true-api/lk/documents/create",exchange->{
             path.set(exchange.getRequestURI().toString());
             authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
-            respond(exchange,"{\"uuid\":\"document-uuid\"}");
+            respond(exchange,"document-uuid");
         });
         server.start();
         try {
             String base="http://127.0.0.1:"+server.getAddress().getPort()+"/api/v3/true-api";
 
-            JsonObject response=new ZnackApiClient().createDocument(base,"true-api-token",new JsonObject());
+            String response=new ZnackApiClient().createDocument(base,"true-api-token",new JsonObject());
 
             assertEquals("/api/v3/true-api/lk/documents/create?pg=lp",path.get());
             assertEquals("Bearer true-api-token",authorization.get());
-            assertEquals("document-uuid",response.get("uuid").getAsString());
+            assertEquals("document-uuid",response);
+        } finally { server.stop(0); }
+    }
+
+    @Test void documentCreationAlsoAcceptsLegacyObjectResponse() throws Exception {
+        HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/api/v3/true-api/lk/documents/create",exchange->
+                respond(exchange,"{\"uuid\":\"legacy-document-uuid\"}"));
+        server.start();
+        try {
+            String base="http://127.0.0.1:"+server.getAddress().getPort();
+
+            String response=new ZnackApiClient().createDocument(base,"true-api-token",new JsonObject());
+
+            assertEquals("legacy-document-uuid",response);
         } finally { server.stop(0); }
     }
 
@@ -600,7 +625,7 @@ class ZnackModuleTest {
         repository.insertCodes(orderId,"04601234567890",new DownloadedCodes(
                 List.of(normalizedCis+"\u001D91ABCD\u001D92signature"),"block"));
         AtomicReference<JsonObject> request=new AtomicReference<>();
-        ZnackApiClient api=new ZnackApiClient(){@Override public JsonObject createDocument(String base,String token,JsonObject body){request.set(body);JsonObject response=new JsonObject();response.addProperty("uuid","doc");return response;}};
+        ZnackApiClient api=new ZnackApiClient(){@Override public String createDocument(String base,String token,JsonObject body){request.set(body);return "doc";}};
         ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
             @Override public String trueApiToken(Settings s){return "token";}
             @Override public String resolvedParticipantInn(Settings s){return "7701234567";}
@@ -627,7 +652,7 @@ class ZnackModuleTest {
         ZnackRepository repository=repository(1,"Shop A");
         long orderId=orderWithCodes(repository);
         ZnackApiClient api=new ZnackApiClient(){
-            @Override public JsonObject createDocument(String base,String token,JsonObject body)throws java.io.IOException{
+            @Override public String createDocument(String base,String token,JsonObject body)throws java.io.IOException{
                 throw new ZnackApiClient.ZnackApiException("Znack API request failed",422,
                         "{\"error\":\"document unavailable\"}");
             }

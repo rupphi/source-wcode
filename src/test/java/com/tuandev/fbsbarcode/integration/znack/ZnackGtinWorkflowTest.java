@@ -460,6 +460,46 @@ class ZnackGtinWorkflowTest {
         assertEquals(PurchaseStage.POLLING_INTRODUCTION, repository.findPipeline(pipeline).orElseThrow().stage());
     }
 
+    @Test void legacyPrimitiveDocumentResponseRecoversUuidWithoutSubmittingAgain() throws Exception {
+        Settings base = testedSettings();
+        Settings auto = new Settings(base.trueApiBaseUrl(), base.suzBaseUrl(), base.omsId(), base.omsConnection(),
+                base.participantInn(), base.producerInn(), base.ownerInn(), base.signerExecutable(),
+                base.signerCertificate(), base.signerArgumentsJson(), "DOC-1", "20.06.2024", "", true,
+                base.certificateListExecutable(), base.certificateListArgumentsJson(), base.certificateMetadataJson(),
+                base.signerTestedAt(), base.certmgrPath(), base.cryptcpPath(), base.csptestPath(),
+                base.cryptoProTimeoutSeconds(), "", "CONFORMITY_DECLARATION");
+        repository.updateProductMetadata(new Product(A, "A", "6201000000", null, null, null, null));
+        long order = repository.createDraft(A, 1);
+        repository.insertCodes(order, A, new DownloadedCodes(List.of("legacy-primitive-response"), "block"));
+        long pipeline = repository.createPipeline(A, 1);
+        String externalDocumentId = "72f9fdad-b271-4184-a525-7ffefd4d8ec3";
+        repository.updatePipeline(pipeline, order, PurchaseStage.FAILED, "Not a JSON Object");
+        long document = repository.createDocument(order, "{}");
+        repository.updateDocument(document, null, "FAILED",
+                "java.lang.IllegalStateException: Not a JSON Object: \"" + externalDocumentId + "\"");
+        AtomicInteger submissions = new AtomicInteger();
+        ZnackIntroductionService introduction = new ZnackIntroductionService(null, null, null, repository) {
+            @Override public long submit(Settings ignored, KizOrder ignoredOrder, Product ignoredProduct,
+                                         List<KizCode> ignoredCodes) {
+                submissions.incrementAndGet();
+                return 2;
+            }
+        };
+        ZnackPurchaseCoordinator coordinator = new ZnackPurchaseCoordinator(repository, null, null, introduction) {
+            @Override void schedule(long ignoredPipeline) {
+            }
+        };
+
+        coordinator.resumeEligibleIntroductions(auto);
+
+        Document recovered = repository.findLatestDocument(order).orElseThrow();
+        assertEquals(0, submissions.get());
+        assertEquals(externalDocumentId, recovered.externalDocumentId());
+        assertEquals("SUBMITTED", recovered.status());
+        assertEquals(PurchaseStage.POLLING_INTRODUCTION, repository.findPipeline(pipeline).orElseThrow().stage());
+        assertEquals(KizLegalStatus.INTRO_SENT, repository.findCodes(order).getFirst().legalStatus());
+    }
+
     @Test void resumedIntroductionKeepsWaitingStageAfterReadinessNetworkFailure() throws Exception {
         Settings base = testedSettings();
         Settings auto = new Settings(base.trueApiBaseUrl(), base.suzBaseUrl(), base.omsId(), base.omsConnection(),
