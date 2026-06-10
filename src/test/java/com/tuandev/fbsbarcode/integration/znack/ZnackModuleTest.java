@@ -112,7 +112,7 @@ class ZnackModuleTest {
         assertTrue(fxml.contains("omsConnectionField"));
         assertTrue(fxml.contains("documentNumberField"));
         assertTrue(fxml.contains("documentIssueDateField"));
-        assertTrue(fxml.contains("documentTypeCombo"));
+        assertFalse(fxml.contains("documentTypeCombo"));
         assertFalse(fxml.contains("documentExpiryDateField"));
         assertFalse(fxml.contains("advancedSettingsPane"));
         assertFalse(fxml.contains("pdfFolderField"));
@@ -131,6 +131,9 @@ class ZnackModuleTest {
         assertFalse(fxml.contains("certmgrPathField"));
         String mapping=Files.readString(Path.of("src/main/resources/com/tuandev/fbsbarcode/ui/kizmapping/kiz-mapping-view.fxml"));
         assertFalse(mapping.contains("syncedColumn"));
+        String mappingController=Files.readString(Path.of("src/main/java/com/tuandev/fbsbarcode/ui/kizmapping/KizMappingController.java"));
+        assertFalse(mappingController.contains("showCirculationData"));
+        assertFalse(mappingController.contains("openCirculationDialog"));
         String supply=Files.readString(Path.of("src/main/resources/com/tuandev/fbsbarcode/ui/supply/supply-detail-view.fxml"));
         assertTrue(supply.contains("minWidth=\"360.0\""));
         assertTrue(supply.contains("prefWidth=\"420.0\""));
@@ -340,6 +343,28 @@ class ZnackModuleTest {
             assertEquals("/api/v4/true-api/doc/doc-id/info?pg=lp",documentPath.get());
             assertEquals("/api/v3/true-api/cises/info?pg=lp",cisesPath.get());
             assertEquals(codes,JsonParser.parseString(cisesBody.get()));
+        } finally { server.stop(0); }
+    }
+
+    @Test void cisesInfoReturnsStructuredNotFoundBodyForReadinessPolling() throws Exception {
+        HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/api/v3/true-api/cises/info",exchange->{
+            byte[] body="[{\"cisInfo\":{\"requestedCis\":\"code\"},\"errorMessage\":\"КМ/КИ не найден\",\"errorCode\":\"404\"}]"
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type","application/json");
+            exchange.sendResponseHeaders(404,body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            String base="http://127.0.0.1:"+server.getAddress().getPort();
+            JsonArray codes=new JsonArray();codes.add("code");
+
+            JsonElement response=new ZnackApiClient().cisesInfo(base,"token",codes);
+
+            assertEquals("КМ/КИ не найден",response.getAsJsonArray().get(0).getAsJsonObject()
+                    .get("errorMessage").getAsString());
         } finally { server.stop(0); }
     }
 
@@ -640,15 +665,17 @@ class ZnackModuleTest {
         assertEquals("ЕАЭС N RU Д-TR.РА05.В.15176/24",a.getSettings().documentNumber());
         assertEquals("16.06.2029",a.getSettings().documentExpiryDate());
         assertEquals("CONFORMITY_DECLARATION",a.getSettings().documentType());
+        assertEquals("CONFORMITY_DECLARATION",Settings.empty().documentType());
         assertTrue(b.getSettings().documentNumber().isBlank());
         assertTrue(aSettings.hasDefaultGoodsDocument());
+        assertDoesNotThrow(Settings.empty()::validateDefaultGoodsDocument);
         assertDoesNotThrow(aSettings::validateGoodsDocumentDates);
         assertThrows(IllegalArgumentException.class,()->settingsWithDocument("",true,"doc","00.00.0000","16.06.2029").validateGoodsDocumentDates());
         assertThrows(IllegalArgumentException.class,()->settingsWithDocument("",true,"doc","2024-06-20","16.06.2029").validateGoodsDocumentDates());
         assertDoesNotThrow(()->settingsWithDocument("",true,"doc","20.06.2029","not-used").validateGoodsDocumentDates());
     }
 
-    @Test void gtinDocumentOverrideUsesWholeDocumentAndNeverPartiallyFallsBackToShopDefault() {
+    @Test void introductionAlwaysUsesShopDefaultDocumentAndIgnoresLegacyGtinOverrides() {
         Settings defaults=settingsWithDocument("",true,"DEFAULT","20.06.2024","");
         Product inherited=new Product("04601234567890","Product","6201000000",null,null,null,null);
         Product overridden=new Product("04601234567890","Product","6201000000","CONFORMITY_CERTIFICATE",
@@ -656,9 +683,9 @@ class ZnackModuleTest {
         Product partial=new Product("04601234567890","Product","6201000000",null,"PARTIAL",null,null);
 
         assertEquals("DEFAULT",inherited.resolvedGoodsDocument(defaults).number());
-        assertEquals("OVERRIDE",overridden.resolvedGoodsDocument(defaults).number());
-        assertFalse(partial.resolvedGoodsDocument(defaults).complete());
-        assertEquals("document type, document issue date",partial.resolvedGoodsDocument(defaults).missingFields());
+        assertEquals("DEFAULT",overridden.resolvedGoodsDocument(defaults).number());
+        assertEquals("DEFAULT",partial.resolvedGoodsDocument(defaults).number());
+        assertTrue(partial.resolvedGoodsDocument(defaults).complete());
     }
 
     @Test void introductionColumnsAreAddedIdempotentlyWithoutRemovingExistingData() throws Exception {

@@ -45,17 +45,23 @@ public class ZnackApiClient {
     public JsonElement document(String base,String token,String documentId)throws IOException{
         return get(trueApiBase(base,4),"/doc/"+url(documentId)+"/info?pg=lp",token);
     }
-    public JsonElement cisesInfo(String base,String token,JsonElement body)throws IOException{return post(trueApiBase(base,3),"/cises/info?pg=lp",token,body);}
+    public JsonElement cisesInfo(String base,String token,JsonElement body)throws IOException{
+        Request request=new Request.Builder().url(join(trueApiBase(base,3),"/cises/info?pg=lp")).headers(headers(token))
+                .post(RequestBody.create(gson.toJson(body),JSON)).build();
+        return execute(request,true);
+    }
 
     private JsonElement get(String base,String path,String token)throws IOException{return execute(new Request.Builder().url(join(base,path)).headers(headers(token)).get().build());}
     private JsonElement suzGet(String base,String path,String token)throws IOException{return execute(new Request.Builder().url(join(base,path)).headers(suzHeaders(token)).get().build());}
     private JsonElement post(String base,String path,String token,Object body)throws IOException{return execute(new Request.Builder().url(join(base,path)).headers(headers(token)).post(RequestBody.create(gson.toJson(body),JSON)).build());}
     private Headers headers(String token){Headers.Builder h=new Headers.Builder().add("Accept","application/json");if(token!=null&&!token.isBlank())h.add("Authorization","Bearer "+token);return h.build();}
     private Headers suzHeaders(String token){Headers.Builder h=new Headers.Builder().add("Accept","application/json");if(token!=null&&!token.isBlank())h.add("clientToken",token);return h.build();}
-    private JsonElement execute(Request request)throws IOException{
+    private JsonElement execute(Request request)throws IOException{return execute(request,false);}
+    private JsonElement execute(Request request,boolean allowNotFoundBody)throws IOException{
         try(Response response=client.newCall(request).execute()){
             String body=response.body()==null?"":response.body().string();
-            if(!response.isSuccessful())throw new ZnackApiException("Znack API request failed",response.code(),body);
+            if(!response.isSuccessful()&&!(allowNotFoundBody&&response.code()==404&&!body.isBlank()))
+                throw new ZnackApiException("Znack API request failed",response.code(),body);
             return body.isBlank()?JsonNull.INSTANCE:JsonParser.parseString(body);
         }
     }

@@ -50,8 +50,13 @@ public final class ZnackModels {
                            String certificateMetadataJson, Instant signerTestedAt,
                            String certmgrPath, String cryptcpPath, String csptestPath, int cryptoProTimeoutSeconds,
                            String documentExpiryDate, String documentType) {
+        public static final String DEFAULT_DOCUMENT_TYPE = "CONFORMITY_DECLARATION";
         private static final DateTimeFormatter GOODS_DOCUMENT_DATE =
                 DateTimeFormatter.ofPattern("dd.MM.uuuu").withResolverStyle(ResolverStyle.STRICT);
+
+        public Settings {
+            documentType = blank(documentType) ? DEFAULT_DOCUMENT_TYPE : documentType.trim();
+        }
 
         public Settings(String trueApiBaseUrl, String suzBaseUrl, String omsId, String omsConnection,
                         String participantInn, String producerInn, String ownerInn, String signerExecutable,
@@ -135,7 +140,7 @@ public final class ZnackModels {
         public void validateDefaultGoodsDocument() {
             validateGoodsDocumentDates();
             GoodsDocument document = defaultGoodsDocument();
-            if (document.anyValue() && !document.complete()) {
+            if ((!blank(documentNumber) || !blank(documentDate)) && !document.complete()) {
                 throw new IllegalArgumentException("Missing " + document.missingFields() + ".");
             }
         }
@@ -172,9 +177,7 @@ public final class ZnackModels {
         }
 
         public GoodsDocument resolvedGoodsDocument(Settings settings) {
-            return hasDocumentOverride()
-                    ? new GoodsDocument(certificateType, certificateNumber, certificateDate)
-                    : settings.defaultGoodsDocument();
+            return settings.defaultGoodsDocument();
         }
 
         public boolean cardReadyForIntroduction() {

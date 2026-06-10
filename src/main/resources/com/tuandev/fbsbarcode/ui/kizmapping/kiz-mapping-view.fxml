@@ -21,7 +21,7 @@
    <TableColumn fx:id="availableColumn" prefWidth="90" text="%kiz_mapping.column.available"/>
    <TableColumn fx:id="pipelineColumn" prefWidth="180" text="%kiz_mapping.column.pipeline"/>
    <TableColumn fx:id="errorColumn" prefWidth="220" text="%kiz_mapping.column.error"/>
-   <TableColumn fx:id="actionsColumn" prefWidth="290" text="%kiz_mapping.column.actions"/>
+   <TableColumn fx:id="actionsColumn" prefWidth="190" text="%kiz_mapping.column.actions"/>
   </columns>
  </TableView>
  <Label fx:id="emptyStateLabel" managed="false" styleClass="text-muted" text="%kiz_mapping.empty_gtin" visible="false"/>

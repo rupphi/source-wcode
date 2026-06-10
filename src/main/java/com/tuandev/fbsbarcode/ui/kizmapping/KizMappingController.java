@@ -31,8 +31,6 @@ import java.util.Map;
 import java.util.Set;
 
 public class KizMappingController {
-    private static final List<String> DOCUMENT_TYPES = List.of(
-            "CONFORMITY_DECLARATION", "CONFORMITY_CERTIFICATE", "STATE_REGISTRATION_CERTIFICATE");
     @FXML private Label titleLabel, emptyStateLabel;
     @FXML private Button refreshButton;
     @FXML private ProgressIndicator loadingIndicator;
@@ -228,7 +226,8 @@ public class KizMappingController {
             renderSelectedRules(selectedRules, state, refresh[0]);
         };
         subjects.setCellFactory(ignored -> categoryCell(summary.gtin(), state, data, refresh[0]));
-        subjects.getSelectionModel().selectedItemProperty().addListener((o, old, subject) -> refresh[0].run());
+        subjects.getSelectionModel().selectedItemProperty().addListener((o, old, subject) ->
+                renderGenders(summary.gtin(), subject, genders, state, data, refresh[0]));
         if (!subjects.getItems().isEmpty()) subjects.getSelectionModel().selectFirst();
         VBox subjectPane = titledPane(tr("kiz_mapping.mapping.categories"), subjects);
         VBox genderPane = titledPane(tr("kiz_mapping.mapping.genders"), new ScrollPane(genders));
@@ -268,8 +267,10 @@ public class KizMappingController {
                 count.getStyleClass().add("text-muted");
                 enabled.setOnAction(event -> {
                     if (updating || getItem() == null) return;
-                    if (enabled.isSelected()) enableSubject(gtin, getItem(), state, data);
+                    boolean selected = enabled.isSelected();
+                    if (selected) enableSubject(gtin, getItem(), state, data);
                     else state.remove(getItem());
+                    getListView().getSelectionModel().select(getItem());
                     refresh.run();
                 });
             }
@@ -333,10 +334,24 @@ public class KizMappingController {
             boolean ownedByOther = owner != null && !owner.equals(gtin);
             CheckBox check = new CheckBox(displayGender(gender) + (owner != null && !owner.equals(gtin) ? " · " + owner : ""));
             check.setSelected(activeSelection.wildcard || activeSelection.genders.contains(gender));
-            check.setDisable(!enabled || activeSelection.wildcard || ownedByOther);
+            check.setDisable(!enabled || ownedByOther);
             check.getProperties().put("ownedByOther", ownedByOther);
             check.selectedProperty().addListener((o, old, selected) -> {
-                if (selected) activeSelection.genders.add(gender); else activeSelection.genders.remove(gender);
+                if (activeSelection.wildcard) {
+                    activeSelection.wildcard = false;
+                    activeSelection.genders.clear();
+                    for (String candidate : availableGenders) {
+                        String candidateOwner = first(owners.get(candidate), wildcardOwner);
+                        boolean candidateOwnedByOther = candidateOwner != null && !candidateOwner.equals(gtin);
+                        if (!candidateOwnedByOther && (!candidate.equals(gender) || selected)) {
+                            activeSelection.genders.add(candidate);
+                        }
+                    }
+                } else if (selected) {
+                    activeSelection.genders.add(gender);
+                } else {
+                    activeSelection.genders.remove(gender);
+                }
                 if (activeSelection.empty()) state.remove(subject);
                 refresh.run();
             });
@@ -418,95 +433,6 @@ public class KizMappingController {
         });
     }
 
-    private void showCirculationData(ZnackGtinInventorySummary summary) {
-        if (znackRepository == null || summary == null) return;
-        ZnackRepository currentRepository = znackRepository;
-        long generation = shopGeneration;
-        Task<Product> task = new Task<>() {
-            @Override protected Product call() {
-                return currentRepository.findProduct(summary.gtin()).orElse(null);
-            }
-        };
-        setLoading(true);
-        task.setOnSucceeded(event -> {
-            if (generation != shopGeneration) return;
-            setLoading(false);
-            Product product = task.getValue();
-            if (product == null) {
-                AlertService.showError(tr("kiz_mapping.error.gtin_missing"));
-                refresh();
-                return;
-            }
-            openCirculationDialog(currentRepository, summary, product);
-        });
-        task.setOnFailed(event -> {
-            if (generation != shopGeneration) return;
-            setLoading(false);
-            AlertService.showError(friendlyError(task.getException()));
-        });
-        AppTaskExecutor.execute(task);
-    }
-
-    private void openCirculationDialog(ZnackRepository currentRepository, ZnackGtinInventorySummary summary,
-                                       Product current) {
-        Dialog<Product> dialog = new Dialog<>();
-        AlertService.applyTheme(dialog);
-        dialog.setTitle(tr("kiz_mapping.circulation.title"));
-        TextField tnVed = new TextField(value(current.tnVed()));
-        tnVed.setPromptText(tr("znack.field.tn_ved"));
-        TextField productionDate = new TextField(value(current.productionDate()));
-        productionDate.setPromptText(tr("znack.field.production_date"));
-        ComboBox<String> documentType = new ComboBox<>();
-        documentType.getItems().setAll(DOCUMENT_TYPES);
-        if (!value(current.certificateType()).isBlank() && !documentType.getItems().contains(current.certificateType())) {
-            documentType.getItems().add(current.certificateType());
-        }
-        documentType.setValue(value(current.certificateType()).isBlank() ? null : current.certificateType());
-        documentType.setConverter(new javafx.util.StringConverter<>() {
-            @Override public String toString(String value) { return documentTypeDisplay(value); }
-            @Override public String fromString(String value) { return null; }
-        });
-        TextField documentNumber = new TextField(value(current.certificateNumber()));
-        TextField documentDate = new TextField(value(current.certificateDate()));
-        documentDate.setPromptText(tr("znack.date_prompt"));
-        VBox content = new VBox(8,
-                new Label(summary.gtin() + " · " + value(current.productName())),
-                new Label(tr("znack.field.tn_ved")), tnVed,
-                new Label(tr("znack.field.production_date")), productionDate,
-                new Label(tr("kiz_mapping.circulation.document_override")),
-                new Label(tr("znack.document_type")), documentType,
-                new Label(tr("znack.document_number")), documentNumber,
-                new Label(tr("znack.document_issue_date")), documentDate);
-        dialog.getDialogPane().setContent(content);
-        ButtonType save = new ButtonType(tr("common.save"), ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().setAll(save, ButtonType.CANCEL);
-        dialog.setResultConverter(button -> button == save
-                ? new Product(current.gtin(), current.productName(), tnVed.getText(), documentType.getValue(),
-                documentNumber.getText(), documentDate.getText(), productionDate.getText(), current.goodMarkFlag(),
-                current.goodTurnFlag(), current.cardStatus(), current.cardDetailedStatus(), current.readinessCheckedAt())
-                : null);
-        dialog.getDialogPane().lookupButton(save).addEventFilter(javafx.event.ActionEvent.ACTION, event -> {
-            GoodsDocument override = new GoodsDocument(documentType.getValue(), documentNumber.getText(), documentDate.getText());
-            if (override.anyValue() && !override.complete()) {
-                AlertService.showError("Missing " + override.missingFields() + ".");
-                event.consume();
-                return;
-            }
-            try {
-                Settings.validateGoodsDocumentDate(override.date(), "Document issue date");
-            } catch (IllegalArgumentException error) {
-                AlertService.showError(error.getMessage());
-                event.consume();
-            }
-        });
-        dialog.showAndWait().ifPresent(product -> runTask(() -> {
-            currentRepository.updateProductMetadata(product);
-            Settings settings = currentRepository.getSettings();
-            ZnackPurchaseCoordinator.create(currentRepository).resumeEligibleIntroductions(settings);
-            return null;
-        }));
-    }
-
     private List<ZnackGtinMappingSelection> flatten(Map<String, SelectionState> state) {
         List<ZnackGtinMappingSelection> result = new ArrayList<>();
         state.forEach((subject, selection) -> {
@@ -567,10 +493,6 @@ public class KizMappingController {
 
     private String displayGender(String gender) {
         return KizMappingRepository.UNSPECIFIED_GENDER.equals(gender) ? tr("kiz_mapping.gender.unspecified") : gender;
-    }
-
-    private String documentTypeDisplay(String type) {
-        return type == null || type.isBlank() ? "" : tr("znack.document_type." + type.toLowerCase(java.util.Locale.ROOT));
     }
 
     private static String first(String first, String second) {
@@ -634,17 +556,14 @@ public class KizMappingController {
     private final class ActionsCell extends TableCell<ZnackGtinInventorySummary, ZnackGtinInventorySummary> {
         private final Button mapping = new Button();
         private final Button buy = new Button();
-        private final Button circulation = new Button();
-        private final HBox box = new HBox(6, mapping, buy, circulation);
+        private final HBox box = new HBox(6, mapping, buy);
         private final Tooltip technicalGtinTooltip = new Tooltip(tr("supply.gtin_inventory.error.technical_gtin"));
 
         private ActionsCell() {
             mapping.setText(tr("kiz_mapping.action.mapping"));
             buy.setText(tr("kiz_mapping.action.buy"));
-            circulation.setText(tr("kiz_mapping.action.circulation"));
             mapping.setOnAction(e -> showMapping(getItem()));
             buy.setOnAction(e -> showBuy(getItem()));
-            circulation.setOnAction(e -> showCirculationData(getItem()));
         }
 
         @Override protected void updateItem(ZnackGtinInventorySummary item, boolean empty) {
