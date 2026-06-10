@@ -5,6 +5,9 @@ import org.bouncycastle.asn1.pkcs.ContentInfo;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.SignedData;
 import org.bouncycastle.asn1.pkcs.SignerInfo;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import com.tuandev.fbsbarcode.integration.znack.ZnackSanitizer;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -15,6 +18,7 @@ import java.util.Base64;
 import java.util.List;
 
 public class CryptoProSignatureProvider implements ZnackSignatureProvider {
+    private static final Logger LOGGER = LoggerFactory.getLogger(CryptoProSignatureProvider.class);
     private final CryptoProCommandRunner runner;
     private final String cryptcpOverride;
     private final String certificateSelector;
@@ -68,13 +72,29 @@ public class CryptoProSignatureProvider implements ZnackSignatureProvider {
             byte[] cms = cms(raw);
             return new CryptoProSigningResult(cms, result.diagnostic());
         } catch (CryptoProException e) {
-            if ((e.code() == CryptoProErrorCode.CRYPTCP_MISSING || e.code() == CryptoProErrorCode.CRYPTOPRO_MISSING)
+            if ((e.code() == CryptoProErrorCode.CRYPTCP_MISSING
+                    || e.code() == CryptoProErrorCode.CRYPTOPRO_MISSING
+                    || e.code() == CryptoProErrorCode.CRYPTCP_LICENSE_INVALID)
                     && windowsFallback != null) {
-                return windowsFallback.sign(payload, context);
+                LOGGER.warn("cryptcp signing unavailable; trying Windows CAdESCOM fallback. code={}, details={}",
+                        e.code(), ZnackSanitizer.error(e));
+                try {
+                    return windowsFallback.sign(payload, context);
+                } catch (CryptoProException fallbackError) {
+                    CryptoProException combined = new CryptoProException(fallbackError.code(),
+                            "cryptcp failed before CAdESCOM fallback: " + ZnackSanitizer.error(e)
+                                    + "; CAdESCOM fallback failed: " + ZnackSanitizer.error(fallbackError),
+                            fallbackError);
+                    logFailure(combined);
+                    throw combined;
+                }
             }
+            logFailure(e);
             throw e;
         } catch (Exception e) {
-            throw new CryptoProException(CryptoProErrorCode.SIGNING_FAILED, "CryptoPro signing failed.", e);
+            CryptoProException failure = new CryptoProException(CryptoProErrorCode.SIGNING_FAILED, "CryptoPro signing failed.", e);
+            logFailure(failure);
+            throw failure;
         } finally {
             try { if (input != null) Files.deleteIfExists(input); } catch (Exception ignored) {}
             try { if (output != null) Files.deleteIfExists(output); } catch (Exception ignored) {}
@@ -128,7 +148,11 @@ public class CryptoProSignatureProvider implements ZnackSignatureProvider {
 
     private CryptoProException failure(CryptoProCommandRunner.Result result) {
         String diagnostic = result.diagnostic().toLowerCase();
-        CryptoProErrorCode code = diagnostic.contains("cancel") || diagnostic.contains("отмен")
+        CryptoProErrorCode code = diagnostic.contains("license") || diagnostic.contains("licence")
+                || diagnostic.contains("лиценз") || diagnostic.contains("0x0000065b")
+                || diagnostic.contains("0x65b") || diagnostic.contains("0x20000324")
+                ? CryptoProErrorCode.CRYPTCP_LICENSE_INVALID
+                : diagnostic.contains("cancel") || diagnostic.contains("отмен")
                 ? CryptoProErrorCode.CANCELLED
                 : diagnostic.contains("expired") || diagnostic.contains("истек")
                 ? CryptoProErrorCode.CERTIFICATE_EXPIRED
@@ -137,5 +161,9 @@ public class CryptoProSignatureProvider implements ZnackSignatureProvider {
                 : diagnostic.contains("certificate") || diagnostic.contains("сертифик")
                 ? CryptoProErrorCode.TOKEN_OR_CERTIFICATE_ABSENT : CryptoProErrorCode.SIGNING_FAILED;
         return new CryptoProException(code, "CryptoPro signing failed (exit " + result.exitCode() + "): " + result.diagnostic());
+    }
+
+    private void logFailure(CryptoProException error) {
+        LOGGER.error("CryptoPro signing failed. code={}, details={}", error.code(), ZnackSanitizer.error(error));
     }
 }

@@ -10,6 +10,8 @@ import com.tuandev.fbsbarcode.integration.znack.ZnackProductService;
 import com.tuandev.fbsbarcode.integration.znack.ZnackPurchaseCoordinator;
 import com.tuandev.fbsbarcode.integration.znack.ZnackRepository;
 import com.tuandev.fbsbarcode.integration.znack.ZnackSafety;
+import com.tuandev.fbsbarcode.integration.znack.ZnackSanitizer;
+import com.tuandev.fbsbarcode.integration.znack.signature.CryptoProErrorCode;
 import com.tuandev.fbsbarcode.integration.znack.signature.CryptoProSignatureProvider;
 import com.tuandev.fbsbarcode.integration.znack.signature.CryptoProException;
 import com.tuandev.fbsbarcode.integration.znack.signature.ZnackSignatureProvider;
@@ -725,9 +727,10 @@ public class SupplyDetailController {
 
     private String friendlyError(Throwable error) {
         if (error instanceof CryptoProException crypto) {
-            return tr("znack.signature.error." + switch (crypto.code()) {
+            String message = tr("znack.signature.error." + switch (crypto.code()) {
                 case CRYPTOPRO_MISSING -> "cryptopro_missing";
                 case CRYPTCP_MISSING -> "cryptcp_missing";
+                case CRYPTCP_LICENSE_INVALID -> "cryptcp_license";
                 case CERTMGR_MISSING -> "certmgr_missing";
                 case CADESCOM_MISSING -> "cadescom_missing";
                 case TOKEN_OR_CERTIFICATE_ABSENT -> "certificate_absent";
@@ -738,6 +741,9 @@ public class SupplyDetailController {
                 case INVALID_SIGNATURE_OUTPUT -> "invalid_output";
                 default -> "failed";
             });
+            String details = ZnackSanitizer.message(crypto.getMessage());
+            return crypto.code() == CryptoProErrorCode.SIGNING_FAILED && !details.isBlank()
+                    ? message + "\n\n" + tr("znack.signature.error.details") + ": " + details : message;
         }
         String message = error == null ? "" : value(error.getMessage());
         if (ZnackSafety.UNVERIFIED_SIGNATURE.equals(message)) {

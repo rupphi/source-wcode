@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels.*;
 import com.tuandev.fbsbarcode.integration.znack.ZnackPurchaseCoordinator;
 import com.tuandev.fbsbarcode.integration.znack.ZnackRepository;
+import com.tuandev.fbsbarcode.integration.znack.ZnackSanitizer;
 import com.tuandev.fbsbarcode.integration.znack.signature.*;
 import com.tuandev.fbsbarcode.models.Shop;
 import com.tuandev.fbsbarcode.shared.AlertService;
@@ -12,6 +13,9 @@ import com.tuandev.fbsbarcode.shared.I18nService;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
+import javafx.scene.input.KeyCode;
 import javafx.util.StringConverter;
 
 import java.nio.charset.StandardCharsets;
@@ -72,6 +76,7 @@ public class ZnackAutomationController {
         logEntityColumn.setCellValueFactory(v -> text(v.getValue().entityReference()));
         logSeverityColumn.setCellValueFactory(v -> text(v.getValue().severity()));
         logResultColumn.setCellValueFactory(v -> text(v.getValue().message()));
+        configureLogCopy();
         signatureCertificateCombo.setConverter(new StringConverter<>() {
             @Override public String toString(CryptoProCertificateInfo value) { return certificateDisplay(value); }
             @Override public CryptoProCertificateInfo fromString(String value) { return null; }
@@ -300,6 +305,8 @@ public class ZnackAutomationController {
             updateSaveState();
         } catch (CryptoProException e) {
             signerTestedAt = null;
+            repository.log("SIGNATURE_TEST", null, "ERROR", signatureDiagnostic(e), null);
+            logsTable.getItems().setAll(repository.findLogs());
             updateSignatureSummary();
             AlertService.showError(signatureError(e));
         }
@@ -505,9 +512,10 @@ public class ZnackAutomationController {
     }
 
     private String signatureError(CryptoProException error) {
-        return tr("znack.signature.error." + switch (error.code()) {
+        String message = tr("znack.signature.error." + switch (error.code()) {
             case CRYPTOPRO_MISSING -> "cryptopro_missing";
             case CRYPTCP_MISSING -> "cryptcp_missing";
+            case CRYPTCP_LICENSE_INVALID -> "cryptcp_license";
             case CERTMGR_MISSING -> "certmgr_missing";
             case CADESCOM_MISSING -> "cadescom_missing";
             case TOKEN_OR_CERTIFICATE_ABSENT -> "certificate_absent";
@@ -518,6 +526,52 @@ public class ZnackAutomationController {
             case INVALID_SIGNATURE_OUTPUT -> "invalid_output";
             default -> "failed";
         });
+        return error.code() == CryptoProErrorCode.SIGNING_FAILED
+                ? withSignatureDetails(message, ZnackSanitizer.error(error)) : message;
+    }
+
+    private String withSignatureDetails(String message, String details) {
+        String sanitized = ZnackSanitizer.message(details);
+        return sanitized.isBlank() ? message : message + "\n\n" + tr("znack.signature.error.details") + ": " + sanitized;
+    }
+
+    private String signatureDiagnostic(CryptoProException error) {
+        return "code=" + error.code() + "; " + ZnackSanitizer.error(error);
+    }
+
+    private void configureLogCopy() {
+        MenuItem copy = new MenuItem(tr("common.copy"));
+        copy.setOnAction(event -> copySelectedLog());
+        ContextMenu menu = new ContextMenu(copy);
+        menu.setOnShowing(event -> copy.setDisable(logsTable.getSelectionModel().getSelectedItem() == null));
+        logsTable.setContextMenu(menu);
+        logsTable.setOnKeyPressed(event -> {
+            if (event.isShortcutDown() && event.getCode() == KeyCode.C) copySelectedLog();
+        });
+        logsTable.setRowFactory(ignored -> {
+            TableRow<OperationLog> row = new TableRow<>();
+            row.setOnContextMenuRequested(event -> {
+                if (!row.isEmpty()) logsTable.getSelectionModel().select(row.getItem());
+            });
+            return row;
+        });
+    }
+
+    private void copySelectedLog() {
+        OperationLog selected = logsTable.getSelectionModel().getSelectedItem();
+        if (selected == null) return;
+        ClipboardContent content = new ClipboardContent();
+        content.putString(logText(selected));
+        Clipboard.getSystemClipboard().setContent(content);
+    }
+
+    static String logText(OperationLog log) {
+        return "time=" + log.createdAt() + "\n"
+                + "action=" + value(log.action()) + "\n"
+                + "entity=" + value(log.entityReference()) + "\n"
+                + "severity=" + value(log.severity()) + "\n"
+                + "httpStatus=" + (log.httpStatus() == null ? "" : log.httpStatus()) + "\n"
+                + "message=" + value(log.message());
     }
 
     private javafx.beans.property.SimpleStringProperty text(String value) {

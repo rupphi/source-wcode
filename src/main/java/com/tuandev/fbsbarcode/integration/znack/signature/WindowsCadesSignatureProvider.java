@@ -1,5 +1,9 @@
 package com.tuandev.fbsbarcode.integration.znack.signature;
 
+import com.tuandev.fbsbarcode.integration.znack.ZnackSanitizer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -8,6 +12,7 @@ import java.util.List;
 import java.util.Locale;
 
 final class WindowsCadesSignatureProvider implements ZnackSignatureProvider {
+    private static final Logger LOGGER = LoggerFactory.getLogger(WindowsCadesSignatureProvider.class);
     private static final String PROBE_SCRIPT = """
             $ErrorActionPreference = 'Stop'
             $signedData = New-Object -ComObject CAdESCOM.CadesSignedData
@@ -97,10 +102,13 @@ final class WindowsCadesSignatureProvider implements ZnackSignatureProvider {
             byte[] raw = Files.isRegularFile(output) ? Files.readAllBytes(output) : new byte[0];
             return new CryptoProSigningResult(CryptoProSignatureProvider.cms(raw), result.diagnostic());
         } catch (CryptoProException error) {
-            if (error.code() == CryptoProErrorCode.CRYPTOPRO_MISSING) throw unavailable(error);
+            if (error.code() == CryptoProErrorCode.CRYPTOPRO_MISSING) error = unavailable(error);
+            LOGGER.error("CAdESCOM signing failed. code={}, details={}", error.code(), ZnackSanitizer.error(error));
             throw error;
         } catch (Exception error) {
-            throw new CryptoProException(CryptoProErrorCode.SIGNING_FAILED, "CAdESCOM signing failed.", error);
+            CryptoProException failure = new CryptoProException(CryptoProErrorCode.SIGNING_FAILED, "CAdESCOM signing failed.", error);
+            LOGGER.error("CAdESCOM signing failed. code={}, details={}", failure.code(), ZnackSanitizer.error(failure));
+            throw failure;
         } finally {
             try { if (input != null) Files.deleteIfExists(input); } catch (Exception ignored) {}
             try { if (output != null) Files.deleteIfExists(output); } catch (Exception ignored) {}

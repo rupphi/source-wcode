@@ -4,6 +4,7 @@ import com.tuandev.fbsbarcode.features.kizmapping.KizMappingRepository;
 import com.tuandev.fbsbarcode.features.kizmapping.ZnackGtinMappingSelection;
 import com.tuandev.fbsbarcode.integration.znack.*;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels.*;
+import com.tuandev.fbsbarcode.integration.znack.signature.CryptoProErrorCode;
 import com.tuandev.fbsbarcode.integration.znack.signature.CryptoProSignatureProvider;
 import com.tuandev.fbsbarcode.integration.znack.signature.CryptoProException;
 import com.tuandev.fbsbarcode.integration.znack.signature.ZnackSignatureProvider;
@@ -406,9 +407,10 @@ public class KizMappingController {
 
     private String friendlyError(Throwable error) {
         if (error instanceof CryptoProException crypto) {
-            return tr("znack.signature.error." + switch (crypto.code()) {
+            String message = tr("znack.signature.error." + switch (crypto.code()) {
                 case CRYPTOPRO_MISSING -> "cryptopro_missing";
                 case CRYPTCP_MISSING -> "cryptcp_missing";
+                case CRYPTCP_LICENSE_INVALID -> "cryptcp_license";
                 case CERTMGR_MISSING -> "certmgr_missing";
                 case CADESCOM_MISSING -> "cadescom_missing";
                 case TOKEN_OR_CERTIFICATE_ABSENT -> "certificate_absent";
@@ -419,6 +421,9 @@ public class KizMappingController {
                 case INVALID_SIGNATURE_OUTPUT -> "invalid_output";
                 default -> "failed";
             });
+            String details = ZnackSanitizer.message(crypto.getMessage());
+            return crypto.code() == CryptoProErrorCode.SIGNING_FAILED && !details.isBlank()
+                    ? message + "\n\n" + tr("znack.signature.error.details") + ": " + details : message;
         }
         if (ZnackSafety.UNVERIFIED_SIGNATURE.equals(error.getMessage())) return tr("znack.signature.not_verified");
         if (ZnackSafety.MISSING_SHOP_CONFIGURATION.equals(error.getMessage())) return tr("znack.error.shop_configuration");

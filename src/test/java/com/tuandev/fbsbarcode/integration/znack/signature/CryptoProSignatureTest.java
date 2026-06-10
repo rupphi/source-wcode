@@ -151,6 +151,37 @@ class CryptoProSignatureTest {
         assertEquals("CAdESCOM", result.diagnostic());
     }
 
+    @Test void fallsBackToWindowsCadesWhenCryptcpLicenseIsInvalid() throws Exception {
+        CryptoProCommandRunner unlicensedCryptcp = new FailureRunner(
+                "Error: License for this product is expired. [ErrorCode: 0x0000065b]");
+        byte[] fixture = cmsFixture();
+        ZnackSignatureProvider fallback = (payload, context) -> new CryptoProSigningResult(fixture, "CAdESCOM");
+
+        CryptoProSigningResult result = new CryptoProSignatureProvider(
+                unlicensedCryptcp, "cryptcp", "AABB", Duration.ofSeconds(2), fallback)
+                .sign("payload".getBytes(), ZnackSignatureContext.SIGNATURE_TEST);
+
+        assertArrayEquals(fixture, result.cms());
+        assertEquals("CAdESCOM", result.diagnostic());
+    }
+
+    @Test void doesNotRetryUnclassifiedCryptcpSigningFailureThroughCades() {
+        boolean[] fallbackCalled = {false};
+        ZnackSignatureProvider fallback = (payload, context) -> {
+            fallbackCalled[0] = true;
+            return new CryptoProSigningResult(new byte[0], "unexpected");
+        };
+
+        CryptoProException error = assertThrows(CryptoProException.class,
+                () -> new CryptoProSignatureProvider(new FailureRunner("Unexpected provider failure"),
+                        "cryptcp", "AABB", Duration.ofSeconds(2), fallback)
+                        .sign("payload".getBytes(), ZnackSignatureContext.SIGNATURE_TEST));
+
+        assertEquals(CryptoProErrorCode.SIGNING_FAILED, error.code());
+        assertTrue(error.getMessage().contains("Unexpected provider failure"));
+        assertFalse(fallbackCalled[0]);
+    }
+
     @Test void windowsCadesSignsThroughGeneratedLocalScriptWithoutPuttingPayloadOnCommandLine() throws Exception {
         WindowsCadesRunner runner = new WindowsCadesRunner(cmsFixture());
 
@@ -209,6 +240,22 @@ class CryptoProSignatureTest {
             } catch (Exception e) {
                 throw new CryptoProException(CryptoProErrorCode.SIGNING_FAILED, "Could not write fixture signature.", e);
             }
+        }
+    }
+
+    private static final class FailureRunner extends CryptoProCommandRunner {
+        private final String diagnostic;
+
+        private FailureRunner(String diagnostic) {
+            this.diagnostic = diagnostic;
+        }
+
+        @Override public String resolve(String override, String command) {
+            return "cryptcp";
+        }
+
+        @Override public Result run(List<String> command, Duration timeout) {
+            return new Result(1, new byte[0], diagnostic.getBytes());
         }
     }
 

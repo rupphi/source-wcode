@@ -537,6 +537,9 @@ class ZnackModuleTest {
             assertFalse(bundle.getString("znack.help.oms_connection.steps").isBlank());
             assertFalse(bundle.getString("znack.help.oms_id.warning").isBlank());
             assertFalse(bundle.getString("znack.help.oms_connection.warning").isBlank());
+            assertFalse(bundle.getString("znack.signature.error.cryptcp_license").isBlank());
+            assertFalse(bundle.getString("znack.signature.error.details").isBlank());
+            assertFalse(bundle.getString("common.copy").isBlank());
             assertFalse(bundle.getString("supply.gtin_inventory.title").isBlank());
             assertFalse(bundle.getString("supply.gtin_inventory.buy_title").isBlank());
             assertFalse(bundle.getString("supply.gtin_inventory.error.pipeline_active").isBlank());
@@ -545,6 +548,16 @@ class ZnackModuleTest {
                 ResourceBundle.getBundle("com.tuandev.fbsbarcode.i18n.messages",Locale.forLanguageTag("ru")).getString("znack.oms_connection_help"));
         assertEquals("Không tìm thấy chữ ký điện tử. Vui lòng cắm USB token, kiểm tra CryptoPro rồi thử lại.",
                 ResourceBundle.getBundle("com.tuandev.fbsbarcode.i18n.messages",Locale.forLanguageTag("vi")).getString("znack.signature.not_found"));
+    }
+
+    @Test void sanitizesNestedErrorDetailsBeforeLogging() {
+        String diagnostic = ZnackSanitizer.error(new RuntimeException("Signing failed",
+                new IllegalStateException("token=secret-value pin=1234")));
+
+        assertTrue(diagnostic.contains("Signing failed"));
+        assertTrue(diagnostic.contains("[REDACTED]"));
+        assertFalse(diagnostic.contains("secret-value"));
+        assertFalse(diagnostic.contains("1234"));
     }
 
     @Test void mapsBufferStatuses() {
