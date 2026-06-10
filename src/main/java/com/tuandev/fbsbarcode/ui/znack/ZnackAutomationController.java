@@ -61,6 +61,7 @@ public class ZnackAutomationController {
     private boolean loading;
     private boolean certificateDiscoveryRunning;
     private boolean updatingCertificateSelection;
+    private boolean reopeningCertificatePopup;
     private long certificateDiscoveryGeneration;
 
     @FXML
@@ -83,7 +84,10 @@ public class ZnackAutomationController {
         });
         signatureCertificateCombo.setCellFactory(ignored -> certificateCell(true));
         signatureCertificateCombo.setButtonCell(certificateCell(false));
-        signatureCertificateCombo.setOnShowing(ignored -> loadCertificates());
+        signatureCertificateCombo.setVisibleRowCount(8);
+        signatureCertificateCombo.setOnShowing(ignored -> {
+            if (!reopeningCertificatePopup) loadCertificates();
+        });
         for (TextField field : List.of(omsIdField, omsConnectionField, documentNumberField, documentIssueDateField, documentExpiryDateField)) {
             field.textProperty().addListener((o, old, value) -> updateSaveState());
         }
@@ -245,6 +249,7 @@ public class ZnackAutomationController {
     }
 
     private void applyDiscoveredCertificates(List<CryptoProCertificateInfo> discovered, Instant now) {
+        boolean resizeOpenPopup = signatureCertificateCombo.isShowing();
         String previousSelector = selectedCertificate();
         CryptoProCertificateInfo current = signatureCertificateCombo.getValue();
         boolean hadConfiguredCertificate = !blank(previousSelector);
@@ -285,7 +290,20 @@ public class ZnackAutomationController {
         }
         updateSignatureSummary();
         updateSaveState();
+        if (resizeOpenPopup) resizeCertificatePopup();
         if (discovered.isEmpty()) AlertService.showError(tr("znack.signature.not_found"));
+    }
+
+    private void resizeCertificatePopup() {
+        reopeningCertificatePopup = true;
+        signatureCertificateCombo.hide();
+        javafx.application.Platform.runLater(() -> {
+            try {
+                signatureCertificateCombo.show();
+            } finally {
+                reopeningCertificatePopup = false;
+            }
+        });
     }
 
     @FXML

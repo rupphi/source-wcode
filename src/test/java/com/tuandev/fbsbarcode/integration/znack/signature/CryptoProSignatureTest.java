@@ -192,6 +192,7 @@ class CryptoProSignatureTest {
         assertTrue(runner.script.contains("CAdESCOM.CadesSignedData"));
         assertTrue(runner.script.contains("SignCades"));
         assertTrue(runner.script.contains("$stage = 'sign payload'"));
+        assertTrue(runner.script.contains("New-Object -ComObject CAPICOM.Store"));
         assertTrue(runner.script.contains("try { $store.Close() } catch { }"));
         assertArrayEquals("secret-payload".getBytes(), runner.payload);
         assertTrue(runner.command.contains("true"));
@@ -210,6 +211,21 @@ class CryptoProSignatureTest {
                         .sign("payload".getBytes(), ZnackSignatureContext.SIGNATURE_TEST));
 
         assertEquals(CryptoProErrorCode.CADESCOM_MISSING, error.code());
+    }
+
+    @Test void windowsCadesDoesNotMisclassifyCertificateStoreOpenFailureAsMissingCertificate() {
+        CryptoProCommandRunner runner = new CryptoProCommandRunner() {
+            @Override public Result run(List<String> command, Duration timeout) {
+                return new Result(1, new byte[0],
+                        "CAdESCOM stage 'open current-user My certificate store' failed: Object reference not set".getBytes());
+            }
+        };
+
+        CryptoProException error = assertThrows(CryptoProException.class,
+                () -> new WindowsCadesSignatureProvider(runner, "AABB", Duration.ofSeconds(2))
+                        .sign("payload".getBytes(), ZnackSignatureContext.SIGNATURE_TEST));
+
+        assertEquals(CryptoProErrorCode.SIGNING_FAILED, error.code());
     }
 
     @Test void certificateSelectionUsesExpiryAndTestSigningValidatesPrivateKey() {

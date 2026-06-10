@@ -29,9 +29,23 @@ final class WindowsCadesSignatureProvider implements ZnackSignatureProvider {
             $store = $null
             $stage = 'create certificate store'
             try {
-              $store = New-Object -ComObject CAdESCOM.Store
               $stage = 'open current-user My certificate store'
-              $store.Open(2, 'My', 2)
+              try {
+                $store = New-Object -ComObject CAdESCOM.Store
+                $store.Open(2, 'My', 2)
+              } catch {
+                $cadesStoreError = $_.Exception.Message
+                if ($null -ne $store) {
+                  try { $store.Close() } catch { }
+                }
+                $store = $null
+                try {
+                  $store = New-Object -ComObject CAPICOM.Store
+                  $store.Open(2, 'My', 2)
+                } catch {
+                  throw "CAdESCOM.Store failed: $cadesStoreError; CAPICOM.Store failed: $($_.Exception.Message)"
+                }
+              }
               $stage = 'find selected certificate'
               $normalized = ($Thumbprint -replace '\\s', '').ToUpperInvariant()
               $certificate = $null
@@ -143,7 +157,8 @@ final class WindowsCadesSignatureProvider implements ZnackSignatureProvider {
                 ? CryptoProErrorCode.CERTIFICATE_EXPIRED
                 : diagnostic.contains("private key") || diagnostic.contains("закрыт")
                 ? CryptoProErrorCode.PRIVATE_KEY_UNAVAILABLE
-                : diagnostic.contains("certificate") || diagnostic.contains("сертифик")
+                : diagnostic.contains("selected certificate was not found")
+                || diagnostic.contains("certificate not found") || diagnostic.contains("сертификат не найден")
                 ? CryptoProErrorCode.TOKEN_OR_CERTIFICATE_ABSENT : CryptoProErrorCode.SIGNING_FAILED;
         return new CryptoProException(code, "CAdESCOM signing failed (exit " + result.exitCode() + "): " + result.diagnostic());
     }
