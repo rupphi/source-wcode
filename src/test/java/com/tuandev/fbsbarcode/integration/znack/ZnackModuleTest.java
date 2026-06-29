@@ -577,6 +577,35 @@ class ZnackModuleTest {
         }
     }
 
+    @Test void productSyncSkipsNonPublishedCardsAndDeletesUnreferencedExistingOnes() throws Exception {
+        ZnackRepository repository=repository(1,"Shop A");
+        String nowDraft="04601234567891";
+        repository.upsertProducts(List.of(new Product(nowDraft,"Was published before",null,null,null,null,null)));
+        ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonElement products(String base,String token){
+                return JsonParser.parseString("""
+                        {"results":[
+                          {"gtin":"04601234567890","productName":"Published","good_status":"published"},
+                          {"gtin":"04601234567891","productName":"Draft now","good_status":"draft"},
+                          {"gtin":"04601234567892","productName":"Errors","good_detailed_status":"errors"}
+                        ]}
+                        """);
+            }
+            @Override public JsonElement productCards(String base,String token,String gtins){
+                return JsonParser.parseString("{\"result\":[]}");
+            }
+        };
+        ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+            @Override public String trueApiToken(Settings s){return "token";}
+        };
+
+        List<Product> products=new ZnackProductService(api,auth,repository)
+                .sync(testedSettings("","","","connection",""));
+
+        assertEquals(List.of("04601234567890"),products.stream().map(Product::gtin).toList());
+        assertEquals(List.of("04601234567890"),repository.findProducts().stream().map(Product::gtin).toList());
+    }
+
     @Test void blankHostsResolveToProductionWithoutReplacingCustomHosts() {
         Settings blank=Settings.empty();
         assertEquals(ZnackModels.PRODUCTION_TRUE_API,blank.resolvedTrueApiBaseUrl());

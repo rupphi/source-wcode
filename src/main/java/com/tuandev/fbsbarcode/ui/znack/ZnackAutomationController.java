@@ -22,6 +22,7 @@ import javafx.scene.input.KeyCode;
 import javafx.util.StringConverter;
 
 import java.nio.charset.StandardCharsets;
+import java.text.MessageFormat;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
@@ -29,6 +30,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 public class ZnackAutomationController {
     private static final DateTimeFormatter CERTIFICATE_DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy");
@@ -47,6 +49,7 @@ public class ZnackAutomationController {
     @FXML private javafx.scene.layout.VBox omsHelpPane;
     @FXML private TableView<Product> productsTable;
     @FXML private TableColumn<Product,String> productGtinColumn, productNameColumn, productTnVedColumn;
+    @FXML private TableColumn<Product,Product> productActionsColumn;
     @FXML private TableView<KizOrder> ordersTable;
     @FXML private TableColumn<KizOrder,Number> orderIdColumn;
     @FXML private TableColumn<KizOrder,String> orderGtinColumn, orderStatusColumn;
@@ -74,6 +77,8 @@ public class ZnackAutomationController {
         productGtinColumn.setCellValueFactory(v -> text(v.getValue().gtin()));
         productNameColumn.setCellValueFactory(v -> text(v.getValue().productName()));
         productTnVedColumn.setCellValueFactory(v -> text(v.getValue().tnVed()));
+        productActionsColumn.setCellValueFactory(v -> new javafx.beans.property.SimpleObjectProperty<>(v.getValue()));
+        productActionsColumn.setCellFactory(column -> new ProductActionsCell());
         orderIdColumn.setCellValueFactory(v -> new javafx.beans.property.SimpleLongProperty(v.getValue().id()));
         orderGtinColumn.setCellValueFactory(v -> text(v.getValue().gtin()));
         orderStatusColumn.setCellValueFactory(v -> text(localizeStatus(v.getValue().localStatus().name())));
@@ -170,6 +175,7 @@ public class ZnackAutomationController {
         productGtinColumn.setText(tr("znack.field.gtin"));
         productNameColumn.setText(tr("znack.field.name"));
         productTnVedColumn.setText(tr("znack.field.tn_ved"));
+        productActionsColumn.setText(tr("znack.field.actions"));
         orderIdColumn.setText(tr("znack.field.id"));
         orderGtinColumn.setText(tr("znack.field.gtin"));
         orderStatusColumn.setText(tr("znack.field.status"));
@@ -377,6 +383,50 @@ public class ZnackAutomationController {
     private void loadProductsFromDatabase() {
         if (repository == null) productsTable.getItems().clear();
         else productsTable.getItems().setAll(repository.findProducts());
+    }
+
+    private void deleteProduct(Product product) {
+        if (repository == null || product == null) return;
+        Optional<ButtonType> result = AlertService.showConfirmation(
+                tr("znack.product.delete.title"),
+                MessageFormat.format(tr("znack.product.delete.header"), value(product.gtin())),
+                tr("znack.product.delete.content"));
+        if (result.isEmpty() || result.get() != ButtonType.OK) return;
+        long generation = shopGeneration;
+        ZnackRepository currentRepository = repository;
+        String gtin = product.gtin();
+        Task<Void> task = new Task<>() {
+            @Override protected Void call() {
+                currentRepository.deleteProduct(gtin);
+                currentRepository.log("GTIN_DELETE", gtin, "INFO", "DELETED", null);
+                return null;
+            }
+        };
+        task.setOnSucceeded(event -> {
+            if (generation != shopGeneration || currentRepository != repository) return;
+            loadProductsFromDatabase();
+            logsTable.getItems().setAll(currentRepository.findLogs());
+        });
+        task.setOnFailed(event -> {
+            if (generation != shopGeneration || currentRepository != repository) return;
+            Throwable failure = task.getException();
+            AlertService.showError(value(failure == null ? null : failure.getMessage()));
+        });
+        AppTaskExecutor.execute(task);
+    }
+
+    private final class ProductActionsCell extends TableCell<Product, Product> {
+        private final Button delete = new Button(tr("common.delete"));
+
+        private ProductActionsCell() {
+            delete.getStyleClass().add("btn-danger");
+            delete.setOnAction(event -> deleteProduct(getItem()));
+        }
+
+        @Override protected void updateItem(Product item, boolean empty) {
+            super.updateItem(item, empty);
+            setGraphic(empty || item == null ? null : delete);
+        }
     }
 
     private void requestProductSync() {

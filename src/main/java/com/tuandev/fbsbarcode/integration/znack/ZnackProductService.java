@@ -3,6 +3,7 @@ package com.tuandev.fbsbarcode.integration.znack;
 import com.google.gson.*;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels.Product;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,10 +34,14 @@ public class ZnackProductService {
             if(received==0)break;
         }while(total==null||fetched<total);
         enrichFromNationalCatalog(settings, token, byGtin);
-        List<Product> products=List.copyOf(byGtin.values());
-        repository.upsertProducts(products);int removed=repository.pruneTechnicalProducts();
-        repository.log("GTIN_SYNC",null,"INFO","Synced "+products.size()+" orderable GTINs; ignored "+technical+
-                " technical GTINs; removed "+removed+" unreferenced technical GTINs",200);return repository.findProducts();
+        List<Product> publishable=new ArrayList<>();List<String> unpublished=new ArrayList<>();
+        for(Product p:byGtin.values()){if(ZnackCardStatus.isErrored(p.cardStatus(),p.cardDetailedStatus()))unpublished.add(p.gtin());else publishable.add(p);}
+        repository.upsertProducts(publishable);
+        int removed=repository.pruneTechnicalProducts();int unpublishedRemoved=repository.deleteUnpublishedProducts(unpublished);
+        repository.log("GTIN_SYNC",null,"INFO","Synced "+publishable.size()+" orderable GTINs; ignored "+technical+
+                " technical GTINs; skipped "+unpublished.size()+" non-published cards; removed "+removed+
+                " unreferenced technical GTINs and "+unpublishedRemoved+" unreferenced non-published GTINs",200);
+        return repository.findProducts();
     }
     private void enrichFromNationalCatalog(ZnackModels.Settings settings,String token,Map<String,Product> byGtin){
         List<String> gtins=List.copyOf(byGtin.keySet());

@@ -61,6 +61,7 @@
                 <TableColumn fx:id="productGtinColumn" prefWidth="150" />
                 <TableColumn fx:id="productNameColumn" prefWidth="400" />
                 <TableColumn fx:id="productTnVedColumn" prefWidth="150" />
+                <TableColumn fx:id="productActionsColumn" prefWidth="120" />
             </columns>
         </TableView>
     </Tab>

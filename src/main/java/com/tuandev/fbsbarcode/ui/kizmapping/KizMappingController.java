@@ -24,6 +24,7 @@ import javafx.scene.layout.VBox;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -41,6 +42,7 @@ public class KizMappingController {
     @FXML private TableColumn<ZnackGtinInventorySummary,ZnackGtinInventorySummary> actionsColumn;
 
     private final KizMappingRepository mappingRepository = new KizMappingRepository();
+    private final Set<Integer> autoSyncedShops = new HashSet<>();
     private Shop shop;
     private ZnackRepository znackRepository;
     private Timeline refreshTimer;
@@ -88,7 +90,12 @@ public class KizMappingController {
 
     public void syncOnOpen() {
         refresh();
-        if (znackRepository != null && hasVerifiedSignature(znackRepository.getSettings())) requestSync(false);
+        // Auto-sync only the first time a shop's mapping page is opened in this session (and only when a
+        // verified signature is configured). Subsequent opens just show the cached data; the user re-syncs
+        // manually with the Refresh button when needed.
+        if (znackRepository == null || shop == null) return;
+        if (!hasVerifiedSignature(znackRepository.getSettings())) return;
+        if (autoSyncedShops.add(shop.getId())) requestSync(false);
     }
 
     public void applyTranslations() {
