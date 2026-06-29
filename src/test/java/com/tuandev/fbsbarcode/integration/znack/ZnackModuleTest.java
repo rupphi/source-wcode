@@ -577,6 +577,32 @@ class ZnackModuleTest {
         }
     }
 
+    @Test void deleteProductRemovesGtinWithMappingsOrdersCodesAndPipelines() {
+        ZnackRepository repository=repository(1,"Shop A");
+        com.tuandev.fbsbarcode.features.kizmapping.KizMappingRepository mappings=
+                new com.tuandev.fbsbarcode.features.kizmapping.KizMappingRepository();
+        String mappedOnly="04601234567890";
+        String purchased="04601234567891";
+        repository.upsertProducts(List.of(
+                new Product(mappedOnly,"Mapped",null,null,null,null,null),
+                new Product(purchased,"Purchased",null,null,null,null,null)));
+        mappings.replaceRulesForGtin(1,mappedOnly,
+                List.of(new com.tuandev.fbsbarcode.features.kizmapping.ZnackGtinMappingSelection("Shoes",null,true)));
+        long order=repository.createDraft(purchased,1);
+        repository.insertCodes(order,purchased,new DownloadedCodes(
+                List.of("010460123456789121abcdefghijklm91ABCD92sig"),"block"));
+        repository.createPipeline(purchased,1); // in-flight buy task must not block deletion
+
+        repository.deleteProduct(mappedOnly); // mapped, no purchase
+        repository.deleteProduct(purchased);  // mapped + order + codes + pipeline
+
+        assertTrue(repository.findProducts().isEmpty(),"both GTINs removed");
+        assertTrue(repository.findOrders().isEmpty(),"orders removed");
+        assertTrue(repository.findActivePipelines().isEmpty(),"pipelines removed");
+        assertTrue(repository.findCodes(order).isEmpty(),"downloaded codes removed");
+        assertTrue(mappings.findRulesForGtin(1,mappedOnly).isEmpty(),"mapping rules removed");
+    }
+
     @Test void productSyncSkipsNonPublishedCardsAndDeletesUnreferencedExistingOnes() throws Exception {
         ZnackRepository repository=repository(1,"Shop A");
         String nowDraft="04601234567891";

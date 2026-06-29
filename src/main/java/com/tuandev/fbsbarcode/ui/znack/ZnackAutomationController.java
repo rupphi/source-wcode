@@ -405,6 +405,7 @@ public class ZnackAutomationController {
         task.setOnSucceeded(event -> {
             if (generation != shopGeneration || currentRepository != repository) return;
             loadProductsFromDatabase();
+            ordersTable.getItems().setAll(currentRepository.findOrders());
             logsTable.getItems().setAll(currentRepository.findLogs());
         });
         task.setOnFailed(event -> {

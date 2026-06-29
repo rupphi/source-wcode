@@ -121,14 +121,33 @@ public final class ZnackRepository {
             }catch(SQLException e){c.rollback();throw e;}
         }catch(SQLException e){throw new RuntimeException(e);}
     }
+    /**
+     * Permanently deletes a GTIN and everything attached to it for this shop: category mapping rules,
+     * purchase pipelines (in-flight buy tasks included), KIZ orders, their downloaded KIZ codes and
+     * introduction documents. There are no guards — the GTIN is removed regardless of state. Children are
+     * deleted before parents and {@code defer_foreign_keys} is enabled so cross-table references never
+     * block the transaction.
+     */
     public void deleteProduct(String gtin){
-        String normalized=GtinNormalizer.normalize(gtin);
+        String g=GtinNormalizer.normalize(gtin);int shopId=shop.shopId();
         try(Connection c=Database.getConnection()){
             c.setAutoCommit(false);
-            try(PreparedStatement mappings=c.prepareStatement("DELETE FROM znack_gtin_mapping_rules WHERE shop_id=? AND gtin=?");
+            try(Statement defer=c.createStatement()){defer.execute("PRAGMA defer_foreign_keys=ON");}
+            try(
+                PreparedStatement codesByOrder=c.prepareStatement("DELETE FROM kiz_codes WHERE shop_id=? AND order_id IN (SELECT id FROM kiz_orders WHERE shop_id=? AND gtin=?)");
+                PreparedStatement codesByGtin=c.prepareStatement("DELETE FROM kiz_codes WHERE shop_id=? AND gtin=?");
+                PreparedStatement documents=c.prepareStatement("DELETE FROM znack_documents WHERE shop_id=? AND order_id IN (SELECT id FROM kiz_orders WHERE shop_id=? AND gtin=?)");
+                PreparedStatement pipelines=c.prepareStatement("DELETE FROM znack_purchase_pipelines WHERE shop_id=? AND gtin=?");
+                PreparedStatement orders=c.prepareStatement("DELETE FROM kiz_orders WHERE shop_id=? AND gtin=?");
+                PreparedStatement mappings=c.prepareStatement("DELETE FROM znack_gtin_mapping_rules WHERE shop_id=? AND gtin=?");
                 PreparedStatement product=c.prepareStatement("DELETE FROM znack_products WHERE shop_id=? AND gtin=?")){
-                mappings.setInt(1,shop.shopId());mappings.setString(2,normalized);mappings.executeUpdate();
-                product.setInt(1,shop.shopId());product.setString(2,normalized);product.executeUpdate();
+                codesByOrder.setInt(1,shopId);codesByOrder.setInt(2,shopId);codesByOrder.setString(3,g);codesByOrder.executeUpdate();
+                codesByGtin.setInt(1,shopId);codesByGtin.setString(2,g);codesByGtin.executeUpdate();
+                documents.setInt(1,shopId);documents.setInt(2,shopId);documents.setString(3,g);documents.executeUpdate();
+                pipelines.setInt(1,shopId);pipelines.setString(2,g);pipelines.executeUpdate();
+                orders.setInt(1,shopId);orders.setString(2,g);orders.executeUpdate();
+                mappings.setInt(1,shopId);mappings.setString(2,g);mappings.executeUpdate();
+                product.setInt(1,shopId);product.setString(2,g);product.executeUpdate();
                 c.commit();
             }catch(SQLException e){c.rollback();throw e;}
         }catch(SQLException e){throw new RuntimeException(e);}
