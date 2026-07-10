@@ -69,11 +69,12 @@ public final class ZnackRepository {
         String sql="""
                 INSERT INTO znack_products(shop_id,gtin,product_name,tn_ved,certificate_type,certificate_number,
                                            certificate_date,production_date,good_mark_flag,good_turn_flag,
-                                           card_status,card_detailed_status,readiness_checked_at,synced_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                                           card_status,card_detailed_status,category,readiness_checked_at,synced_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(shop_id,gtin) DO UPDATE SET
                   product_name=COALESCE(NULLIF(excluded.product_name,''),znack_products.product_name),
                   tn_ved=COALESCE(NULLIF(excluded.tn_ved,''),znack_products.tn_ved),
+                  category=COALESCE(NULLIF(excluded.category,''),znack_products.category),
                   certificate_type=COALESCE(NULLIF(znack_products.certificate_type,''),excluded.certificate_type),
                   certificate_number=COALESCE(NULLIF(znack_products.certificate_number,''),excluded.certificate_number),
                   certificate_date=COALESCE(NULLIF(znack_products.certificate_date,''),excluded.certificate_date),
@@ -85,7 +86,7 @@ public final class ZnackRepository {
                   readiness_checked_at=COALESCE(excluded.readiness_checked_at,znack_products.readiness_checked_at),
                   synced_at=excluded.synced_at
                 """;
-        try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement(sql)){c.setAutoCommit(false);for(Product p:products){int i=1;ps.setInt(i++,shop.shopId());ps.setString(i++,GtinNormalizer.normalize(p.gtin()));ps.setString(i++,p.productName());ps.setString(i++,p.tnVed());ps.setString(i++,p.certificateType());ps.setString(i++,p.certificateNumber());ps.setString(i++,p.certificateDate());ps.setString(i++,p.productionDate());nullableBoolean(ps,i++,p.goodMarkFlag());nullableBoolean(ps,i++,p.goodTurnFlag());ps.setString(i++,p.cardStatus());ps.setString(i++,p.cardDetailedStatus());ps.setString(i++,p.readinessCheckedAt()==null?null:p.readinessCheckedAt().toString());ps.setString(i,Instant.now().toString());ps.addBatch();}ps.executeBatch();c.commit();}catch(SQLException e){throw new RuntimeException(e);}
+        try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement(sql)){c.setAutoCommit(false);for(Product p:products){int i=1;ps.setInt(i++,shop.shopId());ps.setString(i++,GtinNormalizer.normalize(p.gtin()));ps.setString(i++,p.productName());ps.setString(i++,p.tnVed());ps.setString(i++,p.certificateType());ps.setString(i++,p.certificateNumber());ps.setString(i++,p.certificateDate());ps.setString(i++,p.productionDate());nullableBoolean(ps,i++,p.goodMarkFlag());nullableBoolean(ps,i++,p.goodTurnFlag());ps.setString(i++,p.cardStatus());ps.setString(i++,p.cardDetailedStatus());ps.setString(i++,p.category());ps.setString(i++,p.readinessCheckedAt()==null?null:p.readinessCheckedAt().toString());ps.setString(i,Instant.now().toString());ps.addBatch();}ps.executeBatch();c.commit();}catch(SQLException e){throw new RuntimeException(e);}
     }
     public int pruneTechnicalProducts(){
         String deleteProducts="""
@@ -220,7 +221,7 @@ public final class ZnackRepository {
 
     private void execute(String sql,SqlBinder binder){try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement(sql)){binder.bind(ps);ps.executeUpdate();}catch(SQLException e){throw new RuntimeException(e);}}
     private KizOrder order(ResultSet r)throws SQLException{return new KizOrder(r.getLong("id"),r.getString("external_order_id"),r.getString("gtin"),r.getInt("quantity"),r.getString("remote_status"),OrderStatus.valueOf(r.getString("local_status")),r.getString("error_message"),Instant.parse(r.getString("created_at")),Instant.parse(r.getString("updated_at")));}
-    private Product product(ResultSet r)throws SQLException{return new Product(r.getString("gtin"),r.getString("product_name"),r.getString("tn_ved"),r.getString("certificate_type"),r.getString("certificate_number"),r.getString("certificate_date"),r.getString("production_date"),nullableBoolean(r,"good_mark_flag"),nullableBoolean(r,"good_turn_flag"),r.getString("card_status"),r.getString("card_detailed_status"),instant(r.getString("readiness_checked_at")));}
+    private Product product(ResultSet r)throws SQLException{return new Product(r.getString("gtin"),r.getString("product_name"),r.getString("tn_ved"),r.getString("certificate_type"),r.getString("certificate_number"),r.getString("certificate_date"),r.getString("production_date"),nullableBoolean(r,"good_mark_flag"),nullableBoolean(r,"good_turn_flag"),r.getString("card_status"),r.getString("card_detailed_status"),r.getString("category"),instant(r.getString("readiness_checked_at")));}
     private KizCode code(ResultSet r)throws SQLException{long d=r.getLong("document_id");Long documentId=r.wasNull()?null:d;String legal=r.getString("legal_status");return new KizCode(r.getLong("id"),r.getLong("order_id"),r.getString("raw_code"),r.getString("display_code"),r.getString("gtin"),r.getString("block_id"),r.getString("pdf_path"),documentId,KizInventoryStatus.valueOf(r.getString("status")),legal==null||legal.isBlank()?null:KizLegalStatus.valueOf(legal));}
     private ZnackPurchasePipelineState pipeline(ResultSet r)throws SQLException{long orderId=r.getLong("order_id");boolean orderNull=r.wasNull();return new ZnackPurchasePipelineState(r.getLong("id"),r.getInt("shop_id"),r.getString("gtin"),r.getInt("quantity"),orderNull?null:orderId,PurchaseStage.valueOf(r.getString("stage")),r.getString("error_message"),Instant.parse(r.getString("created_at")),Instant.parse(r.getString("updated_at")));}
     private static Instant instant(String value){return value==null||value.isBlank()?null:Instant.parse(value);}

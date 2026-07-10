@@ -28,7 +28,7 @@ public class ZnackProductService {
                     text(o,"certificateDate","certificate_date"),text(o,"productionDate","production_date"),
                     bool(o,"goodMarkFlag","good_mark_flag"),bool(o,"goodTurnFlag","good_turn_flag"),
                     text(o,"goodStatus","good_status","cardStatus"),text(o,"goodDetailedStatus","good_detailed_status"),
-                    null));}}
+                    "",null));}}
             int received=array==null?0:array.size();fetched+=received;page++;
             if(total==null&&received<PAGE_SIZE)break;
             if(received==0)break;
@@ -56,6 +56,7 @@ public class ZnackProductService {
                     JsonObject card=element.getAsJsonObject();
                     String name=text(card,"good_name","productName","name");
                     String tnVed=tnVed(card);
+                    String category=categories(card);
                     JsonArray identifiers=array(card,"identified_by");
                     if(identifiers==null)continue;
                     for(JsonElement identifier:identifiers){
@@ -74,6 +75,7 @@ public class ZnackProductService {
                                     first(bool(card,"goodTurnFlag","good_turn_flag"),current.goodTurnFlag()),
                                     first(text(card,"goodStatus","good_status","cardStatus"),current.cardStatus()),
                                     first(text(card,"goodDetailedStatus","good_detailed_status"),current.cardDetailedStatus()),
+                                    first(category,current.category()),
                                     Instant.now()));
                         }catch(IllegalArgumentException ignored){}
                     }
@@ -82,6 +84,18 @@ public class ZnackProductService {
                 repository.log("GTIN_CATALOG_ENRICH",null,"WARN",error.getMessage(),null);
             }
         }
+    }
+    /** Joins the {@code categories[].cat_name} values of a National Catalog card ("Обувь домашняя", ...). */
+    private String categories(JsonObject card){
+        JsonArray categories=array(card,"categories");
+        if(categories==null)return "";
+        List<String> names=new ArrayList<>();
+        for(JsonElement element:categories){
+            if(!element.isJsonObject())continue;
+            String name=text(element.getAsJsonObject(),"cat_name","catName","name");
+            if(!name.isBlank()&&!names.contains(name))names.add(name);
+        }
+        return String.join(", ",names);
     }
     private JsonArray array(JsonElement response,String key){
         if(response==null||response.isJsonNull())return null;

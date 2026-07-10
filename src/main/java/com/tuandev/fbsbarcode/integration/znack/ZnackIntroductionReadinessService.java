@@ -101,7 +101,7 @@ public class ZnackIntroductionReadinessService {
                                   String name) {
         return new Product(current.gtin(), name, current.tnVed(), current.certificateType(),
                 current.certificateNumber(), current.certificateDate(), current.productionDate(),
-                mark, turn, status, detailed, Instant.now());
+                mark, turn, status, detailed, current.category(), Instant.now());
     }
 
     private boolean matchesGtin(JsonObject card, String expected) {

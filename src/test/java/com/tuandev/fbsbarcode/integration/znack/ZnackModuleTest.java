@@ -508,6 +508,10 @@ class ZnackModuleTest {
             @Override public JsonElement productCards(String base,String token,String gtins){
                 return JsonParser.parseString("""
                         {"result":[{"good_name":"National Catalog Product",
+                        "categories":[
+                          {"cat_id":30717,"cat_name":"Обувь домашняя"},
+                          {"cat_id":30718,"cat_name":"Обувь детская"}
+                        ],
                         "good_attrs":[
                           {"attr_id":3959,"attr_name":"Группа ТНВЭД","attr_value":"6202"},
                           {"attr_id":13933,"attr_name":"Код ТНВЭД","attr_value":"6202 30 00 00"}
@@ -525,6 +529,7 @@ class ZnackModuleTest {
         Product synced=repository.findProducts().getFirst();
         assertEquals("National Catalog Product",synced.productName());
         assertEquals("6202300000",synced.tnVed());
+        assertEquals("Обувь домашняя, Обувь детская",synced.category());
         assertEquals("DOC-1",synced.certificateNumber());
         assertEquals("21.06.2024",synced.productionDate());
 

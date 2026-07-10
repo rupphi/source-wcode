@@ -69,8 +69,9 @@
                 <columns>
                     <TableColumn fx:id="productSelectColumn" maxWidth="44" minWidth="44" prefWidth="44" resizable="false" sortable="false"/>
                     <TableColumn fx:id="productGtinColumn" prefWidth="150" />
-                    <TableColumn fx:id="productNameColumn" prefWidth="400" />
-                    <TableColumn fx:id="productTnVedColumn" prefWidth="150" />
+                    <TableColumn fx:id="productNameColumn" prefWidth="320" />
+                    <TableColumn fx:id="productCategoryColumn" prefWidth="160" />
+                    <TableColumn fx:id="productTnVedColumn" prefWidth="120" />
                     <TableColumn fx:id="productActionsColumn" prefWidth="80" />
                 </columns>
             </TableView>

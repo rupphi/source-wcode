@@ -165,11 +165,11 @@ public final class ZnackModels {
     public record Product(String gtin, String productName, String tnVed, String certificateType,
                           String certificateNumber, String certificateDate, String productionDate,
                           Boolean goodMarkFlag, Boolean goodTurnFlag, String cardStatus,
-                          String cardDetailedStatus, Instant readinessCheckedAt) {
+                          String cardDetailedStatus, String category, Instant readinessCheckedAt) {
         public Product(String gtin, String productName, String tnVed, String certificateType,
                        String certificateNumber, String certificateDate, String productionDate) {
             this(gtin, productName, tnVed, certificateType, certificateNumber, certificateDate, productionDate,
-                    null, null, "", "", null);
+                    null, null, "", "", "", null);
         }
 
         public boolean hasDocumentOverride() {

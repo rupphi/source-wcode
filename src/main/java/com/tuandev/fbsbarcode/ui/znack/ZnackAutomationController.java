@@ -50,7 +50,7 @@ public class ZnackAutomationController {
     @FXML private Button omsIdHelpButton, omsConnectionHelpButton, closeOmsHelpButton;
     @FXML private javafx.scene.layout.VBox omsHelpPane;
     @FXML private TableView<Product> productsTable;
-    @FXML private TableColumn<Product,String> productGtinColumn, productNameColumn, productTnVedColumn;
+    @FXML private TableColumn<Product,String> productGtinColumn, productNameColumn, productCategoryColumn, productTnVedColumn;
     @FXML private TableColumn<Product,Product> productSelectColumn, productActionsColumn;
     @FXML private TableView<Product> deletedTable;
     @FXML private TableColumn<Product,String> deletedGtinColumn, deletedNameColumn;
@@ -85,6 +85,7 @@ public class ZnackAutomationController {
     private void initialize() {
         productGtinColumn.setCellValueFactory(v -> text(v.getValue().gtin()));
         productNameColumn.setCellValueFactory(v -> text(v.getValue().productName()));
+        productCategoryColumn.setCellValueFactory(v -> text(v.getValue().category()));
         productTnVedColumn.setCellValueFactory(v -> text(v.getValue().tnVed()));
         productActionsColumn.setCellValueFactory(v -> new javafx.beans.property.SimpleObjectProperty<>(v.getValue()));
         productActionsColumn.setCellFactory(column -> new ProductActionsCell());
@@ -213,6 +214,7 @@ public class ZnackAutomationController {
         saveButton.setText(tr("znack.save"));
         productGtinColumn.setText(tr("znack.field.gtin"));
         productNameColumn.setText(tr("znack.field.name"));
+        productCategoryColumn.setText(tr("znack.field.category"));
         productTnVedColumn.setText(tr("znack.field.tn_ved"));
         productActionsColumn.setText(tr("znack.field.actions"));
         orderIdColumn.setText(tr("znack.field.id"));
@@ -431,7 +433,8 @@ public class ZnackAutomationController {
                 ? "" : productSearchField.getText().trim().toLowerCase(java.util.Locale.ROOT);
         productsTable.getItems().setAll(query.isEmpty() ? allProducts : allProducts.stream()
                 .filter(product -> containsIgnoreCase(product.gtin(), query)
-                        || containsIgnoreCase(product.productName(), query))
+                        || containsIgnoreCase(product.productName(), query)
+                        || containsIgnoreCase(product.category(), query))
                 .toList());
         updateProductSelectionState();
     }
