@@ -220,7 +220,7 @@ public class KizMappingRepository {
 
     public List<ZnackGtinInventorySummary> findGtinSummaries(int shopId) {
         String sql = """
-                SELECT p.gtin,p.product_name,
+                SELECT p.gtin,p.product_name,p.category,
                   SUM(CASE WHEN c.status='AVAILABLE' THEN 1 ELSE 0 END) available_count,
                   SUM(CASE WHEN c.status='RESERVED' THEN 1 ELSE 0 END) reserved_count,
                   SUM(CASE WHEN c.status='CONSUMED' THEN 1 ELSE 0 END) consumed_count,
@@ -233,17 +233,18 @@ public class KizMappingRepository {
                 FROM znack_products p
                 LEFT JOIN kiz_codes c ON c.shop_id=p.shop_id AND c.gtin=p.gtin
                 WHERE p.shop_id=? AND p.gtin NOT LIKE '029%' AND p.deleted_at IS NULL
-                GROUP BY p.shop_id,p.gtin,p.product_name,p.synced_at
-                ORDER BY p.gtin
+                GROUP BY p.shop_id,p.gtin,p.product_name,p.category,p.synced_at
+                ORDER BY CASE WHEN p.category IS NULL OR p.category='' THEN 1 ELSE 0 END,
+                         p.category COLLATE NOCASE,p.gtin
                 """;
         try (Connection c = Database.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setInt(1, shopId);
             try (ResultSet rs = ps.executeQuery()) {
                 List<ZnackGtinInventorySummary> result = new ArrayList<>();
                 while (rs.next()) {
-                    result.add(new ZnackGtinInventorySummary(rs.getString(1), rs.getString(2), rs.getInt(3),
-                            rs.getInt(4), rs.getInt(5), rs.getInt(6), rs.getString(7), rs.getString(8),
-                            rs.getString(9), instant(rs.getString(10))));
+                    result.add(new ZnackGtinInventorySummary(rs.getString(1), rs.getString(2), rs.getString(3),
+                            rs.getInt(4), rs.getInt(5), rs.getInt(6), rs.getInt(7), rs.getString(8),
+                            rs.getString(9), rs.getString(10), instant(rs.getString(11))));
                 }
                 return result;
             }

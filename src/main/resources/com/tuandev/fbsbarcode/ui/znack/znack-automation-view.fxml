@@ -60,6 +60,9 @@
             <padding><Insets top="8"/></padding>
             <HBox alignment="CENTER_LEFT" spacing="8">
                 <TextField fx:id="productSearchField" promptText="%kiz_mapping.search_gtin" HBox.hgrow="ALWAYS"/>
+                <MenuButton fx:id="productCategoryFilterButton" text="%znack.filter.button">
+                    <graphic><FontIcon iconLiteral="fth-filter" iconSize="14"/></graphic>
+                </MenuButton>
                 <Button fx:id="deleteSelectedButton" disable="true" onAction="#deleteSelectedProducts" styleClass="btn-icon">
                     <graphic><FontIcon iconLiteral="fth-trash-2" iconSize="15"/></graphic>
                 </Button>
@@ -80,7 +83,12 @@
     <Tab fx:id="deletedTab" closable="false" text="%znack.tab.deleted">
         <VBox spacing="8">
             <padding><Insets top="8"/></padding>
-            <TextField fx:id="deletedSearchField" promptText="%kiz_mapping.search_gtin"/>
+            <HBox alignment="CENTER_LEFT" spacing="8">
+                <TextField fx:id="deletedSearchField" promptText="%kiz_mapping.search_gtin" HBox.hgrow="ALWAYS"/>
+                <MenuButton fx:id="deletedCategoryFilterButton" text="%znack.filter.button">
+                    <graphic><FontIcon iconLiteral="fth-filter" iconSize="14"/></graphic>
+                </MenuButton>
+            </HBox>
             <TableView fx:id="deletedTable" VBox.vgrow="ALWAYS">
                 <columnResizePolicy><TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/></columnResizePolicy>
                 <columns>

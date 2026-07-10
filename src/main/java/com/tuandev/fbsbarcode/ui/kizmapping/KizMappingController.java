@@ -11,6 +11,7 @@ import com.tuandev.fbsbarcode.models.Shop;
 import com.tuandev.fbsbarcode.shared.AlertService;
 import com.tuandev.fbsbarcode.shared.AppTaskExecutor;
 import com.tuandev.fbsbarcode.shared.I18nService;
+import com.tuandev.fbsbarcode.ui.controls.CategoryFilterMenu;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.animation.KeyFrame;
@@ -27,6 +28,7 @@ import java.util.List;
 public class KizMappingController {
     @FXML private Label titleLabel, emptyStateLabel;
     @FXML private TextField searchField;
+    @FXML private MenuButton categoryFilterButton;
     @FXML private Button refreshButton;
     @FXML private ProgressIndicator loadingIndicator;
     @FXML private TableView<ZnackGtinInventorySummary> gtinTable;
@@ -36,6 +38,7 @@ public class KizMappingController {
     @FXML private TableColumn<ZnackGtinInventorySummary,ZnackGtinInventorySummary> actionsColumn;
 
     private final KizMappingRepository mappingRepository = new KizMappingRepository();
+    private CategoryFilterMenu categoryFilter;
     private List<ZnackGtinInventorySummary> summaries = List.of();
     private Shop shop;
     private ZnackRepository znackRepository;
@@ -64,6 +67,7 @@ public class KizMappingController {
         }));
         refreshTimer.setCycleCount(Timeline.INDEFINITE);
         searchField.textProperty().addListener((ignored, old, value) -> applyFilter());
+        categoryFilter = new CategoryFilterMenu(categoryFilterButton, this::applyFilter);
         applyTranslations();
         setLoading(false);
     }
@@ -74,6 +78,7 @@ public class KizMappingController {
         syncing = false;
         summaries = List.of();
         searchField.clear();
+        categoryFilter.rebuild(List.of());
         znackRepository = selected == null ? null : new ZnackRepository(new ShopContext(selected.getId(), selected.getName()));
         setLoading(false);
         if (selected == null) refreshTimer.stop(); else refreshTimer.play();
@@ -98,6 +103,7 @@ public class KizMappingController {
     public void applyTranslations() {
         titleLabel.setText(tr("kiz_mapping.title"));
         searchField.setPromptText(tr("kiz_mapping.search_gtin"));
+        categoryFilter.setTexts(tr("znack.filter.button"), tr("znack.filter.no_category"), tr("znack.filter.clear"));
         refreshButton.setTooltip(new Tooltip(tr("kiz_mapping.refresh")));
         refreshButton.setAccessibleText(tr("kiz_mapping.refresh"));
         gtinColumn.setText(tr("znack.field.gtin"));
@@ -137,6 +143,7 @@ public class KizMappingController {
             if (generation != shopGeneration || shop == null || shop.getId() != shopId) return;
             syncing = false;
             summaries = task.getValue();
+            categoryFilter.rebuild(summaries.stream().map(ZnackGtinInventorySummary::category).toList());
             applyFilter();
             setLoadingState();
         });
@@ -169,6 +176,7 @@ public class KizMappingController {
         task.setOnSucceeded(e -> {
             if (generation == shopGeneration && shop != null && shop.getId() == shopId) {
                 summaries = task.getValue();
+                categoryFilter.rebuild(summaries.stream().map(ZnackGtinInventorySummary::category).toList());
                 applyFilter();
                 setLoading(false);
             }
@@ -294,8 +302,10 @@ public class KizMappingController {
     private void applyFilter() {
         String query = searchField.getText() == null
                 ? "" : searchField.getText().trim().toLowerCase(java.util.Locale.ROOT);
-        gtinTable.getItems().setAll(query.isEmpty()
-                ? summaries : summaries.stream().filter(summary -> summary.matchesSearch(query)).toList());
+        gtinTable.getItems().setAll(summaries.stream()
+                .filter(summary -> categoryFilter.matches(summary.category()))
+                .filter(summary -> query.isEmpty() || summary.matchesSearch(query))
+                .toList());
         updateEmpty();
     }
 

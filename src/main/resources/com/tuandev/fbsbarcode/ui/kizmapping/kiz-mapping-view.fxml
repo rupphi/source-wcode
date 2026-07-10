@@ -10,6 +10,9 @@
   <ProgressIndicator fx:id="loadingIndicator" maxHeight="18" maxWidth="18" managed="false" visible="false"/>
   <Pane HBox.hgrow="ALWAYS"/>
   <TextField fx:id="searchField" prefWidth="240" promptText="%kiz_mapping.search_gtin"/>
+  <MenuButton fx:id="categoryFilterButton" text="%znack.filter.button">
+   <graphic><FontIcon iconLiteral="fth-filter" iconSize="14"/></graphic>
+  </MenuButton>
   <Button fx:id="refreshButton" onAction="#onRefresh" styleClass="btn-icon">
    <graphic><FontIcon iconLiteral="fth-refresh-cw" iconSize="15"/></graphic>
   </Button>
