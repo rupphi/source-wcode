@@ -40,7 +40,7 @@ public class ZnackAutomationController {
     @FXML private Label settingsTitleLabel, omsIdLabel, omsConnectionLabel;
     @FXML private Label omsHelpTitleLabel, omsHelpDescriptionLabel, omsHelpStepsTitleLabel, omsHelpStepsLabel;
     @FXML private Label omsHelpRecognizeTitleLabel, omsHelpRecognizeLabel, omsHelpWarningLabel;
-    @FXML private Label signatureTitleLabel, signatureHelpLabel, defaultGoodsDocumentLabel, defaultGoodsDocumentHelpLabel;
+    @FXML private Label signatureTitleLabel, defaultGoodsDocumentLabel;
     @FXML private Label documentNumberLabel, documentIssueDateLabel;
     @FXML private Tab settingsTab, productsTab, deletedTab, ordersTab, logsTab;
     @FXML private TextField omsIdField, omsConnectionField, documentNumberField, documentIssueDateField;
@@ -208,18 +208,18 @@ public class ZnackAutomationController {
         settingsTitleLabel.setText(tr("znack.settings.basic"));
         omsIdLabel.setText(tr("znack.oms_id"));
         omsConnectionLabel.setText(tr("znack.oms_connection"));
-        omsIdHelpButton.setText(tr("common.help"));
-        omsConnectionHelpButton.setText(tr("common.help"));
+        omsIdHelpButton.setTooltip(new Tooltip(tr("common.help")));
+        omsConnectionHelpButton.setTooltip(new Tooltip(tr("common.help")));
         omsIdHelpButton.setAccessibleText(tr("znack.help.oms_id.button"));
         omsConnectionHelpButton.setAccessibleText(tr("znack.help.oms_connection.button"));
         closeOmsHelpButton.setText(tr("common.close"));
         omsHelpStepsTitleLabel.setText(tr("znack.help.steps_title"));
         omsHelpRecognizeTitleLabel.setText(tr("znack.help.recognize_title"));
         signatureTitleLabel.setText(tr("znack.digital_signature"));
-        signatureHelpLabel.setText(tr("znack.signature.help"));
         testSignatureButton.setText(tr("znack.signature.test"));
+        testSignatureButton.setTooltip(new Tooltip(tr("znack.signature.help")));
         defaultGoodsDocumentLabel.setText(tr("znack.default_goods_document"));
-        defaultGoodsDocumentHelpLabel.setText(tr("znack.default_goods_document_help"));
+        autoIntroductionCheck.setTooltip(new Tooltip(tr("znack.default_goods_document_help")));
         documentNumberLabel.setText(tr("znack.document_number"));
         documentIssueDateLabel.setText(tr("znack.document_issue_date"));
         autoIntroductionCheck.setText(tr("znack.auto_introduction"));
@@ -428,7 +428,7 @@ public class ZnackAutomationController {
         testedConfigurationKey = signerTestedAt == null ? null : configurationKey();
         loading = false;
         savedFingerprint = fingerprint();
-        authStatusLabel.setText(tr("znack.status.audit_only"));
+        authStatusLabel.setText("");
         updateSignatureSummary();
         updateSaveState();
     }

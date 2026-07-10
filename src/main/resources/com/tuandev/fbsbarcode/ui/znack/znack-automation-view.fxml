@@ -16,10 +16,14 @@
       <GridPane hgap="12" vgap="9">
        <Label fx:id="omsIdLabel" text="%znack.oms_id" GridPane.rowIndex="0"/>
        <TextField fx:id="omsIdField" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
-       <Button fx:id="omsIdHelpButton" accessibleText="%znack.help.oms_id.button" onAction="#showOmsIdHelp" styleClass="help-button" text="%common.help" GridPane.columnIndex="2" GridPane.rowIndex="0"/>
+       <Button fx:id="omsIdHelpButton" accessibleText="%znack.help.oms_id.button" onAction="#showOmsIdHelp" styleClass="btn-icon" GridPane.columnIndex="2" GridPane.rowIndex="0">
+        <graphic><FontIcon iconLiteral="fth-help-circle" iconSize="15"/></graphic>
+       </Button>
        <Label fx:id="omsConnectionLabel" text="%znack.oms_connection" GridPane.rowIndex="1"/>
        <TextField fx:id="omsConnectionField" promptText="%znack.oms_connection_prompt" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
-       <Button fx:id="omsConnectionHelpButton" accessibleText="%znack.help.oms_connection.button" onAction="#showOmsConnectionHelp" styleClass="help-button" text="%common.help" GridPane.columnIndex="2" GridPane.rowIndex="1"/>
+       <Button fx:id="omsConnectionHelpButton" accessibleText="%znack.help.oms_connection.button" onAction="#showOmsConnectionHelp" styleClass="btn-icon" GridPane.columnIndex="2" GridPane.rowIndex="1">
+        <graphic><FontIcon iconLiteral="fth-help-circle" iconSize="15"/></graphic>
+       </Button>
        <columnConstraints><ColumnConstraints minWidth="170"/><ColumnConstraints hgrow="ALWAYS"/><ColumnConstraints/></columnConstraints>
       </GridPane>
       <VBox fx:id="omsHelpPane" managed="false" spacing="8" styleClass="surface, help-pane" visible="false">
@@ -36,20 +40,24 @@
       </VBox>
       <VBox spacing="8" styleClass="surface">
        <Label fx:id="signatureTitleLabel" styleClass="h3" text="%znack.digital_signature"/>
-       <Label fx:id="signatureHelpLabel" styleClass="text-muted" text="%znack.signature.help" wrapText="true"/>
        <ComboBox fx:id="signatureCertificateCombo" maxWidth="Infinity"/>
-       <HBox spacing="8"><Button fx:id="testSignatureButton" onAction="#testSignature" styleClass="btn-primary" text="%znack.signature.test"/></HBox>
+       <HBox spacing="8">
+        <Button fx:id="testSignatureButton" onAction="#testSignature" styleClass="btn-primary" text="%znack.signature.test">
+         <tooltip><Tooltip text="%znack.signature.help"/></tooltip>
+        </Button>
+       </HBox>
        <Label fx:id="signatureSummaryLabel" styleClass="text-muted"/>
       </VBox>
       <VBox spacing="9" styleClass="surface">
        <Label fx:id="defaultGoodsDocumentLabel" styleClass="h3" text="%znack.default_goods_document"/>
-       <Label fx:id="defaultGoodsDocumentHelpLabel" styleClass="text-muted" text="%znack.default_goods_document_help" wrapText="true"/>
        <GridPane hgap="12" vgap="9">
         <Label fx:id="documentNumberLabel" text="%znack.document_number" GridPane.rowIndex="0"/><TextField fx:id="documentNumberField" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
         <Label fx:id="documentIssueDateLabel" text="%znack.document_issue_date" GridPane.rowIndex="1"/><TextField fx:id="documentIssueDateField" promptText="%znack.date_prompt" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
         <columnConstraints><ColumnConstraints minWidth="170"/><ColumnConstraints hgrow="ALWAYS"/></columnConstraints>
        </GridPane>
-       <CheckBox fx:id="autoIntroductionCheck" text="%znack.auto_introduction"/>
+       <CheckBox fx:id="autoIntroductionCheck" text="%znack.auto_introduction">
+        <tooltip><Tooltip text="%znack.default_goods_document_help"/></tooltip>
+       </CheckBox>
       </VBox>
       <HBox alignment="CENTER_RIGHT"><Button fx:id="saveButton" defaultButton="true" onAction="#save" styleClass="btn-primary" text="%znack.save"/></HBox>
      </VBox>
