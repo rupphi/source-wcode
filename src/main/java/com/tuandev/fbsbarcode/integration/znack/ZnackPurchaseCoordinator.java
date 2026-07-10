@@ -34,6 +34,7 @@ public class ZnackPurchaseCoordinator {
     });
     private static final Set<String> SCHEDULED = ConcurrentHashMap.newKeySet();
     private static final Set<String> RUNNING = ConcurrentHashMap.newKeySet();
+    private static final Set<java.util.concurrent.ScheduledFuture<?>> PENDING_POLLS = ConcurrentHashMap.newKeySet();
 
     private final ZnackRepository repository;
     private final ZnackKizOrderService orders;
@@ -392,7 +393,8 @@ public class ZnackPurchaseCoordinator {
         if (!SCHEDULED.add(key)) return;
         long delaySeconds = pipeline.stage() == PurchaseStage.WAITING_INTRODUCTION_READINESS
                 ? 30 : pipeline.errorMessage() == null || pipeline.errorMessage().isBlank() ? 5 : 30;
-        POLLER.schedule(() -> {
+        PENDING_POLLS.removeIf(java.util.concurrent.Future::isDone);
+        PENDING_POLLS.add(POLLER.schedule(() -> {
             try {
                 Settings latestSettings = repository.getSettings();
                 advance(latestSettings, pipelineId);
@@ -402,7 +404,20 @@ public class ZnackPurchaseCoordinator {
                 SCHEDULED.remove(key);
                 schedule(pipelineId);
             }
-        }, delaySeconds, TimeUnit.SECONDS);
+        }, delaySeconds, TimeUnit.SECONDS));
+    }
+
+    /**
+     * Test hook: cancels every not-yet-fired background poll. Unit tests point the app data dir at
+     * a throwaway directory per test, and a poll firing later would reopen the SQLite database of a
+     * different test — on Windows that file lock makes the JUnit temp-dir cleanup fail.
+     */
+    static void cancelPendingPolls() {
+        for (java.util.concurrent.ScheduledFuture<?> poll : PENDING_POLLS) {
+            poll.cancel(false);
+        }
+        PENDING_POLLS.clear();
+        SCHEDULED.clear();
     }
 
     private String pipelineKey(long pipelineId) {

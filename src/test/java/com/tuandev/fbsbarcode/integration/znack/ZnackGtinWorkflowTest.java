@@ -55,6 +55,9 @@ class ZnackGtinWorkflowTest {
     }
 
     @AfterEach void clear() {
+        // Kill delayed background polls before the per-test temp DB is deleted; a poll firing
+        // later would lock the next test's SQLite file on Windows.
+        ZnackPurchaseCoordinator.cancelPendingPolls();
         System.clearProperty("wcode.appdata.dir");
     }
 

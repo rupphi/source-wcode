@@ -59,6 +59,11 @@ class ZnackModuleTest {
         assertEquals("HTTP 422: Подпись не соответствует данным документа",
                 ZnackErrorMessages.display(
                         "Znack API request failed (HTTP 422): {\"fieldErrors\":[{\"fieldName\":\"signature\",\"errors\":[\"Подпись не соответствует данным документа\"]}]}"));
+        assertEquals("HTTP 400: GTIN không hợp lệ",
+                ZnackErrorMessages.display(
+                        "Znack API request failed (HTTP 400): {\"fieldErrors\":{\"gtin\":\"GTIN không hợp lệ\"}}"));
+        assertEquals("Znack API request failed (HTTP 500)",
+                ZnackErrorMessages.display("Znack API request failed (HTTP 500): {}"));
         assertEquals("Missing TN VED.", ZnackErrorMessages.display("Missing TN VED."));
         assertEquals("broken {not json", ZnackErrorMessages.display("broken {not json"));
         assertEquals("", ZnackErrorMessages.display(null));

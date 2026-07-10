@@ -34,7 +34,12 @@ public final class ZnackErrorMessages {
         } catch (RuntimeException invalidJson) {
             return raw.trim();
         }
-        if (messages.isEmpty()) return raw.trim();
+        if (messages.isEmpty()) {
+            // Message-less payload ("{}" and friends): show the wrapper text without the JSON blob.
+            String prefix = raw.substring(0, json).trim();
+            if (prefix.endsWith(":")) prefix = prefix.substring(0, prefix.length() - 1).trim();
+            return prefix.isBlank() ? raw.trim() : prefix;
+        }
         Matcher status = HTTP_STATUS.matcher(raw);
         String prefix = status.find() ? "HTTP " + status.group(1) + ": " : "";
         return prefix + String.join("; ", messages);
@@ -71,9 +76,17 @@ public final class ZnackErrorMessages {
         } else if (element.isJsonArray()) {
             for (JsonElement item : element.getAsJsonArray()) collectValues(item, out);
         } else if (element.isJsonObject()) {
-            // Nested structures (e.g. fieldErrors entries) still pick only message-like keys,
-            // so field names and other metadata stay out of the displayed text.
-            collect(element, out);
+            // Entries with their own message-like keys (e.g. fieldErrors items carrying
+            // fieldName + errors) contribute only those keys; plain field->message maps
+            // contribute every value.
+            var object = element.getAsJsonObject();
+            boolean hasMessageKey = object.keySet().stream()
+                    .anyMatch(key -> MESSAGE_KEYS.contains(key.toLowerCase(java.util.Locale.ROOT)));
+            if (hasMessageKey) {
+                collect(object, out);
+            } else {
+                for (var entry : object.entrySet()) collectValues(entry.getValue(), out);
+            }
         }
     }
 }
