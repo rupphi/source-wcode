@@ -59,7 +59,8 @@ public class KizMappingController {
                 v.getValue().latestPipelineStage(), v.getValue().latestOrderStatus()))));
         mappingColumn.setCellFactory(column -> statusCell("badge-green", "badge-gray"));
         pipelineColumn.setCellFactory(column -> statusCell("badge-warning", "badge-gray"));
-        errorColumn.setCellValueFactory(v -> new SimpleStringProperty(value(v.getValue().latestError())));
+        errorColumn.setCellValueFactory(v -> new SimpleStringProperty(
+                ZnackErrorMessages.display(v.getValue().latestError())));
         actionsColumn.setCellValueFactory(v -> new javafx.beans.property.SimpleObjectProperty<>(v.getValue()));
         actionsColumn.setCellFactory(column -> new ActionsCell());
         refreshTimer = new Timeline(new KeyFrame(javafx.util.Duration.seconds(5), event -> {

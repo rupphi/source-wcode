@@ -4,6 +4,7 @@ import com.tuandev.fbsbarcode.features.kizmapping.KizMappingRepository;
 import com.tuandev.fbsbarcode.integration.znack.GtinNormalizer;
 import com.tuandev.fbsbarcode.integration.znack.ZnackApiClient;
 import com.tuandev.fbsbarcode.integration.znack.ZnackAuthService;
+import com.tuandev.fbsbarcode.integration.znack.ZnackErrorMessages;
 import com.tuandev.fbsbarcode.integration.znack.ZnackGtinAutoSync;
 import com.tuandev.fbsbarcode.integration.znack.ZnackGtinInventorySummary;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels.ShopContext;
@@ -649,10 +650,11 @@ public class SupplyDetailController {
         VBox card = new VBox(8, header, statusRow);
         card.getStyleClass().add("gtin-inventory-card");
         if (summary.latestError() != null && !summary.latestError().isBlank()) {
-            Label detail = new Label(summary.latestError());
+            Label detail = new Label(ZnackErrorMessages.display(summary.latestError()));
             detail.getStyleClass().add("text-muted");
             detail.setWrapText(true);
             card.getChildren().add(detail);
+            // The tooltip keeps the raw stored error for debugging.
             Tooltip.install(card, new Tooltip(summary.latestError()));
         }
         return card;

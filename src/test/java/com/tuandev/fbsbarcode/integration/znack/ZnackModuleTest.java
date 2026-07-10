@@ -52,6 +52,18 @@ class ZnackModuleTest {
         }
     }
 
+    @Test void errorDisplayExtractsHumanMessageFromApiJsonPayloads() {
+        assertEquals("HTTP 400: Ошибка аутентификации СУЗ: Сервис вернул пустой ответ",
+                ZnackErrorMessages.display(
+                        "Znack API request failed (HTTP 400): {\"error_message\":\"Ошибка аутентификации СУЗ: Сервис вернул пустой ответ\"}"));
+        assertEquals("HTTP 422: Подпись не соответствует данным документа",
+                ZnackErrorMessages.display(
+                        "Znack API request failed (HTTP 422): {\"fieldErrors\":[{\"fieldName\":\"signature\",\"errors\":[\"Подпись не соответствует данным документа\"]}]}"));
+        assertEquals("Missing TN VED.", ZnackErrorMessages.display("Missing TN VED."));
+        assertEquals("broken {not json", ZnackErrorMessages.display("broken {not json"));
+        assertEquals("", ZnackErrorMessages.display(null));
+    }
+
     @Test void sanitizerRedactsJsonAndHeaderStyleSecrets() {
         String sanitized=ZnackSanitizer.message("""
                 {"token":"secret-token","signature":"secret-signature","pin":"1234"}
