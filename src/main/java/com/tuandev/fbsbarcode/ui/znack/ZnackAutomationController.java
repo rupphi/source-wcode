@@ -43,7 +43,7 @@ public class ZnackAutomationController {
     @FXML private Label documentNumberLabel, documentIssueDateLabel;
     @FXML private Tab settingsTab, productsTab, deletedTab, ordersTab, logsTab;
     @FXML private TextField omsIdField, omsConnectionField, documentNumberField, documentIssueDateField;
-    @FXML private TextField productSearchField;
+    @FXML private TextField productSearchField, deletedSearchField;
     @FXML private ComboBox<CryptoProCertificateInfo> signatureCertificateCombo;
     @FXML private CheckBox autoIntroductionCheck;
     @FXML private Button saveButton, testSignatureButton, deleteSelectedButton;
@@ -64,6 +64,7 @@ public class ZnackAutomationController {
     private final CheckBox selectAllProducts = new CheckBox();
     private final java.util.Set<String> selectedProductGtins = new java.util.HashSet<>();
     private List<Product> allProducts = List.of();
+    private List<Product> allDeletedProducts = List.of();
     private ZnackRepository repository;
     private Settings loaded = Settings.empty();
     private String signerCertificate = "";
@@ -100,6 +101,7 @@ public class ZnackAutomationController {
             updateProductSelectionState();
         });
         productSearchField.textProperty().addListener((ignored, old, value) -> applyProductFilter());
+        deletedSearchField.textProperty().addListener((ignored, old, value) -> applyDeletedFilter());
         deletedGtinColumn.setCellValueFactory(v -> text(v.getValue().gtin()));
         deletedNameColumn.setCellValueFactory(v -> text(v.getValue().productName()));
         deletedActionsColumn.setCellValueFactory(v -> new javafx.beans.property.SimpleObjectProperty<>(v.getValue()));
@@ -184,6 +186,7 @@ public class ZnackAutomationController {
         ordersTab.setText(tr("znack.tab.orders"));
         logsTab.setText(tr("znack.tab.logs"));
         productSearchField.setPromptText(tr("kiz_mapping.search_gtin"));
+        deletedSearchField.setPromptText(tr("kiz_mapping.search_gtin"));
         deleteSelectedButton.setTooltip(new Tooltip(tr("znack.products.delete_selected")));
         deleteSelectedButton.setAccessibleText(tr("znack.products.delete_selected"));
         deletedGtinColumn.setText(tr("znack.field.gtin"));
@@ -480,6 +483,7 @@ public class ZnackAutomationController {
 
     private void loadDeletedProducts() {
         if (repository == null) {
+            allDeletedProducts = List.of();
             deletedTable.getItems().clear();
             return;
         }
@@ -492,9 +496,19 @@ public class ZnackAutomationController {
         };
         task.setOnSucceeded(event -> {
             if (generation != shopGeneration || currentRepository != repository) return;
-            deletedTable.getItems().setAll(task.getValue());
+            allDeletedProducts = task.getValue();
+            applyDeletedFilter();
         });
         AppTaskExecutor.execute(task);
+    }
+
+    private void applyDeletedFilter() {
+        String query = deletedSearchField.getText() == null
+                ? "" : deletedSearchField.getText().trim().toLowerCase(java.util.Locale.ROOT);
+        deletedTable.getItems().setAll(query.isEmpty() ? allDeletedProducts : allDeletedProducts.stream()
+                .filter(product -> containsIgnoreCase(product.gtin(), query)
+                        || containsIgnoreCase(product.productName(), query))
+                .toList());
     }
 
     private void restoreProduct(Product product) {
@@ -680,8 +694,10 @@ public class ZnackAutomationController {
         for (TextField field : List.of(omsIdField, omsConnectionField, documentNumberField, documentIssueDateField)) field.clear();
         signatureCertificateCombo.getItems().clear();
         allProducts = List.of();
+        allDeletedProducts = List.of();
         selectedProductGtins.clear();
         productSearchField.clear();
+        deletedSearchField.clear();
         productsTable.getItems().clear();
         deletedTable.getItems().clear();
         ordersTable.getItems().clear();

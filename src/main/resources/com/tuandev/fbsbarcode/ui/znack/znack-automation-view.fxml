@@ -77,14 +77,18 @@
         </VBox>
     </Tab>
     <Tab fx:id="deletedTab" closable="false" text="%znack.tab.deleted">
-        <TableView fx:id="deletedTable">
-            <columnResizePolicy><TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/></columnResizePolicy>
-            <columns>
-                <TableColumn fx:id="deletedGtinColumn" prefWidth="150" />
-                <TableColumn fx:id="deletedNameColumn" prefWidth="400" />
-                <TableColumn fx:id="deletedActionsColumn" prefWidth="110" />
-            </columns>
-        </TableView>
+        <VBox spacing="8">
+            <padding><Insets top="8"/></padding>
+            <TextField fx:id="deletedSearchField" promptText="%kiz_mapping.search_gtin"/>
+            <TableView fx:id="deletedTable" VBox.vgrow="ALWAYS">
+                <columnResizePolicy><TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/></columnResizePolicy>
+                <columns>
+                    <TableColumn fx:id="deletedGtinColumn" prefWidth="150" />
+                    <TableColumn fx:id="deletedNameColumn" prefWidth="400" />
+                    <TableColumn fx:id="deletedActionsColumn" prefWidth="110" />
+                </columns>
+            </TableView>
+        </VBox>
     </Tab>
     <Tab fx:id="ordersTab" closable="false" text="%znack.tab.orders">
         <TableView fx:id="ordersTable">
