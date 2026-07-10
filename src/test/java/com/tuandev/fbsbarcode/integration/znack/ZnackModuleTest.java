@@ -434,9 +434,33 @@ class ZnackModuleTest {
 
         assertTrue(new ZnackIntroductionService(api,auth,testSigner(),repository).confirm(
                 testedSettings("","","","connection",""),repository.findOrder(orderId).orElseThrow(),
-                repository.findCodes(orderId)));
+                repository.findCodes(orderId)).introduced());
         assertEquals("010460123456789021abcdefghijklm",cisesRequest.get().getAsJsonArray().get(0).getAsString());
         assertEquals(OrderStatus.INTRODUCED,repository.findOrder(orderId).orElseThrow().localStatus());
+    }
+
+    @Test void introductionConfirmationPrefersDocumentSuccessOverNestedFailureStatuses() throws Exception {
+        ZnackRepository repository=repository(1,"Shop A");
+        long orderId=orderWithCodes(repository);
+        long documentId=repository.createDocument(orderId,"{}");
+        repository.updateDocument(documentId,"doc-id","SUBMITTED",null);
+        ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonElement document(String base,String token,String externalId){
+                return JsonParser.parseString(
+                        "{\"status\":\"CHECKED_OK\",\"items\":[{\"status\":\"REJECTED\"}]}");
+            }
+            @Override public JsonElement cisesInfo(String base,String token,JsonElement body){
+                return JsonParser.parseString("[{\"status\":\"INTRODUCED\"}]");
+            }
+        };
+        ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+            @Override public String trueApiToken(Settings s){return "token";}
+        };
+
+        assertTrue(new ZnackIntroductionService(api,auth,testSigner(),repository).confirm(
+                testedSettings("","","","connection",""),repository.findOrder(orderId).orElseThrow(),
+                repository.findCodes(orderId)).introduced());
+        assertEquals("CHECKED_OK",repository.findLatestDocument(orderId).orElseThrow().status());
     }
 
     @Test void introductionConfirmationDoesNotDoubleCountParentAndChildStatuses() throws Exception {
@@ -461,7 +485,7 @@ class ZnackModuleTest {
 
         assertFalse(new ZnackIntroductionService(api,auth,testSigner(),repository).confirm(
                 testedSettings("","","","connection",""),repository.findOrder(orderId).orElseThrow(),
-                repository.findCodes(orderId)));
+                repository.findCodes(orderId)).introduced());
         assertNotEquals(OrderStatus.INTRODUCED,repository.findOrder(orderId).orElseThrow().localStatus());
     }
 

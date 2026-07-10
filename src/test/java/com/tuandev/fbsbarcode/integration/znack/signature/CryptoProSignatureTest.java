@@ -247,6 +247,23 @@ class CryptoProSignatureTest {
         assertEquals(CryptoProErrorCode.SIGNING_FAILED, error.code());
     }
 
+    @Test void windowsCadesMapsSelectedCertificateLookupFailureToCertificateAbsent() {
+        CryptoProCommandRunner runner = new CryptoProCommandRunner() {
+            @Override public Result run(List<String> command, Duration timeout) {
+                return new Result(1, new byte[0],
+                        ("CAdESCOM stage 'find selected certificate' failed: Unable to open CryptoPro certificate stores. "
+                                + "Store attempts: CAdESCOM current-user My: Object reference not set to an instance of an object.")
+                                .getBytes());
+            }
+        };
+
+        CryptoProException error = assertThrows(CryptoProException.class,
+                () -> new WindowsCadesSignatureProvider(runner, "AABB", Duration.ofSeconds(2))
+                        .sign("payload".getBytes(), ZnackSignatureContext.SIGNATURE_TEST));
+
+        assertEquals(CryptoProErrorCode.TOKEN_OR_CERTIFICATE_ABSENT, error.code());
+    }
+
     @Test void windowsCadesRetriesOnlyFailuresBeforeSigningIn32BitPowerShell() {
         CryptoProCommandRunner.Result storeFailure = new CryptoProCommandRunner.Result(1, new byte[0],
                 "CAdESCOM stage 'find selected certificate' failed: Unable to open CryptoPro certificate stores".getBytes());

@@ -100,6 +100,32 @@ public class ZnackPurchaseCoordinator {
         return pipelineId;
     }
 
+    /**
+     * Re-runs the introduction of an INTRODUCTION_FAILED pipeline (e.g. after the user fixed the
+     * signature or updated the goods documents). The already-purchased codes are reused; a fresh
+     * introduction document is submitted because the previous one was definitively rejected.
+     */
+    public void retryIntroduction(Settings settings, String gtin) throws Exception {
+        ZnackPurchasePipelineState pipeline = repository.findLatestIntroductionFailedPipeline(gtin)
+                .orElseThrow(() -> new IllegalStateException("No failed introduction to retry for GTIN " + gtin));
+        if (pipeline.orderId() == null || repository.findCodes(pipeline.orderId()).isEmpty()) {
+            throw new IllegalStateException("The failed introduction has no downloaded codes to retry.");
+        }
+        synchronized (CREATE_LOCK) {
+            if (repository.findActivePipeline(gtin).isPresent()) {
+                throw new IllegalStateException("A KIZ purchase pipeline is already active for GTIN " + gtin);
+            }
+            repository.updatePipeline(pipeline.id(), pipeline.orderId(),
+                    PurchaseStage.WAITING_INTRODUCTION_READINESS, null);
+        }
+        repository.log("INTRODUCTION_RETRY", gtin, "INFO", "RETRY_REQUESTED", null);
+        try {
+            advance(settings, pipeline.id());
+        } finally {
+            schedule(pipeline.id());
+        }
+    }
+
     public void resume(Settings settings) {
         for (ZnackPurchasePipelineState pipeline : repository.findActivePipelines()) {
             try {
@@ -125,9 +151,7 @@ public class ZnackPurchaseCoordinator {
         candidates.addAll(repository.findLegacyRejectedIntroductionPipelines());
         candidates.addAll(repository.findLegacyPrimitiveDocumentResponsePipelines());
         for (ZnackPurchasePipelineState pipeline : candidates) {
-            Product product = repository.findProducts().stream()
-                    .filter(item -> item.gtin().equals(pipeline.gtin()))
-                    .findFirst().orElse(null);
+            Product product = repository.findProduct(pipeline.gtin()).orElse(null);
             if (product == null || pipeline.orderId() == null || repository.findCodes(pipeline.orderId()).isEmpty()
                     || !hasGoodsDocument(settings, product) || product.tnVed() == null || product.tnVed().isBlank()) {
                 continue;
@@ -177,6 +201,10 @@ public class ZnackPurchaseCoordinator {
                         || current == PurchaseStage.WAITING_INTRODUCTION_READINESS
                         || current == PurchaseStage.POLLING_INTRODUCTION) {
                     repository.updatePipeline(pipelineId, null, current, e.getMessage());
+                } else if (current == PurchaseStage.SUBMITTING_INTRODUCTION) {
+                    // Codes are already bought; keep the pipeline retryable so the user can fix
+                    // the signature or goods documents and re-run the introduction.
+                    repository.updatePipeline(pipelineId, null, PurchaseStage.INTRODUCTION_FAILED, e.getMessage());
                 } else if (current == PurchaseStage.CREATING_ORDER
                         && !(e instanceof ZnackOrderCreationAmbiguousException)) {
                     repository.updatePipeline(pipelineId, null, PurchaseStage.FAILED, e.getMessage());
@@ -290,6 +318,13 @@ public class ZnackPurchaseCoordinator {
     private void submitIntroduction(Settings settings, ZnackPurchasePipelineState pipeline) throws Exception {
         KizOrder order = repository.findOrder(requiredOrderId(pipeline)).orElseThrow();
         ZnackModels.Document existing = repository.findLatestDocument(order.id()).orElse(null);
+        if (existing != null
+                && ("CHECKED_NOT_OK".equals(existing.status()) || "REJECTED".equals(existing.status()))) {
+            // CHECKED_NOT_OK: Znack definitively processed the previous document with errors.
+            // REJECTED: the True API answered the submission with an HTTP error, so no document
+            // was created. Either way a fresh submission cannot double-introduce the codes.
+            existing = null;
+        }
         if (existing != null) {
             if (existing.externalDocumentId() != null && !existing.externalDocumentId().isBlank()) {
                 repository.updatePipeline(pipeline.id(), order.id(), PurchaseStage.POLLING_INTRODUCTION, null);
@@ -320,15 +355,21 @@ public class ZnackPurchaseCoordinator {
 
     private void pollIntroduction(Settings settings, ZnackPurchasePipelineState pipeline) throws Exception {
         KizOrder order = repository.findOrder(requiredOrderId(pipeline)).orElseThrow();
-        if (introduction.confirm(settings, order, repository.findCodes(order.id()))) {
+        ZnackIntroductionService.ConfirmResult result =
+                introduction.confirm(settings, order, repository.findCodes(order.id()));
+        if (result.introduced()) {
             repository.updatePipeline(pipeline.id(), order.id(), PurchaseStage.INTRODUCED, null);
+        } else if (result.failed()) {
+            repository.updateOrder(order.id(), null, null, OrderStatus.INTRODUCTION_FAILED, result.message());
+            repository.updatePipeline(pipeline.id(), order.id(), PurchaseStage.INTRODUCTION_FAILED, result.message());
+            repository.log("INTRODUCTION", pipeline.gtin(), "ERROR", result.message(), null);
         } else {
             repository.updatePipeline(pipeline.id(), order.id(), PurchaseStage.POLLING_INTRODUCTION, null);
         }
     }
 
     private Product product(String gtin) {
-        return repository.findProducts().stream().filter(p -> p.gtin().equals(gtin)).findFirst().orElseThrow();
+        return repository.findProduct(gtin).orElseThrow();
     }
 
     private long requiredOrderId(ZnackPurchasePipelineState pipeline) {

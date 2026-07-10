@@ -34,20 +34,67 @@ public class ZnackIntroductionService {
             repository.updateDocument(documentId,external,"SUBMITTED",null);repository.markCodes(order.id(),KizLegalStatus.INTRO_SENT,null,documentId);repository.updateOrder(order.id(),null,null,OrderStatus.INTRO_SENT,null);return documentId;
         }catch(Exception e){repository.updateDocument(documentId,null,e instanceof ZnackApiClient.ZnackApiException?"REJECTED":"FAILED",e.getMessage());throw e;}
     }
-    public boolean confirm(Settings s,KizOrder order,List<KizCode> codes)throws Exception{
+    /** Outcome of a document confirmation poll. */
+    public enum ConfirmStatus{INTRODUCED,PENDING,FAILED}
+    public record ConfirmResult(ConfirmStatus status,String message){
+        public boolean introduced(){return status==ConfirmStatus.INTRODUCED;}
+        public boolean failed(){return status==ConfirmStatus.FAILED;}
+    }
+    public ConfirmResult confirm(Settings s,KizOrder order,List<KizCode> codes)throws Exception{
         ZnackSafety.requireSigned(s,true);
         Document document=repository.findLatestDocument(order.id()).orElseThrow();
-        JsonElement docs=api.document(s.resolvedTrueApiBaseUrl(),auth.trueApiToken(s),document.externalDocumentId());if(!documentCheckedOk(docs,document.externalDocumentId()))return false;
+        JsonElement docs=api.document(s.resolvedTrueApiBaseUrl(),auth.trueApiToken(s),document.externalDocumentId());
+        if(!documentCheckedOk(docs,document.externalDocumentId())){
+            // Only classify as failed when the document did not succeed anywhere in the response;
+            // nested per-item failure statuses must not override a CHECKED_OK document.
+            String failedStatus=failedDocumentStatus(docs,document.externalDocumentId());
+            if(!failedStatus.isBlank()){
+                String error=("Znack document "+document.externalDocumentId()+" status: "+failedStatus+documentErrors(docs)).trim();
+                repository.updateDocument(document.id(),null,"CHECKED_NOT_OK",error);
+                return new ConfirmResult(ConfirmStatus.FAILED,error);
+            }
+            return new ConfirmResult(ConfirmStatus.PENDING,null);
+        }
         JsonArray values=new JsonArray();codes.forEach(c->values.add(ZnackCisNormalizer.forTrueApi(c.rawCode())));
-        JsonElement info=api.cisesInfo(s.resolvedTrueApiBaseUrl(),auth.trueApiToken(s),values);if(!allIntroduced(info,codes.size()))return false;
+        JsonElement info=api.cisesInfo(s.resolvedTrueApiBaseUrl(),auth.trueApiToken(s),values);
+        if(!allIntroduced(info,codes.size()))return new ConfirmResult(ConfirmStatus.PENDING,null);
         repository.updateDocument(document.id(),null,"CHECKED_OK",null);
-        repository.markCodes(order.id(),KizLegalStatus.IN_CIRCULATION,null,null);repository.updateOrder(order.id(),null,null,OrderStatus.INTRODUCED,null);return true;
+        repository.markCodes(order.id(),KizLegalStatus.IN_CIRCULATION,null,null);repository.updateOrder(order.id(),null,null,OrderStatus.INTRODUCED,null);
+        return new ConfirmResult(ConfirmStatus.INTRODUCED,null);
     }
     private boolean documentCheckedOk(JsonElement e,String externalId){
         if(e==null||externalId==null||externalId.isBlank())return false;
         if(e.isJsonObject()){JsonObject o=e.getAsJsonObject();String id=text(o,"document_id","documentId","id");String status=text(o,"status","documentStatus");
             if((id.isBlank()||externalId.equals(id))&&"CHECKED_OK".equalsIgnoreCase(status))return true;for(var x:o.entrySet())if(documentCheckedOk(x.getValue(),externalId))return true;}
         else if(e.isJsonArray())for(JsonElement x:e.getAsJsonArray())if(documentCheckedOk(x,externalId))return true;return false;
+    }
+    /** True API statuses that mean the document was definitively processed with errors ("Обработан с ошибками"). */
+    private static final java.util.Set<String> FAILED_DOCUMENT_STATUSES=
+            java.util.Set.of("CHECKED_NOT_OK","PROCESSING_ERROR","PARSE_ERROR","CANCELLED","REJECTED");
+    private String failedDocumentStatus(JsonElement e,String externalId){
+        if(e==null||externalId==null||externalId.isBlank())return "";
+        if(e.isJsonObject()){JsonObject o=e.getAsJsonObject();String id=text(o,"document_id","documentId","id");String status=text(o,"status","documentStatus");
+            if((id.isBlank()||externalId.equals(id))&&FAILED_DOCUMENT_STATUSES.contains(status.toUpperCase(java.util.Locale.ROOT)))return status;
+            for(var x:o.entrySet()){String found=failedDocumentStatus(x.getValue(),externalId);if(!found.isBlank())return found;}}
+        else if(e.isJsonArray())for(JsonElement x:e.getAsJsonArray()){String found=failedDocumentStatus(x,externalId);if(!found.isBlank())return found;}
+        return "";
+    }
+    private String documentErrors(JsonElement e){
+        java.util.List<String> found=new java.util.ArrayList<>();collectErrors(e,found);
+        return found.isEmpty()?"":" ("+String.join("; ",found)+")";
+    }
+    private void collectErrors(JsonElement e,java.util.List<String> out){
+        if(e==null)return;
+        if(e.isJsonObject()){for(var x:e.getAsJsonObject().entrySet()){
+            if("errors".equals(x.getKey())||"error_message".equals(x.getKey())||"errorMessage".equals(x.getKey())||"downloadDesc".equals(x.getKey()))collectErrorValues(x.getValue(),out);
+            else collectErrors(x.getValue(),out);}}
+        else if(e.isJsonArray())for(JsonElement x:e.getAsJsonArray())collectErrors(x,out);
+    }
+    private void collectErrorValues(JsonElement e,java.util.List<String> out){
+        if(e==null||e.isJsonNull())return;
+        if(e.isJsonPrimitive()){String value=e.getAsString();if(!value.isBlank()&&!out.contains(value))out.add(value);}
+        else if(e.isJsonArray())for(JsonElement x:e.getAsJsonArray())collectErrorValues(x,out);
+        else if(e.isJsonObject())for(var x:e.getAsJsonObject().entrySet())collectErrorValues(x.getValue(),out);
     }
     private boolean allIntroduced(JsonElement e,int expected){int[] count={0};walk(e,count);return count[0]>=expected;}
     private void walk(JsonElement e,int[] count){if(e==null)return;if(e.isJsonObject()){JsonObject o=e.getAsJsonObject();if(o.has("status")&&!o.get("status").isJsonNull()&&"INTRODUCED".equalsIgnoreCase(o.get("status").getAsString())){count[0]++;return;}for(var x:o.entrySet())walk(x.getValue(),count);}else if(e.isJsonArray())for(JsonElement x:e.getAsJsonArray())walk(x,count);}

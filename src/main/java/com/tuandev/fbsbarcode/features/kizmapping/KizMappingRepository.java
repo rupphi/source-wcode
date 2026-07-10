@@ -232,7 +232,7 @@ public class KizMappingRepository {
                   p.synced_at
                 FROM znack_products p
                 LEFT JOIN kiz_codes c ON c.shop_id=p.shop_id AND c.gtin=p.gtin
-                WHERE p.shop_id=? AND p.gtin NOT LIKE '029%'
+                WHERE p.shop_id=? AND p.gtin NOT LIKE '029%' AND p.deleted_at IS NULL
                 GROUP BY p.shop_id,p.gtin,p.product_name,p.synced_at
                 ORDER BY p.gtin
                 """;

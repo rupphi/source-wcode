@@ -354,6 +354,7 @@ final class WindowsCadesSignatureProvider implements ZnackSignatureProvider {
                 ? CryptoProErrorCode.PRIVATE_KEY_UNAVAILABLE
                 : diagnostic.contains("selected certificate was not found")
                 || diagnostic.contains("certificate not found") || diagnostic.contains("сертификат не найден")
+                || diagnostic.contains("stage 'find selected certificate'")
                 ? CryptoProErrorCode.TOKEN_OR_CERTIFICATE_ABSENT : CryptoProErrorCode.SIGNING_FAILED;
         return new CryptoProException(code, "CAdESCOM signing failed (exit " + result.exitCode() + "): " + result.diagnostic());
     }

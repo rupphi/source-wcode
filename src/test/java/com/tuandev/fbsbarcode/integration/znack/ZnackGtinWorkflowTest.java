@@ -58,6 +58,26 @@ class ZnackGtinWorkflowTest {
         System.clearProperty("wcode.appdata.dir");
     }
 
+    @Test void softDeletedGtinStaysHiddenAcrossSyncUntilRestored() {
+        repository.softDeleteProducts(List.of(A));
+
+        assertTrue(repository.findProducts().stream().noneMatch(p -> A.equals(p.gtin())));
+        assertTrue(mappings.findGtinSummaries(1).stream().noneMatch(s -> A.equals(s.gtin())));
+        assertEquals(List.of(A), repository.findDeletedProducts().stream().map(Product::gtin).toList());
+        // Running pipelines still resolve the product regardless of the soft-delete flag.
+        assertTrue(repository.findProduct(A).isPresent());
+
+        // A re-sync upserts the same GTIN again but must not resurrect it.
+        repository.upsertProducts(List.of(new Product(A, "A refreshed", null, null, null, null, null)));
+        assertTrue(repository.findProducts().stream().noneMatch(p -> A.equals(p.gtin())));
+        assertEquals(List.of(A), repository.findDeletedProducts().stream().map(Product::gtin).toList());
+
+        repository.restoreProducts(List.of(A));
+        assertTrue(repository.findProducts().stream().anyMatch(p -> A.equals(p.gtin())));
+        assertTrue(repository.findDeletedProducts().isEmpty());
+        assertTrue(mappings.findGtinSummaries(1).stream().anyMatch(s -> A.equals(s.gtin())));
+    }
+
     @Test void wildcardIncludesExistingAndNewOrUnspecifiedGendersAndIsShopScoped() {
         mappings.replaceRulesForGtin(1, A, List.of(new ZnackGtinMappingSelection("Shoes", null, true)));
         assertEquals(A, mappings.findMappings(1, List.of(1L,2L)).get(1L));
@@ -792,6 +812,118 @@ class ZnackGtinWorkflowTest {
         coordinator.advance(settings, pipeline);
 
         assertEquals(0, submits.get());
+        assertEquals(PurchaseStage.POLLING_INTRODUCTION, repository.findPipeline(pipeline).orElseThrow().stage());
+    }
+
+    @Test void introductionFailedPipelineDoesNotBlockCreatingANewPurchasePipeline() {
+        long failed = repository.createPipeline(A, 1);
+        repository.updatePipeline(failed, null, PurchaseStage.INTRODUCTION_FAILED, "processed with errors");
+
+        long fresh = repository.createPipeline(A, 1);
+
+        assertTrue(fresh > failed);
+        assertEquals(PurchaseStage.INTRODUCTION_FAILED, repository.findPipeline(failed).orElseThrow().stage());
+    }
+
+    @Test void introductionProcessedWithErrorsBecomesRetryableWithoutBlockingNewPurchases() throws Exception {
+        Settings base = testedSettings();
+        Settings auto = new Settings(base.trueApiBaseUrl(), base.suzBaseUrl(), base.omsId(), base.omsConnection(),
+                base.participantInn(), base.producerInn(), base.ownerInn(), base.signerExecutable(),
+                base.signerCertificate(), base.signerArgumentsJson(), "DOC-1", "20.06.2024", "", true,
+                base.certificateListExecutable(), base.certificateListArgumentsJson(), base.certificateMetadataJson(),
+                base.signerTestedAt(), base.certmgrPath(), base.cryptcpPath(), base.csptestPath(),
+                base.cryptoProTimeoutSeconds(), "20.06.2029", "CONFORMITY_DECLARATION");
+        repository.updateProductMetadata(new Product(A, "A", "6201000000", null, null, null, "21.06.2024"));
+        long order = repository.createDraft(A, 1);
+        repository.insertCodes(order, A, new DownloadedCodes(List.of(RAW_CIS), "block"));
+        long pipeline = repository.createPipeline(A, 1);
+        repository.updatePipeline(pipeline, order, PurchaseStage.POLLING_INTRODUCTION, null);
+        long document = repository.createDocument(order, "{}");
+        repository.updateDocument(document, "external-document", "SUBMITTED", null);
+        ZnackApiClient api = new ZnackApiClient() {
+            @Override public JsonElement document(String ignoredBase, String token, String externalId) {
+                return JsonParser.parseString("""
+                        {"documentId":"external-document","status":"CHECKED_NOT_OK",
+                        "errors":["Podpis ne sootvetstvuet dannym dokumenta"]}
+                        """);
+            }
+        };
+        ZnackAuthService auth = new ZnackAuthService(api, (input, context) -> null) {
+            @Override public String trueApiToken(Settings ignored) { return "token"; }
+        };
+        ZnackPurchaseCoordinator coordinator = new ZnackPurchaseCoordinator(repository, null, null,
+                new ZnackIntroductionService(api, auth, (input, context) -> null, repository)) {
+            @Override void schedule(long ignoredPipeline) {
+            }
+        };
+
+        coordinator.advance(auto, pipeline);
+
+        ZnackPurchasePipelineState failed = repository.findPipeline(pipeline).orElseThrow();
+        assertEquals(PurchaseStage.INTRODUCTION_FAILED, failed.stage());
+        assertTrue(failed.errorMessage().contains("CHECKED_NOT_OK"));
+        assertTrue(failed.errorMessage().contains("Podpis ne sootvetstvuet dannym dokumenta"));
+        assertTrue(repository.findActivePipeline(A).isEmpty());
+        assertEquals("CHECKED_NOT_OK", repository.findLatestDocument(order).orElseThrow().status());
+
+        AtomicInteger submissions = new AtomicInteger();
+        ZnackIntroductionService retrySubmission = new ZnackIntroductionService(null, null, null, repository) {
+            @Override public long submit(Settings ignored, KizOrder ignoredOrder, Product ignoredProduct,
+                                         List<KizCode> ignoredCodes) {
+                submissions.incrementAndGet();
+                long fresh = repository.createDocument(order, "{}");
+                repository.updateDocument(fresh, "external-document-2", "SUBMITTED", null);
+                return fresh;
+            }
+        };
+        ZnackPurchaseCoordinator retryCoordinator = new ZnackPurchaseCoordinator(repository, null, null,
+                retrySubmission) {
+            @Override void schedule(long ignoredPipeline) {
+            }
+        };
+
+        retryCoordinator.retryIntroduction(auto, A);
+
+        assertEquals(1, submissions.get());
+        assertEquals(PurchaseStage.POLLING_INTRODUCTION, repository.findPipeline(pipeline).orElseThrow().stage());
+        assertEquals("external-document-2",
+                repository.findLatestDocument(order).orElseThrow().externalDocumentId());
+    }
+
+    @Test void rejectedSubmissionCanBeRetriedWithAFreshDocument() throws Exception {
+        Settings base = testedSettings();
+        Settings auto = new Settings(base.trueApiBaseUrl(), base.suzBaseUrl(), base.omsId(), base.omsConnection(),
+                base.participantInn(), base.producerInn(), base.ownerInn(), base.signerExecutable(),
+                base.signerCertificate(), base.signerArgumentsJson(), "DOC-1", "20.06.2024", "", true,
+                base.certificateListExecutable(), base.certificateListArgumentsJson(), base.certificateMetadataJson(),
+                base.signerTestedAt(), base.certmgrPath(), base.cryptcpPath(), base.csptestPath(),
+                base.cryptoProTimeoutSeconds(), "20.06.2029", "CONFORMITY_DECLARATION");
+        repository.updateProductMetadata(new Product(A, "A", "6201000000", null, null, null, "21.06.2024"));
+        long order = repository.createDraft(A, 1);
+        repository.insertCodes(order, A, new DownloadedCodes(List.of(RAW_CIS), "block"));
+        long pipeline = repository.createPipeline(A, 1);
+        repository.updatePipeline(pipeline, order, PurchaseStage.INTRODUCTION_FAILED, "HTTP 400");
+        long document = repository.createDocument(order, "{}");
+        repository.updateDocument(document, null, "REJECTED", "Znack API request failed (HTTP 400)");
+        AtomicInteger submissions = new AtomicInteger();
+        ZnackIntroductionService retrySubmission = new ZnackIntroductionService(null, null, null, repository) {
+            @Override public long submit(Settings ignored, KizOrder ignoredOrder, Product ignoredProduct,
+                                         List<KizCode> ignoredCodes) {
+                submissions.incrementAndGet();
+                long fresh = repository.createDocument(order, "{}");
+                repository.updateDocument(fresh, "external-document-retry", "SUBMITTED", null);
+                return fresh;
+            }
+        };
+        ZnackPurchaseCoordinator coordinator = new ZnackPurchaseCoordinator(repository, null, null,
+                retrySubmission) {
+            @Override void schedule(long ignoredPipeline) {
+            }
+        };
+
+        coordinator.retryIntroduction(auto, A);
+
+        assertEquals(1, submissions.get());
         assertEquals(PurchaseStage.POLLING_INTRODUCTION, repository.findPipeline(pipeline).orElseThrow().stage());
     }
 

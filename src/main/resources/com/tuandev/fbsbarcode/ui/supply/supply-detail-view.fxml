@@ -9,6 +9,7 @@
 <?import javafx.scene.control.CheckBox?>
 <?import javafx.scene.control.TableColumn?>
 <?import javafx.scene.control.TableView?>
+<?import javafx.scene.control.TextField?>
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.Pane?>
 <?import javafx.scene.layout.StackPane?>
@@ -104,6 +105,7 @@
                                 </Button>
                             </children>
                         </HBox>
+                        <TextField fx:id="gtinSearchField" promptText="%kiz_mapping.search_gtin" />
                         <StackPane VBox.vgrow="ALWAYS">
                             <children>
                                 <ScrollPane fitToWidth="true" hbarPolicy="NEVER">

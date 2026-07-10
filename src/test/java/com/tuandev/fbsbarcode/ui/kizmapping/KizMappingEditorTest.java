@@ -37,10 +37,10 @@ class KizMappingEditorTest {
     @Test
     void selectedAndConflictingMappingsRemainVisibleWhileAvailableGendersCanBeChanged() throws Exception {
         runOnFxThread(() -> {
-            KizMappingController controller = new KizMappingController();
-            Map<String, KizMappingController.SelectionState> state = new LinkedHashMap<>();
-            state.put("Jackets", new KizMappingController.SelectionState(true));
-            KizMappingController.MappingDialogData data = new KizMappingController.MappingDialogData(
+            KizGtinMappingEditor editor = new KizGtinMappingEditor();
+            Map<String, KizGtinMappingEditor.SelectionState> state = new LinkedHashMap<>();
+            state.put("Jackets", new KizGtinMappingEditor.SelectionState(true));
+            KizGtinMappingEditor.MappingDialogData data = new KizGtinMappingEditor.MappingDialogData(
                     List.of("Jackets", "Blocked", "Split"),
                     state,
                     Map.of(
@@ -56,8 +56,8 @@ class KizMappingEditorTest {
             String[] active = {"Jackets"};
             Runnable[] refresh = new Runnable[1];
             refresh[0] = () -> {
-                controller.renderCategories(CURRENT_GTIN, categories, active, state, data, refresh[0]);
-                controller.renderGenders(CURRENT_GTIN, active[0], genders, state, data, refresh[0]);
+                editor.renderCategories(CURRENT_GTIN, categories, active, state, data, refresh[0]);
+                editor.renderGenders(CURRENT_GTIN, active[0], genders, state, data, refresh[0]);
             };
             refresh[0].run();
 
@@ -70,7 +70,7 @@ class KizMappingEditorTest {
             assertFalse(female.isDisable());
             female.fire();
 
-            List<ZnackGtinMappingSelection> jacketRules = controller.flatten(state);
+            List<ZnackGtinMappingSelection> jacketRules = editor.flatten(state);
             assertEquals(List.of(new ZnackGtinMappingSelection("Jackets", "Male", false)), jacketRules);
 
             CheckBox split = categoryCheck(categories, "Split");
@@ -82,7 +82,7 @@ class KizMappingEditorTest {
             assertTrue(genderCheck(genders, "Male").isDisable());
             assertTrue(genderCheck(genders, "Female").isSelected());
             assertFalse(genderCheck(genders, "Female").isDisable());
-            assertTrue(controller.flatten(state).contains(new ZnackGtinMappingSelection("Split", "Female", false)));
+            assertTrue(editor.flatten(state).contains(new ZnackGtinMappingSelection("Split", "Female", false)));
         });
     }
 
