@@ -9,6 +9,8 @@ env:
   JAVA_DISTRIBUTION: oracle
   APP_NAME: WCode
   APP_VENDOR: TuanDev
+  # Mã nguồn ở repo này; bản phát hành (installer) đẩy sang repo release riêng.
+  RELEASE_REPO: tuanworlddev/wcode-relatest
 
 permissions:
   contents: write
@@ -123,18 +125,20 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path "out/WCode/*" -DestinationPath "out/WCode-portable.zip"
 
-      - name: Publish GitHub release
+      - name: Publish GitHub release (to release repo)
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          # PAT có quyền contents:write trên repo release (secret RELEASE_TOKEN).
+          # github.token mặc định chỉ ghi được repo hiện tại, không ghi được repo khác.
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
-          NOTES="Windows test release for the Znack GTIN/KIZ automation workflow. Verify CryptoPro signature, OMS settings, KIZ purchase, inventory download, and introduction with a controlled test order before production use."
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release edit "$GITHUB_REF_NAME" --title "WCode Znack ${APP_VERSION}" --notes "$NOTES" --latest
+          NOTES="WCode ${APP_VERSION} — bản phát hành chính thức. Cần license hợp lệ để mua/tự động hóa KIZ (đăng nhập qua wcode.online). In tem hoạt động tự do."
+          if gh release view "$GITHUB_REF_NAME" --repo "$RELEASE_REPO" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --repo "$RELEASE_REPO" --title "WCode ${APP_VERSION}" --notes "$NOTES" --latest
           else
-            gh release create "$GITHUB_REF_NAME" --title "WCode Znack ${APP_VERSION}" --notes "$NOTES" --latest
+            gh release create "$GITHUB_REF_NAME" --repo "$RELEASE_REPO" --title "WCode ${APP_VERSION}" --notes "$NOTES" --latest
           fi
-          gh release upload "$GITHUB_REF_NAME" \
+          gh release upload "$GITHUB_REF_NAME" --repo "$RELEASE_REPO" \
             out/WCode.exe \
             out/WCode.msi \
             out/WCode-portable.zip \

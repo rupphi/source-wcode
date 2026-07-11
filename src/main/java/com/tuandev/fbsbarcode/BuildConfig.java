@@ -23,7 +23,7 @@ public final class BuildConfig {
     }
 
     public static String getUpdateUrl() {
-        return PROPS.getProperty("app.update.url", "https://github.com/tuanworlddev/wcode-new");
+        return PROPS.getProperty("app.update.url", "https://github.com/tuanworlddev/wcode-relatest");
     }
 
     public static String getLicenseServerUrl() {
