@@ -48,6 +48,7 @@ public class ZnackAutomationController {
     @FXML private ComboBox<CryptoProCertificateInfo> signatureCertificateCombo;
     @FXML private CheckBox autoIntroductionCheck;
     @FXML private Button saveButton, testSignatureButton, deleteSelectedButton;
+    @FXML private ProgressIndicator productBusyIndicator;
     @FXML private MenuButton productCategoryFilterButton, deletedCategoryFilterButton;
     @FXML private Button omsIdHelpButton, omsConnectionHelpButton, closeOmsHelpButton;
     @FXML private javafx.scene.layout.VBox omsHelpPane;
@@ -478,6 +479,7 @@ public class ZnackAutomationController {
         if (repository == null || gtins.isEmpty()) return;
         long generation = shopGeneration;
         ZnackRepository currentRepository = repository;
+        setProductsBusy(true);
         Task<Void> task = new Task<>() {
             @Override protected Void call() {
                 currentRepository.softDeleteProducts(gtins);
@@ -486,6 +488,7 @@ public class ZnackAutomationController {
             }
         };
         task.setOnSucceeded(event -> {
+            setProductsBusy(false);
             if (generation != shopGeneration || currentRepository != repository) return;
             gtins.forEach(selectedProductGtins::remove);
             loadProductsFromDatabase();
@@ -493,11 +496,23 @@ public class ZnackAutomationController {
             logsTable.getItems().setAll(currentRepository.findLogs());
         });
         task.setOnFailed(event -> {
+            setProductsBusy(false);
             if (generation != shopGeneration || currentRepository != repository) return;
             Throwable failure = task.getException();
             AlertService.showError(value(failure == null ? null : failure.getMessage()));
         });
         AppTaskExecutor.execute(task);
+    }
+
+    /** Hiện/ẩn loading khi xoá GTIN: spinner + khoá nút xoá + con trỏ chờ trên bảng. */
+    private void setProductsBusy(boolean busy) {
+        if (productBusyIndicator != null) {
+            productBusyIndicator.setVisible(busy);
+            productBusyIndicator.setManaged(busy);
+        }
+        deleteSelectedButton.setDisable(busy || repository == null || selectedProductGtins.isEmpty());
+        productsTable.setCursor(busy ? javafx.scene.Cursor.WAIT : javafx.scene.Cursor.DEFAULT);
+        productsTable.setDisable(busy);
     }
 
     private void loadDeletedProducts() {

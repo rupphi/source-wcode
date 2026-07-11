@@ -74,6 +74,8 @@
                 <Button fx:id="deleteSelectedButton" disable="true" onAction="#deleteSelectedProducts" styleClass="btn-icon">
                     <graphic><FontIcon iconLiteral="fth-trash-2" iconSize="15"/></graphic>
                 </Button>
+                <ProgressIndicator fx:id="productBusyIndicator" managed="false" visible="false"
+                                   prefWidth="20" prefHeight="20" minWidth="20" minHeight="20"/>
             </HBox>
             <TableView fx:id="productsTable" VBox.vgrow="ALWAYS">
                 <columnResizePolicy><TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/></columnResizePolicy>
