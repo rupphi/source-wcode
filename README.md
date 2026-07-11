@@ -6,8 +6,18 @@
 - 📦 Đồng bộ đơn hàng, lô hàng (supply) từ Wildberries API
 - 🏷️ In mã vạch đơn hàng kết hợp với mã **KIZ** (DataMatrix) theo chuẩn Честный ЗНАК
 - ☁️ Tự động tick mã KIZ lên Wildberries sau khi in
+- 🔐 Bán theo thuê bao: kích hoạt license để mở tính năng mua/tự động hóa KIZ
 
 > **Liên hệ:** Zalo 0335407670
+
+## Kho lưu trữ
+
+| Repo | Mục đích |
+|------|----------|
+| 🔒 [tuanworlddev/wcode-new](https://github.com/tuanworlddev/wcode-new) | **Mã nguồn** (private) — code + workflow build |
+| 📦 [tuanworlddev/wcode-relatest](https://github.com/tuanworlddev/wcode-relatest) | **Bản phát hành** (public) — installer, auto-update đọc từ đây |
+
+> Mã nguồn và bản phát hành được tách riêng: source ở `wcode-new`, installer publish sang `wcode-relatest`.
 
 ## Ảnh chụp màn hình
 
@@ -63,12 +73,23 @@
 
 | Loại | Link tải |
 |------|----------|
-| **EXE Installer** (khuyên dùng) | [WCode.exe](https://github.com/tuanworlddev/-WCode-Znack/releases/latest/download/WCode.exe) |
-| **MSI Installer** | [WCode.msi](https://github.com/tuanworlddev/-WCode-Znack/releases/latest/download/WCode.msi) |
-| **Portable (ZIP)** | [WCode-portable.zip](https://github.com/tuanworlddev/-WCode-Znack/releases/latest/download/WCode-portable.zip) |
+| **EXE Installer** (khuyên dùng) | [WCode.exe](https://github.com/tuanworlddev/wcode-relatest/releases/latest/download/WCode.exe) |
+| **MSI Installer** | [WCode.msi](https://github.com/tuanworlddev/wcode-relatest/releases/latest/download/WCode.msi) |
+| **Portable (ZIP)** | [WCode-portable.zip](https://github.com/tuanworlddev/wcode-relatest/releases/latest/download/WCode-portable.zip) |
 
-> 💡 Xem tất cả phiên bản tại [trang Releases](https://github.com/tuanworlddev/-WCode-Znack/releases).
-> Ứng dụng kiểm tra phiên bản mới trực tiếp từ GitHub Releases và trên Windows có thể tải và mở installer cập nhật ngay trong app.
+> 💡 Xem tất cả phiên bản tại [trang Releases](https://github.com/tuanworlddev/wcode-relatest/releases).
+> Ứng dụng kiểm tra phiên bản mới trực tiếp từ GitHub Releases (repo `wcode-relatest`) và trên Windows có thể tải và mở installer cập nhật ngay trong app.
+
+## License & thuê bao
+
+Ứng dụng bán theo **thuê bao**. In tem cơ bản dùng tự do, nhưng **mua/tự động hóa mã KIZ** yêu cầu license hợp lệ:
+
+1. Khách nhận **license key** (`WC-XXXXX-...`) sau khi thanh toán.
+2. Nhập key trong mục **License** của app → kích hoạt theo máy.
+3. App xác thực với máy chủ license `https://wcode.online`; hỗ trợ chạy offline có thời hạn (grace) nhờ file license ký **Ed25519**.
+4. Admin tạo/gia hạn/thu hồi key tại **https://wcode.online/admin**.
+
+> Server license là một dịch vụ Node riêng (repo `wcode-admin`), không nằm trong repo này.
 
 ## Cài đặt từ mã nguồn
 
@@ -79,9 +100,9 @@
 ### Build và chạy
 
 ```bash
-# Clone repository
-git clone https://github.com/tuanworlddev/-WCode-Znack.git
-cd -WCode-Znack
+# Clone repository (mã nguồn — private)
+git clone https://github.com/tuanworlddev/wcode-new.git
+cd wcode-new
 
 # Chạy ứng dụng
 ./mvnw clean javafx:run       # macOS / Linux
@@ -101,15 +122,19 @@ build.bat app-image   # Tạo thư mục portable
 
 ### Build & Release
 
-Workflow [release.yml](.github/workflows/release.yml) tự chạy khi push tag theo dạng `v*`. Pipeline dùng JDK 25 và Maven wrapper trên `windows-latest`, sau đó tạo:
-- `windows-latest`: tạo `WCode.exe`, `WCode.msi`, `WCode-portable.zip`
+Workflow [release.yml](.github/workflows/release.yml) tự chạy khi push tag `v*`. Pipeline chạy kiểm thử + build trên `windows-latest`, đóng gói `WCode.exe` / `WCode.msi` / `WCode-portable.zip`, rồi **publish sang repo release riêng** `tuanworlddev/wcode-relatest` (dùng secret `RELEASE_TOKEN`).
 
-Tag release sẽ chạy kiểm thử trên Windows, đóng gói EXE/MSI/portable ZIP và tải trực tiếp lên GitHub Release tại `tuanworlddev/-WCode-Znack`.
+Cắt bản phát hành mới:
 
 ```bash
-git tag v1.0.29
-git push origin main --tags
+# 1. Bump version trong pom.xml (<version> và <app.version>)
+# 2. Commit rồi tag + push
+git tag v1.1.0
+git push origin dev
+git push origin v1.1.0     # kích hoạt CI build + publish sang wcode-relatest
 ```
+
+> Repo release phải có sẵn ít nhất 1 commit (README), nếu không `gh release create` sẽ báo lỗi *"Repository is empty"*.
 
 ## Hướng dẫn sử dụng
 
@@ -122,7 +147,7 @@ git push origin main --tags
 
 ## Giấy phép
 
-MIT License
+Phần mềm thương mại — bản quyền © TuanDev. Mọi quyền được bảo lưu. Sử dụng theo mô hình thuê bao.
 
 ---
 
