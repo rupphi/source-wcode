@@ -44,6 +44,7 @@ public class KizMappingController {
     private Shop shop;
     private ZnackRepository znackRepository;
     private Timeline refreshTimer;
+    private javafx.animation.RotateTransition refreshSpin;
     private boolean loading;
     private boolean syncing;
     private long shopGeneration;
@@ -70,6 +71,13 @@ public class KizMappingController {
         refreshTimer.setCycleCount(Timeline.INDEFINITE);
         searchField.textProperty().addListener((ignored, old, value) -> applyFilter());
         categoryFilter = new CategoryFilterMenu(categoryFilterButton, this::applyFilter);
+        if (refreshButton.getGraphic() != null) {
+            refreshSpin = new javafx.animation.RotateTransition(
+                    javafx.util.Duration.millis(800), refreshButton.getGraphic());
+            refreshSpin.setByAngle(360);
+            refreshSpin.setCycleCount(javafx.animation.Animation.INDEFINITE);
+            refreshSpin.setInterpolator(javafx.animation.Interpolator.LINEAR);
+        }
         applyTranslations();
         setLoading(false);
     }
@@ -296,6 +304,16 @@ public class KizMappingController {
         loadingIndicator.setVisible(active);
         loadingIndicator.setManaged(active);
         refreshButton.setDisable(active || shop == null);
+        if (refreshSpin != null) {
+            if (active) {
+                if (refreshSpin.getStatus() != javafx.animation.Animation.Status.RUNNING) {
+                    refreshSpin.playFromStart();
+                }
+            } else {
+                refreshSpin.stop();
+                if (refreshButton.getGraphic() != null) refreshButton.getGraphic().setRotate(0);
+            }
+        }
     }
 
     private void updateEmpty() {

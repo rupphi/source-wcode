@@ -98,7 +98,7 @@
                                 <Label fx:id="gtinInventoryTitleLabel" styleClass="h3" text="%supply.gtin_inventory.title" />
                                 <Pane HBox.hgrow="ALWAYS" />
                                 <ProgressIndicator fx:id="gtinInventoryLoading" managed="false" maxHeight="18.0" maxWidth="18.0" prefHeight="18.0" prefWidth="18.0" visible="false" />
-                                <Button fx:id="gtinInventoryRefreshButton" mnemonicParsing="false" onAction="#onRefreshGtinInventory" prefHeight="30.0" prefWidth="30.0" styleClass="btn-icon">
+                                <Button fx:id="gtinInventoryRefreshButton" mnemonicParsing="false" onAction="#onRefreshGtinInventory" prefHeight="30.0" prefWidth="30.0" styleClass="btn-icon,btn-sync">
                                     <graphic>
                                         <FontIcon iconLiteral="fth-refresh-cw" iconSize="15" />
                                     </graphic>

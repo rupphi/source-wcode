@@ -439,6 +439,14 @@
 .btn-icon:pressed {
     -fx-background-color: -border-color;
 }
+/* Nút đồng bộ: khi đang chạy (disabled) vẫn hiện rõ + icon đổi màu accent (kèm hiệu ứng quay) */
+.btn-sync:disabled {
+    -fx-opacity: 1;
+    -fx-background-color: -accent-transparent;
+}
+.btn-sync:disabled .ikonli-font-icon {
+    -fx-icon-color: -accent;
+}
 
 .kiz-category-icon-primary .ikonli-font-icon,
 .kiz-category-icon-primary:hover .ikonli-font-icon {

@@ -13,7 +13,7 @@
   <MenuButton fx:id="categoryFilterButton" text="%znack.filter.button">
    <graphic><FontIcon iconLiteral="fth-filter" iconSize="14"/></graphic>
   </MenuButton>
-  <Button fx:id="refreshButton" onAction="#onRefresh" styleClass="btn-icon">
+  <Button fx:id="refreshButton" onAction="#onRefresh" styleClass="btn-icon,btn-sync">
    <graphic><FontIcon iconLiteral="fth-refresh-cw" iconSize="15"/></graphic>
   </Button>
  </HBox>

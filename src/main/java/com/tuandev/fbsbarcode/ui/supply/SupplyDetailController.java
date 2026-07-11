@@ -160,6 +160,7 @@ public class SupplyDetailController {
 
     @FXML
     private Button gtinInventoryRefreshButton;
+    private javafx.animation.RotateTransition gtinRefreshSpin;
 
     @FXML
     private TextField gtinSearchField;
@@ -174,6 +175,13 @@ public class SupplyDetailController {
 
     @FXML
     private void initialize() {
+        if (gtinInventoryRefreshButton.getGraphic() != null) {
+            gtinRefreshSpin = new javafx.animation.RotateTransition(
+                    javafx.util.Duration.millis(800), gtinInventoryRefreshButton.getGraphic());
+            gtinRefreshSpin.setByAngle(360);
+            gtinRefreshSpin.setCycleCount(javafx.animation.Animation.INDEFINITE);
+            gtinRefreshSpin.setInterpolator(javafx.animation.Interpolator.LINEAR);
+        }
         noTC.setCellFactory(column -> new TableCell<>() {
             @Override
             protected void updateItem(Integer integer, boolean empty) {
@@ -803,6 +811,18 @@ public class SupplyDetailController {
         gtinInventoryLoading.setVisible(busy);
         gtinInventoryLoading.setManaged(busy);
         gtinInventoryRefreshButton.setDisable(busy || shop == null);
+        if (gtinRefreshSpin != null) {
+            if (busy) {
+                if (gtinRefreshSpin.getStatus() != javafx.animation.Animation.Status.RUNNING) {
+                    gtinRefreshSpin.playFromStart();
+                }
+            } else {
+                gtinRefreshSpin.stop();
+                if (gtinInventoryRefreshButton.getGraphic() != null) {
+                    gtinInventoryRefreshButton.getGraphic().setRotate(0);
+                }
+            }
+        }
         updateGtinEmpty();
     }
 
