@@ -23,7 +23,11 @@ public final class BuildConfig {
     }
 
     public static String getUpdateUrl() {
-        return PROPS.getProperty("app.update.url", "https://github.com/tuanworlddev/-WCode-Znack");
+        return PROPS.getProperty("app.update.url", "https://github.com/tuanworlddev/wcode-new");
+    }
+
+    public static String getLicenseServerUrl() {
+        return PROPS.getProperty("app.license.url", "https://wcode.online");
     }
 
     private BuildConfig() {}

@@ -24,6 +24,7 @@ import com.tuandev.fbsbarcode.shared.AlertService;
 import com.tuandev.fbsbarcode.shared.AppTaskExecutor;
 import com.tuandev.fbsbarcode.shared.I18nService;
 import com.tuandev.fbsbarcode.ui.kizmapping.KizGtinMappingEditor;
+import com.tuandev.fbsbarcode.ui.license.LicenseDialogService;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.concurrent.Task;
@@ -693,6 +694,9 @@ public class SupplyDetailController {
 
     private void showBuy(ZnackGtinInventorySummary summary) {
         if (znackRepository == null || shop == null) {
+            return;
+        }
+        if (!new LicenseDialogService().ensureLicensed()) {
             return;
         }
         TextInputDialog dialog = new TextInputDialog("1");

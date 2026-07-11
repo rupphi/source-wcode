@@ -12,6 +12,7 @@ import com.tuandev.fbsbarcode.shared.AlertService;
 import com.tuandev.fbsbarcode.shared.AppTaskExecutor;
 import com.tuandev.fbsbarcode.shared.I18nService;
 import com.tuandev.fbsbarcode.ui.controls.CategoryFilterMenu;
+import com.tuandev.fbsbarcode.ui.license.LicenseDialogService;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.animation.KeyFrame;
@@ -215,6 +216,9 @@ public class KizMappingController {
     }
 
     private void showBuy(ZnackGtinInventorySummary summary) {
+        if (!new LicenseDialogService().ensureLicensed()) {
+            return;
+        }
         TextInputDialog dialog = new TextInputDialog("1");
         AlertService.applyTheme(dialog);
         dialog.setTitle(tr("kiz_mapping.buy.title"));

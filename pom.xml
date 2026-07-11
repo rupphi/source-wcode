@@ -252,4 +252,56 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- Obfuscation (kích hoạt: mvn package -Pobfuscate). Tắt mặc định để ./mvnw verify
+             và CI chạy nhanh; build.sh bật khi đóng gói installer. -->
+        <profile>
+            <id>obfuscate</id>
+            <build>
+                <plugins>
+                    <!-- ProGuard 7.9.1 chấp nhận tối đa bytecode Java 24; hạ target về 24 cho
+                         bản obfuscate (jpackage vẫn bundle JRE 25 nên app chạy trên Java 25).
+                         Gỡ override này khi ProGuard hỗ trợ class file 69 (Java 25). -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <configuration>
+                            <source>24</source>
+                            <target>24</target>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>com.github.wvengen</groupId>
+                        <artifactId>proguard-maven-plugin</artifactId>
+                        <version>2.7.0</version>
+                        <executions>
+                            <execution>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>proguard</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <obfuscate>true</obfuscate>
+                            <injar>${project.build.finalName}.jar</injar>
+                            <proguardInclude>${basedir}/proguard.conf</proguardInclude>
+                            <!-- runtime jmods được khai báo bằng -libraryjars trong proguard.conf
+                                 (ProGuard tự thay <java.home>) vì plugin không parse filter trong <libs> -->
+                            <includeJre>false</includeJre>
+                            <generateTemporaryConfigurationFile>true</generateTemporaryConfigurationFile>
+                        </configuration>
+                        <dependencies>
+                            <dependency>
+                                <groupId>com.guardsquare</groupId>
+                                <artifactId>proguard-base</artifactId>
+                                <version>7.9.1</version>
+                            </dependency>
+                        </dependencies>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

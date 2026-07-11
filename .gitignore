@@ -41,3 +41,8 @@ out-*/
 
 ### Mac OS ###
 .DS_Store
+# License/admin backend — sống trong repo riêng tuanworlddev/wcode-admin
+license-server/
+
+# Tài liệu API Znack + script RAG (có .env) — không thuộc app repo
+znack_api/

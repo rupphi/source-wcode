@@ -41,6 +41,10 @@ public final class AppPaths {
         return appDataDir().resolve("logs");
     }
 
+    public static Path licenseFile() {
+        return appDataDir().resolve("license.json");
+    }
+
     public static Path javaFxCacheDir() {
         return safeSystemDir().resolve("openjfx-cache");
     }

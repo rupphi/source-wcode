@@ -70,7 +70,7 @@ public class ShopSidebarController {
     private Runnable onAbout;
     private Consumer<AppLanguage> onLanguageChanged;
     private Consumer<String> onThemeChanged;
-    private boolean activated;
+    private boolean licenseValid;
 
     @FXML
     private void initialize() {
@@ -159,13 +159,13 @@ public class ShopSidebarController {
         }
     }
 
-    public void setActivated(boolean activated) {
-        this.activated = activated;
+    public void setLicenseValid(boolean licenseValid) {
+        this.licenseValid = licenseValid;
         I18nService i18n = I18nService.getInstance();
-        activationStatusLabel.setText(activated
-                ? "• " + i18n.tr("activation.status.activated_short")
-                : "• " + i18n.tr("activation.status.inactive_short"));
-        activationStatusLabel.setStyle(activated ? "-fx-text-fill: #22c55e; -fx-font-weight: 700;" : "-fx-text-fill: #ef4444; -fx-font-weight: 700;");
+        activationStatusLabel.setText(licenseValid
+                ? "• " + i18n.tr("license.status.short_valid")
+                : "• " + i18n.tr("license.status.short_invalid"));
+        activationStatusLabel.setStyle(licenseValid ? "-fx-text-fill: #22c55e; -fx-font-weight: 700;" : "-fx-text-fill: #ef4444; -fx-font-weight: 700;");
     }
 
     public void applyTranslations() {
@@ -184,9 +184,9 @@ public class ShopSidebarController {
         themeDarkMenuItem.setText(i18n.tr("settings.theme.dark"));
         themeLightMenuItem.setText(i18n.tr("settings.theme.light"));
         checkVersionMenuItem.setText(i18n.tr("settings.check_version"));
-        activationMenuItem.setText(i18n.tr("settings.activation"));
+        activationMenuItem.setText(i18n.tr("license.menu"));
         aboutMenuItem.setText(i18n.tr("settings.about"));
-        setActivated(activated);
+        setLicenseValid(licenseValid);
     }
 
     @FXML

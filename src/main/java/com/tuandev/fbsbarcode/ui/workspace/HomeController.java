@@ -11,6 +11,8 @@ import com.tuandev.fbsbarcode.features.fbo.FboPrintPlan;
 import com.tuandev.fbsbarcode.features.packing.PackingWorkflow;
 import com.tuandev.fbsbarcode.integration.wb.WbSupplySummary;
 import com.tuandev.fbsbarcode.integration.wb.WbSupplyWorkflow;
+import com.tuandev.fbsbarcode.integration.license.LicenseService;
+import com.tuandev.fbsbarcode.integration.license.LicenseState;
 import com.tuandev.fbsbarcode.integration.znack.ZnackPurchaseCoordinator;
 import com.tuandev.fbsbarcode.integration.znack.ZnackGtinInventoryService;
 import com.tuandev.fbsbarcode.integration.wb.WbSyncReport;
@@ -29,8 +31,6 @@ import com.tuandev.fbsbarcode.features.print.KizAttachmentCoordinator;
 import com.tuandev.fbsbarcode.features.print.PrintJobOptions;
 import com.tuandev.fbsbarcode.features.print.PrintOptionsDialogService;
 import com.tuandev.fbsbarcode.features.print.OrderExportWorkflow;
-import com.tuandev.fbsbarcode.features.print.PrintAuthorizationDialogService;
-import com.tuandev.fbsbarcode.features.print.PrintAuthorizationService;
 import com.tuandev.fbsbarcode.features.print.PrintTemplateDesignerService;
 import com.tuandev.fbsbarcode.features.print.PrintTemplateService;
 import com.tuandev.fbsbarcode.features.print.history.PrintHistoryJobSummary;
@@ -105,8 +105,8 @@ public class HomeController implements Initializable {
     private final SupplyLoadWorkflow supplyLoadWorkflow = new SupplyLoadWorkflow();
     private final OrderSortingService orderSortingService = new OrderSortingService();
     private final OrderSortPreferenceService orderSortPreferenceService = new OrderSortPreferenceService();
-    private final PrintAuthorizationDialogService printAuthorizationDialogService = new PrintAuthorizationDialogService();
-    private final PrintAuthorizationService printAuthorizationService = new PrintAuthorizationService();
+    private final com.tuandev.fbsbarcode.ui.license.LicenseDialogService licenseDialogService =
+            new com.tuandev.fbsbarcode.ui.license.LicenseDialogService();
     private final PrintOptionsDialogService printOptionsDialogService = new PrintOptionsDialogService();
     private final PrintTemplateService printTemplateService = new PrintTemplateService();
     private final PrintTemplateDesignerService printTemplateDesignerService = new PrintTemplateDesignerService();
@@ -149,8 +149,8 @@ public class HomeController implements Initializable {
     private WbSupplySummary loadedSupplySummary;
     private final PauseTransition fboSearchDebounce = new PauseTransition(javafx.util.Duration.millis(250));
     private static final int FBO_PAGE_SIZE = 50;
-    private boolean appActivated;
     private boolean fboLoading;
+    private boolean licenseExpiryWarned;
     private boolean fboHasMore;
     private final Consumer<com.tuandev.fbsbarcode.shared.AppLanguage> languageListener =
             language -> Platform.runLater(this::applyTranslations);
@@ -171,7 +171,6 @@ public class HomeController implements Initializable {
         };
         AppTaskExecutor.execute(resumeZnackPipelines);
         printTemplateService.ensureDefaultTemplateExists();
-        appActivated = printAuthorizationService.isAuthorized();
 
         fileChooser = new FileChooser();
         File initialDirectory = AppPaths.preferredFileChooserDirectory();
@@ -192,6 +191,26 @@ public class HomeController implements Initializable {
         updateExportAvailability();
         loadShops();
         checkForUpdates();
+        refreshLicenseInBackground();
+    }
+
+    private void refreshLicenseInBackground() {
+        // Cập nhật sidebar mỗi khi trạng thái license đổi (kể cả từ vòng xác thực định kỳ).
+        LicenseService.getInstance().addListener(state ->
+                javafx.application.Platform.runLater(() -> updateLicenseSidebar(state)));
+        Task<LicenseState> refreshLicense = new Task<>() {
+            @Override protected LicenseState call() {
+                LicenseState state = LicenseService.getInstance().refresh();
+                LicenseService.getInstance().startBackgroundRevalidation();
+                return state;
+            }
+        };
+        refreshLicense.setOnSucceeded(e -> {
+            LicenseState state = refreshLicense.getValue();
+            updateLicenseSidebar(state);
+            notifyIfExpiringSoon(state);
+        });
+        AppTaskExecutor.execute(refreshLicense);
     }
 
     private void loadDynamicViews() {
@@ -419,10 +438,6 @@ public class HomeController implements Initializable {
         if (shop == null) {
             return;
         }
-        if (!printAuthorizationDialogService.ensureAuthorized()) {
-            return;
-        }
-
         preparePdfSaveChooser();
         File file = fileChooser.showSaveDialog(null);
         if (file == null) {
@@ -459,9 +474,6 @@ public class HomeController implements Initializable {
         if (shop == null) {
             return;
         }
-        if (!appActivated && !showActivationInputDialog()) {
-            return;
-        }
         preparePdfSaveChooser();
         File file = fileChooser.showSaveDialog(null);
         if (file == null) {
@@ -492,9 +504,6 @@ public class HomeController implements Initializable {
         }
         Shop shop = state.getSelectedShop();
         if (shop == null) {
-            return;
-        }
-        if (!appActivated && !showActivationInputDialog()) {
             return;
         }
         preparePdfSaveChooser();
@@ -580,101 +589,30 @@ public class HomeController implements Initializable {
         AppTaskExecutor.execute(task);
     }
 
-    private void showActivationDialog() {
-        if (!printAuthorizationService.isAuthorized()) {
-            showActivationInputDialog();
+    private void showLicenseDialog() {
+        licenseDialogService.showDialog();
+        updateLicenseSidebar(LicenseService.getInstance().getState());
+    }
+
+    /** Cập nhật nhãn trạng thái license ở sidebar (gọi trên FX thread). */
+    private void updateLicenseSidebar(LicenseState state) {
+        if (shopSidebarController != null) {
+            shopSidebarController.setLicenseValid(state.kizAllowed());
+        }
+    }
+
+    /** Cảnh báo một lần khi license còn hạn nhưng sắp hết (<= 7 ngày). */
+    private void notifyIfExpiringSoon(LicenseState state) {
+        if (licenseExpiryWarned || state.status() != LicenseState.LicenseStatus.VALID || state.payload() == null) {
             return;
         }
-
-        ButtonType deleteButton = new ButtonType(i18nService.tr("activation.delete"), ButtonBar.ButtonData.OTHER);
-        ButtonType closeButton = new ButtonType(i18nService.tr("common.close"), ButtonBar.ButtonData.CANCEL_CLOSE);
-        Alert alert = new Alert(Alert.AlertType.INFORMATION);
-        AlertService.applyTheme(alert);
-        alert.setTitle(i18nService.tr("activation.status.title"));
-        alert.setHeaderText(i18nService.tr("activation.status.header"));
-        alert.setContentText(MessageFormat.format(
-                i18nService.tr("activation.status.content"),
-                i18nService.tr("activation.status.authorized"),
-                safeText(ConfigService.getActivatedAt())
-        ));
-        alert.getDialogPane().getButtonTypes().setAll(deleteButton, closeButton);
-        alert.showAndWait().ifPresent(choice -> {
-            if (choice == deleteButton) {
-                printAuthorizationService.clearRememberedAuthorization();
-                setAppActivated(false);
-                AlertService.showInfo(
-                        i18nService.tr("activation.deleted.title"),
-                        i18nService.tr("activation.deleted.header"),
-                        i18nService.tr("activation.deleted.content")
-                );
-            }
-        });
-    }
-
-    private boolean showActivationInputDialog() {
-        Dialog<ButtonType> dialog = new Dialog<>();
-        AlertService.applyTheme(dialog);
-        dialog.setTitle(i18nService.tr("activation.input.title"));
-        dialog.setHeaderText(i18nService.tr("activation.input.header"));
-        dialog.getDialogPane().setMinWidth(420);
-
-        ButtonType activateButton = new ButtonType(i18nService.tr("activation.activate"), ButtonBar.ButtonData.OK_DONE);
-        ButtonType cancelButton = new ButtonType(i18nService.tr("common.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
-        dialog.getDialogPane().getButtonTypes().setAll(activateButton, cancelButton);
-
-        PasswordField keyField = new PasswordField();
-        keyField.setPromptText(i18nService.tr("activation.input.content"));
-
-        Label errorLabel = new Label();
-        errorLabel.getStyleClass().add("error-label");
-        errorLabel.setManaged(false);
-        errorLabel.setVisible(false);
-
-        VBox content = new VBox(10,
-                new Label(i18nService.tr("activation.input.content")),
-                keyField,
-                errorLabel
-        );
-        content.getStyleClass().add("dialog-content");
-        dialog.getDialogPane().setContent(content);
-
-        Node activateNode = dialog.getDialogPane().lookupButton(activateButton);
-        activateNode.addEventFilter(ActionEvent.ACTION, event -> {
-            if (!printAuthorizationService.matches(keyField.getText())) {
-                errorLabel.setText(i18nService.tr("print_auth.invalid"));
-                errorLabel.setManaged(true);
-                errorLabel.setVisible(true);
-                keyField.requestFocus();
-                keyField.selectAll();
-                event.consume();
-                return;
-            }
-            printAuthorizationService.rememberAuthorized();
-            if (!printAuthorizationService.isAuthorized()) {
-                errorLabel.setText(i18nService.tr("print_auth.remember_failed"));
-                errorLabel.setManaged(true);
-                errorLabel.setVisible(true);
-                event.consume();
-            }
-        });
-
-        Optional<ButtonType> choice = dialog.showAndWait();
-        boolean activated = choice.isPresent() && choice.get() == activateButton && printAuthorizationService.isAuthorized();
-        if (activated) {
-            setAppActivated(true);
-            AlertService.showInfo(
-                    i18nService.tr("activation.success.title"),
-                    i18nService.tr("activation.success.header"),
-                    i18nService.tr("activation.success.content")
-            );
-        }
-        return activated;
-    }
-
-    private void setAppActivated(boolean activated) {
-        appActivated = activated;
-        if (shopSidebarController != null) {
-            shopSidebarController.setActivated(activated);
+        long daysLeft = (state.payload().expiresAt() - System.currentTimeMillis()) / (24L * 60 * 60 * 1000);
+        if (daysLeft >= 0 && daysLeft <= 7) {
+            licenseExpiryWarned = true;
+            AlertService.showWarning(
+                    i18nService.tr("license.expiring.title"),
+                    i18nService.tr("license.expiring.header"),
+                    MessageFormat.format(i18nService.tr("license.expiring.content"), daysLeft));
         }
     }
 
@@ -850,9 +788,6 @@ public class HomeController implements Initializable {
             }
 
             javafx.application.Platform.runLater(() -> {
-                if (!printAuthorizationDialogService.ensureAuthorized()) {
-                    return;
-                }
                 Optional<PrintJobOptions> printOptions = printOptionsDialogService.chooseOptions();
                 if (printOptions.isEmpty()) {
                     return;
@@ -1344,13 +1279,13 @@ public class HomeController implements Initializable {
         shopSidebarController.setOnZnackAutomation(this::showZnackAutomation);
         shopSidebarController.setOnPrintHistory(this::showPrintHistory);
         shopSidebarController.setOnCheckVersion(this::checkVersionManually);
-        shopSidebarController.setOnActivation(this::showActivationDialog);
+        shopSidebarController.setOnActivation(this::showLicenseDialog);
         shopSidebarController.setOnAbout(this::showAboutDialog);
         shopSidebarController.setOnLanguageChanged(i18nService::setLanguage);
         shopSidebarController.setSelectedLanguage(i18nService.getCurrentLanguage());
         shopSidebarController.setOnThemeChanged(ThemeService::switchTheme);
         shopSidebarController.setSelectedTheme(ThemeService.getCurrentTheme().getKey());
-        shopSidebarController.setActivated(appActivated);
+        shopSidebarController.setLicenseValid(LicenseService.getInstance().getState().kizAllowed());
         shopSidebarController.applyTranslations();
         sidebarContainer.getChildren().setAll(root);
     }
