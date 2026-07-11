@@ -16,11 +16,19 @@ import java.util.regex.Pattern;
  */
 public final class ZnackErrorMessages {
     private static final Pattern HTTP_STATUS = Pattern.compile("\\(HTTP (\\d{3})\\)");
+    private static final Pattern ERROR_CODE = Pattern.compile("\"?errorCode\"?\\s*[:=]\\s*\"?(\\d+)\"?");
     private static final Set<String> MESSAGE_KEYS = Set.of(
             "error_message", "errormessage", "message", "description", "error_description",
             "detail", "reason", "globalerrors", "fielderrors", "errors");
 
     private ZnackErrorMessages() {
+    }
+
+    /** Mã lỗi Znack (nếu có), ví dụ "1110"; rỗng nếu không tìm thấy. */
+    public static String errorCode(String raw) {
+        if (raw == null) return "";
+        Matcher matcher = ERROR_CODE.matcher(raw);
+        return matcher.find() ? matcher.group(1) : "";
     }
 
     /** Human-readable form of a stored error; falls back to the raw text when nothing better is found. */

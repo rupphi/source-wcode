@@ -63,6 +63,24 @@ public class KizMappingController {
         pipelineColumn.setCellFactory(column -> statusCell("badge-warning", "badge-gray"));
         errorColumn.setCellValueFactory(v -> new SimpleStringProperty(
                 ZnackErrorMessages.display(v.getValue().latestError())));
+        errorColumn.setCellFactory(column -> new TableCell<>() {
+            @Override protected void updateItem(String display, boolean empty) {
+                super.updateItem(display, empty);
+                boolean hasError = !empty && display != null && !display.isBlank();
+                setText(hasError ? display : null);
+                setWrapText(hasError);
+                setUnderline(hasError);
+                setCursor(hasError ? javafx.scene.Cursor.HAND : javafx.scene.Cursor.DEFAULT);
+                setTooltip(hasError ? new Tooltip(tr("report.button")) : null);
+                setOnMouseClicked(hasError ? event -> {
+                    ZnackGtinInventorySummary row = getTableRow() == null ? null : getTableRow().getItem();
+                    if (row != null && shop != null) {
+                        com.tuandev.fbsbarcode.ui.report.ErrorReportDialog.show(
+                                shop.getName(), row.gtin(), "PURCHASE_PIPELINE", row.latestError());
+                    }
+                } : null);
+            }
+        });
         actionsColumn.setCellValueFactory(v -> new javafx.beans.property.SimpleObjectProperty<>(v.getValue()));
         actionsColumn.setCellFactory(column -> new ActionsCell());
         refreshTimer = new Timeline(new KeyFrame(javafx.util.Duration.seconds(5), event -> {
