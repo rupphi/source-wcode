@@ -88,6 +88,32 @@ class CryptoProSignatureTest {
         assertEquals("ДИНЬ ТХИ МАЙ / INN 007814508921 / 24.06.2027", certificate.displayName());
     }
 
+    @Test void parsesCertmgr5RussianBlockWhereThumbprintLabelIsSha1Otpechatok() {
+        // Certmgr 5.0.x (uMy) emits the mixed "SHA1 отпечаток" label plus "Идентификатор ключа"
+        // and "Ссылка на ключ"; the selector must come from the thumbprint, not the key id.
+        String output = """
+                Certmgr Ver:5.0.13003 OS:Windows CPU:AMD64 (c) "КРИПТО-ПРО", 2007-2024.
+                =============================================================================
+                1-------
+                Издатель            : ИНН ЮЛ=7707329152, CN=Федеральная налоговая служба
+                Субъект             : ОГРНИП=323508100561415, ИНН=771004718687, CN=ФАМ ВАН ТАМ, G=ВАН ТАМ, SN=ФАМ
+                Серийный номер      : 0x0238D434017FB3FEAB4D71F4D8FBC87175
+                SHA1 отпечаток      : 32b818904e2434b26e6541d20e2e277bab112350
+                Идентификатор ключа : 93a9e8b1997e1c6edc9e6e9821b48b72ef19a2d9
+                Выдан               : 23/10/2025 18:34:25 UTC
+                Истекает            : 23/01/2027 18:44:25 UTC
+                Ссылка на ключ      : Есть
+                Имя провайдера      : Crypto-Pro GOST R 34.10-2012 Cryptographic Service Provider
+                =============================================================================
+                """;
+        CryptoProCertificateInfo certificate = new CryptoProCertificateDiscoveryService().parse(output).getFirst();
+        assertEquals("32b818904e2434b26e6541d20e2e277bab112350", certificate.selector());
+        assertEquals("32b818904e2434b26e6541d20e2e277bab112350", certificate.thumbprint());
+        assertEquals("771004718687", certificate.inn());
+        assertEquals(LocalDate.of(2027, 1, 23), certificate.validToDate());
+        assertTrue(certificate.hasPrivateKey());
+    }
+
     @Test void treatsCertmgrEmptyStoreExitAsNoCertificatesInsteadOfDiscoveryFailure() throws Exception {
         CryptoProCommandRunner runner = new CryptoProCommandRunner() {
             @Override public String resolve(String override, String command) {

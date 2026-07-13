@@ -77,7 +77,7 @@ public class CryptoProCertificateDiscoveryService {
 
     private CryptoProCertificateInfo certificate(Map<String, String> fields, String raw) {
         String thumbprint = field(fields, "sha1 thumbprint", "sha1 hash", "thumbprint", "отпечаток",
-                "отпечаток sha1", "хэш sha1", "hash");
+                "отпечаток sha1", "sha1 отпечаток", "хэш sha1", "hash");
         String selector = field(fields, "selector", "идентификатор", "id");
         if (selector.isBlank()) selector = thumbprint.replace(" ", "");
         String subject = field(fields, "subject", "субъект");
@@ -88,7 +88,8 @@ public class CryptoProCertificateDiscoveryService {
                 field(fields, "issuer", "издатель"), inn,
                 date(field(fields, "not valid before", "valid from", "действителен с", "выдан")),
                 date(field(fields, "not valid after", "valid to", "действителен до", "истекает")),
-                privateKey(field(fields, "privatekey link", "private key", "ссылка на закрытый ключ", "закрытый ключ")),
+                privateKey(field(fields, "privatekey link", "private key", "ссылка на закрытый ключ",
+                        "ссылка на ключ", "закрытый ключ")),
                 field(fields, "provider", "провайдер"), raw.strip());
     }
 
@@ -127,7 +128,7 @@ public class CryptoProCertificateDiscoveryService {
 
     private static boolean isSelector(String key) {
         return Set.of("sha1 thumbprint", "sha1 hash", "thumbprint", "отпечаток", "отпечаток sha1",
-                "хэш sha1", "hash", "selector", "идентификатор", "id").contains(key);
+                "sha1 отпечаток", "хэш sha1", "hash", "selector", "идентификатор", "id").contains(key);
     }
 
     private static boolean hasSelector(Map<String, String> fields) {
