@@ -193,6 +193,44 @@ class CryptoProSignatureTest {
         assertEquals("CAdESCOM", result.diagnostic());
     }
 
+    @Test void csptestSignsByThumbprintWithoutInteractivePrompt() throws Exception {
+        CsptestRunner runner = new CsptestRunner(cmsFixture());
+        CryptoProSigningResult result = new CsptestSignatureProvider(runner, null, "AABB", Duration.ofSeconds(2), null)
+                .sign("payload".getBytes(), ZnackSignatureContext.SIGNATURE_TEST);
+        assertArrayEquals(cmsFixture(), result.cms());
+        List<String> args = runner.command;
+        assertTrue(args.containsAll(List.of("-sfsign", "-sign", "-my", "AABB", "-add", "-cades_strict", "-detached")));
+        // Thumbprint goes to -my, so csptest matches exactly one certificate and never prompts "Enter certificate number".
+        assertEquals("AABB", args.get(args.indexOf("-my") + 1));
+    }
+
+    @Test void csptestFallsBackToCadesWhenCsptestBinaryMissing() throws Exception {
+        CryptoProCommandRunner missing = new CryptoProCommandRunner() {
+            @Override public String resolve(String override, String command) throws CryptoProException {
+                throw new CryptoProException(CryptoProErrorCode.CRYPTOPRO_MISSING, "fixture missing csptest");
+            }
+        };
+        byte[] fixture = cmsFixture();
+        ZnackSignatureProvider cades = (payload, context) -> new CryptoProSigningResult(fixture, "CAdESCOM");
+        CryptoProSigningResult result = new CsptestSignatureProvider(missing, null, "AABB", Duration.ofSeconds(2), cades)
+                .sign("payload".getBytes(), ZnackSignatureContext.SIGNATURE_TEST);
+        assertArrayEquals(fixture, result.cms());
+        assertEquals("CAdESCOM", result.diagnostic());
+    }
+
+    @Test void csptestTreatsNonZeroErrorCodeWithoutOutputAsFailure() {
+        CryptoProCommandRunner errored = new CryptoProCommandRunner() {
+            @Override public String resolve(String override, String command) { return "csptest"; }
+            @Override public Result run(List<String> command, Duration timeout) {
+                return new Result(0, "[ErrorCode: 0x8010006e]".getBytes(), new byte[0]);
+            }
+        };
+        CryptoProException error = assertThrows(CryptoProException.class,
+                () -> new CsptestSignatureProvider(errored, null, "AABB", Duration.ofSeconds(2), null)
+                        .sign("payload".getBytes(), ZnackSignatureContext.SIGNATURE_TEST));
+        assertNotEquals(CryptoProErrorCode.INVALID_SIGNATURE_OUTPUT, error.code());
+    }
+
     @Test void doesNotRetryUnclassifiedCryptcpSigningFailureThroughCades() {
         boolean[] fallbackCalled = {false};
         ZnackSignatureProvider fallback = (payload, context) -> {
@@ -349,6 +387,29 @@ class CryptoProSignatureTest {
                 return new Result(0, new byte[0], new byte[0]);
             } catch (Exception e) {
                 throw new CryptoProException(CryptoProErrorCode.SIGNING_FAILED, "Could not write fixture signature.", e);
+            }
+        }
+    }
+
+    private static final class CsptestRunner extends CryptoProCommandRunner {
+        private final byte[] output;
+        private List<String> command = List.of();
+
+        private CsptestRunner(byte[] output) {
+            this.output = output;
+        }
+
+        @Override public String resolve(String override, String command) {
+            return "csptest";
+        }
+
+        @Override public Result run(List<String> command, Duration timeout) throws CryptoProException {
+            this.command = List.copyOf(command);
+            try {
+                Files.write(Path.of(command.get(command.indexOf("-out") + 1)), output);
+                return new Result(0, "[ErrorCode: 0x00000000]".getBytes(), new byte[0]);
+            } catch (Exception e) {
+                throw new CryptoProException(CryptoProErrorCode.SIGNING_FAILED, "Could not write csptest fixture.", e);
             }
         }
     }

@@ -27,8 +27,11 @@ public class CryptoProSignatureProvider implements ZnackSignatureProvider {
 
     public CryptoProSignatureProvider(String cryptcpOverride, String certificateSelector, Duration timeout) {
         this(new CryptoProCommandRunner(), cryptcpOverride, certificateSelector, timeout,
-                WindowsCadesSignatureProvider.isWindows()
-                        ? new WindowsCadesSignatureProvider(certificateSelector, timeout) : null);
+                // Fallback chain when cryptcp is absent: csptest (ships with every CryptoPro CSP) →
+                // CAdESCOM (Windows-only, part of the CAdES Browser Plug-in).
+                new CsptestSignatureProvider(certificateSelector, timeout,
+                        WindowsCadesSignatureProvider.isWindows()
+                                ? new WindowsCadesSignatureProvider(certificateSelector, timeout) : null));
     }
 
     CryptoProSignatureProvider(CryptoProCommandRunner runner, String cryptcpOverride, String certificateSelector, Duration timeout) {
@@ -76,14 +79,14 @@ public class CryptoProSignatureProvider implements ZnackSignatureProvider {
                     || e.code() == CryptoProErrorCode.CRYPTOPRO_MISSING
                     || e.code() == CryptoProErrorCode.CRYPTCP_LICENSE_INVALID)
                     && windowsFallback != null) {
-                LOGGER.warn("cryptcp signing unavailable; trying Windows CAdESCOM fallback. code={}, details={}",
+                LOGGER.warn("cryptcp signing unavailable; trying csptest/CAdESCOM fallback. code={}, details={}",
                         e.code(), ZnackSanitizer.error(e));
                 try {
                     return windowsFallback.sign(payload, context);
                 } catch (CryptoProException fallbackError) {
                     CryptoProException combined = new CryptoProException(fallbackError.code(),
-                            "cryptcp failed before CAdESCOM fallback: " + ZnackSanitizer.error(e)
-                                    + "; CAdESCOM fallback failed: " + ZnackSanitizer.error(fallbackError),
+                            "cryptcp failed before fallback: " + ZnackSanitizer.error(e)
+                                    + "; fallback failed: " + ZnackSanitizer.error(fallbackError),
                             fallbackError);
                     logFailure(combined);
                     throw combined;
@@ -103,12 +106,18 @@ public class CryptoProSignatureProvider implements ZnackSignatureProvider {
     }
 
     public static void requireAvailable(String cryptcpOverride, Duration timeout) throws CryptoProException {
+        CryptoProCommandRunner runner = new CryptoProCommandRunner();
         try {
-            new CryptoProCommandRunner().resolve(cryptcpOverride, "cryptcp");
-        } catch (CryptoProException error) {
-            if (error.code() != CryptoProErrorCode.CRYPTCP_MISSING || !WindowsCadesSignatureProvider.isWindows()) {
-                throw error;
-            }
+            runner.resolve(cryptcpOverride, "cryptcp");
+            return;
+        } catch (CryptoProException cryptcpError) {
+            if (cryptcpError.code() != CryptoProErrorCode.CRYPTCP_MISSING) throw cryptcpError;
+        }
+        // cryptcp absent — csptest (bundled with every CryptoPro CSP) can sign; CAdESCOM is the last resort.
+        try {
+            runner.resolve(null, "csptest");
+        } catch (CryptoProException csptestError) {
+            if (!WindowsCadesSignatureProvider.isWindows()) throw csptestError;
             WindowsCadesSignatureProvider.requireAvailable(timeout);
         }
     }
