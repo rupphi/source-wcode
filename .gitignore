@@ -35,9 +35,13 @@ build/
 ### VS Code ###
 .vscode/
 
-### jpackage output ###
+### jpackage / jlink output ###
 out/
 out-*/
+runtime/
+
+### Downloaded JavaFX jmods (fetched by build scripts, not source) ###
+javafx-jmods-*/
 
 ### Mac OS ###
 .DS_Store
