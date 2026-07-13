@@ -10,7 +10,7 @@ env:
   APP_NAME: WCode
   APP_VENDOR: TuanDev
   # Mã nguồn ở repo này; bản phát hành (installer) đẩy sang repo release riêng.
-  RELEASE_REPO: tuanworlddev/wcode-relatest
+  RELEASE_REPO: rupphi/relatest-wcode
 
 permissions:
   contents: write

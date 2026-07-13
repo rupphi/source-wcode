@@ -23,7 +23,7 @@ public final class BuildConfig {
     }
 
     public static String getUpdateUrl() {
-        return PROPS.getProperty("app.update.url", "https://github.com/tuanworlddev/wcode-relatest");
+        return PROPS.getProperty("app.update.url", "https://github.com/rupphi/relatest-wcode");
     }
 
     public static String getLicenseServerUrl() {
