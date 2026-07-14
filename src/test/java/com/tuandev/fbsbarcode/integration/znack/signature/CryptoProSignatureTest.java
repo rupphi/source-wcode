@@ -114,6 +114,38 @@ class CryptoProSignatureTest {
         assertTrue(certificate.hasPrivateKey());
     }
 
+    @Test void decodesCp866CertmgrOutputSoRussianLabelsParse() throws Exception {
+        // certmgr on Russian Windows emits its labels in the OEM codepage (cp866). Decoding the raw
+        // bytes as cp1251 turns "SHA1 отпечаток" into mojibake, dropping every certificate.
+        String block = """
+                Certmgr Ver:5.0.13003 OS:Windows CPU:AMD64 (c) "КРИПТО-ПРО", 2007-2024.
+                =============================================================================
+                1-------
+                Издатель            : CN=Федеральная налоговая служба
+                Субъект             : ИНН=773396310603, CN=ЛЕ МИНЬ НГОК
+                SHA1 отпечаток      : 192ac028f2b1838102f08dfb7ddf001e1bbae9a8
+                Выдан               : 14/01/2026 08:01:11 UTC
+                Истекает            : 14/04/2027 08:11:11 UTC
+                Ссылка на ключ      : Есть
+                =============================================================================
+                """;
+        byte[] cp866 = block.getBytes(java.nio.charset.Charset.forName("IBM866"));
+        CryptoProCommandRunner runner = new CryptoProCommandRunner() {
+            @Override public String resolve(String override, String command) {
+                return "certmgr";
+            }
+
+            @Override public Result run(List<String> command, Duration timeout) {
+                return new Result(0, cp866, new byte[0]);
+            }
+        };
+        List<CryptoProCertificateInfo> certificates = new CryptoProCertificateDiscoveryService(runner)
+                .discover("", "", Duration.ofSeconds(1));
+        assertEquals(1, certificates.size());
+        assertEquals("192ac028f2b1838102f08dfb7ddf001e1bbae9a8", certificates.getFirst().selector());
+        assertEquals("773396310603", certificates.getFirst().inn());
+    }
+
     @Test void treatsCertmgrEmptyStoreExitAsNoCertificatesInsteadOfDiscoveryFailure() throws Exception {
         CryptoProCommandRunner runner = new CryptoProCommandRunner() {
             @Override public String resolve(String override, String command) {

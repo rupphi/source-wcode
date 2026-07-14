@@ -136,8 +136,31 @@ public class CryptoProCommandRunner {
     private static String decode(byte[] value) {
         String utf8 = new String(value, StandardCharsets.UTF_8);
         if (!utf8.contains("\uFFFD")) return utf8;
-        try { return new String(value, Charset.forName("windows-1251")); }
-        catch (Exception ignored) { return utf8; }
+        // certmgr/cryptcp/csptest are console apps: on Russian Windows their Cyrillic output uses the
+        // OEM codepage (cp866), not cp1251. Both single-byte codepages decode every byte, so pick the
+        // one that yields the most valid Cyrillic letters \u2014 that is the correct decoding of the labels.
+        String best = utf8;
+        int bestScore = cyrillicCount(utf8);
+        for (String charsetName : List.of("IBM866", "windows-1251")) {
+            try {
+                String decoded = new String(value, Charset.forName(charsetName));
+                int score = cyrillicCount(decoded);
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = decoded;
+                }
+            } catch (Exception ignored) {}
+        }
+        return best;
+    }
+
+    private static int cyrillicCount(String text) {
+        int count = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c >= '\u0410' && c <= '\u044F') count++;
+        }
+        return count;
     }
 
     private static byte[] read(java.io.InputStream stream) {
