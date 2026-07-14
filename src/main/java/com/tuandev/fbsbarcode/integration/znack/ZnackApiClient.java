@@ -69,27 +69,47 @@ public class ZnackApiClient {
     private JsonElement post(String base,String path,String token,Object body)throws IOException{return execute(new Request.Builder().url(join(base,path)).headers(headers(token)).post(RequestBody.create(gson.toJson(body),JSON)).build());}
     private Headers headers(String token){Headers.Builder h=new Headers.Builder().add("Accept","application/json");if(token!=null&&!token.isBlank())h.add("Authorization","Bearer "+token);return h.build();}
     private Headers suzHeaders(String token){Headers.Builder h=new Headers.Builder().add("Accept","application/json");if(token!=null&&!token.isBlank())h.add("clientToken",token);return h.build();}
+    // errorCode 1090 ("Проверка учетных данных УОТ не пройдена") is a transient SUZ/УОТ credential
+    // check that fails intermittently when several purchases run at once. It rejects the request BEFORE
+    // any order is created, so re-sending the identical request is safe (no duplicate order/charge).
+    private static final String UOT_CREDENTIAL_ERROR_CODE="1090";
+    private static final int UOT_CREDENTIAL_RETRY_ATTEMPTS=3;
+    private static final long UOT_CREDENTIAL_RETRY_BASE_DELAY_MS=900;
+
     private JsonElement execute(Request request)throws IOException{return execute(request,false);}
     private JsonElement execute(Request request,boolean allowNotFoundBody)throws IOException{
-        try(Response response=client.newCall(request).execute()){
-            String body=response.body()==null?"":response.body().string();
-            if(!response.isSuccessful()&&!(allowNotFoundBody&&response.code()==404&&!body.isBlank())){
-                LOGGER.error("Znack API request failed. method={}, url={}, httpStatus={}, contentType={}, responseBody={}",
-                        request.method(),request.url(),response.code(),response.header("Content-Type",""),
-                        ZnackSanitizer.diagnostic(body));
-                throw new ZnackApiException("Znack API request failed",response.code(),body);
-            }
-            if(body.isBlank())return JsonNull.INSTANCE;
-            try{
-                return JsonParser.parseString(body);
-            }catch(JsonParseException e){
-                LOGGER.error("Znack API returned invalid JSON. method={}, url={}, httpStatus={}, contentType={}, responseBody={}",
-                        request.method(),request.url(),response.code(),response.header("Content-Type",""),
-                        ZnackSanitizer.diagnostic(body),e);
-                throw new IOException("Znack API returned invalid JSON (HTTP "+response.code()+"): "
-                        +ZnackSanitizer.message(body),e);
+        for(int attempt=1;;attempt++){
+            try(Response response=client.newCall(request).execute()){
+                String body=response.body()==null?"":response.body().string();
+                if(!response.isSuccessful()&&!(allowNotFoundBody&&response.code()==404&&!body.isBlank())){
+                    if(attempt<UOT_CREDENTIAL_RETRY_ATTEMPTS
+                            &&UOT_CREDENTIAL_ERROR_CODE.equals(ZnackErrorMessages.errorCode(body))){
+                        LOGGER.warn("Znack УОТ credential check failed (errorCode 1090); retrying {}/{}. method={}, url={}",
+                                attempt,UOT_CREDENTIAL_RETRY_ATTEMPTS-1,request.method(),request.url());
+                        sleepBeforeRetry(attempt);
+                        continue;
+                    }
+                    LOGGER.error("Znack API request failed. method={}, url={}, httpStatus={}, contentType={}, responseBody={}",
+                            request.method(),request.url(),response.code(),response.header("Content-Type",""),
+                            ZnackSanitizer.diagnostic(body));
+                    throw new ZnackApiException("Znack API request failed",response.code(),body);
+                }
+                if(body.isBlank())return JsonNull.INSTANCE;
+                try{
+                    return JsonParser.parseString(body);
+                }catch(JsonParseException e){
+                    LOGGER.error("Znack API returned invalid JSON. method={}, url={}, httpStatus={}, contentType={}, responseBody={}",
+                            request.method(),request.url(),response.code(),response.header("Content-Type",""),
+                            ZnackSanitizer.diagnostic(body),e);
+                    throw new IOException("Znack API returned invalid JSON (HTTP "+response.code()+"): "
+                            +ZnackSanitizer.message(body),e);
+                }
             }
         }
+    }
+    private static void sleepBeforeRetry(int attempt)throws IOException{
+        try{Thread.sleep(UOT_CREDENTIAL_RETRY_BASE_DELAY_MS*attempt);}
+        catch(InterruptedException e){Thread.currentThread().interrupt();throw new IOException("Interrupted while retrying Znack request.",e);}
     }
     private String documentId(JsonElement response){
         if(response==null||response.isJsonNull())return "";

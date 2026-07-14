@@ -5,6 +5,7 @@ import javafx.scene.control.CustomMenuItem;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
+import javafx.scene.control.Tooltip;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -81,7 +82,12 @@ public class CategoryFilterMenu {
         });
         button.getItems().addAll(clear, new SeparatorMenuItem());
         for (String category : categories) {
-            CheckBox check = new CheckBox(category.isEmpty() ? emptyLabel : category);
+            String label = category.isEmpty() ? emptyLabel : category;
+            CheckBox check = new CheckBox(label);
+            // Long category names must not stretch the popup across the screen: cap width, ellipsize,
+            // and keep the full text reachable via tooltip.
+            check.setMaxWidth(260);
+            check.setTooltip(new Tooltip(label));
             check.setSelected(selected.contains(category));
             check.selectedProperty().addListener((ignored, old, value) -> {
                 if (value) selected.add(category);

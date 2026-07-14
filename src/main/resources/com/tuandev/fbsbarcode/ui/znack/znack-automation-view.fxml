@@ -67,7 +67,7 @@
         <VBox spacing="8">
             <padding><Insets top="8"/></padding>
             <HBox alignment="CENTER_LEFT" spacing="8">
-                <TextField fx:id="productSearchField" promptText="%kiz_mapping.search_gtin" HBox.hgrow="ALWAYS"/>
+                <TextField fx:id="productSearchField" promptText="%kiz_mapping.search_gtin" prefWidth="260" maxWidth="300"/>
                 <MenuButton fx:id="productCategoryFilterButton" text="%znack.filter.button">
                     <graphic><FontIcon iconLiteral="fth-filter" iconSize="14"/></graphic>
                 </MenuButton>
@@ -94,7 +94,7 @@
         <VBox spacing="8">
             <padding><Insets top="8"/></padding>
             <HBox alignment="CENTER_LEFT" spacing="8">
-                <TextField fx:id="deletedSearchField" promptText="%kiz_mapping.search_gtin" HBox.hgrow="ALWAYS"/>
+                <TextField fx:id="deletedSearchField" promptText="%kiz_mapping.search_gtin" prefWidth="260" maxWidth="300"/>
                 <MenuButton fx:id="deletedCategoryFilterButton" text="%znack.filter.button">
                     <graphic><FontIcon iconLiteral="fth-filter" iconSize="14"/></graphic>
                 </MenuButton>

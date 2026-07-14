@@ -87,6 +87,7 @@ public class ZnackAutomationController {
     private boolean updatingCertificateSelection;
     private boolean reopeningCertificatePopup;
     private boolean productSyncRunning;
+    private boolean signatureTestRunning;
     private long certificateDiscoveryGeneration;
     private long shopGeneration;
 
@@ -388,22 +389,50 @@ public class ZnackAutomationController {
             AlertService.showError(tr("znack.signature.error.expired"));
             return;
         }
-        try {
-            new CryptoProSignatureProvider(loaded.cryptcpPath(), selectedCertificate(), timeout())
-                    .sign(("WCode Znack signature test " + Instant.now()).getBytes(StandardCharsets.UTF_8),
-                            ZnackSignatureContext.SIGNATURE_TEST);
+        if (signatureTestRunning) return;
+        // Signing shells out to CryptoPro (csptest/cryptcp) and may show a token PIN dialog — never on
+        // the FX thread, or the UI freezes with no feedback. Run it as a background Task.
+        String cryptcpPath = loaded.cryptcpPath();
+        String selector = selectedCertificate();
+        Duration signTimeout = timeout();
+        String configKey = configurationKey();
+        setSignatureTestBusy(true);
+        Task<Void> task = new Task<>() {
+            @Override protected Void call() throws Exception {
+                new CryptoProSignatureProvider(cryptcpPath, selector, signTimeout)
+                        .sign(("WCode Znack signature test " + Instant.now()).getBytes(StandardCharsets.UTF_8),
+                                ZnackSignatureContext.SIGNATURE_TEST);
+                return null;
+            }
+        };
+        task.setOnSucceeded(event -> {
+            setSignatureTestBusy(false);
             signerTestedAt = Instant.now();
-            testedConfigurationKey = configurationKey();
+            testedConfigurationKey = configKey;
             repository.log("SIGNATURE_TEST", null, "INFO", "VERIFIED", null);
-            updateSignatureSummary();
-            updateSaveState();
-        } catch (CryptoProException e) {
-            signerTestedAt = null;
-            repository.log("SIGNATURE_TEST", null, "ERROR", signatureDiagnostic(e), null);
             logsTable.getItems().setAll(repository.findLogs());
             updateSignatureSummary();
-            AlertService.showError(signatureError(e));
-        }
+            updateSaveState();
+        });
+        task.setOnFailed(event -> {
+            setSignatureTestBusy(false);
+            Throwable failure = task.getException();
+            CryptoProException error = failure instanceof CryptoProException cpe ? cpe
+                    : new CryptoProException(CryptoProErrorCode.SIGNING_FAILED, "CryptoPro signing failed.", failure);
+            signerTestedAt = null;
+            repository.log("SIGNATURE_TEST", null, "ERROR", signatureDiagnostic(error), null);
+            logsTable.getItems().setAll(repository.findLogs());
+            updateSignatureSummary();
+            AlertService.showError(signatureError(error));
+        });
+        AppTaskExecutor.execute(task);
+    }
+
+    /** Loading state for the signature test: disable the button/combo and show a "loading" label. */
+    private void setSignatureTestBusy(boolean busy) {
+        signatureTestRunning = busy;
+        testSignatureButton.setText(tr(busy ? "znack.signature.loading" : "znack.signature.test"));
+        updateSaveState();
     }
 
     private void load() {
@@ -758,8 +787,9 @@ public class ZnackAutomationController {
 
     private void updateSaveState() {
         saveButton.setDisable(repository == null || loading || Objects.equals(savedFingerprint, fingerprint()));
-        signatureCertificateCombo.setDisable(repository == null);
-        testSignatureButton.setDisable(repository == null || certificateDiscoveryRunning || selectedCertificateExpired());
+        signatureCertificateCombo.setDisable(repository == null || signatureTestRunning);
+        testSignatureButton.setDisable(repository == null || certificateDiscoveryRunning
+                || signatureTestRunning || selectedCertificateExpired());
     }
 
     private void updateSignatureSummary() {

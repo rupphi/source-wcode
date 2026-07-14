@@ -280,6 +280,26 @@ class ZnackModuleTest {
         assertEquals(CryptoProErrorCode.CRYPTOPRO_MISSING,error.code());
     }
 
+    @Test void retriesTransientUotCredentialErrorThenSucceeds() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger attempts=new java.util.concurrent.atomic.AtomicInteger();
+        HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/api/v4/true-api/product/gtin",exchange->{
+            if(attempts.incrementAndGet()==1){
+                byte[] body=("{\"globalErrors\":[{\"errorCode\":1090,\"error\":\"Проверка учетных данных УОТ не пройдена\"}],"
+                        +"\"success\":false}").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(400,body.length);exchange.getResponseBody().write(body);exchange.close();
+            } else {
+                respond(exchange,"[]");
+            }
+        });
+        server.start();
+        try {
+            String base="http://127.0.0.1:"+server.getAddress().getPort();
+            new ZnackApiClient().products(base,"abc");
+            assertEquals(2,attempts.get());
+        } finally { server.stop(0); }
+    }
+
     @Test void apiUsesDocumentedProductPathAndBearerHeader() throws Exception {
         AtomicReference<String> path=new AtomicReference<>(),catalogPath=new AtomicReference<>(),authorization=new AtomicReference<>();
         HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
