@@ -10,6 +10,7 @@ import com.tuandev.fbsbarcode.features.print.PrintTemplate;
 import com.tuandev.fbsbarcode.features.print.PrintTemplateService;
 import com.tuandev.fbsbarcode.models.Order;
 import com.tuandev.fbsbarcode.models.Shop;
+import com.tuandev.fbsbarcode.shared.AtomicFilePublisher;
 
 import java.io.File;
 import java.io.IOException;
@@ -94,17 +95,27 @@ public class PrintHistoryService {
     public OrderExportWorkflow.ExportResult reprint(PrintHistoryJobSummary job, File outputFile, File detailsFile) throws IOException, WriterException {
         PrintTemplate template = printTemplateService.getDefaultTemplate();
         PrintJobOptions printOptions = printPreferenceService.load();
-
-        List<Order> orders = toOrders(repository.findItems(job.id()));
-        barcodePrintService.export(template, orders, outputFile, printOptions);
-        orderDetailsPdfExporter.export(detailsFile, orders, new OrderDetailsPdfExporter.PrintDetailsMetadata(
-                job.supplyId(),
-                job.supplyName(),
-                job.shopName(),
-                job.printedAt(),
-                job.itemCount()
-        ));
-        return new OrderExportWorkflow.ExportResult(orders, List.of(), 0L, List.of());
+        File barcodeStaging = null;
+        File detailsStaging = null;
+        try {
+            List<Order> orders = toOrders(repository.findItems(job.id()));
+            barcodeStaging = AtomicFilePublisher.stagingFile(outputFile, ".pdf");
+            detailsStaging = AtomicFilePublisher.stagingFile(detailsFile, ".pdf");
+            barcodePrintService.export(template, orders, barcodeStaging, printOptions);
+            orderDetailsPdfExporter.export(detailsStaging, orders, new OrderDetailsPdfExporter.PrintDetailsMetadata(
+                    job.supplyId(),
+                    job.supplyName(),
+                    job.shopName(),
+                    job.printedAt(),
+                    job.itemCount()
+            ));
+            AtomicFilePublisher.publish(barcodeStaging, outputFile);
+            AtomicFilePublisher.publish(detailsStaging, detailsFile);
+            return new OrderExportWorkflow.ExportResult(orders, List.of(), 0L, List.of());
+        } finally {
+            AtomicFilePublisher.deleteQuietly(barcodeStaging);
+            AtomicFilePublisher.deleteQuietly(detailsStaging);
+        }
     }
 
     private List<Order> toOrders(List<PrintHistoryItem> items) {

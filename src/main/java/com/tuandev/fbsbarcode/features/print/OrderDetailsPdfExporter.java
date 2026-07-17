@@ -16,6 +16,8 @@ import com.itextpdf.layout.properties.TextAlignment;
 import com.itextpdf.layout.properties.UnitValue;
 import com.itextpdf.layout.properties.VerticalAlignment;
 import com.tuandev.fbsbarcode.models.Order;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
@@ -25,6 +27,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 public class OrderDetailsPdfExporter {
+    private static final Logger LOGGER = LoggerFactory.getLogger(OrderDetailsPdfExporter.class);
     private static final DateTimeFormatter HEADER_DATE_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
 
     public void export(File file, List<Order> orders) throws IOException {
@@ -32,39 +35,39 @@ public class OrderDetailsPdfExporter {
     }
 
     public void export(File file, List<Order> orders, PrintDetailsMetadata metadata) throws IOException {
-        PdfWriter pdfWriter = new PdfWriter(file);
-        PdfDocument pdfDocument = new PdfDocument(pdfWriter);
-        Document document = new Document(pdfDocument, PageSize.A4);
-        document.setMargins(20, 20, 20, 20);
-        document.setFont(GenerateBarcode.getArialFont());
+        try (PdfWriter pdfWriter = new PdfWriter(file);
+             PdfDocument pdfDocument = new PdfDocument(pdfWriter);
+             Document document = new Document(pdfDocument, PageSize.A4)) {
+            document.setMargins(20, 20, 20, 20);
+            document.setFont(GenerateBarcode.getArialFont());
 
-        addMetadataHeader(document, orders, metadata);
+            addMetadataHeader(document, orders, metadata);
 
-        float[] widths = {32, 76, 58, 55, 78, 114, 140};
-        Table table = new Table(widths);
-        table.setWidth(UnitValue.createPercentValue(100));
+            float[] widths = {32, 76, 58, 55, 78, 114, 140};
+            Table table = new Table(widths);
+            table.setWidth(UnitValue.createPercentValue(100));
 
-        addHeader(table, "№");
-        addHeader(table, "№ задания");
-        addHeader(table, "Фото");
-        addHeader(table, "Размер");
-        addHeader(table, "Цвет");
-        addHeader(table, "Артикул продавца");
-        addHeader(table, "Стикер");
+            addHeader(table, "№");
+            addHeader(table, "№ задания");
+            addHeader(table, "Фото");
+            addHeader(table, "Размер");
+            addHeader(table, "Цвет");
+            addHeader(table, "Артикул продавца");
+            addHeader(table, "Стикер");
 
-        for (int index = 0; index < orders.size(); index++) {
-            Order order = orders.get(index);
-            table.addCell(cell(String.valueOf(index + 1)));
-            table.addCell(cell(String.valueOf(order.getId())));
-            table.addCell(imageCell(order));
-            table.addCell(cell(order.getSize()));
-            table.addCell(cell(order.getColor()));
-            table.addCell(cell(order.getArticle()));
-            table.addCell(stickerCell(order.getSticker()));
+            for (int index = 0; index < orders.size(); index++) {
+                Order order = orders.get(index);
+                table.addCell(cell(String.valueOf(index + 1)));
+                table.addCell(cell(String.valueOf(order.getId())));
+                table.addCell(imageCell(order));
+                table.addCell(cell(order.getSize()));
+                table.addCell(cell(order.getColor()));
+                table.addCell(cell(order.getArticle()));
+                table.addCell(stickerCell(order.getSticker()));
+            }
+
+            document.add(table);
         }
-
-        document.add(table);
-        document.close();
     }
 
     private void addMetadataHeader(Document document, List<Order> orders, PrintDetailsMetadata metadata) {
@@ -94,15 +97,21 @@ public class OrderDetailsPdfExporter {
             return cell("");
         }
 
-        ImageData imageData = ImageDataFactory.create(order.getImage());
-        Image img = new Image(imageData);
-        img.scaleToFit(42, 56);
+        try {
+            ImageData imageData = ImageDataFactory.create(order.getImage());
+            Image img = new Image(imageData);
+            img.scaleToFit(42, 56);
 
-        return new Cell()
-                .add(img)
-                .setTextAlignment(TextAlignment.CENTER)
-                .setVerticalAlignment(VerticalAlignment.MIDDLE)
-                .setPadding(5);
+            return new Cell()
+                    .add(img)
+                    .setTextAlignment(TextAlignment.CENTER)
+                    .setVerticalAlignment(VerticalAlignment.MIDDLE)
+                    .setPadding(5);
+        } catch (RuntimeException ex) {
+            LOGGER.warn("Bỏ qua ảnh sản phẩm không hợp lệ khi xuất PDF cho order {}: {}",
+                    order.getId(), ex.getMessage());
+            return cell("");
+        }
     }
 
     private Cell cell(String text) {

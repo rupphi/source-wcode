@@ -6,6 +6,8 @@ import com.tuandev.fbsbarcode.features.print.PrintTemplateService;
 import com.tuandev.fbsbarcode.features.shop.ShopRepository;
 import com.tuandev.fbsbarcode.models.Order;
 import com.tuandev.fbsbarcode.models.Shop;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -47,6 +49,8 @@ class PrintHistoryServiceTest {
             order.setSticker("ABCD 12");
             order.setStickerCode("2040000000001");
             order.setKiz("KIZ-001");
+            order.setImageUrl("https://example.invalid/unsupported-sof7.jpg");
+            order.setImage(unsupportedJpegSof7());
 
             PrintHistoryService historyService = new PrintHistoryService();
             long jobId = historyService.recordSuccessfulJob(
@@ -78,10 +82,34 @@ class PrintHistoryServiceTest {
             assertEquals("44-46", result.exportedOrders().getFirst().getRuSize());
             assertTrue(Files.size(output) > 0);
             assertTrue(Files.size(details) > 0);
+            assertPdfReadable(output);
+            assertPdfReadable(details);
             output.toFile().deleteOnExit();
             details.toFile().deleteOnExit();
         } finally {
             System.clearProperty("wcode.appdata.dir");
         }
+    }
+
+    private void assertPdfReadable(Path file) throws Exception {
+        try (PDDocument document = Loader.loadPDF(file.toFile())) {
+            assertTrue(document.getNumberOfPages() > 0);
+        }
+    }
+
+    private byte[] unsupportedJpegSof7() {
+        return new byte[]{
+                (byte) 0xff, (byte) 0xd8,
+                (byte) 0xff, (byte) 0xc7,
+                0, 17,
+                8,
+                0, 1,
+                0, 1,
+                3,
+                1, 17, 0,
+                2, 17, 0,
+                3, 17, 0,
+                (byte) 0xff, (byte) 0xd9
+        };
     }
 }
