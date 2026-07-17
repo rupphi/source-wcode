@@ -14,8 +14,9 @@ public class ZnackKizOrderService {
         ZnackSafety.requireSigned(s,true);
         if(quantity<=0)throw new IllegalArgumentException("Quantity must be positive.");gtin=GtinNormalizer.requireProductionOrderable(gtin);long id=repository.createDraft(gtin,quantity);
         try{
+            String cisType=resolveCisType(s,gtin);
             JsonObject product=new JsonObject();product.addProperty("gtin",gtin);product.addProperty("quantity",quantity);
-            product.addProperty("serialNumberType","OPERATOR");product.addProperty("templateId",10);product.addProperty("cisType","UNIT");
+            product.addProperty("serialNumberType","OPERATOR");product.addProperty("templateId",10);product.addProperty("cisType",cisType);
             JsonObject attributes=new JsonObject();attributes.addProperty("releaseMethodType","PRODUCTION");
             JsonObject order=new JsonObject();order.addProperty("productGroup","lp");order.add("attributes",attributes);
             JsonArray products=new JsonArray();products.add(product);order.add("products",products);
@@ -47,5 +48,28 @@ public class ZnackKizOrderService {
     }
     private String text(JsonObject o,String...k){for(String x:k)if(o.has(x)&&!o.get(x).isJsonNull())return o.get(x).getAsString();return "";}
     private int integer(JsonObject o,String k){return o.has(k)&&!o.get(k).isJsonNull()?o.get(k).getAsInt():0;}
+    private String resolveCisType(Settings settings,String gtin)throws Exception{
+        Product stored=repository.findProduct(gtin).orElseThrow(
+                ()->new IllegalArgumentException("GTIN is not registered for the selected shop."));
+        if(stored.cisType()!=null)return lightIndustryCisType(stored.cisType());
+        JsonElement response=api.productInfo(settings.resolvedTrueApiBaseUrl(),auth.trueApiToken(settings),gtin);
+        JsonArray products=response.isJsonArray()?response.getAsJsonArray():response.getAsJsonObject().getAsJsonArray("results");
+        if(products!=null)for(JsonElement element:products){
+            if(!element.isJsonObject())continue;
+            JsonObject product=element.getAsJsonObject();
+            String candidate=text(product,"gtin","productGtin");
+            if(candidate.isBlank()||!gtin.equals(GtinNormalizer.normalize(candidate)))continue;
+            String cisType=Boolean.TRUE.equals(bool(product,"isKit","is_kit"))?"BUNDLE":"UNIT";
+            repository.updateProductCisType(gtin,cisType);
+            return cisType;
+        }
+        throw new IllegalStateException("Znack did not return the marking code type for GTIN "+gtin+".");
+    }
+    private Boolean bool(JsonObject o,String...keys){for(String key:keys)if(o.has(key)&&!o.get(key).isJsonNull()){JsonElement value=o.get(key);if(value.isJsonPrimitive()){JsonPrimitive primitive=value.getAsJsonPrimitive();if(primitive.isBoolean())return primitive.getAsBoolean();String text=primitive.getAsString();if("true".equalsIgnoreCase(text)||"1".equals(text))return true;if("false".equalsIgnoreCase(text)||"0".equals(text))return false;}}return null;}
+    private String lightIndustryCisType(String value){
+        String cisType=value==null?"UNIT":value.trim().toUpperCase(java.util.Locale.ROOT);
+        if("UNIT".equals(cisType)||"BUNDLE".equals(cisType))return cisType;
+        throw new IllegalStateException("Unsupported light-industry marking code type: "+cisType+".");
+    }
     private String required(String value,String message){if(value==null||value.isBlank())throw new IllegalStateException(message);return value;}
 }

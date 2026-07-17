@@ -28,7 +28,7 @@ public class ZnackProductService {
                     text(o,"certificateDate","certificate_date"),text(o,"productionDate","production_date"),
                     bool(o,"goodMarkFlag","good_mark_flag"),bool(o,"goodTurnFlag","good_turn_flag"),
                     text(o,"goodStatus","good_status","cardStatus"),text(o,"goodDetailedStatus","good_detailed_status"),
-                    "",null));}}
+                    "",null,cisType(o)));}}
             int received=array==null?0:array.size();fetched+=received;page++;
             if(total==null&&received<PAGE_SIZE)break;
             if(received==0)break;
@@ -76,7 +76,7 @@ public class ZnackProductService {
                                     first(text(card,"goodStatus","good_status","cardStatus"),current.cardStatus()),
                                     first(text(card,"goodDetailedStatus","good_detailed_status"),current.cardDetailedStatus()),
                                     first(category,current.category()),
-                                    Instant.now()));
+                                    Instant.now(),current.cisType()));
                         }catch(IllegalArgumentException ignored){}
                     }
                 }
@@ -129,6 +129,12 @@ public class ZnackProductService {
         return "";
     }
     private String compact(String value){return value==null?"":value.replaceAll("\\s+","").trim();}
+    private String cisType(JsonObject product){
+        String explicit=text(product,"cisType","cis_type");
+        if(!explicit.isBlank())return explicit;
+        if(Boolean.TRUE.equals(bool(product,"isKit","is_kit")))return "BUNDLE";
+        return "UNIT";
+    }
     private Boolean bool(JsonObject o,String...keys){for(String k:keys)if(o.has(k)&&!o.get(k).isJsonNull()){JsonElement value=o.get(k);if(value.isJsonPrimitive()){JsonPrimitive primitive=value.getAsJsonPrimitive();if(primitive.isBoolean())return primitive.getAsBoolean();String text=primitive.getAsString();if("true".equalsIgnoreCase(text)||"1".equals(text))return true;if("false".equalsIgnoreCase(text)||"0".equals(text))return false;}}return null;}
     private String text(JsonObject o,String...keys){for(String k:keys)if(o.has(k)&&!o.get(k).isJsonNull()){JsonElement value=o.get(k);return value.isJsonPrimitive()?value.getAsString():value.toString();}return "";}
 }

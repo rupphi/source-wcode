@@ -165,11 +165,26 @@ public final class ZnackModels {
     public record Product(String gtin, String productName, String tnVed, String certificateType,
                           String certificateNumber, String certificateDate, String productionDate,
                           Boolean goodMarkFlag, Boolean goodTurnFlag, String cardStatus,
-                          String cardDetailedStatus, String category, Instant readinessCheckedAt) {
+                          String cardDetailedStatus, String category, Instant readinessCheckedAt,
+                          String cisType) {
+        public Product {
+            cisType = cisType == null || cisType.isBlank()
+                    ? null
+                    : cisType.trim().toUpperCase(java.util.Locale.ROOT);
+        }
+
         public Product(String gtin, String productName, String tnVed, String certificateType,
                        String certificateNumber, String certificateDate, String productionDate) {
             this(gtin, productName, tnVed, certificateType, certificateNumber, certificateDate, productionDate,
-                    null, null, "", "", "", null);
+                    null, null, "", "", "", null, null);
+        }
+
+        public Product(String gtin, String productName, String tnVed, String certificateType,
+                       String certificateNumber, String certificateDate, String productionDate,
+                       Boolean goodMarkFlag, Boolean goodTurnFlag, String cardStatus,
+                       String cardDetailedStatus, String category, Instant readinessCheckedAt) {
+            this(gtin, productName, tnVed, certificateType, certificateNumber, certificateDate, productionDate,
+                    goodMarkFlag, goodTurnFlag, cardStatus, cardDetailedStatus, category, readinessCheckedAt, null);
         }
 
         public boolean hasDocumentOverride() {

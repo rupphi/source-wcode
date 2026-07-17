@@ -153,7 +153,7 @@ public final class ZnackSchemaSupport {
                     shop_id INTEGER NOT NULL,gtin TEXT NOT NULL,product_name TEXT,tn_ved TEXT,certificate_type TEXT,
                     certificate_number TEXT,certificate_date TEXT,production_date TEXT,good_mark_flag INTEGER,
                     good_turn_flag INTEGER,card_status TEXT,card_detailed_status TEXT,category TEXT,
-                    readiness_checked_at TEXT,deleted_at TEXT,synced_at TEXT NOT NULL,
+                    readiness_checked_at TEXT,deleted_at TEXT,cis_type TEXT,synced_at TEXT NOT NULL,
                     PRIMARY KEY(shop_id,gtin),FOREIGN KEY(shop_id) REFERENCES shops(id) ON DELETE CASCADE)
                     """);
             st.execute("""
@@ -282,6 +282,9 @@ public final class ZnackSchemaSupport {
             }
             if (!hasColumn(c, "znack_products", "category")) {
                 st.execute("ALTER TABLE znack_products ADD COLUMN category TEXT");
+            }
+            if (!hasColumn(c, "znack_products", "cis_type")) {
+                st.execute("ALTER TABLE znack_products ADD COLUMN cis_type TEXT");
             }
         }
     }

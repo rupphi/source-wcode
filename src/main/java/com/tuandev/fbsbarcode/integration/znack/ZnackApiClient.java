@@ -32,6 +32,10 @@ public class ZnackApiClient {
     public JsonElement products(String base, String token, int page, int limit) throws IOException {
         return get(trueApiBase(base, 4), "/product/gtin?includeSubaccount=false&limit=" + limit + "&page=" + page + "&pg=lp", token);
     }
+    public JsonElement productInfo(String base,String token,String gtin)throws IOException{
+        JsonObject body=new JsonObject();JsonArray gtins=new JsonArray();gtins.add(gtin);body.add("gtins",gtins);
+        return post(trueApiBase(base,4),"/product/info",token,body);
+    }
     public JsonElement productCards(String base, String token, String gtins) throws IOException {
         return get(trueApiBase(base, 3), "/nk/feed-product?gtins=" + url(gtins), token);
     }

@@ -330,7 +330,8 @@ class ZnackModuleTest {
         server.start();
         try {
             ZnackRepository repository=repository(1,"Shop A");
-            repository.upsertProducts(List.of(new Product("04601234567890","Product",null,null,null,null,null)));
+            repository.upsertProducts(List.of(new Product("04601234567890","Product",null,null,null,null,null,
+                    null,null,"","","",null,"UNIT")));
             String base="http://127.0.0.1:"+server.getAddress().getPort();
             ZnackSignatureProvider signer=(input,context)->{
                 assertEquals(ZnackSignatureContext.SUZ_POST_BODY,context);
@@ -354,6 +355,42 @@ class ZnackModuleTest {
             assertEquals("OPERATOR",product.get("serialNumberType").getAsString());
             assertEquals(10,product.get("templateId").getAsInt());
             assertEquals("UNIT",product.get("cisType").getAsString());
+        } finally { server.stop(0); }
+    }
+
+    @Test void suzOrderUsesBundleTypeForComplexLightIndustryGtin() throws Exception {
+        AtomicReference<byte[]> sent=new AtomicReference<>();
+        AtomicReference<String> productInfoAuthorization=new AtomicReference<>();
+        HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/api/v4/true-api/product/info",exchange->{
+            productInfoAuthorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            respond(exchange,"{\"results\":[{\"gtin\":\"04627154623006\",\"isKit\":true}]}");
+        });
+        server.createContext("/api/v3/order",exchange->{
+            sent.set(exchange.getRequestBody().readAllBytes());
+            respond(exchange,"{\"orderId\":\"remote\"}");
+        });
+        server.start();
+        try {
+            ZnackRepository repository=repository(1,"Shop A");
+            repository.upsertProducts(List.of(new Product("04627154623006","Complex clothing set",null,
+                    null,null,null,null)));
+            String base="http://127.0.0.1:"+server.getAddress().getPort();
+            ZnackSignatureProvider signer=(input,context)->new CryptoProSigningResult(new byte[]{0x30,0x02,0x01,0x00},"");
+            ZnackAuthService auth=new ZnackAuthService(new ZnackApiClient(),signer){
+                @Override public String suzToken(Settings s){return "dynamic-client-token";}
+                @Override public String trueApiToken(Settings s){return "true-api-token";}
+            };
+
+            new ZnackKizOrderService(new ZnackApiClient(),auth,signer,repository)
+                    .buy(testedSettings(base,base,"oms","connection",""),"04627154623006",1);
+
+            JsonObject product=JsonParser.parseString(new String(sent.get(),StandardCharsets.UTF_8))
+                    .getAsJsonObject().getAsJsonArray("products").get(0).getAsJsonObject();
+            assertEquals(10,product.get("templateId").getAsInt());
+            assertEquals("BUNDLE",product.get("cisType").getAsString());
+            assertEquals("Bearer true-api-token",productInfoAuthorization.get());
+            assertEquals("BUNDLE",repository.findProduct("04627154623006").orElseThrow().cisType());
         } finally { server.stop(0); }
     }
 
@@ -537,7 +574,7 @@ class ZnackModuleTest {
         ZnackApiClient api=new ZnackApiClient(){
             @Override public JsonElement products(String base,String token){
                 return JsonParser.parseString("""
-                        {"results":[{"gtin":"04601234567890","productName":"Product",
+                        {"results":[{"gtin":"04601234567890","productName":"Product","isKit":true,
                         "certificate_type":"DECLARATION","certificate_number":"DOC-1",
                         "certificate_date":"20.06.2024","production_date":"21.06.2024"}]}
                         """);
@@ -569,6 +606,7 @@ class ZnackModuleTest {
         assertEquals("Обувь домашняя, Обувь детская",synced.category());
         assertEquals("DOC-1",synced.certificateNumber());
         assertEquals("21.06.2024",synced.productionDate());
+        assertEquals("BUNDLE",synced.cisType());
 
         repository.updateProductMetadata(new Product(synced.gtin(),synced.productName(),"manual-tnved",
                 synced.certificateType(),synced.certificateNumber(),synced.certificateDate(),synced.productionDate()));
@@ -579,6 +617,7 @@ class ZnackModuleTest {
 
         repository.upsertProducts(List.of(new Product(synced.gtin(),"Updated name","6202400000",null,null,null,null)));
         assertEquals("6202400000",repository.findProducts().getFirst().tnVed());
+        assertEquals("BUNDLE",repository.findProducts().getFirst().cisType());
     }
 
     @Test void productSyncFetchesEveryReportedPage() throws Exception {
@@ -895,6 +934,7 @@ class ZnackModuleTest {
             assertTrue(hasColumn(st,"znack_products","good_mark_flag"));
             assertTrue(hasColumn(st,"znack_products","good_turn_flag"));
             assertTrue(hasColumn(st,"znack_products","readiness_checked_at"));
+            assertTrue(hasColumn(st,"znack_products","cis_type"));
         }
         assertEquals("Product",repository.findProducts().getFirst().productName());
     }
