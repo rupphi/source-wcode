@@ -3,6 +3,8 @@ package com.tuandev.fbsbarcode.jdesk;
 import com.tuandev.fbsbarcode.BuildConfig;
 import com.tuandev.fbsbarcode.jdesk.supply.SupplyCommandService;
 import com.tuandev.fbsbarcode.jdesk.supply.SupplyCommandServiceCommands;
+import com.tuandev.fbsbarcode.jdesk.supply.SupplyDetailCommandService;
+import com.tuandev.fbsbarcode.jdesk.supply.SupplyDetailCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.wildberries.WildberriesCommandService;
 import com.tuandev.fbsbarcode.jdesk.wildberries.WildberriesCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.workspace.JDeskCommands;
@@ -30,12 +32,14 @@ public final class WCodeDesktop {
             WorkspaceCommandService workspace = new WorkspaceCommandService();
             WildberriesCommandService wildberries = new WildberriesCommandService();
             SupplyCommandService supplies = new SupplyCommandService();
+            SupplyDetailCommandService supplyDetails = new SupplyDetailCommandService();
             JDeskApplication.Builder application = JDeskApplication.builder()
                     .id("com.tuandev.wcode")
                     .commands(JDeskCommands.combine(
                             WorkspaceCommandServiceCommands.create(workspace),
                             WildberriesCommandServiceCommands.create(wildberries),
-                            SupplyCommandServiceCommands.create(supplies)))
+                            SupplyCommandServiceCommands.create(supplies),
+                            SupplyDetailCommandServiceCommands.create(supplyDetails)))
                     .capabilities(Capabilities.fromResource("jdesk-capabilities.json"))
                     .contentSecurityPolicy(Csp.defaults())
                     .window(WindowConfig.builder()

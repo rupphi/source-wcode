@@ -123,7 +123,7 @@ public final class SupplyCommandService {
                 request.shopId(), request.query().strip(), request.status(), done, request.page(), request.pageSize());
     }
 
-    private static SupplyItem toItem(WbSupplySummary supply) {
+    static SupplyItem toItem(WbSupplySummary supply) {
         Objects.requireNonNull(supply, "supply");
         String id = requireId(supply.getSupplyId());
         String name = sanitizeDisplayText(supply.getName(), MAX_NAME_LENGTH);
@@ -154,7 +154,7 @@ public final class SupplyCommandService {
         return value.strip();
     }
 
-    private static String sanitizeDisplayText(String value, int maxLength) {
+    static String sanitizeDisplayText(String value, int maxLength) {
         if (value == null) {
             return "";
         }
