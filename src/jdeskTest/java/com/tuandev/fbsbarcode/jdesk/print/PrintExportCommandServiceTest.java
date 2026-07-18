@@ -22,8 +22,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -163,8 +167,48 @@ class PrintExportCommandServiceTest {
         assertEquals(null, error.getCause());
     }
 
+    @Test
+    void interruptionOwnsTheWholeNativeSaveTransaction() throws Exception {
+        CountDownLatch dialogStarted = new CountDownLatch(1);
+        CompletableFuture<Optional<Path>> dialogResult = new CompletableFuture<>();
+        AtomicInteger exports = new AtomicInteger();
+        PrintExportCommandService service = serviceWithDialog(
+                (context, suggestedName) -> {
+                    dialogStarted.countDown();
+                    return dialogResult;
+                },
+                (shop, source, options, labels, details) -> {
+                    exports.incrementAndGet();
+                    return new PrintExportCommandService.PdfExportReceipt(1, 0);
+                },
+                ignored -> {});
+        AtomicReference<java.util.concurrent.CompletionStage<PrintExportCommandService.PrintExportResponse>> result =
+                new AtomicReference<>();
+
+        Thread invocation = Thread.ofVirtual().start(() -> result.set(service.exportSupply(request(7), null)));
+        assertTrue(dialogStarted.await(5, TimeUnit.SECONDS));
+        invocation.interrupt();
+        invocation.join(Duration.ofSeconds(5));
+
+        assertFalse(invocation.isAlive());
+        assertTrue(result.get().toCompletableFuture().isDone());
+        assertTrue(result.get().toCompletableFuture().isCompletedExceptionally());
+        assertThrows(CancellationException.class, () -> result.get().toCompletableFuture().join());
+        assertEquals(0, exports.get());
+    }
+
     private PrintExportCommandService service(
             Picker picker,
+            PrintExportCommandService.PdfExporter exporter,
+            PrintExportCommandService.FileOpener opener) {
+        return serviceWithDialog(
+                (context, suggestedName) -> CompletableFuture.completedFuture(picker.pick(suggestedName)),
+                exporter,
+                opener);
+    }
+
+    private PrintExportCommandService serviceWithDialog(
+            PrintExportCommandService.FilePicker picker,
             PrintExportCommandService.PdfExporter exporter,
             PrintExportCommandService.FileOpener opener) {
         return new PrintExportCommandService(
@@ -174,13 +218,12 @@ class PrintExportCommandServiceTest {
                         "Supply / One",
                         List.of(order(101), order(102))),
                 (shop, orders) -> {},
-                (context, suggestedName) -> CompletableFuture.completedFuture(picker.pick(suggestedName)),
+                picker,
                 exporter,
                 opener,
                 NOW,
                 Duration.ofMinutes(30),
-                8,
-                Runnable::run);
+                8);
     }
 
     private PrintExportCommandService.ExportSupplyRequest request(int shopId) {

@@ -37,9 +37,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
-import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutionException;
 import java.util.function.Supplier;
 
 public final class PrintExportCommandService {
@@ -49,10 +50,6 @@ public final class PrintExportCommandService {
     private static final int MAX_BARCODE_COPIES = 100;
     private static final int MAX_FILE_NAME_LENGTH = 180;
     private static final String SESSION_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
-    private static final Executor VIRTUAL_EXECUTOR = command -> Thread.ofVirtual()
-            .name("wcode-print-export")
-            .start(command);
-
     private final Supplier<List<Shop>> shops;
     private final PrintSourceReader sources;
     private final KizVerifier kizVerifier;
@@ -62,7 +59,6 @@ public final class PrintExportCommandService {
     private final Clock clock;
     private final Duration sessionTtl;
     private final int maxSessions;
-    private final Executor executor;
     private final Map<String, ExportSession> sessions = new LinkedHashMap<>();
 
     public PrintExportCommandService() {
@@ -96,7 +92,6 @@ public final class PrintExportCommandService {
         this.clock = Clock.systemUTC();
         this.sessionTtl = Duration.ofMinutes(30);
         this.maxSessions = 8;
-        this.executor = VIRTUAL_EXECUTOR;
     }
 
     PrintExportCommandService(
@@ -108,8 +103,7 @@ public final class PrintExportCommandService {
             FileOpener opener,
             Clock clock,
             Duration sessionTtl,
-            int maxSessions,
-            Executor executor) {
+            int maxSessions) {
         this.shops = Objects.requireNonNull(shops, "shops");
         this.sources = Objects.requireNonNull(sources, "sources");
         this.kizVerifier = Objects.requireNonNull(kizVerifier, "kizVerifier");
@@ -118,7 +112,6 @@ public final class PrintExportCommandService {
         this.opener = Objects.requireNonNull(opener, "opener");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.sessionTtl = Objects.requireNonNull(sessionTtl, "sessionTtl");
-        this.executor = Objects.requireNonNull(executor, "executor");
         if (sessionTtl.isZero() || sessionTtl.isNegative() || maxSessions <= 0) {
             throw new IllegalArgumentException("Print export session limits are invalid.");
         }
@@ -131,25 +124,31 @@ public final class PrintExportCommandService {
             ExportSupplyRequest request, InvocationContext context) {
         ValidatedExport validated = validateExport(request);
         Shop shop = requireShop(validated.shopId());
-        return CompletableFuture.supplyAsync(
-                        () -> prepare(shop, validated), executor)
-                .thenCompose(prepared -> picker.pick(context, suggestedName(prepared.source().supplyId()))
-                        .handle((selected, error) -> {
-                            if (error != null) {
-                                throw safeFailure("Native save dialog could not be opened.", "dialog_unavailable", true);
-                            }
-                            if (selected == null) {
-                                throw safeFailure("Native save dialog returned an invalid result.", "dialog_unavailable", true);
-                            }
-                            return new SelectedExport(prepared, selected);
-                        }))
-                .thenCompose(selected -> {
-                    if (selected.path().isEmpty()) {
-                        return CompletableFuture.completedFuture(cancelledResponse());
-                    }
-                    return CompletableFuture.supplyAsync(
-                            () -> exportSelected(selected.prepared(), selected.path().get()), executor);
-                });
+        try {
+            PreparedExport prepared = prepare(shop, validated);
+            Optional<Path> selected;
+            try {
+                CompletionStage<Optional<Path>> dialog = picker.pick(
+                        context, suggestedName(prepared.source().supplyId()));
+                if (dialog == null) {
+                    throw safeFailure("Native save dialog returned an invalid result.", "dialog_unavailable", true);
+                }
+                selected = await(dialog);
+                if (selected == null) {
+                    throw safeFailure("Native save dialog returned an invalid result.", "dialog_unavailable", true);
+                }
+            } catch (CancellationException error) {
+                return CompletableFuture.failedFuture(error);
+            } catch (RuntimeException error) {
+                throw safeFailure("Native save dialog could not be opened.", "dialog_unavailable", true);
+            }
+            if (selected.isEmpty()) {
+                return CompletableFuture.completedFuture(cancelledResponse());
+            }
+            return CompletableFuture.completedFuture(exportSelected(prepared, selected.get()));
+        } catch (RuntimeException error) {
+            return CompletableFuture.failedFuture(error);
+        }
     }
 
     @DesktopCommand("printing.openExport")
@@ -160,7 +159,7 @@ public final class PrintExportCommandService {
         requireShop(validated.shopId());
         ExportSession session = requireSession(validated.shopId(), validated.exportId());
         Path file = validated.fileKind().equals("details") ? session.details() : session.labels();
-        return CompletableFuture.supplyAsync(() -> {
+        try {
             if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
                 throw SafeCommandExecutor.invalidRequest("The exported PDF is no longer available.");
             }
@@ -169,8 +168,32 @@ public final class PrintExportCommandService {
             } catch (Exception error) {
                 throw safeFailure("The exported PDF could not be opened.", "open_failed", true);
             }
-            return new OpenExportResponse(true, sanitizeFileName(file));
-        }, executor);
+            return CompletableFuture.completedFuture(
+                    new OpenExportResponse(true, sanitizeFileName(file)));
+        } catch (RuntimeException error) {
+            return CompletableFuture.failedFuture(error);
+        }
+    }
+
+    private static <T> T await(CompletionStage<T> stage) {
+        try {
+            return stage.toCompletableFuture().get();
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new CancellationException("Native print export was cancelled.");
+        } catch (ExecutionException error) {
+            Throwable cause = error.getCause();
+            if (cause instanceof CancellationException cancelled) {
+                throw cancelled;
+            }
+            if (cause instanceof RuntimeException runtime) {
+                throw runtime;
+            }
+            if (cause instanceof Error fatal) {
+                throw fatal;
+            }
+            throw new java.util.concurrent.CompletionException(cause);
+        }
     }
 
     private PreparedExport prepare(Shop shop, ValidatedExport validated) {
@@ -525,9 +548,6 @@ public final class PrintExportCommandService {
     }
 
     private record PreparedExport(Shop shop, PrintSource source, PrintJobOptions options) {
-    }
-
-    private record SelectedExport(PreparedExport prepared, Optional<Path> path) {
     }
 
     private record OutputTargets(Path labels, Path details) {

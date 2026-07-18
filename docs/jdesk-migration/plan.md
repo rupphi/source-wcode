@@ -263,7 +263,7 @@ Vertical slices, each with contract → RED test → Java adapter → React UI �
 - [x] Refresh orders/status and restore selection.
 - [x] Excel order import through a native open dialog, bounded parser, opaque paged session and
       live sticker lookup.
-- [ ] Sticker preview and PDF save/open are intentionally handled as one print transaction in
+- [x] Sticker lookup and PDF save/open are handled as one bounded print transaction in
       Phase 5. The legacy workflow does not provide a separate Excel-export feature.
 
 ### Checkpoint C: FBS read workflow
@@ -273,12 +273,13 @@ recover from rate limit/offline/error without JavaFX.
 
 ## Phase 5: Printing, packing and history
 
-1. Port print option contract and template list.
-2. Port PDF generation command and save/open workflow.
-3. Port packing workflow and KIZ availability checks.
-4. Port print history/reprint.
-5. Port template designer with unit conversion and visual preview.
-6. Validate physical 58×40 output and Windows printer behavior.
+- [x] Port print option contract and template list.
+- [x] Port PDF generation command and native save/open workflow, including KIZ preflight and
+      safe background-attachment handoff.
+- [ ] Port packing workflow and its operator-facing KIZ availability states.
+- [ ] Port print history/reprint.
+- [ ] Port template designer with unit conversion and visual preview.
+- [ ] Validate physical 58×40 output and Windows printer behavior.
 
 Windows print gaps in jDesk 0.1.3 are a hard release risk. Preserve the existing Java PDF/OS
 path or add a verified Windows adapter; do not claim parity from macOS/browser preview.
