@@ -63,6 +63,29 @@ luồng hiện tại trong UI mới, nhanh, rõ trạng thái, dùng được b�
   smoke chỉ chạy trên isolated app-data hoặc artifact không cần KIZ; không consume live KIZ nếu chưa
   có approval riêng của người dùng.
 
+### GTIN mapping contract
+
+- `kizMapping.catalog` chỉ đọc local SQLite và yêu cầu shop hiện hữu, query tối đa 120 ký tự,
+  tối đa 30 category filter, page dương và page-size 10–100. Query database lấy tối đa
+  `pageSize + 1` GTIN để trả `hasMore`; frontend không nhận toàn bộ Znack catalog.
+- Catalog DTO chỉ gồm GTIN chuẩn hoá, product/category đã giới hạn, số KIZ available/reserved/
+  consumed, số mapping rule, trạng thái order/pipeline đã allowlist, lỗi đã redaction và thời điểm
+  sync. Raw KIZ, Znack response, certificate/token, SQL/stack trace và object repository không qua
+  bridge.
+- `kizMapping.editor` trả tối đa 500 subject KIZ hiện có, tối đa 100 gender/subject, current rule và
+  owner GTIN cho mỗi lựa chọn. Technical GTIN `029…`, subject/gender không thuộc catalog, duplicate,
+  quota vượt giới hạn hoặc shop/GTIN mismatch phải bị từ chối tại Java boundary.
+- `kizMapping.save` là local mutation riêng với capability `kiz-mapping:write`; request tối đa 500
+  rule. Java re-resolve shop, registered GTIN, subject/gender và owner conflict trước khi gọi một
+  transaction `BEGIN IMMEDIATE` thay toàn bộ rule của GTIN. Empty selection có nghĩa clear mapping;
+  response trả editor/catalog summary mới, không echo dữ liệu không tin cậy.
+- React giữ parity search/category/page, inventory/status/error state và editor ba vùng
+  subject → gender → selected rules. Wildcard “mọi giới tính” và exact gender loại trừ nhau; lựa chọn
+  đang thuộc GTIN khác vẫn hiển thị nhưng disabled, và save/error/cancel có trạng thái rõ ràng.
+- Sync sản phẩm, buy KIZ, retry introduction và CryptoPro là remote/mutation workflow riêng trong
+  các increment Phase 7 tiếp theo. Native test của editor chỉ ghi isolated app-data; live database
+  chỉ được smoke read-only nếu chưa có approval mutation riêng.
+
 ## Tech Stack
 
 - Java 25, jDesk `0.1.3`, Gradle wrapper `9.6.1`.

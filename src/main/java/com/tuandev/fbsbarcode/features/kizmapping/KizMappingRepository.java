@@ -34,6 +34,83 @@ public class KizMappingRepository {
                 """, shopId);
     }
 
+    public List<String> findGtinCategories(int shopId) {
+        return strings("""
+                SELECT DISTINCT TRIM(category) FROM znack_products
+                WHERE shop_id=? AND gtin NOT LIKE '029%' AND deleted_at IS NULL
+                  AND category IS NOT NULL AND TRIM(category)<>''
+                ORDER BY TRIM(category) COLLATE NOCASE
+                """, shopId);
+    }
+
+    public List<ZnackGtinInventorySummary> findGtinSummariesPage(
+            int shopId, String query, List<String> categories, int limit, int offset) {
+        if (shopId <= 0 || query == null || categories == null || categories.size() > 30
+                || limit < 1 || limit > 101 || offset < 0 || offset > 10_000_000) {
+            throw new IllegalArgumentException("Invalid GTIN summary page.");
+        }
+        String categoryClause = categories.isEmpty()
+                ? ""
+                : " AND TRIM(p.category) IN (" + String.join(",", Collections.nCopies(categories.size(), "?")) + ")";
+        String sql = """
+                SELECT p.gtin,p.product_name,p.category,
+                  SUM(CASE WHEN c.status='AVAILABLE' THEN 1 ELSE 0 END) available_count,
+                  SUM(CASE WHEN c.status='RESERVED' THEN 1 ELSE 0 END) reserved_count,
+                  SUM(CASE WHEN c.status='CONSUMED' THEN 1 ELSE 0 END) consumed_count,
+                  (SELECT COUNT(*) FROM znack_gtin_mapping_rules r WHERE r.shop_id=p.shop_id AND r.gtin=p.gtin) rule_count,
+                  (SELECT o.local_status FROM kiz_orders o WHERE o.shop_id=p.shop_id AND o.gtin=p.gtin ORDER BY o.updated_at DESC LIMIT 1) order_status,
+                  (SELECT x.stage FROM znack_purchase_pipelines x WHERE x.shop_id=p.shop_id AND x.gtin=p.gtin ORDER BY x.updated_at DESC LIMIT 1) pipeline_stage,
+                  COALESCE((SELECT x.error_message FROM znack_purchase_pipelines x WHERE x.shop_id=p.shop_id AND x.gtin=p.gtin ORDER BY x.updated_at DESC LIMIT 1),
+                           (SELECT o.error_message FROM kiz_orders o WHERE o.shop_id=p.shop_id AND o.gtin=p.gtin ORDER BY o.updated_at DESC LIMIT 1)) latest_error,
+                  p.synced_at
+                FROM znack_products p
+                LEFT JOIN kiz_codes c ON c.shop_id=p.shop_id AND c.gtin=p.gtin
+                WHERE p.shop_id=? AND p.gtin NOT LIKE '029%' AND p.deleted_at IS NULL
+                  AND (?='' OR LOWER(p.gtin) LIKE ? ESCAPE '\\'
+                       OR LOWER(COALESCE(p.product_name,'')) LIKE ? ESCAPE '\\'
+                       OR LOWER(COALESCE(p.category,'')) LIKE ? ESCAPE '\\')
+                """ + categoryClause + """
+                GROUP BY p.shop_id,p.gtin,p.product_name,p.category,p.synced_at
+                ORDER BY CASE WHEN p.category IS NULL OR TRIM(p.category)='' THEN 1 ELSE 0 END,
+                         TRIM(p.category) COLLATE NOCASE,p.gtin
+                LIMIT ? OFFSET ?
+                """;
+        try (Connection c = Database.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            int parameter = 1;
+            ps.setInt(parameter++, shopId);
+            String normalizedQuery = query.trim().toLowerCase(java.util.Locale.ROOT);
+            String pattern = "%" + escapeLike(normalizedQuery) + "%";
+            ps.setString(parameter++, normalizedQuery);
+            ps.setString(parameter++, pattern);
+            ps.setString(parameter++, pattern);
+            ps.setString(parameter++, pattern);
+            for (String category : categories) ps.setString(parameter++, category.trim());
+            ps.setInt(parameter++, limit);
+            ps.setInt(parameter, offset);
+            try (ResultSet rs = ps.executeQuery()) {
+                List<ZnackGtinInventorySummary> result = new ArrayList<>();
+                while (rs.next()) result.add(summary(rs));
+                return result;
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public boolean hasGtinProduct(int shopId, String gtin) {
+        String normalized = GtinNormalizer.normalize(gtin);
+        try (Connection c = Database.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "SELECT 1 FROM znack_products WHERE shop_id=? AND gtin=? AND deleted_at IS NULL")) {
+            ps.setInt(1, shopId);
+            ps.setString(2, normalized);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public List<String> findGenders(int shopId) {
         return findGendersForSubject(shopId, null);
     }
@@ -242,9 +319,7 @@ public class KizMappingRepository {
             try (ResultSet rs = ps.executeQuery()) {
                 List<ZnackGtinInventorySummary> result = new ArrayList<>();
                 while (rs.next()) {
-                    result.add(new ZnackGtinInventorySummary(rs.getString(1), rs.getString(2), rs.getString(3),
-                            rs.getInt(4), rs.getInt(5), rs.getInt(6), rs.getInt(7), rs.getString(8),
-                            rs.getString(9), rs.getString(10), instant(rs.getString(11))));
+                    result.add(summary(rs));
                 }
                 return result;
             }
@@ -270,7 +345,7 @@ public class KizMappingRepository {
                 ps.setString(5, selection.wildcardGender() ? WILDCARD_GENDER : normalizeGender(selection.genderValue()));
                 try (ResultSet rs = ps.executeQuery()) {
                     if (rs.next()) {
-                        throw new IllegalStateException("Mapping is already owned by GTIN " + rs.getString(1));
+                        throw new MappingConflictException();
                     }
                 }
             }
@@ -327,5 +402,21 @@ public class KizMappingRepository {
 
     private static Instant instant(String value) {
         return value == null || value.isBlank() ? null : Instant.parse(value);
+    }
+
+    private static ZnackGtinInventorySummary summary(ResultSet rs) throws SQLException {
+        return new ZnackGtinInventorySummary(rs.getString(1), rs.getString(2), rs.getString(3),
+                rs.getInt(4), rs.getInt(5), rs.getInt(6), rs.getInt(7), rs.getString(8),
+                rs.getString(9), rs.getString(10), instant(rs.getString(11)));
+    }
+
+    private static String escapeLike(String value) {
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    }
+
+    public static final class MappingConflictException extends IllegalStateException {
+        public MappingConflictException() {
+            super("The mapping is already owned by another GTIN.");
+        }
     }
 }

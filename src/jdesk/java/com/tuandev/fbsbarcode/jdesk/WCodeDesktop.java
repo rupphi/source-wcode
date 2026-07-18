@@ -5,6 +5,8 @@ import com.tuandev.fbsbarcode.jdesk.fbo.FboCatalogCommandService;
 import com.tuandev.fbsbarcode.jdesk.fbo.FboCatalogCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.fbo.FboPrintCommandService;
 import com.tuandev.fbsbarcode.jdesk.fbo.FboPrintCommandServiceCommands;
+import com.tuandev.fbsbarcode.jdesk.kizmapping.KizMappingCommandService;
+import com.tuandev.fbsbarcode.jdesk.kizmapping.KizMappingCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.order.ExcelOrderImportCommandService;
 import com.tuandev.fbsbarcode.jdesk.order.ExcelOrderImportCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.packing.PackingCommandService;
@@ -59,6 +61,7 @@ public final class WCodeDesktop {
             OrderImageAssetService orderImages = new OrderImageAssetService();
             FboCatalogCommandService fboCatalog = new FboCatalogCommandService(orderImages);
             FboPrintCommandService fboPrinting = new FboPrintCommandService();
+            KizMappingCommandService kizMappings = new KizMappingCommandService();
             PackingCommandService packing = new PackingCommandService(orderImages);
             ExcelOrderImportCommandService excelOrders = new ExcelOrderImportCommandService(orderImages);
             PrintCommandService printing = new PrintCommandService();
@@ -91,6 +94,7 @@ public final class WCodeDesktop {
                             PackingCommandServiceCommands.create(packing),
                             FboCatalogCommandServiceCommands.create(fboCatalog),
                             fboPrintCommands,
+                            KizMappingCommandServiceCommands.create(kizMappings),
                             SupplyDetailCommandServiceCommands.create(supplyDetails),
                             SupplyRefreshCommandServiceCommands.create(supplyRefresh),
                             ExcelOrderImportCommandServiceCommands.create(excelOrders),

@@ -306,11 +306,18 @@ path or add a verified Windows adapter; do not claim parity from macOS/browser p
 
 ## Phase 7: KIZ and Znack
 
-1. GTIN mapping inventory/read/edit.
-2. KIZ import with file type/size/magic-byte validation.
-3. Purchase pipeline and progress events with idempotency/recovery.
-4. CryptoPro certificate discovery/signing on Windows.
-5. Introduction status/retry and audit-safe errors.
+- [ ] Port bounded, server-paginated GTIN inventory with local category/search filters and safe
+      inventory/order/pipeline/error DTOs.
+- [ ] Port the subject/gender mapping editor, including current/foreign ownership, wildcard rules,
+      empty-clear and atomic conflict-safe local save through a dedicated write capability.
+- [ ] Cover invalid shop/GTIN/rule/quota, technical GTIN, stale owner conflict, rollback and
+      redaction with Java tests; cover loading/empty/error/filter/page/edit/save/cancel in React.
+- [ ] Native-test live inventory read-only and an isolated SQLite mapping lifecycle at 1440×900 and
+      960×640 with clean console, bounded DOM and accessible controls.
+- [ ] Port KIZ import with file type/size/magic-byte validation.
+- [ ] Port purchase pipeline and progress events with idempotency/recovery.
+- [ ] Port CryptoPro certificate discovery/signing on Windows.
+- [ ] Port introduction status/retry and audit-safe errors.
 
 Any real KIZ purchase/introduction mutation requires explicit approval and a dedicated shop/test
 artifact. Recovery/idempotency tests precede implementation changes.
