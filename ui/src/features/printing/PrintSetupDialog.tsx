@@ -3,6 +3,7 @@ import { JDeskError } from "jdesk-client";
 import { useEffect, useState } from "react";
 import { commands } from "../../generated/commands";
 import type { OrderSortRequest, PrintExportResponse, PrintSetupResponse } from "../../generated/types";
+import { exportSupplyPdf } from "./nativePrintCommands";
 
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const PRINT_JOB_ID = /^[1-9][0-9]{0,19}$/;
@@ -119,7 +120,7 @@ export function PrintSetupDialog({
         effectiveCopies = saved.barcodeCopies;
         applySavedSetup(saved, false);
       }
-      const response = await commands.printing.exportSupply({
+      const response = await exportSupplyPdf({
         shopId,
         supplyId,
         query,

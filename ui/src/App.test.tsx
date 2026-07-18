@@ -4,6 +4,7 @@ import { JDeskError } from "jdesk-client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { commands } from "./generated/commands";
+import { exportSupplyPdf } from "./features/printing/nativePrintCommands";
 
 vi.mock("./generated/commands", () => ({
   commands: {
@@ -34,6 +35,10 @@ vi.mock("./generated/commands", () => ({
   },
 }));
 
+vi.mock("./features/printing/nativePrintCommands", () => ({
+  exportSupplyPdf: vi.fn(),
+}));
+
 const bootstrap = vi.mocked(commands.workspace.bootstrap);
 const loadDashboard = vi.mocked(commands.dashboard.load);
 const listSupplies = vi.mocked(commands.supplies.list);
@@ -45,7 +50,7 @@ const importExcel = vi.mocked(commands.orders.importExcel);
 const loadImportedOrders = vi.mocked(commands.orders.importedPage);
 const loadPrintSetup = vi.mocked(commands.printing.setup);
 const savePrintOptions = vi.mocked(commands.printing.saveOptions);
-const exportSupplyPdf = vi.mocked(commands.printing.exportSupply);
+const exportSupplyPdfCommand = vi.mocked(exportSupplyPdf);
 const openExportedPdf = vi.mocked(commands.printing.openExport);
 const syncOverview = vi.mocked(commands.wildberries.syncOverview);
 const syncStatus = vi.mocked(commands.wildberries.syncStatus);
@@ -65,7 +70,7 @@ describe("App", () => {
     loadImportedOrders.mockReset();
     loadPrintSetup.mockReset();
     savePrintOptions.mockReset();
-    exportSupplyPdf.mockReset();
+    exportSupplyPdfCommand.mockReset();
     openExportedPdf.mockReset();
     syncOverview.mockReset();
     syncStatus.mockReset();
@@ -778,7 +783,7 @@ describe("App", () => {
         { id: 10, name: "Компактный", defaultTemplate: false },
       ],
     });
-    exportSupplyPdf.mockResolvedValue({
+    exportSupplyPdfCommand.mockResolvedValue({
       cancelled: false,
       exportId: "00000000-0000-4000-8000-000000000009",
       labelsFileName: "labels.pdf",
@@ -816,7 +821,7 @@ describe("App", () => {
     expect(screen.getByText("10 страниц PDF")).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Создать PDF" }));
-    await waitFor(() => expect(exportSupplyPdf).toHaveBeenCalledWith({
+    await waitFor(() => expect(exportSupplyPdfCommand).toHaveBeenCalledWith({
       shopId: 7,
       supplyId: "WB-GI-1",
       query: "",
