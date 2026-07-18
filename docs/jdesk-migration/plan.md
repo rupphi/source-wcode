@@ -258,7 +258,7 @@ Tests bắt buộc cover crash/failure sau từng write và chứng minh JavaFX 
 Vertical slices, each with contract → RED test → Java adapter → React UI → native E2E:
 
 - [x] Paginated supply list with search/status/filter.
-- [ ] Supply detail and order table with stable sorting.
+- [x] Supply detail and paginated order table with stable sorting/search.
 - [ ] Sticker/image preview via asset route or binary stream, never oversized JSON.
 - [ ] Refresh orders/status and restore selection.
 - [ ] Excel import/export and native file dialogs.

@@ -28,7 +28,7 @@ Baseline: WCode `1.1.7`, branch point `61e8117`, 2026-07-18.
 | WB overview sync | `WbSyncWorkflow` | read-only live sync, progress/cancel/retry, KPI refresh | Foundation |
 | Shop CRUD/token | `ShopDialogService`, `ShopWorkflow` | validated CRUD, masked secret, OS-store migration/rollback | Legacy |
 | Supply list | `SupplyListController` | paginated local list/search/status, live native evidence; detail selection/restore pending | Foundation |
-| Supply detail/orders | `SupplyDetailController` | table/detail/filter/sort/status/GTIN refresh | Legacy |
+| Supply detail/orders | `SupplyDetailController` | local detail/search/natural sort/page native evidence; image/GTIN/WB refresh pending | Foundation |
 | Deliver supply | `SupplyDetailController.onDeliver` | explicit-confirm mutation test on approved shop | Legacy |
 | FBS packing | `PackingController` | new/preparation/dispatch tabs, selection, create/add | Legacy |
 | Print/export | `OrderExportWorkflow`, print services | PDF parity, save/open, physical 58×40 Windows test | Legacy |
