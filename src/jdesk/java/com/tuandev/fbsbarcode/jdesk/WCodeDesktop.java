@@ -1,6 +1,7 @@
 package com.tuandev.fbsbarcode.jdesk;
 
 import com.tuandev.fbsbarcode.BuildConfig;
+import com.tuandev.fbsbarcode.jdesk.supply.OrderImageAssetService;
 import com.tuandev.fbsbarcode.jdesk.supply.SupplyCommandService;
 import com.tuandev.fbsbarcode.jdesk.supply.SupplyCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.supply.SupplyDetailCommandService;
@@ -32,7 +33,8 @@ public final class WCodeDesktop {
             WorkspaceCommandService workspace = new WorkspaceCommandService();
             WildberriesCommandService wildberries = new WildberriesCommandService();
             SupplyCommandService supplies = new SupplyCommandService();
-            SupplyDetailCommandService supplyDetails = new SupplyDetailCommandService();
+            OrderImageAssetService orderImages = new OrderImageAssetService();
+            SupplyDetailCommandService supplyDetails = new SupplyDetailCommandService(orderImages);
             JDeskApplication.Builder application = JDeskApplication.builder()
                     .id("com.tuandev.wcode")
                     .commands(JDeskCommands.combine(
@@ -42,6 +44,7 @@ public final class WCodeDesktop {
                             SupplyDetailCommandServiceCommands.create(supplyDetails)))
                     .capabilities(Capabilities.fromResource("jdesk-capabilities.json"))
                     .contentSecurityPolicy(Csp.defaults())
+                    .assetRoute("order-images", orderImages)
                     .window(WindowConfig.builder()
                             .id("main")
                             .title("WCode")

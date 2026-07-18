@@ -5,6 +5,7 @@ import com.tuandev.fbsbarcode.features.supply.OrderSortingService;
 import com.tuandev.fbsbarcode.integration.wb.WbOrderRepository;
 import com.tuandev.fbsbarcode.integration.wb.WbSupplyRepository;
 import com.tuandev.fbsbarcode.integration.wb.WbSupplySummary;
+import com.tuandev.fbsbarcode.integration.wb.WbSupplyWorkflow;
 import com.tuandev.fbsbarcode.jdesk.SafeCommandExecutor;
 import com.tuandev.fbsbarcode.models.Order;
 import com.tuandev.fbsbarcode.models.Shop;
@@ -29,15 +30,23 @@ public final class SupplyDetailCommandService {
     private final SupplyReader supplies;
     private final OrderReader orders;
     private final OrderSortingService sorting;
+    private final OrderImageAssetService imageAssets;
 
     public SupplyDetailCommandService() {
+        this(new OrderImageAssetService());
+    }
+
+    public SupplyDetailCommandService(OrderImageAssetService imageAssets) {
         ShopRepository shopRepository = new ShopRepository();
         WbSupplyRepository supplyRepository = new WbSupplyRepository();
         WbOrderRepository orderRepository = new WbOrderRepository();
+        WbSupplyWorkflow supplyWorkflow = new WbSupplyWorkflow();
         this.shops = shopRepository::findAll;
         this.supplies = supplyRepository::findSupplySummary;
-        this.orders = orderRepository::getOrdersForSupply;
+        this.orders = (shopId, supplyId) -> supplyWorkflow.populateCachedOrderImages(
+                orderRepository.getOrdersForSupply(shopId, supplyId));
         this.sorting = new OrderSortingService();
+        this.imageAssets = Objects.requireNonNull(imageAssets, "imageAssets");
     }
 
     SupplyDetailCommandService(
@@ -45,10 +54,20 @@ public final class SupplyDetailCommandService {
             SupplyReader supplies,
             OrderReader orders,
             OrderSortingService sorting) {
+        this(shops, supplies, orders, sorting, new OrderImageAssetService());
+    }
+
+    SupplyDetailCommandService(
+            Supplier<List<Shop>> shops,
+            SupplyReader supplies,
+            OrderReader orders,
+            OrderSortingService sorting,
+            OrderImageAssetService imageAssets) {
         this.shops = Objects.requireNonNull(shops, "shops");
         this.supplies = Objects.requireNonNull(supplies, "supplies");
         this.orders = Objects.requireNonNull(orders, "orders");
         this.sorting = Objects.requireNonNull(sorting, "sorting");
+        this.imageAssets = Objects.requireNonNull(imageAssets, "imageAssets");
     }
 
     @DesktopCommand("supplies.detail")
@@ -83,7 +102,7 @@ public final class SupplyDetailCommandService {
             int fromIndex = Math.min(offset, totalItems);
             int toIndex = Math.min(fromIndex + validated.pageSize(), totalItems);
             List<OrderItem> items = sorted.subList(fromIndex, toIndex).stream()
-                    .map(SupplyDetailCommandService::toItem)
+                    .map(this::toItem)
                     .toList();
             return new SupplyDetailResponse(
                     SupplyCommandService.toItem(supply),
@@ -158,7 +177,7 @@ public final class SupplyDetailCommandService {
         return value != null && value.toString().toLowerCase(Locale.ROOT).contains(needle);
     }
 
-    private static OrderItem toItem(Order order) {
+    private OrderItem toItem(Order order) {
         if (order.getId() == null || order.getId() <= 0) {
             throw new IllegalStateException("Order id is invalid");
         }
@@ -190,7 +209,8 @@ public final class SupplyDetailCommandService {
                 price,
                 text(order.getSupplierStatus(), 64),
                 text(order.getWbStatus(), 64),
-                order.isRequiresKiz());
+                order.isRequiresKiz(),
+                imageAssets.register(order));
     }
 
     private static String text(String value, int maxLength) {
@@ -247,7 +267,8 @@ public final class SupplyDetailCommandService {
             int priceKopecks,
             String supplierStatus,
             String wbStatus,
-            boolean requiresKiz) {
+            boolean requiresKiz,
+            String imagePath) {
     }
 
     public record SupplyDetailResponse(

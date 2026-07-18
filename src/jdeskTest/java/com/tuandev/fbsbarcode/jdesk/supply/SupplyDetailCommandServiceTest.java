@@ -22,6 +22,7 @@ import dev.jdesk.api.JDeskException;
 import dev.jdesk.runtime.json.JacksonJsonCodec;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
@@ -65,6 +66,7 @@ class SupplyDetailCommandServiceTest {
         assertEquals("1001", response.items().getFirst().nmId());
         assertEquals(12_345, response.items().getFirst().priceKopecks());
         assertTrue(response.items().getFirst().requiresKiz());
+        assertEquals("", response.items().getFirst().imagePath());
         assertFalse(response.toString().contains(SECRET));
     }
 
@@ -90,6 +92,38 @@ class SupplyDetailCommandServiceTest {
         assertEquals("special", response.query());
         assertEquals(1, response.totalItems());
         assertEquals("102", response.items().getFirst().orderId());
+    }
+
+    @Test
+    void returnsOnlyAnOpaqueSameOriginPathForCachedOrderImages() throws Exception {
+        byte[] png = new byte[] {(byte) 0x89, 'P', 'N', 'G'};
+        Order cached = order(101, "Shoes", "First", "ART-1", "SKU-1");
+        cached.setImage(png);
+        OrderImageAssetService imageAssets = new OrderImageAssetService(new byte[32], 4, 1024);
+        SupplyDetailCommandService service = new SupplyDetailCommandService(
+                () -> List.of(new Shop(7, "Main", SECRET)),
+                (shopId, supplyId) -> new WbSupplySummary(supplyId, "Supply", false, false, "", 1),
+                (shopId, supplyId) -> List.of(cached),
+                new OrderSortingService(),
+                imageAssets);
+
+        String path = service.load(validRequest(), null)
+                .toCompletableFuture()
+                .join()
+                .items()
+                .getFirst()
+                .imagePath();
+        String routePath = path.substring("jdesk://app/order-images/".length());
+
+        assertTrue(path.startsWith("jdesk://app/order-images/"));
+        assertFalse(path.contains(cached.getImageUrl()));
+        try (var body = imageAssets
+                .serve(new dev.jdesk.api.AssetRoute.Request(routePath, "GET", new byte[0], Map.of()))
+                .orElseThrow()
+                .body()
+                .get()) {
+            assertEquals(png.length, body.readAllBytes().length);
+        }
     }
 
     @Test
