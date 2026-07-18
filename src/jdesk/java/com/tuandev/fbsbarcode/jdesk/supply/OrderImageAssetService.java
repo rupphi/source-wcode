@@ -16,7 +16,7 @@ import javax.crypto.spec.SecretKeySpec;
 
 public final class OrderImageAssetService implements AssetRoute {
     private static final String ROUTE_PREFIX = "jdesk://app/order-images/";
-    private static final String TOKEN_PATTERN = "[A-Za-z0-9_-]{43}\\.png";
+    private static final String TOKEN_PATTERN = "[A-Za-z0-9_-]{43}\\.(?:png|jpg)";
     private static final int DEFAULT_MAX_ENTRIES = 500;
     private static final int DEFAULT_MAX_IMAGE_BYTES = 5 * 1024 * 1024;
     private static final int DEFAULT_MAX_CACHE_BYTES = 64 * 1024 * 1024;
@@ -25,7 +25,7 @@ public final class OrderImageAssetService implements AssetRoute {
     private final int maxEntries;
     private final int maxImageBytes;
     private final int maxCacheBytes;
-    private final Map<String, byte[]> images;
+    private final Map<String, ImageAsset> images;
     private long cacheBytes;
 
     public OrderImageAssetService() {
@@ -62,14 +62,39 @@ public final class OrderImageAssetService implements AssetRoute {
                 || order.getImage().length > maxImageBytes) {
             return "";
         }
-        String token = token(order.getId(), order.getImageUrl());
+        return register(order, order.getImageUrl(), "png", "image/png");
+    }
+
+    public String registerImported(String sessionScope, Order order) {
+        if (sessionScope == null
+                || sessionScope.isBlank()
+                || sessionScope.length() > 128
+                || sessionScope.chars().anyMatch(Character::isISOControl)
+                || order == null
+                || order.getId() == null
+                || order.getId() <= 0
+                || order.getImage() == null
+                || order.getImage().length == 0
+                || order.getImage().length > maxImageBytes) {
+            return "";
+        }
+        ImageFormat format = detectFormat(order.getImage());
+        if (format == null) {
+            return "";
+        }
+        return register(order, "import:" + sessionScope, format.extension(), format.contentType());
+    }
+
+    private String register(Order order, String source, String extension, String contentType) {
+        String token = token(order.getId(), source);
         byte[] image = order.getImage().clone();
+        ImageAsset asset = new ImageAsset(extension, contentType, image);
         synchronized (images) {
-            byte[] previous = images.put(token, image);
-            cacheBytes += image.length - (previous == null ? 0 : previous.length);
+            ImageAsset previous = images.put(token, asset);
+            cacheBytes += image.length - (previous == null ? 0 : previous.data().length);
             evictLeastRecentlyUsed();
         }
-        return ROUTE_PREFIX + token + ".png";
+        return ROUTE_PREFIX + token + "." + extension;
     }
 
     @Override
@@ -79,29 +104,29 @@ public final class OrderImageAssetService implements AssetRoute {
                 || !request.path().matches(TOKEN_PATTERN)) {
             return Optional.empty();
         }
-        String token = request.path().substring(0, request.path().length() - ".png".length());
-        byte[] image;
+        String token = request.path().substring(0, request.path().lastIndexOf('.'));
+        ImageAsset asset;
         synchronized (images) {
-            image = images.get(token);
+            asset = images.get(token);
         }
-        if (image == null) {
+        if (asset == null || !request.path().equals(token + "." + asset.extension())) {
             return Optional.empty();
         }
-        byte[] response = image.clone();
+        byte[] response = asset.data().clone();
         return Optional.of(new Response(
-                "image/png",
+                asset.contentType(),
                 response.length,
                 () -> new ByteArrayInputStream(response),
                 Map.of("Cache-Control", "private, max-age=3600")));
     }
 
-    private String token(long orderId, String imageUrl) {
+    private String token(long orderId, String source) {
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(secret, "HmacSHA256"));
             mac.update(Long.toString(orderId).getBytes(StandardCharsets.UTF_8));
             mac.update((byte) 0);
-            byte[] digest = mac.doFinal(imageUrl.getBytes(StandardCharsets.UTF_8));
+            byte[] digest = mac.doFinal(source.getBytes(StandardCharsets.UTF_8));
             return Base64.getUrlEncoder().withoutPadding().encodeToString(digest);
         } catch (GeneralSecurityException exception) {
             throw new IllegalStateException("Order image token generation is unavailable");
@@ -109,12 +134,29 @@ public final class OrderImageAssetService implements AssetRoute {
     }
 
     private void evictLeastRecentlyUsed() {
-        Iterator<Map.Entry<String, byte[]>> entries = images.entrySet().iterator();
+        Iterator<Map.Entry<String, ImageAsset>> entries = images.entrySet().iterator();
         while ((images.size() > maxEntries || cacheBytes > maxCacheBytes) && entries.hasNext()) {
-            Map.Entry<String, byte[]> entry = entries.next();
-            cacheBytes -= entry.getValue().length;
+            Map.Entry<String, ImageAsset> entry = entries.next();
+            cacheBytes -= entry.getValue().data().length;
             entries.remove();
         }
+    }
+
+    private static ImageFormat detectFormat(byte[] image) {
+        if (image.length >= 4
+                && image[0] == (byte) 0x89
+                && image[1] == 'P'
+                && image[2] == 'N'
+                && image[3] == 'G') {
+            return new ImageFormat("png", "image/png");
+        }
+        if (image.length >= 3
+                && image[0] == (byte) 0xff
+                && image[1] == (byte) 0xd8
+                && image[2] == (byte) 0xff) {
+            return new ImageFormat("jpg", "image/jpeg");
+        }
+        return null;
     }
 
     private static int defaultCacheBytes(int maxEntries, int maxImageBytes) {
@@ -128,5 +170,11 @@ public final class OrderImageAssetService implements AssetRoute {
         byte[] value = new byte[32];
         new SecureRandom().nextBytes(value);
         return value;
+    }
+
+    private record ImageFormat(String extension, String contentType) {
+    }
+
+    private record ImageAsset(String extension, String contentType, byte[] data) {
     }
 }

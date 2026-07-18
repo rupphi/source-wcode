@@ -38,6 +38,23 @@ class OrderImageAssetServiceTest {
     }
 
     @Test
+    void servesImportedJpegWithoutRequiringOrExposingAFilePath() throws Exception {
+        byte[] jpeg = new byte[] {(byte) 0xff, (byte) 0xd8, (byte) 0xff, (byte) 0xe0, 1, 2, 3};
+        OrderImageAssetService service = new OrderImageAssetService(new byte[32], 4, 1024);
+        Order order = order(101, null, jpeg);
+
+        String path = service.registerImported("opaque-session", order);
+        AssetRoute.Response response = service.serve(request(routePath(path))).orElseThrow();
+
+        assertTrue(path.matches("jdesk://app/order-images/[A-Za-z0-9_-]{43}\\.jpg"));
+        assertFalse(path.contains("opaque-session"));
+        assertEquals("image/jpeg", response.contentType());
+        try (var body = response.body().get()) {
+            assertArrayEquals(jpeg, body.readAllBytes());
+        }
+    }
+
+    @Test
     void rejectsTamperedWritesMissingAndOversizedImages() {
         OrderImageAssetService service = new OrderImageAssetService(new byte[32], 2, 8);
         Order valid = order(1, REMOTE_URL, new byte[] {1, 2, 3});
@@ -49,6 +66,8 @@ class OrderImageAssetServiceTest {
         assertEquals("", service.register(order(2, REMOTE_URL, new byte[9])));
         assertEquals("", service.register(order(3, "", new byte[] {1})));
         assertEquals("", service.register(order(4, REMOTE_URL, null)));
+        assertEquals("", service.registerImported("", order(5, null, new byte[] {1})));
+        assertEquals("", service.registerImported("session", order(6, null, new byte[] {1})));
     }
 
     @Test
