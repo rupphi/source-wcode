@@ -18,11 +18,13 @@ public final class AppDataLock implements AutoCloseable {
 
     private final FileChannel channel;
     private final FileLock lock;
+    private final Path appDataDir;
     private boolean closed;
 
-    private AppDataLock(FileChannel channel, FileLock lock) {
+    private AppDataLock(FileChannel channel, FileLock lock, Path appDataDir) {
         this.channel = channel;
         this.lock = lock;
+        this.appDataDir = appDataDir;
     }
 
     public static AppDataLock acquire(Path appDataDir, String owner) throws IOException {
@@ -65,12 +67,19 @@ public final class AppDataLock implements AutoCloseable {
             channel.position(0);
             channel.write(ByteBuffer.wrap(metadata));
             channel.force(true);
-            return new AppDataLock(channel, lock);
+            return new AppDataLock(channel, lock, normalizedDir);
         } catch (IOException exception) {
             lock.release();
             channel.close();
             throw exception;
         }
+    }
+
+    synchronized Path requireOwnedAppDataDir() throws IOException {
+        if (closed || !lock.isValid()) {
+            throw new IOException("The WCode app-data ownership lock is not active.");
+        }
+        return appDataDir;
     }
 
     @Override
