@@ -2,6 +2,7 @@ package com.tuandev.fbsbarcode;
 
 import com.tuandev.fbsbarcode.shared.AppPaths;
 import com.tuandev.fbsbarcode.shared.AppDataRecoveryService;
+import com.tuandev.fbsbarcode.shared.AppDataLock;
 import javafx.application.Application;
 
 import java.io.PrintWriter;
@@ -13,8 +14,15 @@ import java.time.LocalDateTime;
 public class Launcher {
     public static void main(String[] args) {
         configureStartupEnvironment();
-        AppDataRecoveryService.recoverIfNeededOnStartup();
-        Application.launch(MainApplication.class, args);
+        try (AppDataLock ignored = AppDataLock.acquire(AppPaths.appDataDir(), "javafx")) {
+            AppDataRecoveryService.recoverIfNeededOnStartup();
+            Application.launch(MainApplication.class, args);
+        } catch (AppDataLock.AlreadyRunningException exception) {
+            System.err.println("WCode is already running for this app-data directory.");
+        } catch (Exception exception) {
+            writeStartupLog("main", exception);
+            System.err.println("WCode could not acquire its app-data directory.");
+        }
     }
 
     private static void configureStartupEnvironment() {
