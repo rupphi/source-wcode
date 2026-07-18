@@ -41,6 +41,28 @@ luồng hiện tại trong UI mới, nhanh, rõ trạng thái, dùng được b�
 - Template là dữ liệu SQLite cục bộ, không phụ thuộc shop và không gọi WB/Znack. Native test writer
   dùng bản sao/isolated app-data; live catalog smoke không làm seller-state mutation.
 
+### FBO packing and print contract
+
+- `fbo.catalog` là read-only local command. Request bắt buộc có shop thuộc workspace, query tối đa
+  120 ký tự không có control character, tối đa 50 subject duy nhất, page dương và page-size 10–100.
+  Java query tối đa `pageSize + 1` SKU để trả `hasMore`; WebView không được yêu cầu offset/limit tùy
+  ý hoặc nhận toàn bộ catalog (~37k SKU hiện tại).
+- Product DTO chỉ cho phép nmId dạng string, vendor code, subject, brand, title, color, size/RU size,
+  barcode SKU, `requiresKiz` và opaque local image path. Remote image URL, image blob, token shop,
+  raw DB error và object legacy không được qua bridge. Ảnh list chỉ đọc từ bounded local cache;
+  cache-miss không tự tải URL trong command.
+- UI giữ quantity theo SKU qua page/filter, chỉ nhận số nguyên 0–10.000, hiển thị tổng label/pair
+  trước export và có quick-print quantity 1. Batch request tối đa 500 SKU duy nhất và 10.000 pair;
+  Java re-resolve mọi SKU từ `(shopId, sku)` thay vì tin metadata sản phẩm từ WebView.
+- `fbo.export` dùng capability riêng, native save dialog và một transaction interruptible: validate
+  → re-resolve → reserve KIZ → render staging PDF → consume KIZ ngay trước atomic publish. Cancel,
+  dialog/export failure trước publish và interrupt phải release toàn bộ reservation; response chỉ
+  trả cancelled, UUID session, basename và bounded pair/page counts. `fbo.openExport` chỉ mở file
+  cùng shop qua opaque session có TTL.
+- Live catalog smoke được phép trên shop có sẵn vì chỉ đọc local SQLite/cache. Native export/KIZ
+  smoke chỉ chạy trên isolated app-data hoặc artifact không cần KIZ; không consume live KIZ nếu chưa
+  có approval riêng của người dùng.
+
 ## Tech Stack
 
 - Java 25, jDesk `0.1.3`, Gradle wrapper `9.6.1`.

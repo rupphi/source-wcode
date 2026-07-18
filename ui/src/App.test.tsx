@@ -4,12 +4,17 @@ import { JDeskError } from "jdesk-client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { commands } from "./generated/commands";
-import { exportSupplyPdf, reprintHistoryPdf } from "./features/printing/nativePrintCommands";
+import { exportFboPdf, exportSupplyPdf, reprintHistoryPdf } from "./features/printing/nativePrintCommands";
 
 vi.mock("./generated/commands", () => ({
   commands: {
     workspace: { bootstrap: vi.fn() },
     dashboard: { load: vi.fn() },
+    fbo: {
+      catalog: vi.fn(),
+      export: vi.fn(),
+      openExport: vi.fn(),
+    },
     supplies: {
       list: vi.fn(),
       detail: vi.fn(),
@@ -53,12 +58,16 @@ vi.mock("./generated/commands", () => ({
 }));
 
 vi.mock("./features/printing/nativePrintCommands", () => ({
+  exportFboPdf: vi.fn(),
   exportSupplyPdf: vi.fn(),
   reprintHistoryPdf: vi.fn(),
 }));
 
 const bootstrap = vi.mocked(commands.workspace.bootstrap);
 const loadDashboard = vi.mocked(commands.dashboard.load);
+const loadFboCatalog = vi.mocked(commands.fbo.catalog);
+const exportFbo = vi.mocked(exportFboPdf);
+const openFboExport = vi.mocked(commands.fbo.openExport);
 const listSupplies = vi.mocked(commands.supplies.list);
 const loadSupplyDetail = vi.mocked(commands.supplies.detail);
 const refreshSupply = vi.mocked(commands.supplies.refresh);
@@ -177,6 +186,9 @@ describe("App", () => {
   beforeEach(() => {
     bootstrap.mockReset();
     loadDashboard.mockReset();
+    loadFboCatalog.mockReset();
+    exportFbo.mockReset();
+    openFboExport.mockReset();
     listSupplies.mockReset();
     loadSupplyDetail.mockReset();
     refreshSupply.mockReset();
@@ -540,6 +552,60 @@ describe("App", () => {
       pageSize: 20,
     }));
     expect(await screen.findByText("Поставка Москва")).toBeVisible();
+    expect(document.body).not.toHaveTextContent(secret);
+  });
+
+  it("opens the typed local FBO packing catalog from the primary navigation", async () => {
+    const user = userEvent.setup();
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Основной магазин", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard.mockResolvedValue({
+      shopId: 7,
+      productCount: 10,
+      newOrderCount: 3,
+      openSupplyCount: 1,
+    });
+    loadFboCatalog.mockResolvedValue({
+      shopId: 7,
+      query: "",
+      subjects: [],
+      page: 1,
+      pageSize: 50,
+      hasMore: false,
+      availableSubjects: ["Обувь"],
+      items: [{
+        nmId: "9007199254740993",
+        vendorCode: "ART-1",
+        subject: "Обувь",
+        brand: "WCode",
+        title: "Кроссовки FBO",
+        color: "Чёрный",
+        size: "M",
+        russianSize: "42",
+        sku: "SKU-FBO-1",
+        requiresKiz: true,
+        imagePath: "",
+        imageUrl: `https://untrusted.example/${secret}`,
+      }],
+    } as unknown as Awaited<ReturnType<typeof commands.fbo.catalog>>);
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Поставки FBO" }));
+
+    expect(await screen.findByRole("heading", { name: "Печать FBO" })).toBeVisible();
+    await waitFor(() => expect(loadFboCatalog).toHaveBeenCalledWith({
+      shopId: 7,
+      query: "",
+      subjects: [],
+      page: 1,
+      pageSize: 50,
+    }));
+    expect(screen.getByText("Кроссовки FBO")).toBeVisible();
+    expect(screen.getByText("9007199254740993")).toBeVisible();
     expect(document.body).not.toHaveTextContent(secret);
   });
 

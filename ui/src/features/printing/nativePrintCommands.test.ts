@@ -1,7 +1,8 @@
 import { invoke } from "jdesk-client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ExportSupplyRequest, ReprintHistoryRequest } from "../../generated/types";
+import type { ExportSupplyRequest, FboExportRequest, ReprintHistoryRequest } from "../../generated/types";
 import {
+  exportFboPdf,
   exportSupplyPdf,
   NATIVE_PRINT_EXPORT_TIMEOUT_MS,
   reprintHistoryPdf,
@@ -66,6 +67,29 @@ describe("nativePrintCommands", () => {
     await expect(reprintHistoryPdf(request)).resolves.toEqual(response);
     expect(invokeCommand).toHaveBeenCalledWith(
       "printing.reprintHistory",
+      request,
+      { timeoutMs: NATIVE_PRINT_EXPORT_TIMEOUT_MS },
+    );
+  });
+
+  it("uses the native save deadline for FBO exports", async () => {
+    const request: FboExportRequest = {
+      shopId: 8,
+      items: [{ sku: "SKU-1", quantity: 2 }],
+    };
+    const response = {
+      cancelled: false,
+      exportId: "9a59c3c2-55dc-4bb1-90e7-3b5dba0eaa43",
+      fileName: "WCODE-FBO.pdf",
+      pairCount: 2,
+      pageCount: 4,
+      kizCount: 1,
+    };
+    invokeCommand.mockResolvedValue(response);
+
+    await expect(exportFboPdf(request)).resolves.toEqual(response);
+    expect(invokeCommand).toHaveBeenCalledWith(
+      "fbo.export",
       request,
       { timeoutMs: NATIVE_PRINT_EXPORT_TIMEOUT_MS },
     );

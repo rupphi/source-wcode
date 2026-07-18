@@ -292,8 +292,17 @@ path or add a verified Windows adapter; do not claim parity from macOS/browser p
 
 ## Phase 6: FBO
 
-Port subject/search pagination, barcode plan, single/batch print and templates as independent
-vertical slices. Verify performance with the existing 17k+ product dataset.
+- [x] Port bounded local catalog, exact nmID/vendor/SKU search and multi-subject filtering through
+      secret-safe typed DTOs and opaque cached images.
+- [x] Keep quantity selection across bounded 50-SKU pages and filters without accumulating the
+      full 37k-SKU catalog in the WebView DOM.
+- [x] Port quick quantity-1 and bounded multi-SKU print through native save, Java-side product
+      re-resolution, KIZ reserve/consume/release and atomic PDF publication.
+- [x] Cover cancellation, interruption, stale SKU, shortage/planner/export/open failure, opaque
+      file session, real 58×40 PDF output and React async states with regression tests.
+- [x] Native-test the existing live catalog at 1440×900 and min-size 960×640 without WB/Znack
+      mutation or live KIZ consumption. Physical Windows 58×40 output remains the shared print
+      release gate in Phase 9.
 
 ## Phase 7: KIZ and Znack
 

@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-export type WorkspaceView = "dashboard" | "packing" | "supplies" | "templates" | "history";
+export type WorkspaceView = "dashboard" | "packing" | "supplies" | "fbo" | "templates" | "history";
 
 type NavigationItem = {
   label: string;
@@ -21,7 +21,7 @@ const navigation: NavigationItem[] = [
   { label: "Упаковка FBS", icon: PackageSearch, view: "packing" },
   { label: "Поставки FBS", icon: Truck, view: "supplies" },
   { label: "Дизайн этикеток", icon: Barcode, view: "templates" },
-  { label: "Поставки FBO", icon: Boxes, view: null },
+  { label: "Поставки FBO", icon: Boxes, view: "fbo" },
   { label: "История печати", icon: History, view: "history" },
 ];
 

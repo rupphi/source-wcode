@@ -20,6 +20,7 @@ public final class OrderImageAssetService implements AssetRoute {
     private static final int DEFAULT_MAX_ENTRIES = 500;
     private static final int DEFAULT_MAX_IMAGE_BYTES = 5 * 1024 * 1024;
     private static final int DEFAULT_MAX_CACHE_BYTES = 64 * 1024 * 1024;
+    private static final int MAX_PRODUCT_CACHE_SCOPE_LENGTH = 2048;
 
     private final byte[] secret;
     private final int maxEntries;
@@ -62,7 +63,7 @@ public final class OrderImageAssetService implements AssetRoute {
                 || order.getImage().length > maxImageBytes) {
             return "";
         }
-        return register(order, order.getImageUrl(), "png", "image/png");
+        return register(order.getId(), order.getImageUrl(), "png", "image/png", order.getImage());
     }
 
     public String registerImported(String sessionScope, Order order) {
@@ -82,12 +83,31 @@ public final class OrderImageAssetService implements AssetRoute {
         if (format == null) {
             return "";
         }
-        return register(order, "import:" + sessionScope, format.extension(), format.contentType());
+        return register(
+                order.getId(), "import:" + sessionScope, format.extension(), format.contentType(), order.getImage());
     }
 
-    private String register(Order order, String source, String extension, String contentType) {
-        String token = token(order.getId(), source);
-        byte[] image = order.getImage().clone();
+    public String registerProduct(long productId, String cacheScope, byte[] image) {
+        if (productId <= 0
+                || cacheScope == null
+                || cacheScope.isBlank()
+                || cacheScope.length() > MAX_PRODUCT_CACHE_SCOPE_LENGTH
+                || cacheScope.chars().anyMatch(Character::isISOControl)
+                || image == null
+                || image.length == 0
+                || image.length > maxImageBytes) {
+            return "";
+        }
+        ImageFormat format = detectFormat(image);
+        if (format == null) {
+            return "";
+        }
+        return register(productId, "product:" + cacheScope, format.extension(), format.contentType(), image);
+    }
+
+    private String register(long id, String source, String extension, String contentType, byte[] data) {
+        String token = token(id, source);
+        byte[] image = data.clone();
         ImageAsset asset = new ImageAsset(extension, contentType, image);
         synchronized (images) {
             ImageAsset previous = images.put(token, asset);

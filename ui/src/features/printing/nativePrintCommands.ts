@@ -1,6 +1,8 @@
 import { invoke } from "jdesk-client";
 import type {
   ExportSupplyRequest,
+  FboExportRequest,
+  FboExportResponse,
   PrintExportResponse,
   ReprintHistoryRequest,
   ReprintHistoryResponse,
@@ -16,6 +18,14 @@ export function exportSupplyPdf(request: ExportSupplyRequest): Promise<PrintExpo
     request,
     { timeoutMs: NATIVE_PRINT_EXPORT_TIMEOUT_MS },
   ) as Promise<PrintExportResponse>;
+}
+
+export function exportFboPdf(request: FboExportRequest): Promise<FboExportResponse> {
+  return invoke(
+    "fbo.export",
+    request,
+    { timeoutMs: NATIVE_PRINT_EXPORT_TIMEOUT_MS },
+  ) as Promise<FboExportResponse>;
 }
 
 export function reprintHistoryPdf(request: ReprintHistoryRequest): Promise<ReprintHistoryResponse> {

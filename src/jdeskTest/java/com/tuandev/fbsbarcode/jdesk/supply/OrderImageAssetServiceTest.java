@@ -55,6 +55,27 @@ class OrderImageAssetServiceTest {
     }
 
     @Test
+    void servesCachedProductImagesWithoutExposingTheirCacheScope() throws Exception {
+        byte[] png = new byte[] {(byte) 0x89, 'P', 'N', 'G', 1, 2, 3};
+        OrderImageAssetService service = new OrderImageAssetService(new byte[32], 4, 1024);
+
+        String path = service.registerProduct(9_007_199_254_740_993L, "private-cache-key", png);
+        AssetRoute.Response response = service.serve(request(routePath(path))).orElseThrow();
+
+        assertTrue(path.matches("jdesk://app/order-images/[A-Za-z0-9_-]{43}\\.png"));
+        assertFalse(path.contains("private-cache-key"));
+        assertEquals("image/png", response.contentType());
+        try (var body = response.body().get()) {
+            assertArrayEquals(png, body.readAllBytes());
+        }
+        assertEquals("", service.registerProduct(0, "scope", png));
+        assertEquals("", service.registerProduct(1, "", png));
+        assertEquals("", service.registerProduct(1, "scope", new byte[] {1, 2, 3}));
+        assertFalse(service.registerProduct(1, "x".repeat(2048), png).isBlank());
+        assertEquals("", service.registerProduct(1, "x".repeat(2049), png));
+    }
+
+    @Test
     void rejectsTamperedWritesMissingAndOversizedImages() {
         OrderImageAssetService service = new OrderImageAssetService(new byte[32], 2, 8);
         Order valid = order(1, REMOTE_URL, new byte[] {1, 2, 3});

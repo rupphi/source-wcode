@@ -1,6 +1,10 @@
 package com.tuandev.fbsbarcode.jdesk;
 
 import com.tuandev.fbsbarcode.BuildConfig;
+import com.tuandev.fbsbarcode.jdesk.fbo.FboCatalogCommandService;
+import com.tuandev.fbsbarcode.jdesk.fbo.FboCatalogCommandServiceCommands;
+import com.tuandev.fbsbarcode.jdesk.fbo.FboPrintCommandService;
+import com.tuandev.fbsbarcode.jdesk.fbo.FboPrintCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.order.ExcelOrderImportCommandService;
 import com.tuandev.fbsbarcode.jdesk.order.ExcelOrderImportCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.packing.PackingCommandService;
@@ -53,6 +57,8 @@ public final class WCodeDesktop {
             WildberriesCommandService wildberries = new WildberriesCommandService();
             SupplyCommandService supplies = new SupplyCommandService();
             OrderImageAssetService orderImages = new OrderImageAssetService();
+            FboCatalogCommandService fboCatalog = new FboCatalogCommandService(orderImages);
+            FboPrintCommandService fboPrinting = new FboPrintCommandService();
             PackingCommandService packing = new PackingCommandService(orderImages);
             ExcelOrderImportCommandService excelOrders = new ExcelOrderImportCommandService(orderImages);
             PrintCommandService printing = new PrintCommandService();
@@ -70,6 +76,10 @@ public final class WCodeDesktop {
                     PrintHistoryReprintCommandServiceCommands.create(historyReprint),
                     "printing.reprintHistory",
                     Duration.ofMinutes(10));
+            var fboPrintCommands = CommandTimeoutOverrides.withTimeout(
+                    FboPrintCommandServiceCommands.create(fboPrinting),
+                    "fbo.export",
+                    Duration.ofMinutes(10));
             SupplyDetailCommandService supplyDetails = new SupplyDetailCommandService(orderImages);
             SupplyRefreshCommandService supplyRefresh = new SupplyRefreshCommandService();
             JDeskApplication.Builder application = JDeskApplication.builder()
@@ -79,6 +89,8 @@ public final class WCodeDesktop {
                             WildberriesCommandServiceCommands.create(wildberries),
                             SupplyCommandServiceCommands.create(supplies),
                             PackingCommandServiceCommands.create(packing),
+                            FboCatalogCommandServiceCommands.create(fboCatalog),
+                            fboPrintCommands,
                             SupplyDetailCommandServiceCommands.create(supplyDetails),
                             SupplyRefreshCommandServiceCommands.create(supplyRefresh),
                             ExcelOrderImportCommandServiceCommands.create(excelOrders),
