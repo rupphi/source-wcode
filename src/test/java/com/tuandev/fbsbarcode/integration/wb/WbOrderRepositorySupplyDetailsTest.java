@@ -286,4 +286,58 @@ class WbOrderRepositorySupplyDetailsTest {
         assertEquals(1, supplies.size());
         assertEquals(0, supplies.getFirst().getItemCount());
     }
+
+    @Test
+    void shouldPageAndCountSuppliesWithDeterministicStatusOrdering() throws Exception {
+        System.setProperty("wcode.appdata.dir", tempDir.toString());
+        Database.initDatabase();
+        try (Connection conn = Database.getConnection();
+             Statement st = conn.createStatement()) {
+            st.execute("INSERT INTO shops(id, name, api_key) VALUES (1, 'Shop', 'token')");
+            st.execute("""
+                    INSERT INTO wb_supplies(shop_id, supply_id, name, done, order_count, created_at, synced_at)
+                    VALUES
+                      (1, 'WB-OPEN-NEW', 'Alpha new', 0, 2, '2026-07-03T00:00:00Z', 'now'),
+                      (1, 'WB-OPEN-OLD', 'Other', 0, 1, '2026-07-01T00:00:00Z', 'now'),
+                      (1, 'WB-CLOSED', 'Alpha closed', 1, 4, '2026-07-04T00:00:00Z', 'now')
+                    """);
+        }
+
+        WbSupplyRepository.SupplyPage first =
+                new WbSupplyRepository().findSupplyPage(1, "alpha", null, 1, 0);
+        WbSupplyRepository.SupplyPage second =
+                new WbSupplyRepository().findSupplyPage(1, "alpha", null, 1, 1);
+        WbSupplyRepository.SupplyPage open =
+                new WbSupplyRepository().findSupplyPage(1, "", false, 25, 0);
+
+        assertEquals(2, first.totalItems());
+        assertEquals(1, first.openItems());
+        assertEquals(1, first.closedItems());
+        assertEquals(List.of("WB-OPEN-NEW"), first.items().stream().map(WbSupplySummary::getSupplyId).toList());
+        assertEquals(List.of("WB-CLOSED"), second.items().stream().map(WbSupplySummary::getSupplyId).toList());
+        assertEquals(2, open.totalItems());
+        assertTrue(open.items().stream().noneMatch(WbSupplySummary::isDone));
+    }
+
+    @Test
+    void shouldTreatSupplySearchWildcardsAsLiteralText() throws Exception {
+        System.setProperty("wcode.appdata.dir", tempDir.toString());
+        Database.initDatabase();
+        try (Connection conn = Database.getConnection();
+             Statement st = conn.createStatement()) {
+            st.execute("INSERT INTO shops(id, name, api_key) VALUES (1, 'Shop', 'token')");
+            st.execute("""
+                    INSERT INTO wb_supplies(shop_id, supply_id, name, done, created_at, synced_at)
+                    VALUES
+                      (1, 'WB-LITERAL', 'Ready 100%_today', 0, '2026-07-03T00:00:00Z', 'now'),
+                      (1, 'WB-WILDCARD', 'Ready 100XXtoday', 0, '2026-07-02T00:00:00Z', 'now')
+                    """);
+        }
+
+        WbSupplyRepository.SupplyPage result =
+                new WbSupplyRepository().findSupplyPage(1, "%_", null, 25, 0);
+
+        assertEquals(1, result.totalItems());
+        assertEquals("WB-LITERAL", result.items().getFirst().getSupplyId());
+    }
 }

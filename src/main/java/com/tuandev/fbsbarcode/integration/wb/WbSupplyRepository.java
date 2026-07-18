@@ -9,6 +9,7 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 import static com.tuandev.fbsbarcode.integration.wb.WbRepositorySupport.setNullableBoolean;
 import static com.tuandev.fbsbarcode.integration.wb.WbRepositorySupport.setNullableInteger;
@@ -112,6 +113,80 @@ public class WbSupplyRepository {
             return supplies;
         } catch (SQLException e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    public SupplyPage findSupplyPage(
+            int shopId, String query, Boolean done, int limit, int offset) {
+        if (shopId <= 0 || query == null || limit <= 0 || limit > 100 || offset < 0) {
+            throw new IllegalArgumentException("Invalid supply page request");
+        }
+        String searchPattern = "%" + escapeLike(query.strip().toLowerCase(Locale.ROOT)) + "%";
+        String searchClause = """
+                AND (
+                    LOWER(s.supply_id) LIKE ? ESCAPE '\\'
+                    OR LOWER(COALESCE(s.name, '')) LIKE ? ESCAPE '\\'
+                )
+                """;
+        String statusClause = done == null ? "" : "AND COALESCE(s.done, 0) = ?";
+        String countSql = """
+                SELECT COALESCE(SUM(CASE WHEN COALESCE(s.done, 0) = 0 THEN 1 ELSE 0 END), 0) AS open_items,
+                       COALESCE(SUM(CASE WHEN s.done = 1 THEN 1 ELSE 0 END), 0) AS closed_items
+                FROM wb_supplies s
+                WHERE s.shop_id = ?
+                """ + searchClause;
+        String pageSql = """
+                SELECT s.supply_id,
+                       s.name,
+                       s.done,
+                       s.is_b2b,
+                       s.created_at,
+                       COALESCE(NULLIF((
+                           SELECT COUNT(*)
+                           FROM wb_supply_orders so
+                           WHERE so.shop_id = s.shop_id
+                             AND so.supply_id = s.supply_id
+                       ), 0), s.order_count, 0) AS item_count
+                FROM wb_supplies s
+                WHERE s.shop_id = ?
+                """ + searchClause + statusClause + """
+                ORDER BY COALESCE(s.done, 0) ASC, s.created_at DESC, s.supply_id DESC
+                LIMIT ? OFFSET ?
+                """;
+        try (Connection conn = Database.getConnection()) {
+            int openItems;
+            int closedItems;
+            try (PreparedStatement counts = conn.prepareStatement(countSql)) {
+                bindSearch(counts, shopId, searchPattern);
+                try (ResultSet rs = counts.executeQuery()) {
+                    if (rs.next()) {
+                        openItems = rs.getInt("open_items");
+                        closedItems = rs.getInt("closed_items");
+                    } else {
+                        openItems = 0;
+                        closedItems = 0;
+                    }
+                }
+            }
+
+            List<WbSupplySummary> items = new ArrayList<>();
+            try (PreparedStatement page = conn.prepareStatement(pageSql)) {
+                int index = bindSearch(page, shopId, searchPattern);
+                if (done != null) {
+                    page.setInt(index++, done ? 1 : 0);
+                }
+                page.setInt(index++, limit);
+                page.setInt(index, offset);
+                try (ResultSet rs = page.executeQuery()) {
+                    while (rs.next()) {
+                        items.add(toSummary(rs));
+                    }
+                }
+            }
+            int totalItems = done == null ? openItems + closedItems : done ? closedItems : openItems;
+            return new SupplyPage(List.copyOf(items), totalItems, openItems, closedItems);
+        } catch (SQLException exception) {
+            throw new RuntimeException(exception);
         }
     }
 
@@ -267,6 +342,35 @@ public class WbSupplyRepository {
             ps.setInt(1, shopId);
             ps.setString(2, supplyId);
             ps.executeUpdate();
+        }
+    }
+
+    private static int bindSearch(PreparedStatement statement, int shopId, String searchPattern)
+            throws SQLException {
+        statement.setInt(1, shopId);
+        statement.setString(2, searchPattern);
+        statement.setString(3, searchPattern);
+        return 4;
+    }
+
+    private static WbSupplySummary toSummary(ResultSet rs) throws SQLException {
+        return new WbSupplySummary(
+                rs.getString("supply_id"),
+                rs.getString("name"),
+                rs.getInt("done") == 1,
+                rs.getObject("is_b2b") == null ? null : rs.getInt("is_b2b") == 1,
+                rs.getString("created_at"),
+                rs.getInt("item_count"));
+    }
+
+    private static String escapeLike(String value) {
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    }
+
+    public record SupplyPage(
+            List<WbSupplySummary> items, int totalItems, int openItems, int closedItems) {
+        public SupplyPage {
+            items = List.copyOf(items);
         }
     }
 }
