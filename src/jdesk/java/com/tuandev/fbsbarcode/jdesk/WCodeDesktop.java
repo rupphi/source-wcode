@@ -9,6 +9,10 @@ import com.tuandev.fbsbarcode.jdesk.print.PrintCommandService;
 import com.tuandev.fbsbarcode.jdesk.print.PrintCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.print.PrintExportCommandService;
 import com.tuandev.fbsbarcode.jdesk.print.PrintExportCommandServiceCommands;
+import com.tuandev.fbsbarcode.jdesk.print.PrintHistoryCommandService;
+import com.tuandev.fbsbarcode.jdesk.print.PrintHistoryCommandServiceCommands;
+import com.tuandev.fbsbarcode.jdesk.print.PrintHistoryReprintCommandService;
+import com.tuandev.fbsbarcode.jdesk.print.PrintHistoryReprintCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.supply.OrderImageAssetService;
 import com.tuandev.fbsbarcode.jdesk.supply.SupplyCommandService;
 import com.tuandev.fbsbarcode.jdesk.supply.SupplyCommandServiceCommands;
@@ -48,10 +52,16 @@ public final class WCodeDesktop {
             PackingCommandService packing = new PackingCommandService(orderImages);
             ExcelOrderImportCommandService excelOrders = new ExcelOrderImportCommandService(orderImages);
             PrintCommandService printing = new PrintCommandService();
+            PrintHistoryCommandService printHistory = new PrintHistoryCommandService();
+            PrintHistoryReprintCommandService historyReprint = new PrintHistoryReprintCommandService();
             PrintExportCommandService printExport = new PrintExportCommandService();
             var printExportCommands = CommandTimeoutOverrides.withTimeout(
                     PrintExportCommandServiceCommands.create(printExport),
                     "printing.exportSupply",
+                    Duration.ofMinutes(10));
+            var historyReprintCommands = CommandTimeoutOverrides.withTimeout(
+                    PrintHistoryReprintCommandServiceCommands.create(historyReprint),
+                    "printing.reprintHistory",
                     Duration.ofMinutes(10));
             SupplyDetailCommandService supplyDetails = new SupplyDetailCommandService(orderImages);
             SupplyRefreshCommandService supplyRefresh = new SupplyRefreshCommandService();
@@ -66,6 +76,8 @@ public final class WCodeDesktop {
                             SupplyRefreshCommandServiceCommands.create(supplyRefresh),
                             ExcelOrderImportCommandServiceCommands.create(excelOrders),
                             PrintCommandServiceCommands.create(printing),
+                            PrintHistoryCommandServiceCommands.create(printHistory),
+                            historyReprintCommands,
                             printExportCommands))
                     .capabilities(Capabilities.fromResource("jdesk-capabilities.json"))
                     .contentSecurityPolicy(Csp.defaults())

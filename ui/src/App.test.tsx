@@ -4,7 +4,7 @@ import { JDeskError } from "jdesk-client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { commands } from "./generated/commands";
-import { exportSupplyPdf } from "./features/printing/nativePrintCommands";
+import { exportSupplyPdf, reprintHistoryPdf } from "./features/printing/nativePrintCommands";
 
 vi.mock("./generated/commands", () => ({
   commands: {
@@ -29,6 +29,9 @@ vi.mock("./generated/commands", () => ({
       saveOptions: vi.fn(),
       exportSupply: vi.fn(),
       openExport: vi.fn(),
+      history: vi.fn(),
+      reprintHistory: vi.fn(),
+      openHistoryReprint: vi.fn(),
     },
     wildberries: {
       syncOverview: vi.fn(),
@@ -40,6 +43,7 @@ vi.mock("./generated/commands", () => ({
 
 vi.mock("./features/printing/nativePrintCommands", () => ({
   exportSupplyPdf: vi.fn(),
+  reprintHistoryPdf: vi.fn(),
 }));
 
 const bootstrap = vi.mocked(commands.workspace.bootstrap);
@@ -56,6 +60,9 @@ const loadPrintSetup = vi.mocked(commands.printing.setup);
 const savePrintOptions = vi.mocked(commands.printing.saveOptions);
 const exportSupplyPdfCommand = vi.mocked(exportSupplyPdf);
 const openExportedPdf = vi.mocked(commands.printing.openExport);
+const loadPrintHistory = vi.mocked(commands.printing.history);
+const reprintHistory = vi.mocked(reprintHistoryPdf);
+const openHistoryReprint = vi.mocked(commands.printing.openHistoryReprint);
 const syncOverview = vi.mocked(commands.wildberries.syncOverview);
 const syncStatus = vi.mocked(commands.wildberries.syncStatus);
 const cancelSync = vi.mocked(commands.wildberries.cancelSync);
@@ -77,6 +84,9 @@ describe("App", () => {
     savePrintOptions.mockReset();
     exportSupplyPdfCommand.mockReset();
     openExportedPdf.mockReset();
+    loadPrintHistory.mockReset();
+    reprintHistory.mockReset();
+    openHistoryReprint.mockReset();
     syncOverview.mockReset();
     syncStatus.mockReset();
     cancelSync.mockReset();
@@ -168,6 +178,100 @@ describe("App", () => {
       pageSize: 20,
     }));
     expect(await screen.findByText("Поставка Москва")).toBeVisible();
+    expect(document.body).not.toHaveTextContent(secret);
+  });
+
+  it("opens, searches, and filters the bounded print history", async () => {
+    const user = userEvent.setup();
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Основной магазин", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard.mockResolvedValue({
+      shopId: 7,
+      productCount: 10,
+      newOrderCount: 3,
+      openSupplyCount: 1,
+    });
+    loadPrintHistory.mockImplementation(async (request) => ({
+      ...request,
+      totalItems: 1,
+      totalPages: 1,
+      successfulItems: 4,
+      failedItems: 1,
+      items: [{
+        jobId: "9007199254741001",
+        supplyId: "WB-GI-1",
+        supplyName: "Поставка Москва",
+        printedAt: "2026-07-18T10:00:00Z",
+        itemCount: 5,
+        templateName: "58 × 40",
+        status: request.status === "failed" ? "failed" : "success",
+        canReprint: request.status !== "failed",
+        errorMessage: secret,
+      }],
+    } as unknown as Awaited<ReturnType<typeof commands.printing.history>>));
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "История печати" }));
+
+    expect(await screen.findByRole("heading", { name: "История печати" })).toBeVisible();
+    await waitFor(() => expect(loadPrintHistory).toHaveBeenLastCalledWith({
+      shopId: 7,
+      query: "",
+      status: "all",
+      page: 1,
+      pageSize: 25,
+    }));
+    expect(screen.getByText("Поставка Москва")).toBeVisible();
+    expect(screen.getByText("WB-GI-1")).toBeVisible();
+    expect(screen.getByText("58 × 40")).toBeVisible();
+
+    reprintHistory.mockResolvedValue({
+      cancelled: false,
+      exportId: "9a59c3c2-55dc-4bb1-90e7-3b5dba0eaa43",
+      labelsFileName: "WCODE-REPRINT-WB-GI-1.pdf",
+      detailsFileName: "NHAT_HANG-WCODE-REPRINT-WB-GI-1.pdf",
+      jobId: "9007199254741001",
+      itemCount: 5,
+    });
+    openHistoryReprint.mockResolvedValue({
+      opened: true,
+      fileName: "WCODE-REPRINT-WB-GI-1.pdf",
+    });
+    await user.click(screen.getByRole("button", { name: "Повторить печать Поставка Москва" }));
+    await waitFor(() => expect(reprintHistory).toHaveBeenCalledWith({
+      shopId: 7,
+      jobId: "9007199254741001",
+    }));
+    expect(await screen.findByText("WCODE-REPRINT-WB-GI-1.pdf")).toBeVisible();
+    expect(screen.getByText("NHAT_HANG-WCODE-REPRINT-WB-GI-1.pdf")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Открыть этикетки" }));
+    await waitFor(() => expect(openHistoryReprint).toHaveBeenCalledWith({
+      shopId: 7,
+      exportId: "9a59c3c2-55dc-4bb1-90e7-3b5dba0eaa43",
+      fileKind: "labels",
+    }));
+
+    await user.type(screen.getByRole("searchbox", { name: "Поиск истории печати" }), "  Москва  ");
+    await user.click(screen.getByRole("button", { name: "Найти" }));
+    await waitFor(() => expect(loadPrintHistory).toHaveBeenLastCalledWith(expect.objectContaining({
+      query: "Москва",
+      status: "all",
+      page: 1,
+    })));
+
+    await user.click(screen.getByRole("button", { name: /Ошибки.*1/ }));
+    await waitFor(() => expect(loadPrintHistory).toHaveBeenLastCalledWith({
+      shopId: 7,
+      query: "Москва",
+      status: "failed",
+      page: 1,
+      pageSize: 25,
+    }));
+    expect(await screen.findByText("Ошибка")).toBeVisible();
     expect(document.body).not.toHaveTextContent(secret);
   });
 

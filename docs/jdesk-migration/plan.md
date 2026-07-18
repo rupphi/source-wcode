@@ -280,7 +280,8 @@ recover from rate limit/offline/error without JavaFX.
       search/category pagination and opaque cached product images.
 - [ ] Port confirmed create/add/deliver packing mutations and their operator-facing KIZ
       availability/preflight states on an explicitly approved shop.
-- [ ] Port print history/reprint.
+- [x] Port bounded print history/search/status pagination and native history reprint/save/open with
+      opaque, expiring file sessions.
 - [ ] Port template designer with unit conversion and visual preview.
 - [ ] Validate physical 58×40 output and Windows printer behavior.
 

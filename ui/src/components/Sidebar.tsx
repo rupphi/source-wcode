@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-export type WorkspaceView = "dashboard" | "packing" | "supplies";
+export type WorkspaceView = "dashboard" | "packing" | "supplies" | "history";
 
 type NavigationItem = {
   label: string;
@@ -22,7 +22,7 @@ const navigation: NavigationItem[] = [
   { label: "Поставки FBS", icon: Truck, view: "supplies" },
   { label: "Печать штрихкодов", icon: Barcode, view: null },
   { label: "Поставки FBO", icon: Boxes, view: null },
-  { label: "История печати", icon: History, view: null },
+  { label: "История печати", icon: History, view: "history" },
 ];
 
 export function Sidebar({

@@ -1,7 +1,11 @@
 import { invoke } from "jdesk-client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ExportSupplyRequest } from "../../generated/types";
-import { exportSupplyPdf, NATIVE_PRINT_EXPORT_TIMEOUT_MS } from "./nativePrintCommands";
+import type { ExportSupplyRequest, ReprintHistoryRequest } from "../../generated/types";
+import {
+  exportSupplyPdf,
+  NATIVE_PRINT_EXPORT_TIMEOUT_MS,
+  reprintHistoryPdf,
+} from "./nativePrintCommands";
 
 vi.mock("jdesk-client", () => ({
   invoke: vi.fn(),
@@ -39,6 +43,29 @@ describe("nativePrintCommands", () => {
     expect(NATIVE_PRINT_EXPORT_TIMEOUT_MS).toBe(10 * 60 * 1_000);
     expect(invokeCommand).toHaveBeenCalledWith(
       "printing.exportSupply",
+      request,
+      { timeoutMs: NATIVE_PRINT_EXPORT_TIMEOUT_MS },
+    );
+  });
+
+  it("uses the native save deadline for history reprints", async () => {
+    const request: ReprintHistoryRequest = {
+      shopId: 8,
+      jobId: "35",
+    };
+    const response = {
+      cancelled: false,
+      exportId: "9a59c3c2-55dc-4bb1-90e7-3b5dba0eaa43",
+      labelsFileName: "WCODE-REPRINT-WB-GI-244638998.pdf",
+      detailsFileName: "NHAT_HANG-WCODE-REPRINT-WB-GI-244638998.pdf",
+      jobId: "35",
+      itemCount: 5,
+    };
+    invokeCommand.mockResolvedValue(response);
+
+    await expect(reprintHistoryPdf(request)).resolves.toEqual(response);
+    expect(invokeCommand).toHaveBeenCalledWith(
+      "printing.reprintHistory",
       request,
       { timeoutMs: NATIVE_PRINT_EXPORT_TIMEOUT_MS },
     );

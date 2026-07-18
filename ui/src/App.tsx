@@ -11,6 +11,7 @@ import {
 import { useWildberriesSync } from "./features/wildberries/useWildberriesSync";
 import { SupplyListView } from "./features/supplies/SupplyListView";
 import { PackingView } from "./features/packing/PackingView";
+import { PrintHistoryView } from "./features/history/PrintHistoryView";
 import { commands } from "./generated/commands";
 import type { BootstrapResponse } from "./generated/types";
 
@@ -115,6 +116,10 @@ export function App() {
         title: "Поставки FBS",
         description: "Локальный реестр поставок Wildberries с быстрым поиском, статусами и точной пагинацией.",
     },
+    history: {
+      title: "История печати",
+      description: "Журнал локальных PDF-заданий с безопасным статусом, шаблоном и точным количеством этикеток.",
+    },
   }[activeView];
 
   return (
@@ -167,6 +172,8 @@ export function App() {
             <SupplyListView shopId={selectedShop.id} />
           ) : activeView === "packing" ? (
             <PackingView key={selectedShop.id} shopId={selectedShop.id} />
+          ) : activeView === "history" ? (
+            <PrintHistoryView key={selectedShop.id} shopId={selectedShop.id} />
           ) : (
             <DashboardView shop={selectedShop} state={dashboard} sync={wildberriesSync} />
           )}

@@ -33,7 +33,7 @@ Baseline: WCode `1.1.7`, branch point `61e8117`, 2026-07-18.
 | Deliver supply | `SupplyDetailController.onDeliver` | explicit-confirm mutation test on approved shop | Legacy |
 | FBS packing | `PackingController` | read-only new/preparation/dispatch board, search/category/paging and supply detail are native-tested; selection/create/add/deliver + KIZ preflight pending | Foundation (read) |
 | Print/export | `OrderExportWorkflow`, print services | macOS live WB PDF/save/open passed; physical 58×40 Windows test pending | Foundation |
-| Print history/reprint | `PrintHistoryController` | history list, status, reprint unsupported-image cases | Legacy |
+| Print history/reprint | `PrintHistoryController` | bounded history/search/status page and native reprint/save/open pass on live KingRussia job; unsupported-image regression remains covered by legacy service test; Windows native evidence pending | Foundation |
 | Template designer | `PrintTemplateDesignerController` | CRUD/elements/preview/unit/layout persistence | Legacy |
 | FBO packing | `FboPackingController` | search/category/pagination/quantity/single+batch print | Legacy |
 | GTIN/KIZ mapping | `KizMappingController`, `KizGtinMappingEditor` | inventory/filter/edit/sync/progress/error | Legacy |
