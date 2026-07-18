@@ -12,6 +12,7 @@ import { useWildberriesSync } from "./features/wildberries/useWildberriesSync";
 import { SupplyListView } from "./features/supplies/SupplyListView";
 import { PackingView } from "./features/packing/PackingView";
 import { FboPackingView } from "./features/fbo/FboPackingView";
+import { KizMappingView } from "./features/kizmapping/KizMappingView";
 import { PrintHistoryView } from "./features/history/PrintHistoryView";
 import { TemplateDesignerView } from "./features/templates/TemplateDesignerView";
 import { commands } from "./generated/commands";
@@ -126,6 +127,10 @@ export function App() {
       title: "Печать FBO",
       description: "Локальный каталог SKU с пакетной и быстрой печатью парных товарных этикеток и контролируемым списанием KIZ.",
     },
+    kizMapping: {
+      title: "Соответствия GTIN",
+      description: "Локальный каталог GTIN, остатков KIZ и точных правил соответствия категориям и значениям пола Wildberries.",
+    },
     templates: {
       title: "Дизайн этикеток",
       description: "Локальные шаблоны FBS и FBO с точной геометрией 58 × 40 мм и визуальной проверкой каждого элемента.",
@@ -193,6 +198,8 @@ export function App() {
             <PackingView key={selectedShop.id} shopId={selectedShop.id} />
           ) : activeView === "fbo" ? (
             <FboPackingView key={selectedShop.id} shopId={selectedShop.id} />
+          ) : activeView === "kizMapping" ? (
+            <KizMappingView key={selectedShop.id} shopId={selectedShop.id} />
           ) : activeView === "history" ? (
             <PrintHistoryView key={selectedShop.id} shopId={selectedShop.id} />
           ) : (

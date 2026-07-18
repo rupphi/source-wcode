@@ -306,13 +306,13 @@ path or add a verified Windows adapter; do not claim parity from macOS/browser p
 
 ## Phase 7: KIZ and Znack
 
-- [ ] Port bounded, server-paginated GTIN inventory with local category/search filters and safe
+- [x] Port bounded, server-paginated GTIN inventory with local category/search filters and safe
       inventory/order/pipeline/error DTOs.
-- [ ] Port the subject/gender mapping editor, including current/foreign ownership, wildcard rules,
+- [x] Port the subject/gender mapping editor, including current/foreign ownership, wildcard rules,
       empty-clear and atomic conflict-safe local save through a dedicated write capability.
-- [ ] Cover invalid shop/GTIN/rule/quota, technical GTIN, stale owner conflict, rollback and
+- [x] Cover invalid shop/GTIN/rule/quota, technical GTIN, stale owner conflict, rollback and
       redaction with Java tests; cover loading/empty/error/filter/page/edit/save/cancel in React.
-- [ ] Native-test live inventory read-only and an isolated SQLite mapping lifecycle at 1440×900 and
+- [x] Native-test live inventory read-only at 1440×857 and an isolated SQLite mapping lifecycle at
       960×640 with clean console, bounded DOM and accessible controls.
 - [ ] Port KIZ import with file type/size/magic-byte validation.
 - [ ] Port purchase pipeline and progress events with idempotency/recovery.

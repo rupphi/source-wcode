@@ -15,6 +15,11 @@ vi.mock("./generated/commands", () => ({
       export: vi.fn(),
       openExport: vi.fn(),
     },
+    kizMapping: {
+      catalog: vi.fn(),
+      editor: vi.fn(),
+      save: vi.fn(),
+    },
     supplies: {
       list: vi.fn(),
       detail: vi.fn(),
@@ -68,6 +73,7 @@ const loadDashboard = vi.mocked(commands.dashboard.load);
 const loadFboCatalog = vi.mocked(commands.fbo.catalog);
 const exportFbo = vi.mocked(exportFboPdf);
 const openFboExport = vi.mocked(commands.fbo.openExport);
+const loadKizMappingCatalog = vi.mocked(commands.kizMapping.catalog);
 const listSupplies = vi.mocked(commands.supplies.list);
 const loadSupplyDetail = vi.mocked(commands.supplies.detail);
 const refreshSupply = vi.mocked(commands.supplies.refresh);
@@ -189,6 +195,7 @@ describe("App", () => {
     loadFboCatalog.mockReset();
     exportFbo.mockReset();
     openFboExport.mockReset();
+    loadKizMappingCatalog.mockReset();
     listSupplies.mockReset();
     loadSupplyDetail.mockReset();
     refreshSupply.mockReset();
@@ -607,6 +614,58 @@ describe("App", () => {
     expect(screen.getByText("Кроссовки FBO")).toBeVisible();
     expect(screen.getByText("9007199254740993")).toBeVisible();
     expect(document.body).not.toHaveTextContent(secret);
+  });
+
+  it("opens the bounded local GTIN mapping catalog from primary navigation", async () => {
+    const user = userEvent.setup();
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Основной магазин", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard.mockResolvedValue({
+      shopId: 7,
+      productCount: 10,
+      newOrderCount: 3,
+      openSupplyCount: 1,
+    });
+    loadKizMappingCatalog.mockResolvedValue({
+      shopId: 7,
+      query: "",
+      categories: [],
+      page: 1,
+      pageSize: 50,
+      hasMore: false,
+      availableCategories: ["Одежда"],
+      items: [{
+        gtin: "04601234567890",
+        productName: "Куртка Alpine",
+        category: "Одежда",
+        available: 12,
+        reserved: 2,
+        consumed: 8,
+        mappingRuleCount: 2,
+        orderStatus: "CODES_READY",
+        pipelineStage: "COMPLETED",
+        errorMessage: "",
+        syncedAt: "2026-07-18T12:00:00Z",
+      }],
+    });
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "GTIN и KIZ" }));
+
+    expect(await screen.findByRole("heading", { name: "Соответствия GTIN" })).toBeVisible();
+    await waitFor(() => expect(loadKizMappingCatalog).toHaveBeenCalledWith({
+      shopId: 7,
+      query: "",
+      categories: [],
+      page: 1,
+      pageSize: 50,
+    }));
+    expect(screen.getByText("Куртка Alpine")).toBeVisible();
+    expect(screen.getByText("04601234567890")).toBeVisible();
   });
 
   it("opens, searches, and filters the bounded print history", async () => {

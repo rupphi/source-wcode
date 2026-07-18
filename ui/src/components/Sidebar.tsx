@@ -3,12 +3,13 @@ import {
   Boxes,
   History,
   LayoutDashboard,
+  Link2,
   PackageSearch,
   Truck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-export type WorkspaceView = "dashboard" | "packing" | "supplies" | "fbo" | "templates" | "history";
+export type WorkspaceView = "dashboard" | "packing" | "supplies" | "fbo" | "kizMapping" | "templates" | "history";
 
 type NavigationItem = {
   label: string;
@@ -22,6 +23,7 @@ const navigation: NavigationItem[] = [
   { label: "Поставки FBS", icon: Truck, view: "supplies" },
   { label: "Дизайн этикеток", icon: Barcode, view: "templates" },
   { label: "Поставки FBO", icon: Boxes, view: "fbo" },
+  { label: "GTIN и KIZ", icon: Link2, view: "kizMapping" },
   { label: "История печати", icon: History, view: "history" },
 ];
 

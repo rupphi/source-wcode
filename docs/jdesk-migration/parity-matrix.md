@@ -36,7 +36,7 @@ Baseline: WCode `1.1.7`, branch point `61e8117`, 2026-07-18.
 | Print history/reprint | `PrintHistoryController` | bounded history/search/status page and native reprint/save/open pass on live KingRussia job; unsupported-image regression remains covered by legacy service test; Windows native evidence pending | Foundation |
 | Template designer | `PrintTemplateDesignerController` | typed FBS/FBO catalog; CRUD/default/reset; palette/add/copy/paste/delete; bounded mm inspector, drag/resize geometry and persisted 58×40 layout are covered by Java/React tests plus native isolated-SQLite lifecycle at 1440×900 and 960×640 | Parity |
 | FBO packing | `FboPackingController` | typed local search/category/50-SKU paging, quantity retention, quick+batch native export/open and KIZ compensation are covered by Java/React tests, a real two-page 58×40 PDF integration test and live native catalog evidence at 1440×900/960×640; physical Windows output remains the shared print gate | Parity |
-| GTIN/KIZ mapping | `KizMappingController`, `KizGtinMappingEditor` | inventory/filter/edit/sync/progress/error | Legacy |
+| GTIN/KIZ mapping | `KizMappingController`, `KizGtinMappingEditor` | bounded local inventory/filter/page and conflict-safe wildcard/exact editor are covered by Java/React tests plus live read-only and isolated native lifecycle evidence; Znack sync/purchase/progress remain pending | Foundation (local) |
 | Znack settings/products | `ZnackAutomationController` | settings, signature cert, product lifecycle | Legacy |
 | Znack orders/logs | `ZnackAutomationController` | pipeline state/retry/logs/recovery | Legacy |
 | CryptoPro signing | `integration/znack/signature` | real Windows CryptoPro provider matrix | Legacy |
