@@ -261,7 +261,7 @@ Vertical slices, each with contract → RED test → Java adapter → React UI �
 - [x] Supply detail and paginated order table with stable sorting/search.
 - [x] Cached product-image preview via asset route, never remote URL or oversized JSON.
 - [ ] Sticker preview via asset route or binary stream as part of the print workflow.
-- [ ] Refresh orders/status and restore selection.
+- [x] Refresh orders/status and restore selection.
 - [ ] Excel import/export and native file dialogs.
 
 ### Checkpoint C: FBS read workflow
