@@ -152,6 +152,17 @@ tasks.named<JavaExec>("run") {
     }
 }
 
+tasks.register<JavaExec>("wcodeRecovery") {
+    group = "application"
+    description = "Runs the offline recovery CLI; pass --args='list|verify <id>|restore <id> --confirm'."
+    mainClass.set("com.tuandev.fbsbarcode.jdesk.recovery.WCodeRecoveryCli")
+    classpath = sourceSets["main"].runtimeClasspath
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
+    System.getProperty("wcode.appdata.dir")?.let { appDataDir ->
+        systemProperty("wcode.appdata.dir", appDataDir)
+    }
+}
+
 tasks.register("dev") {
     group = "jdesk"
     description = "Alias for jdeskDev."
