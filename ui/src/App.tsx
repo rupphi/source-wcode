@@ -13,6 +13,7 @@ import { SupplyListView } from "./features/supplies/SupplyListView";
 import { PackingView } from "./features/packing/PackingView";
 import { FboPackingView } from "./features/fbo/FboPackingView";
 import { KizMappingView } from "./features/kizmapping/KizMappingView";
+import { ZnackView } from "./features/znack/ZnackView";
 import { PrintHistoryView } from "./features/history/PrintHistoryView";
 import { TemplateDesignerView } from "./features/templates/TemplateDesignerView";
 import { commands } from "./generated/commands";
@@ -131,6 +132,10 @@ export function App() {
       title: "Соответствия GTIN",
       description: "Локальный каталог GTIN, остатков KIZ и точных правил соответствия категориям и значениям пола Wildberries.",
     },
+    znack: {
+      title: "Znack Automation",
+      description: "Настройки OMS, безопасный статус подписи и локальный жизненный цикл зарегистрированных GTIN.",
+    },
     templates: {
       title: "Дизайн этикеток",
       description: "Локальные шаблоны FBS и FBO с точной геометрией 58 × 40 мм и визуальной проверкой каждого элемента.",
@@ -200,6 +205,8 @@ export function App() {
             <FboPackingView key={selectedShop.id} shopId={selectedShop.id} />
           ) : activeView === "kizMapping" ? (
             <KizMappingView key={selectedShop.id} shopId={selectedShop.id} />
+          ) : activeView === "znack" ? (
+            <ZnackView key={selectedShop.id} shopId={selectedShop.id} />
           ) : activeView === "history" ? (
             <PrintHistoryView key={selectedShop.id} shopId={selectedShop.id} />
           ) : (

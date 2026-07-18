@@ -86,6 +86,27 @@ luồng hiện tại trong UI mới, nhanh, rõ trạng thái, dùng được b�
   các increment Phase 7 tiếp theo. Native test của editor chỉ ghi isolated app-data; live database
   chỉ được smoke read-only nếu chưa có approval mutation riêng.
 
+### Znack settings and product contract
+
+- `znack.settings` chỉ trả các field người dùng được phép chỉnh (`omsId`, `omsConnection`, default
+  goods document, auto-introduction), trạng thái chữ ký allowlist và label/ngày hết hạn certificate
+  đã sanitize. API hosts, executable path/arguments, certificate selector/thumbprint/metadata JSON,
+  participant identity, token, signature và raw error không qua bridge.
+- Settings response mang version SHA-256 opaque tính ở Java từ toàn bộ persisted settings.
+  `znack.saveSettings` yêu cầu shop hiện hữu, version hiện hành, OMS fields hợp lệ và goods-document
+  đầy đủ với ngày `dd.MM.yyyy`; Java merge trên snapshot mới nhất để giữ nguyên mọi field private.
+  Stale version bị từ chối trước mutation và command dùng capability `znack:configure` riêng.
+- `znack.products` đọc local SQLite theo page, tối đa `pageSize + 1`, query tối đa 120 ký tự, tối đa
+  30 category filter và page-size 10–100. Active/deleted là hai tập riêng; DTO không chứa raw KIZ,
+  certificate fields, pipeline payload, deletion timestamp hay remote response.
+- `znack.setProductVisibility` nhận tối đa 100 production GTIN, re-resolve toàn bộ ownership và
+  expected active/deleted state trong một `BEGIN IMMEDIATE` transaction rồi mới ẩn/khôi phục và ghi
+  audit log. Partial/stale/cross-shop batch phải rollback; permanent purge, certificate
+  discovery/test và remote sync là command riêng ở increment sau.
+- React phải có loading/empty/error/retry, bounded search/category/page, dirty/stale settings state,
+  explicit save và reversible hide/restore feedback. Live native smoke chỉ đọc; lifecycle mutation
+  dùng isolated app-data.
+
 ## Tech Stack
 
 - Java 25, jDesk `0.1.3`, Gradle wrapper `9.6.1`.

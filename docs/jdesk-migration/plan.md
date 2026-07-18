@@ -314,8 +314,15 @@ path or add a verified Windows adapter; do not claim parity from macOS/browser p
       redaction with Java tests; cover loading/empty/error/filter/page/edit/save/cancel in React.
 - [x] Native-test live inventory read-only at 1440×857 and an isolated SQLite mapping lifecycle at
       960×640 with clean console, bounded DOM and accessible controls.
-- [ ] Port KIZ import with file type/size/magic-byte validation.
+- [x] Preserve the intentional v1.0.28 removal of legacy PDF KIZ import and its category tables;
+      do not reintroduce a path that bypasses the shop-scoped Znack inventory lifecycle.
+- [x] Port editable Znack settings through an opaque optimistic version while keeping API hosts,
+      executable paths/arguments and certificate selector/thumbprint/metadata inside Java.
+- [x] Port bounded active/deleted product pages and atomic batch hide/restore with shop-scoped audit.
+- [x] Native-test settings save/restore and product hide/restore on isolated app-data at 1440×857
+      and 960×640 with bounded DOM, accessible controls, clean console and no remote mutation.
 - [ ] Port purchase pipeline and progress events with idempotency/recovery.
+- [ ] Port certificate discovery/test and participant product sync without exposing signer material.
 - [ ] Port CryptoPro certificate discovery/signing on Windows.
 - [ ] Port introduction status/retry and audit-safe errors.
 

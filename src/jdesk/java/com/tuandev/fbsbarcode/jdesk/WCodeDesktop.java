@@ -35,6 +35,8 @@ import com.tuandev.fbsbarcode.jdesk.wildberries.WildberriesCommandServiceCommand
 import com.tuandev.fbsbarcode.jdesk.workspace.JDeskCommands;
 import com.tuandev.fbsbarcode.jdesk.workspace.WorkspaceCommandService;
 import com.tuandev.fbsbarcode.jdesk.workspace.WorkspaceCommandServiceCommands;
+import com.tuandev.fbsbarcode.jdesk.znack.ZnackCommandService;
+import com.tuandev.fbsbarcode.jdesk.znack.ZnackCommandServiceCommands;
 import com.tuandev.fbsbarcode.shared.AppDataLock;
 import com.tuandev.fbsbarcode.shared.AppPaths;
 import dev.jdesk.api.ApplicationHandle;
@@ -62,6 +64,7 @@ public final class WCodeDesktop {
             FboCatalogCommandService fboCatalog = new FboCatalogCommandService(orderImages);
             FboPrintCommandService fboPrinting = new FboPrintCommandService();
             KizMappingCommandService kizMappings = new KizMappingCommandService();
+            ZnackCommandService znack = new ZnackCommandService();
             PackingCommandService packing = new PackingCommandService(orderImages);
             ExcelOrderImportCommandService excelOrders = new ExcelOrderImportCommandService(orderImages);
             PrintCommandService printing = new PrintCommandService();
@@ -95,6 +98,7 @@ public final class WCodeDesktop {
                             FboCatalogCommandServiceCommands.create(fboCatalog),
                             fboPrintCommands,
                             KizMappingCommandServiceCommands.create(kizMappings),
+                            ZnackCommandServiceCommands.create(znack),
                             SupplyDetailCommandServiceCommands.create(supplyDetails),
                             SupplyRefreshCommandServiceCommands.create(supplyRefresh),
                             ExcelOrderImportCommandServiceCommands.create(excelOrders),

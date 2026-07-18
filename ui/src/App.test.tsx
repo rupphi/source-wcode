@@ -20,6 +20,12 @@ vi.mock("./generated/commands", () => ({
       editor: vi.fn(),
       save: vi.fn(),
     },
+    znack: {
+      products: vi.fn(),
+      saveSettings: vi.fn(),
+      setProductVisibility: vi.fn(),
+      settings: vi.fn(),
+    },
     supplies: {
       list: vi.fn(),
       detail: vi.fn(),
@@ -74,6 +80,7 @@ const loadFboCatalog = vi.mocked(commands.fbo.catalog);
 const exportFbo = vi.mocked(exportFboPdf);
 const openFboExport = vi.mocked(commands.fbo.openExport);
 const loadKizMappingCatalog = vi.mocked(commands.kizMapping.catalog);
+const loadZnackSettings = vi.mocked(commands.znack.settings);
 const listSupplies = vi.mocked(commands.supplies.list);
 const loadSupplyDetail = vi.mocked(commands.supplies.detail);
 const refreshSupply = vi.mocked(commands.supplies.refresh);
@@ -196,6 +203,7 @@ describe("App", () => {
     exportFbo.mockReset();
     openFboExport.mockReset();
     loadKizMappingCatalog.mockReset();
+    loadZnackSettings.mockReset();
     listSupplies.mockReset();
     loadSupplyDetail.mockReset();
     refreshSupply.mockReset();
@@ -666,6 +674,42 @@ describe("App", () => {
     }));
     expect(screen.getByText("Куртка Alpine")).toBeVisible();
     expect(screen.getByText("04601234567890")).toBeVisible();
+  });
+
+  it("opens the safe local Znack settings workspace from primary navigation", async () => {
+    const user = userEvent.setup();
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Основной магазин", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard.mockResolvedValue({
+      shopId: 7,
+      productCount: 10,
+      newOrderCount: 3,
+      openSupplyCount: 1,
+    });
+    loadZnackSettings.mockResolvedValue({
+      shopId: 7,
+      omsId: "OMS-7",
+      omsConnection: "CONNECTION-7",
+      documentNumber: "",
+      documentDate: "",
+      autoIntroduction: false,
+      signatureStatus: "VERIFIED",
+      certificateLabel: "ООО Маркировка",
+      certificateValidTo: "2027-07-18",
+      version: "a".repeat(64),
+    });
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Znack Automation" }));
+
+    expect(await screen.findByRole("heading", { name: "Znack Automation" })).toBeVisible();
+    await waitFor(() => expect(loadZnackSettings).toHaveBeenCalledWith({ shopId: 7 }));
+    expect(screen.getByDisplayValue("OMS-7")).toBeVisible();
+    expect(screen.getByText("Подпись проверена")).toBeVisible();
   });
 
   it("opens, searches, and filters the bounded print history", async () => {

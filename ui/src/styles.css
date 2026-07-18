@@ -17,8 +17,16 @@
   --accent: #53d397;
   --accent-strong: #167a50;
   --accent-soft: #dcf7e9;
+  --success: #167a50;
+  --success-soft: #dcf7e9;
+  --warning: #9a5a0a;
+  --warning-soft: #fff2d6;
+  --danger: #b42318;
+  --danger-soft: #fee4e2;
   --shadow-panel: 0 1px 2px rgb(20 35 29 / 0.04), 0 10px 30px rgb(20 35 29 / 0.035);
+  --shadow-card: var(--shadow-panel);
   --shadow-control: 0 1px 2px rgb(20 35 29 / 0.05);
+  --shadow-popover: 0 16px 40px rgb(20 35 29 / 0.14);
 }
 
 * {
@@ -71,6 +79,143 @@ input:focus-visible {
 .icon-button:disabled {
   cursor: default;
   opacity: 0.4;
+}
+
+.field-label {
+  display: grid;
+  gap: 0.45rem;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.text-input {
+  min-width: 0;
+  height: 2.65rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.75rem;
+  background: var(--surface-elevated);
+  padding: 0 0.8rem;
+  color: var(--text-primary);
+  box-shadow: var(--shadow-control);
+  font-size: 0.875rem;
+  font-weight: 450;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.text-input:hover,
+.text-input:focus {
+  border-color: color-mix(in srgb, var(--accent-strong) 55%, var(--border-strong));
+}
+
+.primary-button,
+.secondary-button,
+.danger-button {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border-radius: 0.75rem;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease, opacity 150ms ease;
+}
+
+.primary-button {
+  border: 1px solid var(--accent-strong);
+  background: var(--accent-strong);
+  color: #fff;
+}
+
+.primary-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-strong) 88%, #000);
+}
+
+.secondary-button {
+  border: 1px solid var(--border-strong);
+  background: var(--surface-elevated);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-control);
+}
+
+.secondary-button:hover:not(:disabled) {
+  background: var(--surface-muted);
+  color: var(--text-primary);
+}
+
+.danger-button {
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border-subtle));
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.danger-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger-soft) 80%, var(--danger));
+}
+
+.primary-button:disabled,
+.secondary-button:disabled,
+.danger-button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.notice-success,
+.notice-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid;
+  border-radius: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.notice-success {
+  justify-content: flex-start;
+  border-color: color-mix(in srgb, var(--success) 25%, var(--border-subtle));
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.notice-error {
+  border-color: color-mix(in srgb, var(--danger) 25%, var(--border-subtle));
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.notice-error button {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  padding: 0.25rem 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.status-success {
+  border-color: color-mix(in srgb, var(--success) 20%, var(--border-subtle));
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.status-warning {
+  border-color: color-mix(in srgb, var(--warning) 20%, var(--border-subtle));
+  background: var(--warning-soft);
+  color: var(--warning);
 }
 
 .template-canvas {
