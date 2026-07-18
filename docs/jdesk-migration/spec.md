@@ -23,6 +23,20 @@ luồng hiện tại trong UI mới, nhanh, rõ trạng thái, dùng được b�
 7. Quản lý license, ngôn ngữ, theme, update và diagnostics.
 8. Đóng gói Windows EXE/MSI/portable; giữ dữ liệu của bản JavaFX khi nâng cấp.
 
+### Template designer contract
+
+- Designer phục vụ hai kho template tách biệt `fbs` và `fbo`, cùng khổ cố định 58×40 mm.
+- Catalog bridge chỉ trả DTO allowlist: template/element ID dạng string, tên/thuộc tính đã giới
+  hạn, enum typed và geometry hữu hạn theo millimeter; raw `layout_json` không qua frontend.
+- Mỗi mode tối đa 100 template, mỗi template tối đa 100 element. Element ID phải không rỗng,
+  không trùng trong template; type/field/alignment phải thuộc enum legacy.
+- UI giữ parity create/duplicate/rename/delete/default/reset/save; canvas hỗ trợ chọn, thêm,
+  copy/paste/delete, drag/resize, snap 1 mm và chỉnh x/y/width/height theo mm, font theo point.
+- Save boundary chuyển mm về PDF point, validate quota/text/numeric/required KIZ + Code128 +
+  sticker-tail trước khi gọi `PrintTemplateService`; mọi lỗi repository/JSON chỉ trả safe envelope.
+- Template là dữ liệu SQLite cục bộ, không phụ thuộc shop và không gọi WB/Znack. Native test writer
+  dùng bản sao/isolated app-data; live catalog smoke không làm seller-state mutation.
+
 ## Tech Stack
 
 - Java 25, jDesk `0.1.3`, Gradle wrapper `9.6.1`.

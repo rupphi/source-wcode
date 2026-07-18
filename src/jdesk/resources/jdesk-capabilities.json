@@ -9,6 +9,7 @@
     { "capability": "printing:read", "windows": ["main"] },
     { "capability": "printing:configure", "windows": ["main"] },
     { "capability": "printing:export", "windows": ["main"] },
+    { "capability": "templates:read", "windows": ["main"] },
     { "capability": "wildberries:sync", "windows": ["main"] }
   ]
 }

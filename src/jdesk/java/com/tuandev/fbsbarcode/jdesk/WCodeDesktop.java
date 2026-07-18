@@ -20,6 +20,8 @@ import com.tuandev.fbsbarcode.jdesk.supply.SupplyDetailCommandService;
 import com.tuandev.fbsbarcode.jdesk.supply.SupplyDetailCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.supply.SupplyRefreshCommandService;
 import com.tuandev.fbsbarcode.jdesk.supply.SupplyRefreshCommandServiceCommands;
+import com.tuandev.fbsbarcode.jdesk.template.TemplateDesignerCommandService;
+import com.tuandev.fbsbarcode.jdesk.template.TemplateDesignerCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.wildberries.WildberriesCommandService;
 import com.tuandev.fbsbarcode.jdesk.wildberries.WildberriesCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.workspace.JDeskCommands;
@@ -55,6 +57,7 @@ public final class WCodeDesktop {
             PrintHistoryCommandService printHistory = new PrintHistoryCommandService();
             PrintHistoryReprintCommandService historyReprint = new PrintHistoryReprintCommandService();
             PrintExportCommandService printExport = new PrintExportCommandService();
+            TemplateDesignerCommandService templates = new TemplateDesignerCommandService();
             var printExportCommands = CommandTimeoutOverrides.withTimeout(
                     PrintExportCommandServiceCommands.create(printExport),
                     "printing.exportSupply",
@@ -78,7 +81,8 @@ public final class WCodeDesktop {
                             PrintCommandServiceCommands.create(printing),
                             PrintHistoryCommandServiceCommands.create(printHistory),
                             historyReprintCommands,
-                            printExportCommands))
+                            printExportCommands,
+                            TemplateDesignerCommandServiceCommands.create(templates)))
                     .capabilities(Capabilities.fromResource("jdesk-capabilities.json"))
                     .contentSecurityPolicy(Csp.defaults())
                     .assetRoute("order-images", orderImages)
