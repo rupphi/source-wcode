@@ -1,6 +1,8 @@
 package com.tuandev.fbsbarcode.jdesk;
 
 import com.tuandev.fbsbarcode.BuildConfig;
+import com.tuandev.fbsbarcode.jdesk.order.ExcelOrderImportCommandService;
+import com.tuandev.fbsbarcode.jdesk.order.ExcelOrderImportCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.supply.OrderImageAssetService;
 import com.tuandev.fbsbarcode.jdesk.supply.SupplyCommandService;
 import com.tuandev.fbsbarcode.jdesk.supply.SupplyCommandServiceCommands;
@@ -36,6 +38,7 @@ public final class WCodeDesktop {
             WildberriesCommandService wildberries = new WildberriesCommandService();
             SupplyCommandService supplies = new SupplyCommandService();
             OrderImageAssetService orderImages = new OrderImageAssetService();
+            ExcelOrderImportCommandService excelOrders = new ExcelOrderImportCommandService(orderImages);
             SupplyDetailCommandService supplyDetails = new SupplyDetailCommandService(orderImages);
             SupplyRefreshCommandService supplyRefresh = new SupplyRefreshCommandService();
             JDeskApplication.Builder application = JDeskApplication.builder()
@@ -45,7 +48,8 @@ public final class WCodeDesktop {
                             WildberriesCommandServiceCommands.create(wildberries),
                             SupplyCommandServiceCommands.create(supplies),
                             SupplyDetailCommandServiceCommands.create(supplyDetails),
-                            SupplyRefreshCommandServiceCommands.create(supplyRefresh)))
+                            SupplyRefreshCommandServiceCommands.create(supplyRefresh),
+                            ExcelOrderImportCommandServiceCommands.create(excelOrders)))
                     .capabilities(Capabilities.fromResource("jdesk-capabilities.json"))
                     .contentSecurityPolicy(Csp.defaults())
                     .assetRoute("order-images", orderImages)
