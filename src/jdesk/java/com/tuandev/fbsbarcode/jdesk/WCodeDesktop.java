@@ -7,6 +7,8 @@ import com.tuandev.fbsbarcode.jdesk.fbo.FboPrintCommandService;
 import com.tuandev.fbsbarcode.jdesk.fbo.FboPrintCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.kizmapping.KizMappingCommandService;
 import com.tuandev.fbsbarcode.jdesk.kizmapping.KizMappingCommandServiceCommands;
+import com.tuandev.fbsbarcode.jdesk.license.LicenseCommandService;
+import com.tuandev.fbsbarcode.jdesk.license.LicenseCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.order.ExcelOrderImportCommandService;
 import com.tuandev.fbsbarcode.jdesk.order.ExcelOrderImportCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.packing.PackingCommandService;
@@ -68,6 +70,7 @@ public final class WCodeDesktop {
             FboCatalogCommandService fboCatalog = new FboCatalogCommandService(orderImages);
             FboPrintCommandService fboPrinting = new FboPrintCommandService();
             KizMappingCommandService kizMappings = new KizMappingCommandService();
+            LicenseCommandService license = new LicenseCommandService();
             ZnackCommandService znack = new ZnackCommandService();
             ZnackAutomationCommandService znackAutomation = new ZnackAutomationCommandService();
             ZnackPurchaseCommandService znackPurchases = new ZnackPurchaseCommandService();
@@ -120,6 +123,7 @@ public final class WCodeDesktop {
                             FboCatalogCommandServiceCommands.create(fboCatalog),
                             fboPrintCommands,
                             KizMappingCommandServiceCommands.create(kizMappings),
+                            LicenseCommandServiceCommands.create(license),
                             ZnackCommandServiceCommands.create(znack),
                             znackAutomationCommands,
                             znackPurchaseCommands,

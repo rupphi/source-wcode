@@ -2,6 +2,7 @@ package com.tuandev.fbsbarcode.jdesk.znack;
 
 import com.tuandev.fbsbarcode.config.Database;
 import com.tuandev.fbsbarcode.features.shop.ShopRepository;
+import com.tuandev.fbsbarcode.integration.license.LicenseService;
 import com.tuandev.fbsbarcode.integration.znack.GtinNormalizer;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels.PurchaseStage;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels.Settings;
@@ -33,6 +34,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 /** Safe jDesk boundary for persisted KIZ purchase progress, introduction retry, and audit history. */
@@ -50,18 +52,27 @@ public final class ZnackPurchaseCommandService {
     private final PurchaseSource source;
     private final PurchaseRunner runner;
     private final Clock clock;
+    private final BooleanSupplier licenseAllowed;
     private final ConcurrentMap<String, PurchasePreview> previews = new ConcurrentHashMap<>();
 
     public ZnackPurchaseCommandService() {
-        this(new ShopRepository()::findAll, new LegacyPurchaseSource(), new LegacyPurchaseRunner(), Clock.systemUTC());
+        this(new ShopRepository()::findAll, new LegacyPurchaseSource(), new LegacyPurchaseRunner(),
+                Clock.systemUTC(), () -> LicenseService.getInstance().getState().kizAllowed());
     }
 
     ZnackPurchaseCommandService(
             Supplier<List<Shop>> shops, PurchaseSource source, PurchaseRunner runner, Clock clock) {
+        this(shops, source, runner, clock, () -> true);
+    }
+
+    ZnackPurchaseCommandService(
+            Supplier<List<Shop>> shops, PurchaseSource source, PurchaseRunner runner, Clock clock,
+            BooleanSupplier licenseAllowed) {
         this.shops = Objects.requireNonNull(shops, "shops");
         this.source = Objects.requireNonNull(source, "source");
         this.runner = Objects.requireNonNull(runner, "runner");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.licenseAllowed = Objects.requireNonNull(licenseAllowed, "licenseAllowed");
     }
 
     @DesktopCommand("znack.preparePurchase")
@@ -72,6 +83,7 @@ public final class ZnackPurchaseCommandService {
         return SafeCommandExecutor.execute(() -> {
             requireNotCancelled(context);
             requireShop(validated.shopId());
+            requirePurchaseLicense();
             Settings settings = requireSettings(validated.shopId());
             requireVersion(settings, validated.version());
             requireVerified(settings);
@@ -107,6 +119,7 @@ public final class ZnackPurchaseCommandService {
                 emit(context, item);
                 return new StartPurchaseResponse(false, item);
             }
+            requirePurchaseLicense();
             Settings settings = requireSettings(validated.shopId());
             requireVersion(settings, validated.version());
             requireVerified(settings);
@@ -216,6 +229,12 @@ public final class ZnackPurchaseCommandService {
 
     private Settings requireSettings(int shopId) {
         return Objects.requireNonNull(source.settings(shopId), "Znack settings");
+    }
+
+    private void requirePurchaseLicense() {
+        if (!licenseAllowed.getAsBoolean()) {
+            throw invalid("An active WCode license is required before buying KIZ.");
+        }
     }
 
     private Shop requireShop(int shopId) {

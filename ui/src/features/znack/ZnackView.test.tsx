@@ -432,6 +432,17 @@ describe("ZnackView", () => {
     expect(document.body).not.toHaveTextContent(secret);
   });
 
+  it("keeps paid KIZ purchase unavailable when the shared license oracle denies it", async () => {
+    const user = userEvent.setup();
+    render(<ZnackView shopId={7} licenseAllowed={false} />);
+    await screen.findByDisplayValue("OMS-7");
+    await user.click(screen.getByRole("tab", { name: "Товары" }));
+
+    const buy = await screen.findByRole("button", { name: `Купить КИЗ для ${gtin}` });
+    expect(buy).toBeDisabled();
+    expect(preparePurchase).not.toHaveBeenCalled();
+  });
+
   it("shows bounded purchase recovery and sanitized operation journal", async () => {
     const user = userEvent.setup();
     loadPurchases.mockResolvedValueOnce({

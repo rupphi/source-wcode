@@ -9,6 +9,8 @@
     { "capability": "fbo:print", "windows": ["main"] },
     { "capability": "kiz-mapping:read", "windows": ["main"] },
     { "capability": "kiz-mapping:write", "windows": ["main"] },
+    { "capability": "license:read", "windows": ["main"] },
+    { "capability": "license:manage", "windows": ["main"] },
     { "capability": "znack:read", "windows": ["main"] },
     { "capability": "znack:configure", "windows": ["main"] },
     { "capability": "znack:certificate", "windows": ["main"] },

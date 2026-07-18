@@ -114,7 +114,7 @@ function readiness(status: string, kind: "mark" | "turn") {
   return { label: `${label}: нет данных`, className: "status-pill" };
 }
 
-export function ZnackView({ shopId }: { shopId: number }) {
+export function ZnackView({ shopId, licenseAllowed = true }: { shopId: number; licenseAllowed?: boolean }) {
   const [tab, setTab] = useState<Tab>("settings");
   const [settingsState, setSettingsState] = useState<SettingsState>({ status: "loading" });
   const [draft, setDraft] = useState<SettingsDraft | null>(null);
@@ -595,7 +595,7 @@ export function ZnackView({ shopId }: { shopId: number }) {
               onSync={() => void startSync()}
               onCancelSync={() => void cancelSync()}
               canPurchase={settingsState.status === "ready"
-                && settingsState.data.signatureStatus === "VERIFIED" && !settingsDirty}
+                && settingsState.data.signatureStatus === "VERIFIED" && !settingsDirty && licenseAllowed}
               onBuy={openPurchase}
             />
           </div>
@@ -619,7 +619,7 @@ export function ZnackView({ shopId }: { shopId: number }) {
         <PurchaseDialog
           state={purchaseDialog}
           canPurchase={settingsState.status === "ready"
-            && settingsState.data.signatureStatus === "VERIFIED" && !settingsDirty}
+            && settingsState.data.signatureStatus === "VERIFIED" && !settingsDirty && licenseAllowed}
           onState={setPurchaseDialog}
           onClose={() => setPurchaseDialog(null)}
           onPrepare={() => void preparePurchase()}

@@ -337,8 +337,16 @@ artifact. Recovery/idempotency tests precede implementation changes.
 
 ## Phase 8: License, update, settings and diagnostics
 
-Port license activation/status, i18n, theme, update check/install and support bundle. Update and
-installer tasks must include signature/checksum validation and rollback evidence.
+- [x] Port secret-safe license status, activation, refresh and explicit device deactivation while
+      preserving the signed-file/offline-grace/clock policy unchanged.
+- [x] Gate paid jDesk KIZ purchase through the same `LicenseService.kizAllowed()` oracle as JavaFX.
+- [x] Cover invalid key/device limit/network/signed state/expiry/offline grace/clock rollback,
+      malformed bridge response and concurrency with Java/React tests.
+- [x] Native-test isolated not-activated/settings states without contacting the production license
+      server; real activation/deactivation remains an approval-only release gate.
+- [ ] Port persisted language and light/dark/system theme.
+- [ ] Port signed update check/download/install with checksum validation and rollback evidence.
+- [ ] Port redacted diagnostics/support bundle.
 
 ## Phase 9: Production hardening and cutover
 

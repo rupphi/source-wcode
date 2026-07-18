@@ -16,6 +16,7 @@ import { KizMappingView } from "./features/kizmapping/KizMappingView";
 import { ZnackView } from "./features/znack/ZnackView";
 import { PrintHistoryView } from "./features/history/PrintHistoryView";
 import { TemplateDesignerView } from "./features/templates/TemplateDesignerView";
+import { LicenseSettingsDialog } from "./features/license/LicenseSettingsDialog";
 import { commands } from "./generated/commands";
 import type { BootstrapResponse } from "./generated/types";
 
@@ -29,7 +30,10 @@ export function App() {
   const [dashboard, setDashboard] = useState<DashboardState>({ status: "idle" });
   const [selectedShopId, setSelectedShopId] = useState<number | null>(null);
   const [activeView, setActiveView] = useState<WorkspaceView>("dashboard");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [licenseAllowed, setLicenseAllowed] = useState(false);
   const dashboardRequest = useRef(0);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
 
   const loadDashboard = useCallback(async (shopId: number) => {
     const requestId = ++dashboardRequest.current;
@@ -79,6 +83,19 @@ export function App() {
     };
   }, [applyWorkspace]);
 
+  useEffect(() => {
+    let active = true;
+    void commands.license.refresh({}).then(
+      (response) => {
+        if (!active || typeof response.kizAllowed !== "boolean") return;
+        const allowedStatus = response.status === "valid" || response.status === "offline_grace";
+        setLicenseAllowed(response.kizAllowed && allowedStatus);
+      },
+      () => { if (active) setLicenseAllowed(false); },
+    );
+    return () => { active = false; };
+  }, []);
+
   const retryWorkspace = async () => {
     dashboardRequest.current += 1;
     setWorkspace({ status: "loading" });
@@ -96,6 +113,11 @@ export function App() {
   const selectShop = (shopId: number) => {
     setSelectedShopId(shopId);
     void loadDashboard(shopId);
+  };
+
+  const closeSettings = () => {
+    setSettingsOpen(false);
+    requestAnimationFrame(() => settingsButtonRef.current?.focus());
   };
 
   if (workspace.status === "loading") {
@@ -143,7 +165,12 @@ export function App() {
   }[activeView];
 
   return (
-    <div className="min-h-screen bg-[var(--surface-canvas)] text-[var(--text-primary)] md:grid md:grid-cols-[15.5rem_1fr]">
+    <>
+      <div
+        className="min-h-screen bg-[var(--surface-canvas)] text-[var(--text-primary)] md:grid md:grid-cols-[15.5rem_1fr]"
+        aria-hidden={settingsOpen || undefined}
+        inert={settingsOpen || undefined}
+      >
       <Sidebar
         version={workspace.data.app.version}
         activeView={activeView}
@@ -161,7 +188,14 @@ export function App() {
             <button className="icon-button" type="button" aria-label="Помощь">
               <CircleHelp aria-hidden="true" size={18} />
             </button>
-            <button className="icon-button" type="button" aria-label="Настройки">
+            <button
+              ref={settingsButtonRef}
+              className="icon-button"
+              type="button"
+              aria-label="Настройки"
+              aria-expanded={settingsOpen}
+              onClick={() => setSettingsOpen(true)}
+            >
               <Settings aria-hidden="true" size={18} />
             </button>
           </div>
@@ -206,7 +240,7 @@ export function App() {
           ) : activeView === "kizMapping" ? (
             <KizMappingView key={selectedShop.id} shopId={selectedShop.id} />
           ) : activeView === "znack" ? (
-            <ZnackView key={selectedShop.id} shopId={selectedShop.id} />
+            <ZnackView key={selectedShop.id} shopId={selectedShop.id} licenseAllowed={licenseAllowed} />
           ) : activeView === "history" ? (
             <PrintHistoryView key={selectedShop.id} shopId={selectedShop.id} />
           ) : (
@@ -214,6 +248,14 @@ export function App() {
           )}
         </main>
       </div>
-    </div>
+      </div>
+      {settingsOpen ? (
+        <LicenseSettingsDialog
+          open
+          onClose={closeSettings}
+          onStatusChange={setLicenseAllowed}
+        />
+      ) : null}
+    </>
   );
 }

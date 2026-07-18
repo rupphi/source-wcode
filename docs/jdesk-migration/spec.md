@@ -144,6 +144,28 @@ luồng hiện tại trong UI mới, nhanh, rõ trạng thái, dùng được b�
   sync/purchase/introduction chỉ chạy khi có approval; unavailable/seeded local states có thể smoke
   trên isolated app-data.
 
+### License contract
+
+- Giữ nguyên `LicenseService`, Ed25519 public key, server channel, offline grace 14 ngày và clock
+  rollback policy hiện tại; jDesk chỉ thêm adapter/UI, không đổi pricing hay cơ chế cấp phép.
+- `license.status` chỉ đọc state trong process. DTO allowlist gồm status, `kizAllowed`, cờ có key
+  đã lưu, plan label đã giới hạn, issued/expiry/grace timestamp, số ngày còn lại và safe error kind;
+  license key, fingerprint/device name, signed payload/signature, max-device detail, file path,
+  server URL và raw exception không qua bridge.
+- `license.refresh` gọi oracle hiện tại trên background invocation thread. `license.activate` nhận
+  key định dạng `WC-XXXXX-XXXXX-XXXXX-XXXXX`, normalize uppercase nhưng không echo key trong success,
+  failure, event hay log. Expected failure chỉ trả error kind allowlist (`invalid_license`,
+  `device_limit`, `network`, `unavailable`).
+- `license.deactivate` yêu cầu capability `license:manage` và boolean confirmation từ dialog riêng;
+  giữ semantics legacy best-effort remote rồi xóa key/license file cục bộ. UI phải nói rõ khi offline,
+  slot trên server có thể cần được gỡ sau; response không trả key/fingerprint.
+- Settings dialog React phải có loading/error/retry, tám trạng thái license, expiry/offline-grace
+  copy, activation form, manual refresh và explicit deactivate confirmation. Runtime validator từ
+  chối enum/timestamp/plan/error bất thường trước khi render. Đổi shop không ảnh hưởng license vì
+  license thuộc device/app, không thuộc shop.
+- Live activation/deactivation chỉ chạy với approval và test artifact riêng. Native evidence mặc
+  định dùng app-data cô lập chưa có key và không gọi license server.
+
 ## Tech Stack
 
 - Java 25, jDesk `0.1.3`, Gradle wrapper `9.6.1`.

@@ -65,6 +65,28 @@ class ZnackPurchaseCommandServiceTest {
     }
 
     @Test
+    void paidPurchaseRequiresTheSharedLicenseOracleButPersistedReplayRemainsReadable() {
+        FakeSource source = new FakeSource();
+        FakeRunner runner = new FakeRunner(source);
+        ZnackPurchaseCommandService service = new ZnackPurchaseCommandService(
+                () -> List.of(new Shop(7, "Main", SECRET)), source, runner, CLOCK, () -> false);
+        String version = ZnackCommandService.settingsVersion(source.settings);
+
+        assertInvalid(() -> service.preparePurchase(
+                new ZnackPurchaseCommandService.PreparePurchaseRequest(7, GTIN, 1, version), null));
+        String persistedId = "55555555-5555-4555-8555-555555555555";
+        source.purchases.add(purchase(persistedId, PurchaseStage.COMPLETED, 3, ""));
+
+        ZnackPurchaseCommandService.StartPurchaseResponse replay = service.startPurchase(
+                        new ZnackPurchaseCommandService.StartPurchaseRequest(7, persistedId, version, true), null)
+                .toCompletableFuture().join();
+
+        assertFalse(replay.accepted());
+        assertEquals(persistedId, replay.purchase().purchaseId());
+        assertEquals(0, runner.starts.get());
+    }
+
+    @Test
     void startsOnceFromASingleUsePreviewAndReplaysThePersistedPurchase() {
         FakeSource source = new FakeSource();
         FakeRunner runner = new FakeRunner(source);

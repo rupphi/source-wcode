@@ -20,6 +20,12 @@ vi.mock("./generated/commands", () => ({
       editor: vi.fn(),
       save: vi.fn(),
     },
+    license: {
+      activate: vi.fn(),
+      deactivate: vi.fn(),
+      refresh: vi.fn(),
+      status: vi.fn(),
+    },
     znack: {
       products: vi.fn(),
       saveSettings: vi.fn(),
@@ -80,6 +86,8 @@ const loadFboCatalog = vi.mocked(commands.fbo.catalog);
 const exportFbo = vi.mocked(exportFboPdf);
 const openFboExport = vi.mocked(commands.fbo.openExport);
 const loadKizMappingCatalog = vi.mocked(commands.kizMapping.catalog);
+const loadLicenseStatus = vi.mocked(commands.license.status);
+const refreshLicense = vi.mocked(commands.license.refresh);
 const loadZnackSettings = vi.mocked(commands.znack.settings);
 const listSupplies = vi.mocked(commands.supplies.list);
 const loadSupplyDetail = vi.mocked(commands.supplies.detail);
@@ -203,6 +211,8 @@ describe("App", () => {
     exportFbo.mockReset();
     openFboExport.mockReset();
     loadKizMappingCatalog.mockReset();
+    loadLicenseStatus.mockReset();
+    refreshLicense.mockReset();
     loadZnackSettings.mockReset();
     listSupplies.mockReset();
     loadSupplyDetail.mockReset();
@@ -231,6 +241,50 @@ describe("App", () => {
     syncOverview.mockReset();
     syncStatus.mockReset();
     cancelSync.mockReset();
+    loadLicenseStatus.mockResolvedValue({
+      status: "not_activated",
+      kizAllowed: false,
+      hasStoredKey: false,
+      plan: "",
+      issuedAt: "",
+      expiresAt: "",
+      offlineGraceEndsAt: "",
+      daysRemaining: 0,
+      errorKind: "",
+    });
+    refreshLicense.mockResolvedValue({
+      status: "not_activated",
+      kizAllowed: false,
+      hasStoredKey: false,
+      plan: "",
+      issuedAt: "",
+      expiresAt: "",
+      offlineGraceEndsAt: "",
+      daysRemaining: 0,
+      errorKind: "",
+    });
+  });
+
+  it("opens and closes the application license settings from the header", async () => {
+    const user = userEvent.setup();
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Основной магазин", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard.mockResolvedValue({ shopId: 7, productCount: 10, newOrderCount: 3, openSupplyCount: 1 });
+    render(<App />);
+
+    await screen.findByText("Обзор магазина");
+    await waitFor(() => expect(refreshLicense).toHaveBeenCalledWith({}));
+    await user.click(screen.getByRole("button", { name: "Настройки" }));
+    expect(await screen.findByRole("dialog", { name: "Настройки приложения" })).toBeVisible();
+    expect(await screen.findByText("Лицензия не активирована")).toBeVisible();
+    expect(loadLicenseStatus).toHaveBeenCalledWith({});
+    await user.click(screen.getByRole("button", { name: "Закрыть настройки" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Настройки приложения" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Настройки" })).toHaveFocus());
   });
 
   it("opens the typed FBS and FBO template catalogs without raw layout data", async () => {

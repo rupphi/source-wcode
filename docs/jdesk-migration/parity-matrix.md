@@ -40,7 +40,7 @@ Baseline: WCode `1.1.7`, branch point `61e8117`, 2026-07-18.
 | Znack settings/products | `ZnackAutomationController` | safe settings, bounded active/deleted catalog, atomic hide/restore, opaque certificate discovery/test and resumable participant product-sync commands are covered by Java/React/SQLite tests plus isolated native safe-state evidence; real Windows CryptoPro/sync evidence and permanent purge remain pending | Foundation (automation) |
 | Znack orders/logs | `ZnackAutomationController` | persisted purchase UUID, replay-safe order creation, authoritative progress, introduction-only retry and redacted bounded journal are covered by Java/React/SQLite tests plus isolated native seeded-state evidence; real paid purchase/introduction still requires an approved test artifact | Foundation (automation) |
 | CryptoPro signing | `integration/znack/signature` | real Windows CryptoPro provider matrix | Legacy |
-| License | `LicenseDialogService`, `LicenseService` | activate/refresh/offline grace/expiry/error | Legacy |
+| License | `LicenseDialogService`, `LicenseService` | existing Ed25519 state oracle, eight bounded states, activation/refresh, explicit best-effort deactivation and paid-KIZ gate are covered by Java/React tests plus isolated native not-activated evidence; real activation/deactivation remains approval-only | Foundation |
 | Update | `UpdateDialogService`, `UpdateInstallerService` | signed download/install/rollback on Windows | Legacy |
 | Language/theme | `I18nService`, `ThemeService` | RU/EN/VI/ZH, light/dark/system persisted | Legacy |
 | Error report/diagnostics | `ErrorReportDialog`, `ReportApiClient` | redacted support flow, no secret/stack leak | Legacy |
