@@ -31,7 +31,7 @@ Baseline: WCode `1.1.7`, branch point `61e8117`, 2026-07-18.
 | Supply detail/orders | `SupplyDetailController` | local detail/search/natural sort/page, opaque image assets and live WB refresh native evidence; GTIN pending | Foundation |
 | Excel order import | `ExcelOrderImportService`, `OrderImportWorkflow` | native open dialog, bounded XLSX parser, opaque session, live stickers, server paging/search, no path/secret crossing bridge | Foundation |
 | Deliver supply | `SupplyDetailController.onDeliver` | explicit-confirm mutation test on approved shop | Legacy |
-| FBS packing | `PackingController` | new/preparation/dispatch tabs, selection, create/add | Legacy |
+| FBS packing | `PackingController` | read-only new/preparation/dispatch board, search/category/paging and supply detail are native-tested; selection/create/add/deliver + KIZ preflight pending | Foundation (read) |
 | Print/export | `OrderExportWorkflow`, print services | macOS live WB PDF/save/open passed; physical 58×40 Windows test pending | Foundation |
 | Print history/reprint | `PrintHistoryController` | history list, status, reprint unsupported-image cases | Legacy |
 | Template designer | `PrintTemplateDesignerController` | CRUD/elements/preview/unit/layout persistence | Legacy |

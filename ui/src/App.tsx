@@ -10,6 +10,7 @@ import {
 } from "./features/dashboard/DashboardView";
 import { useWildberriesSync } from "./features/wildberries/useWildberriesSync";
 import { SupplyListView } from "./features/supplies/SupplyListView";
+import { PackingView } from "./features/packing/PackingView";
 import { commands } from "./generated/commands";
 import type { BootstrapResponse } from "./generated/types";
 
@@ -101,15 +102,20 @@ export function App() {
   }
 
   const selectedShop = workspace.data.shops.find((shop) => shop.id === selectedShopId) ?? null;
-  const pageCopy = activeView === "dashboard"
-    ? {
+  const pageCopy = {
+    dashboard: {
         title: "Обзор магазина",
         description: "Быстрый срез каталога, новых заказов и активных поставок без раскрытия API-токена.",
-      }
-    : {
+    },
+    packing: {
+      title: "Упаковка FBS",
+      description: "Рабочая очередь новых заказов, поставок на сборке и готовых отгрузок из локальных данных WCode.",
+    },
+    supplies: {
         title: "Поставки FBS",
         description: "Локальный реестр поставок Wildberries с быстрым поиском, статусами и точной пагинацией.",
-      };
+    },
+  }[activeView];
 
   return (
     <div className="min-h-screen bg-[var(--surface-canvas)] text-[var(--text-primary)] md:grid md:grid-cols-[15.5rem_1fr]">
@@ -159,6 +165,8 @@ export function App() {
             <EmptyWorkspace />
           ) : activeView === "supplies" ? (
             <SupplyListView shopId={selectedShop.id} />
+          ) : activeView === "packing" ? (
+            <PackingView key={selectedShop.id} shopId={selectedShop.id} />
           ) : (
             <DashboardView shop={selectedShop} state={dashboard} sync={wildberriesSync} />
           )}

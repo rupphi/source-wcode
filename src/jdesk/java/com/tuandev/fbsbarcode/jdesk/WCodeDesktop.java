@@ -3,6 +3,8 @@ package com.tuandev.fbsbarcode.jdesk;
 import com.tuandev.fbsbarcode.BuildConfig;
 import com.tuandev.fbsbarcode.jdesk.order.ExcelOrderImportCommandService;
 import com.tuandev.fbsbarcode.jdesk.order.ExcelOrderImportCommandServiceCommands;
+import com.tuandev.fbsbarcode.jdesk.packing.PackingCommandService;
+import com.tuandev.fbsbarcode.jdesk.packing.PackingCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.print.PrintCommandService;
 import com.tuandev.fbsbarcode.jdesk.print.PrintCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.print.PrintExportCommandService;
@@ -43,6 +45,7 @@ public final class WCodeDesktop {
             WildberriesCommandService wildberries = new WildberriesCommandService();
             SupplyCommandService supplies = new SupplyCommandService();
             OrderImageAssetService orderImages = new OrderImageAssetService();
+            PackingCommandService packing = new PackingCommandService(orderImages);
             ExcelOrderImportCommandService excelOrders = new ExcelOrderImportCommandService(orderImages);
             PrintCommandService printing = new PrintCommandService();
             PrintExportCommandService printExport = new PrintExportCommandService();
@@ -58,6 +61,7 @@ public final class WCodeDesktop {
                             WorkspaceCommandServiceCommands.create(workspace),
                             WildberriesCommandServiceCommands.create(wildberries),
                             SupplyCommandServiceCommands.create(supplies),
+                            PackingCommandServiceCommands.create(packing),
                             SupplyDetailCommandServiceCommands.create(supplyDetails),
                             SupplyRefreshCommandServiceCommands.create(supplyRefresh),
                             ExcelOrderImportCommandServiceCommands.create(excelOrders),

@@ -21,6 +21,9 @@ vi.mock("./generated/commands", () => ({
       importExcel: vi.fn(),
       importedPage: vi.fn(),
     },
+    packing: {
+      board: vi.fn(),
+    },
     printing: {
       setup: vi.fn(),
       saveOptions: vi.fn(),
@@ -48,6 +51,7 @@ const refreshSupplyStatus = vi.mocked(commands.supplies.refreshStatus);
 const cancelSupplyRefresh = vi.mocked(commands.supplies.cancelRefresh);
 const importExcel = vi.mocked(commands.orders.importExcel);
 const loadImportedOrders = vi.mocked(commands.orders.importedPage);
+const loadPackingBoard = vi.mocked(commands.packing.board);
 const loadPrintSetup = vi.mocked(commands.printing.setup);
 const savePrintOptions = vi.mocked(commands.printing.saveOptions);
 const exportSupplyPdfCommand = vi.mocked(exportSupplyPdf);
@@ -68,6 +72,7 @@ describe("App", () => {
     cancelSupplyRefresh.mockReset();
     importExcel.mockReset();
     loadImportedOrders.mockReset();
+    loadPackingBoard.mockReset();
     loadPrintSetup.mockReset();
     savePrintOptions.mockReset();
     exportSupplyPdfCommand.mockReset();
@@ -75,6 +80,95 @@ describe("App", () => {
     syncOverview.mockReset();
     syncStatus.mockReset();
     cancelSync.mockReset();
+  });
+
+  it("opens the read-only FBS packing board and keeps tab filters scoped", async () => {
+    const user = userEvent.setup();
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Основной магазин", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard.mockResolvedValue({
+      shopId: 7,
+      productCount: 10,
+      newOrderCount: 3,
+      openSupplyCount: 1,
+    });
+    loadPackingBoard.mockImplementation(async (request) => ({
+      ...request,
+      totalItems: request.tab === "new" ? 1 : 1,
+      totalPages: 1,
+      newOrderCount: 3,
+      preparationCount: 1,
+      dispatchCount: 1,
+      availableCategories: ["Обувь", "Сумки"],
+      orders: request.tab === "new"
+        ? [{
+            orderId: "9007199254741001",
+            nmId: "1001",
+            name: "Кроссовки",
+            brand: "WCode",
+            subject: "Обувь",
+            article: "ART-1",
+            color: "Чёрный",
+            size: "M",
+            russianSize: "42",
+            barcode: "SKU-1",
+            createdAt: "2026-07-18T10:00:00Z",
+            priceKopecks: 12345,
+            requiresKiz: true,
+            imagePath: "",
+            apiKey: secret,
+          }]
+        : [],
+      supplies: request.tab === "preparation"
+        ? [{
+            id: "WB-GI-1",
+            name: "Поставка Москва",
+            status: "open",
+            mode: "consumer",
+            createdAt: "2026-07-18T10:00:00Z",
+            itemCount: 5,
+          }]
+        : [],
+    } as unknown as Awaited<ReturnType<typeof commands.packing.board>>));
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Упаковка FBS" }));
+
+    expect(await screen.findByRole("heading", { name: "Упаковка FBS" })).toBeVisible();
+    await waitFor(() => expect(loadPackingBoard).toHaveBeenLastCalledWith({
+      shopId: 7,
+      tab: "new",
+      query: "",
+      categories: [],
+      page: 1,
+      pageSize: 20,
+    }));
+    expect(screen.getByText("Кроссовки")).toBeVisible();
+    expect(screen.getByText("#9007199254741001")).toBeVisible();
+    expect(screen.getByText("Требуется KIZ")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Обувь" }));
+    await waitFor(() => expect(loadPackingBoard).toHaveBeenLastCalledWith(expect.objectContaining({
+      tab: "new",
+      categories: ["Обувь"],
+      page: 1,
+    })));
+
+    await user.click(screen.getByRole("tab", { name: /На сборке.*1/ }));
+    await waitFor(() => expect(loadPackingBoard).toHaveBeenLastCalledWith({
+      shopId: 7,
+      tab: "preparation",
+      query: "",
+      categories: [],
+      page: 1,
+      pageSize: 20,
+    }));
+    expect(await screen.findByText("Поставка Москва")).toBeVisible();
+    expect(document.body).not.toHaveTextContent(secret);
   });
 
   it("loads sanitized shops and the selected shop dashboard", async () => {

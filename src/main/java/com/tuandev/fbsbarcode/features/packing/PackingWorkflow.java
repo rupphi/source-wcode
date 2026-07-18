@@ -39,7 +39,13 @@ public class PackingWorkflow {
     private final WbActionLogRepository actionLogRepository = new WbActionLogRepository();
 
     public PackingBoard loadBoard(Shop shop) {
-        List<Order> newOrders = supplyWorkflow.populateCachedOrderImages(orderRepository.getOrdersForPackingStatus(shop.getId(), "new"));
+        PackingBoard board = loadBoardData(shop);
+        List<Order> newOrders = supplyWorkflow.populateCachedOrderImages(board.newOrders());
+        return new PackingBoard(newOrders, board.preparationSupplies(), board.dispatchSupplies());
+    }
+
+    public PackingBoard loadBoardData(Shop shop) {
+        List<Order> newOrders = orderRepository.getOrdersForPackingStatus(shop.getId(), "new");
         List<WbSupplySummary> allSupplies = supplyWorkflow.getSupplies(shop.getId());
         List<WbSupplySummary> preparationSupplies = allSupplies.stream()
                 .filter(supply -> !supply.isDone())

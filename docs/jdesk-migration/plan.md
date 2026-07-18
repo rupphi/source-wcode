@@ -276,7 +276,10 @@ recover from rate limit/offline/error without JavaFX.
 - [x] Port print option contract and template list.
 - [x] Port PDF generation command and native save/open workflow, including KIZ preflight and
       safe background-attachment handoff.
-- [ ] Port packing workflow and its operator-facing KIZ availability states.
+- [x] Port the read-only packing board with new/preparation/dispatch tabs, bounded local
+      search/category pagination and opaque cached product images.
+- [ ] Port confirmed create/add/deliver packing mutations and their operator-facing KIZ
+      availability/preflight states on an explicitly approved shop.
 - [ ] Port print history/reprint.
 - [ ] Port template designer with unit conversion and visual preview.
 - [ ] Validate physical 58×40 output and Windows printer behavior.

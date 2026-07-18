@@ -4,6 +4,7 @@
     { "capability": "workspace:read", "windows": ["main"] },
     { "capability": "dashboard:read", "windows": ["main"] },
     { "capability": "supplies:read", "windows": ["main"] },
+    { "capability": "packing:read", "windows": ["main"] },
     { "capability": "orders:import", "windows": ["main"] },
     { "capability": "printing:read", "windows": ["main"] },
     { "capability": "printing:configure", "windows": ["main"] },
