@@ -26,6 +26,11 @@ vi.mock("./generated/commands", () => ({
       refresh: vi.fn(),
       status: vi.fn(),
     },
+    preferences: {
+      load: vi.fn(),
+      setLanguage: vi.fn(),
+      setTheme: vi.fn(),
+    },
     znack: {
       products: vi.fn(),
       saveSettings: vi.fn(),
@@ -88,6 +93,9 @@ const openFboExport = vi.mocked(commands.fbo.openExport);
 const loadKizMappingCatalog = vi.mocked(commands.kizMapping.catalog);
 const loadLicenseStatus = vi.mocked(commands.license.status);
 const refreshLicense = vi.mocked(commands.license.refresh);
+const loadPreferences = vi.mocked(commands.preferences.load);
+const setLanguage = vi.mocked(commands.preferences.setLanguage);
+const setTheme = vi.mocked(commands.preferences.setTheme);
 const loadZnackSettings = vi.mocked(commands.znack.settings);
 const listSupplies = vi.mocked(commands.supplies.list);
 const loadSupplyDetail = vi.mocked(commands.supplies.detail);
@@ -205,6 +213,8 @@ function editableDesigner(mode: string, id: string, name: string) {
 
 describe("App", () => {
   beforeEach(() => {
+    document.documentElement.lang = "ru";
+    document.documentElement.dataset.theme = "dark";
     bootstrap.mockReset();
     loadDashboard.mockReset();
     loadFboCatalog.mockReset();
@@ -213,6 +223,9 @@ describe("App", () => {
     loadKizMappingCatalog.mockReset();
     loadLicenseStatus.mockReset();
     refreshLicense.mockReset();
+    loadPreferences.mockReset();
+    setLanguage.mockReset();
+    setTheme.mockReset();
     loadZnackSettings.mockReset();
     listSupplies.mockReset();
     loadSupplyDetail.mockReset();
@@ -263,6 +276,9 @@ describe("App", () => {
       daysRemaining: 0,
       errorKind: "",
     });
+    loadPreferences.mockResolvedValue({ language: "ru", theme: "dark" });
+    setLanguage.mockImplementation(async ({ language }) => ({ language, theme: "dark" }));
+    setTheme.mockImplementation(async ({ theme }) => ({ language: "ru", theme }));
   });
 
   it("opens and closes the application license settings from the header", async () => {
@@ -285,6 +301,75 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Закрыть настройки" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Настройки приложения" })).not.toBeInTheDocument());
     await waitFor(() => expect(screen.getByRole("button", { name: "Настройки" })).toHaveFocus());
+  });
+
+  it("applies persisted language and theme then saves system mode from translated settings", async () => {
+    const user = userEvent.setup();
+    loadPreferences.mockResolvedValue({ language: "en", theme: "light" });
+    setTheme.mockResolvedValue({ language: "en", theme: "system" });
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [],
+      hasSelectedShop: false,
+      selectedShopId: 0,
+    });
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Sales workspace" })).toBeVisible();
+    expect(document.documentElement).toHaveAttribute("lang", "en");
+    expect(document.documentElement).toHaveAttribute("data-theme", "light");
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    expect(await screen.findByRole("dialog", { name: "Application settings" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "System" }));
+
+    expect(setTheme).toHaveBeenCalledWith({ theme: "system" });
+    await waitFor(() => expect(document.documentElement).toHaveAttribute("data-theme", "system"));
+  });
+
+  it("switches the shared shell and settings to Vietnamese immediately", async () => {
+    const user = userEvent.setup();
+    setLanguage.mockResolvedValue({ language: "vi", theme: "dark" });
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [],
+      hasSelectedShop: false,
+      selectedShopId: 0,
+    });
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Настройки" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Язык" }), "vi");
+
+    expect(setLanguage).toHaveBeenCalledWith({ language: "vi" });
+    expect(await screen.findByRole("dialog", { name: "Cài đặt ứng dụng" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Quản lý bán hàng", hidden: true })).toBeInTheDocument();
+    expect(document.documentElement).toHaveAttribute("lang", "vi");
+    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+  });
+
+  it("rejects untrusted persisted preferences and malformed mutation responses", async () => {
+    const user = userEvent.setup();
+    loadPreferences.mockResolvedValue({ language: "<script>", theme: "neon" } as never);
+    setTheme.mockResolvedValue({ language: secret, theme: "system" } as never);
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [],
+      hasSelectedShop: false,
+      selectedShopId: 0,
+    });
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Управление продажами" })).toBeVisible();
+    expect(document.documentElement).toHaveAttribute("lang", "ru");
+    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+    expect(document.body).not.toHaveTextContent("<script>");
+    await user.click(screen.getByRole("button", { name: "Настройки" }));
+    await user.click(await screen.findByRole("button", { name: "Системная" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось сохранить настройки интерфейса");
+    expect(document.documentElement).toHaveAttribute("lang", "ru");
+    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+    expect(document.body).not.toHaveTextContent(secret);
   });
 
   it("opens the typed FBS and FBO template catalogs without raw layout data", async () => {

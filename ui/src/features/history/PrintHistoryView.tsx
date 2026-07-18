@@ -290,7 +290,7 @@ function HistoryTable({ items, runningJobId, onReprint }: {
                 <td className="px-5 py-4 text-right">
                   {item.canReprint ? (
                     <button
-                      className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[var(--border-strong)] bg-white px-3 text-xs font-semibold text-[var(--text-primary)] shadow-[var(--shadow-control)] transition hover:border-[var(--accent)] hover:text-[var(--accent-strong)] disabled:cursor-wait disabled:opacity-60"
+                      className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-3 text-xs font-semibold text-[var(--text-primary)] shadow-[var(--shadow-control)] transition hover:border-[var(--accent)] hover:text-[var(--accent-strong)] disabled:cursor-wait disabled:opacity-60"
                       type="button"
                       aria-label={`Повторить печать ${item.supplyName}`}
                       disabled={runningJobId !== null}
@@ -354,14 +354,14 @@ function ReprintFile({ fileName, label, opening, disabled, onOpen }: {
   onOpen: () => void;
 }) {
   return (
-    <div className="flex min-w-0 items-center gap-3 rounded-xl border border-emerald-200 bg-white/75 px-3 py-2.5">
+    <div className="flex min-w-0 items-center gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-3 py-2.5">
       <FileText className="shrink-0 text-emerald-700" aria-hidden="true" size={17} />
       <div className="min-w-0 flex-1">
         <p className="text-[0.68rem] font-semibold tracking-[0.05em] text-emerald-700 uppercase">{label}</p>
         <p className="truncate text-sm font-medium" title={fileName}>{fileName}</p>
       </div>
       <button
-        className="icon-button shrink-0 border border-emerald-200 bg-white text-emerald-800"
+        className="icon-button shrink-0 border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--accent-strong)]"
         type="button"
         aria-label={`Открыть ${label.toLocaleLowerCase("ru-RU")}`}
         disabled={disabled}

@@ -42,7 +42,7 @@ Baseline: WCode `1.1.7`, branch point `61e8117`, 2026-07-18.
 | CryptoPro signing | `integration/znack/signature` | real Windows CryptoPro provider matrix | Legacy |
 | License | `LicenseDialogService`, `LicenseService` | existing Ed25519 state oracle, eight bounded states, activation/refresh, explicit best-effort deactivation and paid-KIZ gate are covered by Java/React tests plus isolated native not-activated evidence; real activation/deactivation remains approval-only | Foundation |
 | Update | `UpdateDialogService`, `UpdateInstallerService` | signed download/install/rollback on Windows | Legacy |
-| Language/theme | `I18nService`, `ThemeService` | RU/EN/VI/ZH, light/dark/system persisted | Legacy |
+| Language/theme | `I18nService`, `ThemeService` | bounded shared `app_language`/`app_theme` persistence, RU/EN/VI/ZH shell/settings/license copy and dark/light/system runtime behavior are covered by Java/React tests plus browser/native restart evidence; feature-specific Russian copy remains pending | Foundation (shared surfaces) |
 | Error report/diagnostics | `ErrorReportDialog`, `ReportApiClient` | redacted support flow, no secret/stack leak | Legacy |
 | Packaging | Maven `release.yml`, jpackage | jDesk EXE/MSI/portable, checksum/SBOM/sign/upgrade | Foundation |
 

@@ -125,7 +125,7 @@ function SyncNotice({ state }: { state: WildberriesSyncController["state"] }) {
   }
   if (state.status === "cancelled") {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700" role="status">
+      <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-4 py-3 text-sm text-[var(--text-secondary)]" role="status">
         Синхронизация остановлена. Уже сохранённые страницы данных оставлены без изменений.
       </div>
     );

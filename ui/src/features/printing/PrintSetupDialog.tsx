@@ -222,7 +222,7 @@ export function PrintSetupDialog({
 
                 <label className="grid gap-2 sm:max-w-xs">
                   <span className="text-sm font-semibold">Копий этикетки</span>
-                  <input aria-label="Копий этикетки" className="h-11 rounded-xl border border-[var(--border-strong)] bg-white px-3 text-sm shadow-[var(--shadow-control)] outline-none focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]" disabled={busy} max={100} min={1} onChange={(event) => { setCopies(event.target.value); markChanged(state); }} type="number" value={copies} />
+                  <input aria-label="Копий этикетки" className="h-11 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-3 text-sm shadow-[var(--shadow-control)] outline-none focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]" disabled={busy} max={100} min={1} onChange={(event) => { setCopies(event.target.value); markChanged(state); }} type="number" value={copies} />
                   <span className={`text-xs ${validCopies ? "text-[var(--text-muted)]" : "font-semibold text-red-700"}`}>{validCopies ? "От 1 до 100 копий на один заказ." : "Введите целое число от 1 до 100."}</span>
                 </label>
 
@@ -281,7 +281,7 @@ function ExportNotice({ state, onOpen }: { state: ExportState; onOpen: (kind: "l
 }
 
 function ExportFileButton({ fileName, label, loading, onClick }: { fileName: string; label: string; loading: boolean; onClick: () => void }) {
-  return <button aria-label={label} className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-white px-3 py-3 text-left transition hover:border-emerald-400 disabled:cursor-wait disabled:opacity-60" disabled={loading} onClick={onClick} type="button"><FolderOpen aria-hidden="true" className="shrink-0 text-emerald-700" size={18} /><span className="min-w-0"><span className="block text-xs font-semibold">{loading ? "Открываем…" : label}</span><span className="block truncate text-xs text-emerald-800">{fileName}</span></span></button>;
+  return <button aria-label={label} className="flex items-center gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-3 py-3 text-left transition hover:border-[var(--accent)] disabled:cursor-wait disabled:opacity-60" disabled={loading} onClick={onClick} type="button"><FolderOpen aria-hidden="true" className="shrink-0 text-[var(--accent-strong)]" size={18} /><span className="min-w-0"><span className="block text-xs font-semibold">{loading ? "Открываем…" : label}</span><span className="block truncate text-xs text-[var(--text-secondary)]">{fileName}</span></span></button>;
 }
 
 function SummaryCard({ icon, label, value, detail }: { icon: React.ReactNode; label: string; value: string; detail: string }) {

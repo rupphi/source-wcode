@@ -289,7 +289,7 @@ function SortToggle({ label, checked, onChange }: { label: string; checked: bool
   return (
     <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition ${checked ? "bg-[var(--accent-soft)] text-[var(--accent-strong)]" : "bg-[var(--surface-muted)] text-[var(--text-secondary)]"}`}>
       <input className="sr-only" type="checkbox" checked={checked} onChange={onChange} />
-      <span className={`grid size-4 place-items-center rounded border ${checked ? "border-[var(--accent-strong)] bg-[var(--accent-strong)] text-white" : "border-[var(--border-strong)] bg-white"}`}>
+      <span className={`grid size-4 place-items-center rounded border ${checked ? "border-[var(--button-primary)] bg-[var(--button-primary)] text-white" : "border-[var(--border-strong)] bg-[var(--surface-elevated)]"}`}>
         {checked && <Check aria-hidden="true" size={11} strokeWidth={3} />}
       </span>
       {label}

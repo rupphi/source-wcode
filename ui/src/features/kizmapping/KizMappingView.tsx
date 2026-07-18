@@ -225,7 +225,7 @@ export function KizMappingView({ shopId }: { shopId: number }) {
             <Search className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden="true" size={18} />
             <input
               aria-label="Поиск GTIN"
-              className="h-11 w-full rounded-xl border border-[var(--border-strong)] bg-white pr-4 pl-10 text-sm shadow-[var(--shadow-control)] outline-none transition placeholder:text-[var(--text-muted)] hover:border-[var(--accent)] focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]"
+              className="h-11 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] pr-4 pl-10 text-sm shadow-[var(--shadow-control)] outline-none transition placeholder:text-[var(--text-muted)] hover:border-[var(--accent)] focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]"
               maxLength={120}
               onChange={(event) => setDraftQuery(event.target.value)}
               placeholder="GTIN, название товара или категория"
@@ -240,7 +240,7 @@ export function KizMappingView({ shopId }: { shopId: number }) {
             <button
               aria-expanded={categoriesOpen}
               aria-label="Категории GTIN"
-              className="flex h-11 w-full items-center justify-between gap-2 rounded-xl border border-[var(--border-strong)] bg-white px-4 text-sm font-medium text-[var(--text-primary)] shadow-[var(--shadow-control)] transition hover:border-[var(--accent)] lg:w-auto"
+              className="flex h-11 w-full items-center justify-between gap-2 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-4 text-sm font-medium text-[var(--text-primary)] shadow-[var(--shadow-control)] transition hover:border-[var(--accent)] lg:w-auto"
               onClick={() => setCategoriesOpen((value) => !value)}
               type="button"
             >
@@ -251,7 +251,7 @@ export function KizMappingView({ shopId }: { shopId: number }) {
               <ChevronDown aria-hidden="true" size={16} />
             </button>
             {categoriesOpen ? (
-              <div className="absolute right-0 z-20 mt-2 max-h-72 w-full min-w-64 overflow-auto rounded-xl border border-[var(--border-subtle)] bg-white p-2 shadow-xl lg:w-72">
+              <div className="absolute right-0 z-20 mt-2 max-h-72 w-full min-w-64 overflow-auto rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-2 shadow-xl lg:w-72">
                 {visibleCatalog.status === "ready" && visibleCatalog.data.availableCategories.length > 0 ? (
                   visibleCatalog.data.availableCategories.map((category) => (
                     <label className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-[var(--surface-muted)]" key={category}>
@@ -289,7 +289,7 @@ export function KizMappingView({ shopId }: { shopId: number }) {
             <AlertCircle aria-hidden="true" size={18} />
             Не удалось открыть редактор соответствий
           </span>
-          <button className="rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm font-semibold hover:bg-rose-100" onClick={() => openEditor(editor.gtin)} type="button" aria-label="Повторить открытие редактора">
+          <button className="rounded-lg border border-[var(--danger)]/35 bg-[var(--surface-elevated)] px-3 py-2 text-sm font-semibold text-[var(--danger)] hover:bg-[var(--danger-soft)]" onClick={() => openEditor(editor.gtin)} type="button" aria-label="Повторить открытие редактора">
             Повторить
           </button>
         </section>
@@ -394,12 +394,12 @@ function CatalogContent({
         {state.data.items.map((item) => <GtinRow item={item} key={item.gtin} onEdit={() => onOpenEditor(item.gtin)} />)}
       </div>
       <div className="flex items-center justify-between gap-3 border-t border-[var(--border-subtle)] bg-[var(--surface-muted)]/55 px-4 py-3">
-        <button className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-strong)] bg-white px-3 py-2 text-sm font-medium disabled:cursor-default disabled:opacity-40" disabled={state.data.page <= 1} onClick={onPrevious} type="button" aria-label="Предыдущая страница GTIN">
+        <button className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-3 py-2 text-sm font-medium disabled:cursor-default disabled:opacity-40" disabled={state.data.page <= 1} onClick={onPrevious} type="button" aria-label="Предыдущая страница GTIN">
           <ChevronLeft aria-hidden="true" size={16} />
           Назад
         </button>
         <span className="text-sm font-semibold text-[var(--text-secondary)]">Страница {state.data.page}</span>
-        <button className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-strong)] bg-white px-3 py-2 text-sm font-medium disabled:cursor-default disabled:opacity-40" disabled={!state.data.hasMore} onClick={onNext} type="button" aria-label="Следующая страница GTIN">
+        <button className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-3 py-2 text-sm font-medium disabled:cursor-default disabled:opacity-40" disabled={!state.data.hasMore} onClick={onNext} type="button" aria-label="Следующая страница GTIN">
           Далее
           <ChevronRight aria-hidden="true" size={16} />
         </button>
@@ -411,7 +411,7 @@ function CatalogContent({
 function GtinRow({ item, onEdit }: { item: GtinItem; onEdit: () => void }) {
   const status = statusLabel(item.pipelineStage || item.orderStatus);
   return (
-    <article className="grid gap-4 px-4 py-4 transition hover:bg-[#fbfcfa] xl:grid-cols-[minmax(14rem,1.25fr)_minmax(17rem,1fr)_minmax(12rem,.8fr)_auto] xl:items-center xl:px-5">
+    <article className="grid gap-4 px-4 py-4 transition hover:bg-[var(--surface-muted)] xl:grid-cols-[minmax(14rem,1.25fr)_minmax(17rem,1fr)_minmax(12rem,.8fr)_auto] xl:items-center xl:px-5">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <code className="rounded-md bg-[var(--sidebar)] px-2 py-1 text-xs font-semibold text-white">{item.gtin}</code>
@@ -433,7 +433,7 @@ function GtinRow({ item, onEdit }: { item: GtinItem; onEdit: () => void }) {
         {status ? <span className="text-xs font-medium text-[var(--text-secondary)]">{status}</span> : null}
         {item.errorMessage ? <p className="line-clamp-2 text-xs leading-4 text-rose-700" title={item.errorMessage}>{item.errorMessage}</p> : null}
       </div>
-      <button className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--border-strong)] bg-white px-4 text-sm font-semibold shadow-[var(--shadow-control)] transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]" onClick={onEdit} type="button" aria-label={`Настроить соответствие для ${item.gtin}`}>
+      <button className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-4 text-sm font-semibold shadow-[var(--shadow-control)] transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]" onClick={onEdit} type="button" aria-label={`Настроить соответствие для ${item.gtin}`}>
         <Layers3 aria-hidden="true" size={17} />
         Настроить
       </button>
@@ -458,7 +458,7 @@ function InventoryMetric({ value, label, tone }: { value: number; label: string;
 function EditorLoading({ gtin, onClose }: { gtin: string; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-[#0b1712]/55 p-4 backdrop-blur-[2px]">
-      <section className="relative grid min-h-56 w-full max-w-xl place-items-center rounded-2xl bg-white p-8 shadow-2xl" role="dialog" aria-label={`Соответствие GTIN ${gtin}`} aria-modal="true">
+      <section className="relative grid min-h-56 w-full max-w-xl place-items-center rounded-2xl bg-[var(--surface-elevated)] p-8 shadow-2xl" role="dialog" aria-label={`Соответствие GTIN ${gtin}`} aria-modal="true">
         <button className="absolute top-4 right-4 rounded-lg p-2 text-[var(--text-muted)] hover:bg-[var(--surface-muted)]" onClick={onClose} type="button" aria-label="Закрыть редактор"><X aria-hidden="true" size={18} /></button>
         <div className="grid justify-items-center gap-3 text-sm text-[var(--text-secondary)]">
           <LoaderCircle className="animate-spin text-[var(--accent-strong)]" aria-hidden="true" size={30} />
@@ -549,10 +549,10 @@ function MappingEditor({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-[#0b1712]/60 p-3 backdrop-blur-[2px] sm:p-6">
-      <section className="mx-auto flex min-h-[calc(100vh-1.5rem)] w-full max-w-[82rem] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:min-h-0 sm:max-h-[calc(100vh-3rem)]" role="dialog" aria-label={`Соответствие GTIN ${state.data.gtin}`} aria-modal="true" onKeyDown={(event) => {
+      <section className="mx-auto flex min-h-[calc(100vh-1.5rem)] w-full max-w-[82rem] flex-col overflow-hidden rounded-2xl bg-[var(--surface-elevated)] shadow-2xl sm:min-h-0 sm:max-h-[calc(100vh-3rem)]" role="dialog" aria-label={`Соответствие GTIN ${state.data.gtin}`} aria-modal="true" onKeyDown={(event) => {
         if (event.key === "Escape" && !state.saving) onClose();
       }} ref={dialogRef} tabIndex={-1}>
-        <header className="flex items-start justify-between gap-4 border-b border-[var(--border-subtle)] bg-[linear-gradient(120deg,#fff,#eef9f3)] px-5 py-4 sm:px-6">
+        <header className="flex items-start justify-between gap-4 border-b border-[var(--border-subtle)] bg-[linear-gradient(120deg,var(--surface-elevated),var(--accent-soft))] px-5 py-4 sm:px-6">
           <div className="min-w-0">
             <p className="text-xs font-semibold tracking-[0.12em] text-[var(--accent-strong)] uppercase">Редактор соответствий</p>
             <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -561,7 +561,7 @@ function MappingEditor({
             </div>
             <p className="mt-1 text-sm text-[var(--text-secondary)]">Один вариант категории и пола может принадлежать только одному GTIN.</p>
           </div>
-          <button className="shrink-0 rounded-xl p-2 text-[var(--text-muted)] hover:bg-white" disabled={state.saving} onClick={onClose} type="button" aria-label="Закрыть редактор"><X aria-hidden="true" size={20} /></button>
+          <button className="shrink-0 rounded-xl p-2 text-[var(--text-muted)] hover:bg-[var(--surface-muted)]" disabled={state.saving} onClick={onClose} type="button" aria-label="Закрыть редактор"><X aria-hidden="true" size={20} /></button>
         </header>
 
         <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(14rem,.8fr)_minmax(16rem,1fr)_minmax(16rem,1fr)]">
@@ -622,11 +622,11 @@ function MappingEditor({
                           <p className="truncate text-sm font-semibold">{subject.subjectName}</p>
                           <p className="mt-1 text-xs leading-4 text-[var(--text-secondary)]">{rule.wildcard ? "Все значения пола" : `${rule.genders.size} ${rule.genders.size === 1 ? "точное значение" : "точных значения"}`}</p>
                         </div>
-                        <button className="rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-white hover:text-rose-700" disabled={state.saving} onClick={() => removeSubject(subject.subjectName)} type="button" aria-label={`Удалить правило ${subject.subjectName}`}><X aria-hidden="true" size={16} /></button>
+                        <button className="rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-elevated)] hover:text-[var(--danger)]" disabled={state.saving} onClick={() => removeSubject(subject.subjectName)} type="button" aria-label={`Удалить правило ${subject.subjectName}`}><X aria-hidden="true" size={16} /></button>
                       </div>
                       {!rule.wildcard ? (
                         <div className="mt-2 flex flex-wrap gap-1.5">
-                          {[...rule.genders].map((gender) => <span className="rounded-full bg-white px-2 py-1 text-[0.68rem] font-medium text-[var(--text-secondary)]" key={gender}>{displayGender(gender)}</span>)}
+                          {[...rule.genders].map((gender) => <span className="rounded-full bg-[var(--surface-elevated)] px-2 py-1 text-[0.68rem] font-medium text-[var(--text-secondary)]" key={gender}>{displayGender(gender)}</span>)}
                         </div>
                       ) : null}
                     </div>
@@ -637,7 +637,7 @@ function MappingEditor({
           </EditorColumn>
         </div>
 
-        <footer className="flex flex-col gap-3 border-t border-[var(--border-subtle)] bg-[#fbfcfa] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <footer className="flex flex-col gap-3 border-t border-[var(--border-subtle)] bg-[var(--surface-muted)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div className="min-h-5">
             {state.saveError ? (
               <p className="flex items-center gap-2 text-sm font-medium text-rose-700" role="alert"><AlertCircle aria-hidden="true" size={17} />Не удалось сохранить соответствие</p>
@@ -646,7 +646,7 @@ function MappingEditor({
             )}
           </div>
           <div className="flex justify-end gap-2">
-            <button className="h-10 rounded-xl border border-[var(--border-strong)] bg-white px-4 text-sm font-semibold hover:bg-[var(--surface-muted)] disabled:opacity-50" disabled={state.saving} onClick={onClose} type="button">Отмена</button>
+            <button className="h-10 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-4 text-sm font-semibold hover:bg-[var(--surface-muted)] disabled:opacity-50" disabled={state.saving} onClick={onClose} type="button">Отмена</button>
             <button className="inline-flex h-10 items-center gap-2 rounded-xl bg-[var(--sidebar)] px-4 text-sm font-semibold text-white hover:bg-[#203b30] disabled:cursor-wait disabled:opacity-60" disabled={state.saving} onClick={onSave} type="button" aria-label="Сохранить соответствие">
               {state.saving ? <LoaderCircle className="animate-spin" aria-hidden="true" size={16} /> : <Check aria-hidden="true" size={16} />}
               {state.saving ? "Сохраняем…" : "Сохранить"}
@@ -660,7 +660,7 @@ function MappingEditor({
 
 function EditorColumn({ title, subtitle, accent = false, children }: { title: string; subtitle: string; accent?: boolean; children: React.ReactNode }) {
   return (
-    <section className={`min-h-0 overflow-y-auto border-b border-[var(--border-subtle)] p-4 md:border-r md:border-b-0 md:p-5 ${accent ? "bg-[#fbfdfb]" : "bg-white"}`}>
+    <section className={`min-h-0 overflow-y-auto border-b border-[var(--border-subtle)] p-4 md:border-r md:border-b-0 md:p-5 ${accent ? "bg-[var(--surface-muted)]" : "bg-[var(--surface-elevated)]"}`}>
       <div className="sticky top-0 z-10 mb-4 bg-[inherit] pb-2">
         <h4 className="text-sm font-semibold">{title}</h4>
         <p className="mt-0.5 truncate text-xs text-[var(--text-muted)]">{subtitle}</p>
@@ -712,7 +712,7 @@ function GenderEditor({
         const checked = rule.wildcard || rule.genders.has(gender.value);
         const ownerSuffix = occupied ? ` · занято ${gender.ownerGtin}` : "";
         return (
-          <label className={`flex items-center gap-3 rounded-xl border px-3 py-3 ${occupied ? "border-[var(--border-subtle)] bg-[var(--surface-muted)] text-[var(--text-muted)]" : checked ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--border-subtle)] bg-white hover:border-[var(--accent)]"}`} key={gender.value}>
+          <label className={`flex items-center gap-3 rounded-xl border px-3 py-3 ${occupied ? "border-[var(--border-subtle)] bg-[var(--surface-muted)] text-[var(--text-muted)]" : checked ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--border-subtle)] bg-[var(--surface-elevated)] hover:border-[var(--accent)]"}`} key={gender.value}>
             <input aria-label={`${displayGender(gender.value)}${ownerSuffix}`} checked={checked} disabled={saving || occupied} onChange={() => onToggleGender(gender)} type="checkbox" />
             <span className="min-w-0 flex-1 truncate text-sm font-medium">{displayGender(gender.value)}</span>
             {occupied ? <code className="text-[0.65rem]">{gender.ownerGtin}</code> : null}

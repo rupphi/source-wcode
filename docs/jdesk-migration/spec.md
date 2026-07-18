@@ -166,6 +166,25 @@ luồng hiện tại trong UI mới, nhanh, rõ trạng thái, dùng được b�
 - Live activation/deactivation chỉ chạy với approval và test artifact riêng. Native evidence mặc
   định dùng app-data cô lập chưa có key và không gọi license server.
 
+### Language and theme contract
+
+- Reuse legacy `app_language` and `app_theme` rows; do not introduce browser-only preference
+  storage. Supported languages stay exactly `ru`, `en`, `zh`, `vi`. Missing/corrupt language
+  normalizes to Russian, matching `AppLanguage.fromCode`; missing/corrupt theme normalizes to dark,
+  matching the JavaFX default.
+- Add `system` as a jDesk theme mode beside `dark` and `light`. Persist the mode, not the currently
+  resolved OS color scheme. JavaFX rollback safely treats the unknown `system` value as its existing
+  dark fallback and does not rewrite it unless the user explicitly changes theme there.
+- `preferences.load`, `preferences.setLanguage` and `preferences.setTheme` expose only the two
+  allowlisted enum values. Writes require a dedicated capability, reject null/unknown/oversized
+  input, serialize concurrent mutations and never return arbitrary `app_config` keys or values.
+- Apply `lang` and `data-theme` at the document root. Dark is the pre-bootstrap fallback to avoid a
+  light flash and preserve the legacy default; system follows `prefers-color-scheme` without a Java
+  callback. Theme tokens must retain focus, text, border, success/warning/danger contrast.
+- Language control is not considered parity until every reachable React journey uses translated
+  copy. Migration may land incrementally, but parity/evidence must name the translated surfaces and
+  the UI must not claim full-language completion while hard-coded Russian remains.
+
 ## Tech Stack
 
 - Java 25, jDesk `0.1.3`, Gradle wrapper `9.6.1`.

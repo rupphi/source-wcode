@@ -344,7 +344,12 @@ artifact. Recovery/idempotency tests precede implementation changes.
       malformed bridge response and concurrency with Java/React tests.
 - [x] Native-test isolated not-activated/settings states without contacting the production license
       server; real activation/deactivation remains an approval-only release gate.
-- [ ] Port persisted language and light/dark/system theme.
+- [x] Reuse the legacy persisted `app_language`/`app_theme` values through bounded read/write
+      commands; add a jDesk-only system mode with a rollback-safe dark fallback in JavaFX.
+- [x] Apply dark/light/system design tokens before workspace render and native-test both explicit
+      themes plus an emulated system preference without horizontal overflow or contrast regressions.
+- [x] Translate the shared shell and settings/license surface in RU/EN/VI/ZH.
+- [ ] Migrate every remaining feature surface before marking language parity complete.
 - [ ] Port signed update check/download/install with checksum validation and rollback evidence.
 - [ ] Port redacted diagnostics/support bundle.
 

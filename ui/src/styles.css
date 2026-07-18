@@ -1,22 +1,52 @@
 @import "tailwindcss";
 
-:root {
-  color-scheme: light;
+:root,
+:root[data-theme="dark"],
+:root[data-theme="system"] {
+  color-scheme: dark;
   font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  --surface-canvas: #0d1512;
+  --surface-elevated: #14201b;
+  --surface-muted: #1b2a24;
+  --sidebar: #08110d;
+  --text-primary: #edf5f1;
+  --text-secondary: #a7b5ad;
+  --text-muted: #7e8f86;
+  --border-subtle: #2b3b33;
+  --border-strong: #405249;
+  --accent: #53d397;
+  --accent-strong: #69dfa9;
+  --accent-soft: #183a2b;
+  --button-primary: #167a50;
+  --success: #69dfa9;
+  --success-soft: #17382a;
+  --warning: #f0bd68;
+  --warning-soft: #3b2c16;
+  --danger: #ff958c;
+  --danger-soft: #40201f;
+  --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.24), 0 18px 48px rgb(0 0 0 / 0.18);
+  --shadow-card: var(--shadow-panel);
+  --shadow-control: 0 1px 2px rgb(0 0 0 / 0.2);
+  --shadow-popover: 0 18px 48px rgb(0 0 0 / 0.34);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
   --surface-canvas: #f3f4f1;
   --surface-elevated: #ffffff;
   --surface-muted: #edf0eb;
   --sidebar: #14231d;
   --text-primary: #17211d;
-  --text-secondary: #66716c;
-  --text-muted: #8b9490;
+  --text-secondary: #58635e;
+  --text-muted: #626c67;
   --border-subtle: #dfe4df;
   --border-strong: #cbd2cc;
   --accent: #53d397;
   --accent-strong: #167a50;
   --accent-soft: #dcf7e9;
+  --button-primary: #167a50;
   --success: #167a50;
   --success-soft: #dcf7e9;
   --warning: #9a5a0a;
@@ -27,6 +57,35 @@
   --shadow-card: var(--shadow-panel);
   --shadow-control: 0 1px 2px rgb(20 35 29 / 0.05);
   --shadow-popover: 0 16px 40px rgb(20 35 29 / 0.14);
+}
+
+@media (prefers-color-scheme: light) {
+  :root[data-theme="system"] {
+    color-scheme: light;
+    --surface-canvas: #f3f4f1;
+    --surface-elevated: #ffffff;
+    --surface-muted: #edf0eb;
+    --sidebar: #14231d;
+    --text-primary: #17211d;
+    --text-secondary: #58635e;
+    --text-muted: #626c67;
+    --border-subtle: #dfe4df;
+    --border-strong: #cbd2cc;
+    --accent: #53d397;
+    --accent-strong: #167a50;
+    --accent-soft: #dcf7e9;
+    --button-primary: #167a50;
+    --success: #167a50;
+    --success-soft: #dcf7e9;
+    --warning: #9a5a0a;
+    --warning-soft: #fff2d6;
+    --danger: #b42318;
+    --danger-soft: #fee4e2;
+    --shadow-panel: 0 1px 2px rgb(20 35 29 / 0.04), 0 10px 30px rgb(20 35 29 / 0.035);
+    --shadow-card: var(--shadow-panel);
+    --shadow-control: 0 1px 2px rgb(20 35 29 / 0.05);
+    --shadow-popover: 0 16px 40px rgb(20 35 29 / 0.14);
+  }
 }
 
 * {
@@ -124,13 +183,13 @@ input:focus-visible {
 }
 
 .primary-button {
-  border: 1px solid var(--accent-strong);
-  background: var(--accent-strong);
+  border: 1px solid var(--button-primary);
+  background: var(--button-primary);
   color: #fff;
 }
 
 .primary-button:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent-strong) 88%, #000);
+  background: color-mix(in srgb, var(--button-primary) 88%, #000);
 }
 
 .secondary-button {

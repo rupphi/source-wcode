@@ -250,7 +250,7 @@ export function FboPackingView({ shopId }: { shopId: number }) {
             <Search className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden="true" size={18} />
             <input
               aria-label="Поиск товаров FBO"
-              className="h-11 w-full rounded-xl border border-[var(--border-strong)] bg-white pr-4 pl-10 text-sm shadow-[var(--shadow-control)] outline-none transition placeholder:text-[var(--text-muted)] hover:border-[var(--accent)] focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]"
+              className="h-11 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] pr-4 pl-10 text-sm shadow-[var(--shadow-control)] outline-none transition placeholder:text-[var(--text-muted)] hover:border-[var(--accent)] focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]"
               maxLength={120}
               onChange={(event) => setDraftQuery(event.target.value)}
               placeholder="nmID, артикул продавца или SKU"
@@ -262,7 +262,7 @@ export function FboPackingView({ shopId }: { shopId: number }) {
             <button
               aria-expanded={subjectsOpen}
               aria-label="Категории"
-              className="inline-flex h-11 w-full items-center justify-between gap-3 rounded-xl border border-[var(--border-strong)] bg-white px-4 text-sm font-semibold shadow-[var(--shadow-control)] transition hover:border-[var(--accent)] lg:w-52"
+              className="inline-flex h-11 w-full items-center justify-between gap-3 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-4 text-sm font-semibold shadow-[var(--shadow-control)] transition hover:border-[var(--accent)] lg:w-52"
               onClick={() => setSubjectsOpen((value) => !value)}
               type="button"
             >
@@ -270,7 +270,7 @@ export function FboPackingView({ shopId }: { shopId: number }) {
               <ChevronDown aria-hidden="true" size={16} />
             </button>
             {subjectsOpen && visibleState.status !== "loading" && visibleState.status !== "error" && (
-              <div className="absolute top-12 right-0 z-20 max-h-72 w-full min-w-64 overflow-y-auto rounded-xl border border-[var(--border-subtle)] bg-white p-2 shadow-xl lg:right-auto lg:left-0">
+              <div className="absolute top-12 right-0 z-20 max-h-72 w-full min-w-64 overflow-y-auto rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-2 shadow-xl lg:right-auto lg:left-0">
                 {visibleState.availableSubjects.length === 0 ? (
                   <p className="px-3 py-2 text-sm text-[var(--text-muted)]">Категорий пока нет</p>
                 ) : visibleState.availableSubjects.map((subject) => (
@@ -315,7 +315,7 @@ export function FboPackingView({ shopId }: { shopId: number }) {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button className="rounded-xl border border-emerald-300 bg-white px-4 py-2.5 text-sm font-semibold text-emerald-900" onClick={() => setQuantities(new Map())} type="button">Очистить</button>
+            <button className="rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)]" onClick={() => setQuantities(new Map())} type="button">Очистить</button>
             <button
               aria-label={`Создать PDF для ${pairLabel(pairCount)}`}
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:opacity-50"
@@ -347,7 +347,7 @@ export function FboPackingView({ shopId }: { shopId: number }) {
               {exportState.openError && <p className="mt-1 text-xs font-semibold text-red-800">Не удалось открыть файл. Он остаётся в выбранной папке.</p>}
             </div>
           </div>
-          <button aria-label="Открыть PDF FBO" className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-white px-4 text-sm font-semibold shadow-[var(--shadow-control)] disabled:cursor-wait disabled:opacity-60" disabled={exportState.opening} onClick={() => void openPdf()} type="button">
+          <button aria-label="Открыть PDF FBO" className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-4 text-sm font-semibold shadow-[var(--shadow-control)] disabled:cursor-wait disabled:opacity-60" disabled={exportState.opening} onClick={() => void openPdf()} type="button">
             {exportState.opening ? <LoaderCircle className="animate-spin" aria-hidden="true" size={16} /> : <FileText aria-hidden="true" size={16} />}
             {exportState.opening ? "Открываем…" : "Открыть PDF"}
           </button>
@@ -378,7 +378,7 @@ export function FboPackingView({ shopId }: { shopId: number }) {
             <p className="text-center text-sm font-medium text-red-700" role="alert">Страницу загрузить не удалось. Уже выбранные количества сохранены.</p>
           )}
           {(visibleState.page > 1 || visibleState.hasMore) && (
-            <nav className="flex items-center justify-between gap-3 rounded-2xl border border-[var(--border-subtle)] bg-white p-3 shadow-[var(--shadow-panel)]" aria-label="Пагинация FBO">
+            <nav className="flex items-center justify-between gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-3 shadow-[var(--shadow-panel)]" aria-label="Пагинация FBO">
               <button aria-label="Предыдущая страница FBO" className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--border-strong)] px-4 text-sm font-semibold transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45" disabled={visibleState.page <= 1 || visibleState.status === "loadingMore"} onClick={() => void loadPage(visibleState.page - 1)} type="button"><ChevronLeft aria-hidden="true" size={16} /><span className="hidden sm:inline">Назад</span></button>
               <p className="text-sm font-semibold tabular-nums text-[var(--text-secondary)]">{visibleState.status === "loadingMore" ? "Загружаем…" : `Страница ${numberFormat.format(visibleState.page)}`}</p>
               <button aria-label="Следующая страница FBO" className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--border-strong)] px-4 text-sm font-semibold transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45" disabled={!visibleState.hasMore || visibleState.status === "loadingMore"} onClick={() => void loadPage(visibleState.page + 1)} type="button"><span className="hidden sm:inline">Далее</span><ChevronRight aria-hidden="true" size={16} /></button>
@@ -398,7 +398,7 @@ function ProductCard({ item, quantity, busy, onQuantity, onQuickPrint }: {
   onQuickPrint: () => void;
 }) {
   return (
-    <article className="flex min-w-0 flex-col gap-4 rounded-2xl border border-[var(--border-subtle)] bg-white p-4 shadow-[var(--shadow-panel)] sm:flex-row">
+    <article className="flex min-w-0 flex-col gap-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)] sm:flex-row">
       <div className="grid h-32 w-full shrink-0 place-items-center overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-muted)] sm:h-32 sm:w-24">
         {item.imagePath ? (
           <img alt={`Фото товара ${item.title}`} className="size-full object-cover" src={item.imagePath} />
@@ -421,7 +421,7 @@ function ProductCard({ item, quantity, busy, onQuantity, onQuickPrint }: {
           <p><span className="text-[var(--text-muted)]">Размер</span> <span className="font-medium text-[var(--text-primary)]">{item.russianSize || item.size || "—"}</span>{item.color ? ` · ${item.color}` : ""}</p>
         </div>
         <div className="mt-4 flex flex-col gap-2 border-t border-[var(--border-subtle)] pt-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="inline-flex h-10 w-fit items-center overflow-hidden rounded-xl border border-[var(--border-strong)] bg-white shadow-[var(--shadow-control)]">
+          <div className="inline-flex h-10 w-fit items-center overflow-hidden rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] shadow-[var(--shadow-control)]">
             <button aria-label={`Уменьшить количество ${item.title}`} className="grid size-10 place-items-center text-[var(--text-secondary)] hover:bg-[var(--surface-muted)] disabled:opacity-40" disabled={busy || quantity === 0} onClick={() => onQuantity(quantity - 1)} type="button"><Minus aria-hidden="true" size={15} /></button>
             <input
               aria-label={`Количество для ${item.title}, SKU ${item.sku}`}
@@ -456,7 +456,7 @@ function CatalogError({ onRetry }: { onRetry: () => void }) {
 
 function CatalogEmpty({ filtered }: { filtered: boolean }) {
   return (
-    <section className="grid min-h-64 place-items-center rounded-2xl border border-dashed border-[var(--border-strong)] bg-white p-8 text-center">
+    <section className="grid min-h-64 place-items-center rounded-2xl border border-dashed border-[var(--border-strong)] bg-[var(--surface-elevated)] p-8 text-center">
       <div><PackageOpen className="mx-auto mb-3 text-[var(--text-muted)]" aria-hidden="true" size={26} /><h3 className="font-semibold">{filtered ? "Товары не найдены" : "Каталог FBO пока пуст"}</h3><p className="mt-2 text-sm text-[var(--text-secondary)]">{filtered ? "Измените запрос или категории." : "Синхронизируйте каталог Wildberries на главной странице."}</p></div>
     </section>
   );

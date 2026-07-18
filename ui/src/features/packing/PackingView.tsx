@@ -195,7 +195,7 @@ export function PackingView({ shopId }: { shopId: number }) {
               const active = categories.includes(category);
               return (
                 <button
-                  className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${active ? "bg-[var(--accent-strong)] text-white" : "bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"}`}
+                  className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${active ? "bg-[var(--button-primary)] text-white" : "bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"}`}
                   key={category}
                   type="button"
                   aria-pressed={active}

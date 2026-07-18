@@ -19,6 +19,8 @@ import { TemplateDesignerView } from "./features/templates/TemplateDesignerView"
 import { LicenseSettingsDialog } from "./features/license/LicenseSettingsDialog";
 import { commands } from "./generated/commands";
 import type { BootstrapResponse } from "./generated/types";
+import { getCopy, isLanguage, isTheme } from "./i18n";
+import type { Language, ThemeMode } from "./i18n";
 
 type WorkspaceState =
   | { status: "loading" }
@@ -32,6 +34,10 @@ export function App() {
   const [activeView, setActiveView] = useState<WorkspaceView>("dashboard");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [licenseAllowed, setLicenseAllowed] = useState(false);
+  const [preferences, setPreferences] = useState<{ language: Language; theme: ThemeMode }>({
+    language: "ru",
+    theme: "dark",
+  });
   const dashboardRequest = useRef(0);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -50,6 +56,12 @@ export function App() {
     }
   }, []);
   const wildberriesSync = useWildberriesSync(selectedShopId, loadDashboard);
+
+  const applyPreferences = useCallback((language: Language, theme: ThemeMode) => {
+    document.documentElement.lang = language;
+    document.documentElement.dataset.theme = theme;
+    setPreferences({ language, theme });
+  }, []);
 
   const applyWorkspace = useCallback(
     async (response: BootstrapResponse) => {
@@ -82,6 +94,19 @@ export function App() {
       dashboardRequest.current += 1;
     };
   }, [applyWorkspace]);
+
+  useEffect(() => {
+    let active = true;
+    void commands.preferences.load({}).then(
+      (response) => {
+        if (active && isLanguage(response.language) && isTheme(response.theme)) {
+          applyPreferences(response.language, response.theme);
+        }
+      },
+      () => { if (active) applyPreferences("ru", "dark"); },
+    );
+    return () => { active = false; };
+  }, [applyPreferences]);
 
   useEffect(() => {
     let active = true;
@@ -120,49 +145,18 @@ export function App() {
     requestAnimationFrame(() => settingsButtonRef.current?.focus());
   };
 
+  const copy = getCopy(preferences.language);
+
   if (workspace.status === "loading") {
-    return <CenteredState kind="loading" />;
+    return <CenteredState kind="loading" copy={{ ...copy.center, ...copy.common }} />;
   }
 
   if (workspace.status === "error") {
-    return <CenteredState kind="error" onRetry={() => void retryWorkspace()} />;
+    return <CenteredState kind="error" copy={{ ...copy.center, ...copy.common }} onRetry={() => void retryWorkspace()} />;
   }
 
   const selectedShop = workspace.data.shops.find((shop) => shop.id === selectedShopId) ?? null;
-  const pageCopy = {
-    dashboard: {
-        title: "Обзор магазина",
-        description: "Быстрый срез каталога, новых заказов и активных поставок без раскрытия API-токена.",
-    },
-    packing: {
-      title: "Упаковка FBS",
-      description: "Рабочая очередь новых заказов, поставок на сборке и готовых отгрузок из локальных данных WCode.",
-    },
-    supplies: {
-        title: "Поставки FBS",
-        description: "Локальный реестр поставок Wildberries с быстрым поиском, статусами и точной пагинацией.",
-    },
-    history: {
-      title: "История печати",
-      description: "Журнал локальных PDF-заданий с безопасным статусом, шаблоном и точным количеством этикеток.",
-    },
-    fbo: {
-      title: "Печать FBO",
-      description: "Локальный каталог SKU с пакетной и быстрой печатью парных товарных этикеток и контролируемым списанием KIZ.",
-    },
-    kizMapping: {
-      title: "Соответствия GTIN",
-      description: "Локальный каталог GTIN, остатков KIZ и точных правил соответствия категориям и значениям пола Wildberries.",
-    },
-    znack: {
-      title: "Znack Automation",
-      description: "Настройки OMS, каталог GTIN, идемпотентные покупки КИЗ, ввод в оборот и безопасный журнал операций.",
-    },
-    templates: {
-      title: "Дизайн этикеток",
-      description: "Локальные шаблоны FBS и FBO с точной геометрией 58 × 40 мм и визуальной проверкой каждого элемента.",
-    },
-  }[activeView];
+  const pageCopy = copy.shell.pages[activeView];
 
   return (
     <>
@@ -175,24 +169,25 @@ export function App() {
         version={workspace.data.app.version}
         activeView={activeView}
         onNavigate={setActiveView}
+        copy={copy.shell}
       />
       <div className="min-w-0">
         <header className="sticky top-0 z-20 flex min-h-18 items-center justify-between gap-4 border-b border-[var(--border-subtle)] bg-[color:var(--surface-elevated)] px-4 md:px-7">
           <div className="min-w-0">
             <p className="text-xs font-semibold tracking-[0.12em] text-[var(--text-muted)] uppercase">
-              Рабочее пространство
+              {copy.shell.workspaceEyebrow}
             </p>
-            <h1 className="truncate text-lg font-semibold tracking-[-0.02em]">Управление продажами</h1>
+            <h1 className="truncate text-lg font-semibold tracking-[-0.02em]">{copy.shell.workspaceTitle}</h1>
           </div>
           <div className="flex items-center gap-2">
-            <button className="icon-button" type="button" aria-label="Помощь">
+            <button className="icon-button" type="button" aria-label={copy.shell.help}>
               <CircleHelp aria-hidden="true" size={18} />
             </button>
             <button
               ref={settingsButtonRef}
               className="icon-button"
               type="button"
-              aria-label="Настройки"
+              aria-label={copy.shell.settings}
               aria-expanded={settingsOpen}
               onClick={() => setSettingsOpen(true)}
             >
@@ -206,7 +201,7 @@ export function App() {
             <div>
               <p className="mb-2 inline-flex items-center gap-2 text-sm font-medium text-[var(--accent-strong)]">
                 <span className="h-2 w-2 rounded-full bg-[var(--accent)]" aria-hidden="true" />
-                Локальные данные WCode
+                {copy.shell.localData}
               </p>
               <h2 className="text-3xl font-semibold tracking-[-0.035em]">{pageCopy.title}</h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-secondary)]">
@@ -215,14 +210,15 @@ export function App() {
             </div>
             {activeView === "templates" ? (
               <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-4 py-3 shadow-[var(--shadow-control)]">
-                <p className="text-xs font-semibold text-[var(--text-primary)]">Локальная библиотека</p>
-                <p className="mt-0.5 text-xs text-[var(--text-muted)]">Не зависит от выбранного магазина</p>
+                <p className="text-xs font-semibold text-[var(--text-primary)]">{copy.shell.localLibrary}</p>
+                <p className="mt-0.5 text-xs text-[var(--text-muted)]">{copy.shell.shopIndependent}</p>
               </div>
             ) : (
               <ShopPicker
                 shops={workspace.data.shops}
                 selectedId={selectedShopId}
                 onSelect={selectShop}
+                copy={copy.shop}
               />
             )}
           </section>
@@ -254,6 +250,10 @@ export function App() {
           open
           onClose={closeSettings}
           onStatusChange={setLicenseAllowed}
+          copy={copy}
+          language={preferences.language}
+          theme={preferences.theme}
+          onPreferencesChange={applyPreferences}
         />
       ) : null}
     </>

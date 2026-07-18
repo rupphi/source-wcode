@@ -355,7 +355,7 @@ function ModeBar({ mode, onMode }: { mode: DesignerMode; onMode: (mode: Designer
       <div className="inline-flex w-fit rounded-xl bg-[var(--surface-muted)] p-1" role="tablist" aria-label="Тип поставки шаблона">
         {(["fbs", "fbo"] as const).map((item) => (
           <button
-            className={`min-w-20 rounded-lg px-4 py-2 text-sm font-semibold transition ${mode === item ? "bg-white text-[var(--text-primary)] shadow-[var(--shadow-control)]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"}`}
+            className={`min-w-20 rounded-lg px-4 py-2 text-sm font-semibold transition ${mode === item ? "bg-[var(--surface-elevated)] text-[var(--text-primary)] shadow-[var(--shadow-control)]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"}`}
             type="button"
             role="tab"
             aria-selected={mode === item}
@@ -427,10 +427,10 @@ function ControlButton({
   onClick: () => void;
 }) {
   const tone = primary
-    ? "bg-[var(--accent-strong)] text-white hover:brightness-95"
+    ? "bg-[var(--button-primary)] text-white hover:brightness-95"
     : danger
-      ? "border border-red-200 bg-white text-red-700 hover:bg-red-50"
-      : "border border-[var(--border-subtle)] bg-white text-[var(--text-primary)] hover:border-[var(--border-strong)]";
+      ? "border border-[var(--danger)]/30 bg-[var(--surface-elevated)] text-[var(--danger)] hover:bg-[var(--danger-soft)]"
+      : "border border-[var(--border-subtle)] bg-[var(--surface-elevated)] text-[var(--text-primary)] hover:border-[var(--border-strong)]";
   return (
     <button className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-45 ${tone}`} type="button" disabled={disabled} onClick={onClick} aria-label={label}>
       {children}<span>{label}</span>
@@ -491,7 +491,7 @@ function CatalogPanel({
           <div className="mb-4 grid gap-2">
             <label className="text-[0.68rem] font-semibold tracking-[0.1em] text-[var(--text-muted)] uppercase">
               Новый элемент
-              <select className="mt-1.5 w-full rounded-lg border border-[var(--border-subtle)] bg-white px-2.5 py-2 text-xs font-medium normal-case tracking-normal text-[var(--text-primary)]" aria-label="Новый элемент" value={paletteKey} onChange={(event) => onPalette(event.target.value)}>
+              <select className="mt-1.5 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-2.5 py-2 text-xs font-medium normal-case tracking-normal text-[var(--text-primary)]" aria-label="Новый элемент" value={paletteKey} onChange={(event) => onPalette(event.target.value)}>
                 {palette.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
               </select>
             </label>
@@ -567,7 +567,7 @@ function InspectorPanel({
         {!new Set(["kiz_datamatrix", "separator_line"]).has(element.type) && (
           <div className="grid grid-cols-2 gap-2">
             <MetricField label="Шрифт, pt" value={element.fontSizePt} disabled={disabled} onChange={(value) => onChange({ fontSizePt: clampMetric(value, 1, 72) })} />
-            <label className="text-[0.68rem] font-medium text-[var(--text-secondary)]">Выравнивание<select className="mt-1 w-full rounded-lg border border-[var(--border-subtle)] bg-white px-2 py-2 text-xs" value={element.align} disabled={disabled} onChange={(event) => onChange({ align: event.target.value })}><option value="left">Слева</option><option value="center">По центру</option><option value="right">Справа</option></select></label>
+            <label className="text-[0.68rem] font-medium text-[var(--text-secondary)]">Выравнивание<select className="mt-1 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-2 py-2 text-xs" value={element.align} disabled={disabled} onChange={(event) => onChange({ align: event.target.value })}><option value="left">Слева</option><option value="center">По центру</option><option value="right">Справа</option></select></label>
             <label className="flex items-center gap-2 text-xs font-medium"><input type="checkbox" checked={element.bold} disabled={disabled} onChange={(event) => onChange({ bold: event.target.checked })} />Жирный</label>
             {element.type === "barcode_code128" && <label className="flex items-center gap-2 text-xs font-medium"><input type="checkbox" checked={element.humanReadable} disabled={disabled} onChange={(event) => onChange({ humanReadable: event.target.checked })} />Цифры штрихкода</label>}
           </div>
@@ -579,7 +579,7 @@ function InspectorPanel({
 }
 
 function TextField({ label, value, disabled, onChange }: { label: string; value: string; disabled: boolean; onChange: (value: string) => void }) {
-  return <label className="block text-[0.68rem] font-medium text-[var(--text-secondary)]">{label}<input className="mt-1 w-full rounded-lg border border-[var(--border-subtle)] bg-white px-2.5 py-2 text-xs text-[var(--text-primary)]" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} /></label>;
+  return <label className="block text-[0.68rem] font-medium text-[var(--text-secondary)]">{label}<input className="mt-1 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-2.5 py-2 text-xs text-[var(--text-primary)]" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
 function MetricField({ label, value, disabled, onChange }: { label: string; value: number; disabled: boolean; onChange: (value: number) => void }) {
@@ -589,7 +589,7 @@ function MetricField({ label, value, disabled, onChange }: { label: string; valu
   return (
     <label className="text-[0.68rem] font-medium text-[var(--text-secondary)]">
       {label}
-      <input className="mt-1 w-full rounded-lg border border-[var(--border-subtle)] bg-white px-2.5 py-2 text-xs font-semibold text-[var(--text-primary)]" aria-label={label} type="number" step="0.1" value={displayValue} disabled={disabled} onFocus={() => {
+      <input className="mt-1 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-2.5 py-2 text-xs font-semibold text-[var(--text-primary)]" aria-label={label} type="number" step="0.1" value={displayValue} disabled={disabled} onFocus={() => {
         setDraft(String(roundMetric(value)));
         setFocused(true);
       }} onBlur={() => {
@@ -611,7 +611,7 @@ function NameDialog({ action, initialName, busy, onClose, onSubmit }: { action: 
     <Modal title={labels.title} onClose={onClose}>
       <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); const trimmed = name.trim(); if (trimmed) onSubmit(trimmed); }}>
         <label className="block text-sm font-medium">Название шаблона<input autoFocus className="mt-2 w-full rounded-xl border border-[var(--border-strong)] px-3 py-2.5" aria-label="Название шаблона" value={name} maxLength={120} disabled={busy} onChange={(event) => setName(event.target.value)} /></label>
-        <div className="flex justify-end gap-2"><DialogCancel onClick={onClose} /><button className="rounded-lg bg-[var(--accent-strong)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-45" type="submit" disabled={busy || !name.trim()}>{labels.submit}</button></div>
+        <div className="flex justify-end gap-2"><DialogCancel onClick={onClose} /><button className="rounded-lg bg-[var(--button-primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-45" type="submit" disabled={busy || !name.trim()}>{labels.submit}</button></div>
       </form>
     </Modal>
   );
@@ -622,7 +622,7 @@ function ConfirmDialog({ action, templateName, busy, onClose, onConfirm }: { act
   return (
     <Modal title={reset ? "Сбросить шаблон?" : "Удалить шаблон?"} onClose={onClose}>
       <p className="text-sm leading-6 text-[var(--text-secondary)]">{reset ? `Макет «${templateName}» вернётся к системной раскладке.` : `Шаблон «${templateName}» будет удалён без возможности восстановления.`}</p>
-      <div className="mt-5 flex justify-end gap-2"><DialogCancel onClick={onClose} /><button className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-45 ${reset ? "bg-[var(--accent-strong)]" : "bg-red-700"}`} type="button" disabled={busy} onClick={onConfirm}>{reset ? "Сбросить" : "Удалить"}</button></div>
+      <div className="mt-5 flex justify-end gap-2"><DialogCancel onClick={onClose} /><button className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-45 ${reset ? "bg-[var(--button-primary)]" : "bg-red-700"}`} type="button" disabled={busy} onClick={onConfirm}>{reset ? "Сбросить" : "Удалить"}</button></div>
     </Modal>
   );
 }
@@ -630,7 +630,7 @@ function ConfirmDialog({ action, templateName, busy, onClose, onConfirm }: { act
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="w-full max-w-md rounded-2xl border border-[var(--border-subtle)] bg-white p-5 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="template-dialog-title">
+      <section className="w-full max-w-md rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-5 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="template-dialog-title">
         <div className="mb-4 flex items-start justify-between gap-3"><h2 className="text-lg font-semibold" id="template-dialog-title">{title}</h2><button className="rounded-lg px-2 py-1 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-muted)]" type="button" aria-label="Закрыть" onClick={onClose}>×</button></div>
         {children}
       </section>
