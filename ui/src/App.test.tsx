@@ -16,6 +16,10 @@ vi.mock("./generated/commands", () => ({
       refreshStatus: vi.fn(),
       cancelRefresh: vi.fn(),
     },
+    orders: {
+      importExcel: vi.fn(),
+      importedPage: vi.fn(),
+    },
     wildberries: {
       syncOverview: vi.fn(),
       syncStatus: vi.fn(),
@@ -31,6 +35,8 @@ const loadSupplyDetail = vi.mocked(commands.supplies.detail);
 const refreshSupply = vi.mocked(commands.supplies.refresh);
 const refreshSupplyStatus = vi.mocked(commands.supplies.refreshStatus);
 const cancelSupplyRefresh = vi.mocked(commands.supplies.cancelRefresh);
+const importExcel = vi.mocked(commands.orders.importExcel);
+const loadImportedOrders = vi.mocked(commands.orders.importedPage);
 const syncOverview = vi.mocked(commands.wildberries.syncOverview);
 const syncStatus = vi.mocked(commands.wildberries.syncStatus);
 const cancelSync = vi.mocked(commands.wildberries.cancelSync);
@@ -45,6 +51,8 @@ describe("App", () => {
     refreshSupply.mockReset();
     refreshSupplyStatus.mockReset();
     cancelSupplyRefresh.mockReset();
+    importExcel.mockReset();
+    loadImportedOrders.mockReset();
     syncOverview.mockReset();
     syncStatus.mockReset();
     cancelSync.mockReset();
@@ -524,6 +532,160 @@ describe("App", () => {
       expect(loadSupplyDetail).toHaveBeenLastCalledWith(expect.objectContaining({ query: "SKU-1", page: 2 })),
     );
     expect(await screen.findByText("ORDER-2")).toBeVisible();
+  });
+
+  it("imports an Excel workbook through a native dialog and keeps its path out of the UI", async () => {
+    const user = userEvent.setup();
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Основной магазин", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard.mockResolvedValue({ shopId: 7, productCount: 10, newOrderCount: 1, openSupplyCount: 1 });
+    const supply = {
+      id: "WB-GI-1",
+      name: "Поставка Москва",
+      status: "open",
+      mode: "consumer",
+      createdAt: "2026-07-18T10:00:00Z",
+      itemCount: 1,
+    };
+    listSupplies.mockResolvedValue({
+      shopId: 7,
+      query: "",
+      status: "all",
+      page: 1,
+      pageSize: 25,
+      totalItems: 1,
+      totalPages: 1,
+      openItems: 1,
+      closedItems: 0,
+      items: [supply],
+    });
+    loadSupplyDetail.mockResolvedValue({
+      supply,
+      query: "",
+      page: 1,
+      pageSize: 25,
+      totalItems: 1,
+      totalPages: 1,
+      sort: { bySubject: true, byArticle: true, byColor: true, bySize: true },
+      items: [{
+        orderId: "LOCAL-1",
+        nmId: "1001",
+        name: "Локальный товар",
+        brand: "Brand",
+        subject: "Одежда",
+        article: "LOCAL-ART",
+        color: "Синий",
+        size: "M",
+        russianSize: "44",
+        barcode: "LOCAL-SKU",
+        createdAt: "2026-07-18T10:00:00Z",
+        priceKopecks: 10_000,
+        supplierStatus: "confirm",
+        wbStatus: "sorted",
+        requiresKiz: false,
+        imagePath: "",
+      }],
+    });
+    const sessionId = "00000000-0000-4000-8000-000000000001";
+    importExcel.mockResolvedValueOnce({
+      cancelled: false,
+      sessionId,
+      fileName: "orders.xlsx",
+      query: "",
+      page: 1,
+      pageSize: 25,
+      totalItems: 30,
+      totalPages: 2,
+      importedItems: 30,
+      stickerItems: 29,
+      items: [{
+        orderId: "9007199254740993",
+        name: "Импортированный товар",
+        brand: "Excel Brand",
+        article: "ART-EXCEL",
+        color: "Чёрный",
+        size: "L",
+        barcode: "SKU-EXCEL",
+        sticker: "12 34",
+        stickerAvailable: true,
+        imagePath: `jdesk://app/order-images/${"B".repeat(43)}.jpg`,
+      }],
+    });
+    loadImportedOrders.mockImplementation(async (request) => ({
+      cancelled: false,
+      sessionId,
+      fileName: "orders.xlsx",
+      query: request.query,
+      page: request.page,
+      pageSize: request.pageSize,
+      totalItems: 1,
+      totalPages: 1,
+      importedItems: 30,
+      stickerItems: 29,
+      items: [{
+        orderId: "9007199254740993",
+        name: "Импортированный товар",
+        brand: "Excel Brand",
+        article: "ART-EXCEL",
+        color: "Чёрный",
+        size: "L",
+        barcode: "SKU-EXCEL",
+        sticker: "12 34",
+        stickerAvailable: true,
+        imagePath: `jdesk://app/order-images/${"B".repeat(43)}.jpg`,
+      }],
+    }));
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Поставки FBS" }));
+    await user.click(await screen.findByRole("button", { name: "Открыть поставку Поставка Москва" }));
+    await screen.findByText("LOCAL-1");
+    await user.click(screen.getByRole("button", { name: "Импортировать Excel" }));
+
+    await waitFor(() => expect(importExcel).toHaveBeenCalledWith({ shopId: 7, pageSize: 25 }));
+    expect(await screen.findByRole("heading", { name: "Заказы из orders.xlsx" })).toBeVisible();
+    expect(screen.getByText("9007199254740993")).toBeVisible();
+    expect(screen.queryByText("LOCAL-1")).not.toBeInTheDocument();
+    expect(screen.getByText("29 из 30")).toBeVisible();
+    expect(screen.getByRole("img", { name: "Фото товара Импортированный товар" })).toHaveAttribute(
+      "src",
+      `jdesk://app/order-images/${"B".repeat(43)}.jpg`,
+    );
+
+    await user.type(screen.getByRole("searchbox", { name: "Поиск импортированных заказов" }), "  ART-EXCEL  ");
+    await user.click(screen.getByRole("button", { name: "Найти импортированный заказ" }));
+    await waitFor(() => expect(loadImportedOrders).toHaveBeenCalledWith({
+      shopId: 7,
+      sessionId,
+      query: "ART-EXCEL",
+      page: 1,
+      pageSize: 25,
+    }));
+    expect(document.body).not.toHaveTextContent("/private/operator");
+    expect(document.body).not.toHaveTextContent(secret);
+
+    importExcel.mockResolvedValueOnce({
+      cancelled: true,
+      sessionId: "",
+      fileName: "",
+      query: "",
+      page: 1,
+      pageSize: 25,
+      totalItems: 0,
+      totalPages: 0,
+      importedItems: 0,
+      stickerItems: 0,
+      items: [],
+    });
+    await user.click(screen.getByRole("button", { name: "Другой файл" }));
+    expect(await screen.findByRole("heading", { name: "Заказы из orders.xlsx" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Вернуться к заказам поставки" }));
+    expect(await screen.findByText("LOCAL-1")).toBeVisible();
   });
 
   it("refreshes supply orders in the background without losing detail selection", async () => {

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { CalendarDays, ImageIcon, KeyRound } from "lucide-react";
 import type { OrderItem } from "../../generated/types";
 
-const SAFE_ORDER_IMAGE_PATH = /^jdesk:\/\/app\/order-images\/[A-Za-z0-9_-]{43}\.png$/;
+const SAFE_ORDER_IMAGE_PATH = /^jdesk:\/\/app\/order-images\/[A-Za-z0-9_-]{43}\.(?:png|jpg)$/;
 
 const priceFormat = new Intl.NumberFormat("ru-RU", {
   minimumFractionDigits: 2,
@@ -75,7 +75,7 @@ export function OrderTable({ items }: { items: OrderItem[] }) {
   );
 }
 
-function OrderThumbnail({ name, path }: { name: string; path: string }) {
+export function OrderThumbnail({ name, path }: { name: string; path: string }) {
   const [failed, setFailed] = useState(false);
   const canRender = SAFE_ORDER_IMAGE_PATH.test(path) && !failed;
 

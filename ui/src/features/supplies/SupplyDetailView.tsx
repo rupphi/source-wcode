@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { commands } from "../../generated/commands";
 import type { OrderSortRequest, SupplyDetailResponse, SupplyItem } from "../../generated/types";
 import { OrderTable, OrderTableLoading } from "./OrderTable";
+import { ExcelImportPanel } from "./ExcelImportPanel";
 import { Pagination } from "./SupplyTable";
 import { useSupplyRefresh, type SupplyRefreshState } from "./useSupplyRefresh";
 
@@ -35,6 +36,7 @@ export function SupplyDetailView({
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState<OrderSortRequest>(DEFAULT_SORT);
   const [retryKey, setRetryKey] = useState(0);
+  const [showImportedOrders, setShowImportedOrders] = useState(false);
   const [state, setState] = useState<DetailState>({ status: "loading", requestKey: "" });
   const requestSequence = useRef(0);
   const requestKey = JSON.stringify([shopId, summary.id, query, page, sort, retryKey]);
@@ -149,7 +151,9 @@ export function SupplyDetailView({
 
       <RefreshNotice state={refresh.state} />
 
-      <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)] md:p-5">
+      <ExcelImportPanel key={shopId} shopId={shopId} onActiveChange={setShowImportedOrders} />
+
+      {!showImportedOrders && <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)] md:p-5">
         <form className="flex flex-col gap-3 sm:flex-row" onSubmit={submitSearch} role="search">
           <label className="relative min-w-0 flex-1">
             <span className="sr-only">Поиск заказов</span>
@@ -179,9 +183,9 @@ export function SupplyDetailView({
           <SortToggle label="Цвет" checked={sort.byColor} onChange={() => toggleSort("byColor")} />
           <SortToggle label="Размер" checked={sort.bySize} onChange={() => toggleSort("bySize")} />
         </div>
-      </section>
+      </section>}
 
-      {visibleState.status === "loading" ? (
+      {!showImportedOrders && (visibleState.status === "loading" ? (
         <OrderTableLoading />
       ) : visibleState.status === "error" ? (
         <DetailError onRetry={() => setRetryKey((key) => key + 1)} />
@@ -189,9 +193,9 @@ export function SupplyDetailView({
         <DetailEmpty hasQuery={query.length > 0} />
       ) : (
         <OrderTable items={visibleState.data.items} />
-      )}
+      ))}
 
-      {visibleState.status === "ready" && visibleState.data.items.length > 0 && (
+      {!showImportedOrders && visibleState.status === "ready" && visibleState.data.items.length > 0 && (
         <Pagination
           page={visibleState.data.page}
           totalPages={visibleState.data.totalPages}
