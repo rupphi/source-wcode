@@ -42,6 +42,7 @@ out-*/
 runtime/
 ui/node_modules/
 ui/dist/
+ui/src/generated/
 
 ### Downloaded JavaFX jmods (fetched by build scripts, not source) ###
 javafx-jmods-*/
