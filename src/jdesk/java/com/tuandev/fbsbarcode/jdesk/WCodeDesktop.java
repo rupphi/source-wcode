@@ -3,6 +3,8 @@ package com.tuandev.fbsbarcode.jdesk;
 import com.tuandev.fbsbarcode.BuildConfig;
 import com.tuandev.fbsbarcode.jdesk.order.ExcelOrderImportCommandService;
 import com.tuandev.fbsbarcode.jdesk.order.ExcelOrderImportCommandServiceCommands;
+import com.tuandev.fbsbarcode.jdesk.print.PrintCommandService;
+import com.tuandev.fbsbarcode.jdesk.print.PrintCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.supply.OrderImageAssetService;
 import com.tuandev.fbsbarcode.jdesk.supply.SupplyCommandService;
 import com.tuandev.fbsbarcode.jdesk.supply.SupplyCommandServiceCommands;
@@ -39,6 +41,7 @@ public final class WCodeDesktop {
             SupplyCommandService supplies = new SupplyCommandService();
             OrderImageAssetService orderImages = new OrderImageAssetService();
             ExcelOrderImportCommandService excelOrders = new ExcelOrderImportCommandService(orderImages);
+            PrintCommandService printing = new PrintCommandService();
             SupplyDetailCommandService supplyDetails = new SupplyDetailCommandService(orderImages);
             SupplyRefreshCommandService supplyRefresh = new SupplyRefreshCommandService();
             JDeskApplication.Builder application = JDeskApplication.builder()
@@ -49,7 +52,8 @@ public final class WCodeDesktop {
                             SupplyCommandServiceCommands.create(supplies),
                             SupplyDetailCommandServiceCommands.create(supplyDetails),
                             SupplyRefreshCommandServiceCommands.create(supplyRefresh),
-                            ExcelOrderImportCommandServiceCommands.create(excelOrders)))
+                            ExcelOrderImportCommandServiceCommands.create(excelOrders),
+                            PrintCommandServiceCommands.create(printing)))
                     .capabilities(Capabilities.fromResource("jdesk-capabilities.json"))
                     .contentSecurityPolicy(Csp.defaults())
                     .assetRoute("order-images", orderImages)
