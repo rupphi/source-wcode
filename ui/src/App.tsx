@@ -17,8 +17,10 @@ import { ZnackView } from "./features/znack/ZnackView";
 import { PrintHistoryView } from "./features/history/PrintHistoryView";
 import { TemplateDesignerView } from "./features/templates/TemplateDesignerView";
 import { LicenseSettingsDialog } from "./features/license/LicenseSettingsDialog";
+import { ShopManagementDialog } from "./features/shops/ShopManagementDialog";
+import { validShopState } from "./features/shops/shopState";
 import { commands } from "./generated/commands";
-import type { BootstrapResponse } from "./generated/types";
+import type { BootstrapResponse, ShopState } from "./generated/types";
 import { getCopy, isLanguage, isTheme } from "./i18n";
 import type { Language, ThemeMode } from "./i18n";
 
@@ -33,6 +35,9 @@ export function App() {
   const [selectedShopId, setSelectedShopId] = useState<number | null>(null);
   const [activeView, setActiveView] = useState<WorkspaceView>("dashboard");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [shopManagerOpen, setShopManagerOpen] = useState(false);
+  const [shopSelectionBusy, setShopSelectionBusy] = useState(false);
+  const [shopError, setShopError] = useState("");
   const [licenseAllowed, setLicenseAllowed] = useState(false);
   const [preferences, setPreferences] = useState<{ language: Language; theme: ThemeMode }>({
     language: "ru",
@@ -40,6 +45,7 @@ export function App() {
   });
   const dashboardRequest = useRef(0);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const shopManagerButtonRef = useRef<HTMLButtonElement>(null);
 
   const loadDashboard = useCallback(async (shopId: number) => {
     const requestId = ++dashboardRequest.current;
@@ -76,6 +82,19 @@ export function App() {
     },
     [loadDashboard],
   );
+
+  const applyShopState = useCallback(async (response: ShopState) => {
+    if (!validShopState(response)) throw new Error("Invalid shop state");
+    const nextShopId = response.hasSelectedShop ? response.selectedShopId : null;
+    dashboardRequest.current += 1;
+    setWorkspace((current) => current.status === "ready"
+      ? { status: "ready", data: { ...current.data, shops: response.shops } }
+      : current);
+    setSelectedShopId(nextShopId);
+    setDashboard(nextShopId === null ? { status: "idle" } : { status: "loading" });
+    setShopError("");
+    if (nextShopId !== null) await loadDashboard(nextShopId);
+  }, [loadDashboard]);
 
   useEffect(() => {
     let active = true;
@@ -135,14 +154,29 @@ export function App() {
     }
   };
 
-  const selectShop = (shopId: number) => {
-    setSelectedShopId(shopId);
-    void loadDashboard(shopId);
+  const selectShop = async (shopId: number) => {
+    if (shopSelectionBusy || shopId === selectedShopId) return;
+    setShopSelectionBusy(true);
+    setShopError("");
+    try {
+      const response: unknown = await commands.shops.select({ shopId });
+      if (!validShopState(response)) throw new Error("Invalid shop state");
+      await applyShopState(response);
+    } catch {
+      setShopError(copy.shop.errors.unavailable);
+    } finally {
+      setShopSelectionBusy(false);
+    }
   };
 
   const closeSettings = () => {
     setSettingsOpen(false);
     requestAnimationFrame(() => settingsButtonRef.current?.focus());
+  };
+
+  const closeShopManager = () => {
+    setShopManagerOpen(false);
+    requestAnimationFrame(() => shopManagerButtonRef.current?.focus());
   };
 
   const copy = getCopy(preferences.language);
@@ -162,8 +196,8 @@ export function App() {
     <>
       <div
         className="min-h-screen bg-[var(--surface-canvas)] text-[var(--text-primary)] md:grid md:grid-cols-[15.5rem_1fr]"
-        aria-hidden={settingsOpen || undefined}
-        inert={settingsOpen || undefined}
+        aria-hidden={settingsOpen || shopManagerOpen || undefined}
+        inert={settingsOpen || shopManagerOpen || undefined}
       >
       <Sidebar
         version={workspace.data.app.version}
@@ -217,7 +251,11 @@ export function App() {
               <ShopPicker
                 shops={workspace.data.shops}
                 selectedId={selectedShopId}
-                onSelect={selectShop}
+                onSelect={(shopId) => void selectShop(shopId)}
+                onManage={() => setShopManagerOpen(true)}
+                manageButtonRef={shopManagerButtonRef}
+                busy={shopSelectionBusy}
+                error={shopError}
                 copy={copy.shop}
               />
             )}
@@ -226,7 +264,7 @@ export function App() {
           {activeView === "templates" ? (
             <TemplateDesignerView />
           ) : selectedShop === null ? (
-            <EmptyWorkspace />
+            <EmptyWorkspace copy={copy.shop} />
           ) : activeView === "supplies" ? (
             <SupplyListView shopId={selectedShop.id} />
           ) : activeView === "packing" ? (
@@ -254,6 +292,15 @@ export function App() {
           language={preferences.language}
           theme={preferences.theme}
           onPreferencesChange={applyPreferences}
+        />
+      ) : null}
+      {shopManagerOpen ? (
+        <ShopManagementDialog
+          shops={workspace.data.shops}
+          selectedId={selectedShopId}
+          onClose={closeShopManager}
+          onState={(state) => { void applyShopState(state); }}
+          copy={copy.shop}
         />
       ) : null}
     </>

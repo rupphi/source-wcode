@@ -1,6 +1,7 @@
 package com.tuandev.fbsbarcode.jdesk;
 
 import com.tuandev.fbsbarcode.BuildConfig;
+import com.tuandev.fbsbarcode.features.print.KizAttachmentCoordinator;
 import com.tuandev.fbsbarcode.jdesk.fbo.FboCatalogCommandService;
 import com.tuandev.fbsbarcode.jdesk.fbo.FboCatalogCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.fbo.FboPrintCommandService;
@@ -30,6 +31,9 @@ import com.tuandev.fbsbarcode.jdesk.supply.SupplyDetailCommandService;
 import com.tuandev.fbsbarcode.jdesk.supply.SupplyDetailCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.supply.SupplyRefreshCommandService;
 import com.tuandev.fbsbarcode.jdesk.supply.SupplyRefreshCommandServiceCommands;
+import com.tuandev.fbsbarcode.jdesk.shop.ShopActivityGate;
+import com.tuandev.fbsbarcode.jdesk.shop.ShopCommandService;
+import com.tuandev.fbsbarcode.jdesk.shop.ShopCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.template.TemplateDesignerCommandService;
 import com.tuandev.fbsbarcode.jdesk.template.TemplateDesignerCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.template.TemplateDesignerMutationCommandService;
@@ -39,10 +43,10 @@ import com.tuandev.fbsbarcode.jdesk.wildberries.WildberriesCommandServiceCommand
 import com.tuandev.fbsbarcode.jdesk.workspace.JDeskCommands;
 import com.tuandev.fbsbarcode.jdesk.workspace.WorkspaceCommandService;
 import com.tuandev.fbsbarcode.jdesk.workspace.WorkspaceCommandServiceCommands;
-import com.tuandev.fbsbarcode.jdesk.znack.ZnackCommandService;
-import com.tuandev.fbsbarcode.jdesk.znack.ZnackCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.znack.ZnackAutomationCommandService;
 import com.tuandev.fbsbarcode.jdesk.znack.ZnackAutomationCommandServiceCommands;
+import com.tuandev.fbsbarcode.jdesk.znack.ZnackCommandService;
+import com.tuandev.fbsbarcode.jdesk.znack.ZnackCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.znack.ZnackPurchaseCommandService;
 import com.tuandev.fbsbarcode.jdesk.znack.ZnackPurchaseCommandServiceCommands;
 import com.tuandev.fbsbarcode.shared.AppDataLock;
@@ -66,7 +70,8 @@ public final class WCodeDesktop {
                 JDeskStartup.prepare(AppPaths.appDataDir(), BuildConfig.getAppVersion())) {
             boolean smokeTest = Arrays.asList(args).contains("--jdesk-smoke");
             WorkspaceCommandService workspace = new WorkspaceCommandService();
-            WildberriesCommandService wildberries = new WildberriesCommandService();
+            ShopActivityGate shopActivity = new ShopActivityGate();
+            WildberriesCommandService wildberries = new WildberriesCommandService(shopActivity);
             SupplyCommandService supplies = new SupplyCommandService();
             OrderImageAssetService orderImages = new OrderImageAssetService();
             FboCatalogCommandService fboCatalog = new FboCatalogCommandService(orderImages);
@@ -75,8 +80,12 @@ public final class WCodeDesktop {
             LicenseCommandService license = new LicenseCommandService();
             PreferencesCommandService preferences = new PreferencesCommandService();
             ZnackCommandService znack = new ZnackCommandService();
-            ZnackAutomationCommandService znackAutomation = new ZnackAutomationCommandService();
+            ZnackAutomationCommandService znackAutomation = new ZnackAutomationCommandService(shopActivity);
             ZnackPurchaseCommandService znackPurchases = new ZnackPurchaseCommandService();
+            SupplyRefreshCommandService supplyRefresh = new SupplyRefreshCommandService(shopActivity);
+            ShopCommandService shops = new ShopCommandService(
+                    shopActivity,
+                    shopId -> KizAttachmentCoordinator.getInstance().hasActiveJobForShop(shopId));
             PackingCommandService packing = new PackingCommandService(orderImages);
             ExcelOrderImportCommandService excelOrders = new ExcelOrderImportCommandService(orderImages);
             PrintCommandService printing = new PrintCommandService();
@@ -115,11 +124,11 @@ public final class WCodeDesktop {
                     "znack.retryIntroduction",
                     Duration.ofMinutes(10));
             SupplyDetailCommandService supplyDetails = new SupplyDetailCommandService(orderImages);
-            SupplyRefreshCommandService supplyRefresh = new SupplyRefreshCommandService();
             JDeskApplication.Builder application = JDeskApplication.builder()
                     .id("com.tuandev.wcode")
                     .commands(JDeskCommands.combine(
                             WorkspaceCommandServiceCommands.create(workspace),
+                            ShopCommandServiceCommands.create(shops),
                             WildberriesCommandServiceCommands.create(wildberries),
                             SupplyCommandServiceCommands.create(supplies),
                             PackingCommandServiceCommands.create(packing),

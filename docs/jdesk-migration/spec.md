@@ -23,6 +23,30 @@ luồng hiện tại trong UI mới, nhanh, rõ trạng thái, dùng được b�
 7. Quản lý license, ngôn ngữ, theme, update và diagnostics.
 8. Đóng gói Windows EXE/MSI/portable; giữ dữ liệu của bản JavaFX khi nâng cấp.
 
+### Shop management and token boundary
+
+- `shops.list`, `shops.select`, `shops.create`, `shops.update` và `shops.delete` chỉ trả một
+  `ShopState` bounded gồm tối đa 500 summary `{id, name, tokenConfigured}` cùng selection hợp lệ.
+  API key, fingerprint, credential version, SQL/exception, config khác và object `Shop` legacy
+  không được trả qua bridge, `toString`, event hoặc log.
+- Tên shop được trim, dài 1–120 ký tự và không chứa control character. Token create bắt buộc,
+  token thay thế dài tối đa 16 KiB và không chứa control character; token trống khi update có nghĩa
+  giữ token hiện có. Java không echo request trong validation/error. React xóa token khỏi state và
+  unmount input ngay sau success/cancel; edit luôn mở với input token trống và chỉ hiển thị trạng
+  thái “đã cấu hình”, không hiển thị mask có thể suy ra secret.
+- Create/update/select/delete được serialize. SQLite mutation và `last_selected_shop_id` liên quan
+  commit trong cùng transaction: create chọn shop mới; select chỉ chấp nhận shop hiện hữu; update
+  phải fail nếu shop biến mất; delete chọn shop ID nhỏ nhất còn lại nếu selection cũ không còn.
+  Generated ID lấy từ cùng SQLite connection, không dùng `MAX(id)`.
+- Delete là local destructive cascade qua dữ liệu shop. Command yêu cầu `confirmed=true`, re-resolve
+  shop ngay trước transaction và từ chối nếu bất kỳ WB/supply/Znack async job đã biết nào còn chạy
+  cho shop. React dùng dialog xác nhận riêng nêu rõ dữ liệu cục bộ liên quan sẽ bị xóa; live/native
+  delete chỉ chạy trên app-data cô lập nếu chưa có approval cụ thể.
+- Trong increment CRUD đầu, SQLite `shops.api_key` tiếp tục là source-of-truth để JavaFX rollback
+  đọc được token mới. Đây chưa phải credential-storage parity. Increment kế tiếp phải thêm monotonic
+  version/fingerprint, OS credential-store write-through + read-back verification và fault-injection
+  recovery theo ADR; chỉ sau rollback window mới được retire plaintext column.
+
 ### Template designer contract
 
 - Designer phục vụ hai kho template tách biệt `fbs` và `fbo`, cùng khổ cố định 58×40 mm.

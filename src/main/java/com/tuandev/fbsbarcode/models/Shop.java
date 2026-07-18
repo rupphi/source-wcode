@@ -48,7 +48,7 @@ public class Shop {
         return "Shop{" +
                 "id=" + id +
                 ", name='" + name + '\'' +
-                ", apiKey='" + apiKey + '\'' +
+                ", apiKeyConfigured=" + (apiKey != null && !apiKey.isBlank()) +
                 '}';
     }
 }

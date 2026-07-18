@@ -16,6 +16,7 @@ import com.tuandev.fbsbarcode.integration.znack.signature.CryptoProException;
 import com.tuandev.fbsbarcode.integration.znack.signature.CryptoProSignatureProvider;
 import com.tuandev.fbsbarcode.integration.znack.signature.ZnackSignatureContext;
 import com.tuandev.fbsbarcode.jdesk.SafeCommandExecutor;
+import com.tuandev.fbsbarcode.jdesk.shop.ShopActivityGate;
 import com.tuandev.fbsbarcode.models.Shop;
 import dev.jdesk.api.DesktopCommand;
 import dev.jdesk.api.ErrorCode;
@@ -56,10 +57,15 @@ public final class ZnackAutomationCommandService {
     private final CertificateTester tester;
     private final ProductSyncRunner syncRunner;
     private final Clock clock;
+    private final ShopActivityGate activityGate;
     private final ConcurrentMap<Integer, CertificateSession> certificateSessions = new ConcurrentHashMap<>();
     private final ConcurrentMap<Integer, ProductSyncJob> syncJobs = new ConcurrentHashMap<>();
 
     public ZnackAutomationCommandService() {
+        this(new ShopActivityGate());
+    }
+
+    public ZnackAutomationCommandService(ShopActivityGate activityGate) {
         this(
                 new ShopRepository()::findAll,
                 new LegacyAutomationSource(),
@@ -76,7 +82,8 @@ public final class ZnackAutomationCommandService {
                                         .getBytes(StandardCharsets.UTF_8),
                                 ZnackSignatureContext.SIGNATURE_TEST),
                 ZnackAutomationCommandService::syncProducts,
-                Clock.systemUTC());
+                Clock.systemUTC(),
+                activityGate);
     }
 
     ZnackAutomationCommandService(
@@ -86,12 +93,24 @@ public final class ZnackAutomationCommandService {
             CertificateTester tester,
             ProductSyncRunner syncRunner,
             Clock clock) {
+        this(shops, source, discoverer, tester, syncRunner, clock, new ShopActivityGate());
+    }
+
+    private ZnackAutomationCommandService(
+            Supplier<List<Shop>> shops,
+            AutomationSource source,
+            CertificateDiscoverer discoverer,
+            CertificateTester tester,
+            ProductSyncRunner syncRunner,
+            Clock clock,
+            ShopActivityGate activityGate) {
         this.shops = Objects.requireNonNull(shops, "shops");
         this.source = Objects.requireNonNull(source, "source");
         this.discoverer = Objects.requireNonNull(discoverer, "discoverer");
         this.tester = Objects.requireNonNull(tester, "tester");
         this.syncRunner = Objects.requireNonNull(syncRunner, "syncRunner");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.activityGate = Objects.requireNonNull(activityGate, "activityGate");
     }
 
     @DesktopCommand("znack.discoverCertificates")
@@ -182,30 +201,51 @@ public final class ZnackAutomationCommandService {
         int shopId = requireShopId(request == null ? 0 : request.shopId());
         String version = requireVersion(request == null ? null : request.version());
         requireNotCancelled(context, "Product sync was cancelled before launch.");
-        Shop shop = requireShop(shopId);
-        Settings settings = requireSettings(shopId);
-        if (!ZnackCommandService.settingsVersion(settings).equals(version)) {
-            throw invalid("Znack settings changed. Reload them before syncing products.");
-        }
+        ShopActivityGate.Lease activity = beginActivity(shopId);
+        boolean transferred = false;
         try {
-            ZnackSafety.requireSigned(settings, false);
-        } catch (IllegalStateException error) {
-            throw invalid("Verify a CryptoPro certificate before syncing products.");
+            Shop shop = requireShop(shopId);
+            Settings settings = requireSettings(shopId);
+            if (!ZnackCommandService.settingsVersion(settings).equals(version)) {
+                throw invalid("Znack settings changed. Reload them before syncing products.");
+            }
+            try {
+                ZnackSafety.requireSigned(settings, false);
+            } catch (IllegalStateException error) {
+                throw invalid("Verify a CryptoPro certificate before syncing products.");
+            }
+            AtomicBoolean accepted = new AtomicBoolean();
+            ProductSyncJob job = syncJobs.compute(shopId, (ignored, existing) -> {
+                if (existing != null && existing.isRunning()) return existing;
+                accepted.set(true);
+                return new ProductSyncJob(UUID.randomUUID().toString(), shopId);
+            });
+            if (accepted.get()) {
+                EventEmitter emitter = emitter(context);
+                job.worker = Thread.ofVirtual()
+                        .name("wcode-znack-product-sync-" + shopId)
+                        .start(() -> {
+                            try {
+                                runSync(job, shop, version, emitter);
+                            } finally {
+                                activity.close();
+                            }
+                        });
+                transferred = true;
+            }
+            return CompletableFuture.completedFuture(
+                    new StartProductSyncResponse(accepted.get(), shopId, job.jobId));
+        } finally {
+            if (!transferred) activity.close();
         }
+    }
 
-        AtomicBoolean accepted = new AtomicBoolean();
-        ProductSyncJob job = syncJobs.compute(shopId, (ignored, existing) -> {
-            if (existing != null && existing.isRunning()) return existing;
-            accepted.set(true);
-            return new ProductSyncJob(UUID.randomUUID().toString(), shopId);
-        });
-        if (accepted.get()) {
-            EventEmitter emitter = emitter(context);
-            job.worker = Thread.ofVirtual()
-                    .name("wcode-znack-product-sync-" + shopId)
-                    .start(() -> runSync(job, shop, version, emitter));
+    private ShopActivityGate.Lease beginActivity(int shopId) {
+        try {
+            return activityGate.begin(shopId);
+        } catch (ShopActivityGate.ShopBusyException exception) {
+            throw invalid("The shop is being deleted. Try again after the operation finishes.");
         }
-        return CompletableFuture.completedFuture(new StartProductSyncResponse(accepted.get(), shopId, job.jobId));
     }
 
     @DesktopCommand("znack.productSyncStatus")

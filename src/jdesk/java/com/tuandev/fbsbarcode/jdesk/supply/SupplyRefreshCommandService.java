@@ -5,6 +5,7 @@ import com.tuandev.fbsbarcode.features.supply.SupplyLoadWorkflow;
 import com.tuandev.fbsbarcode.integration.wb.WbApiException;
 import com.tuandev.fbsbarcode.integration.wb.WbSupplyRepository;
 import com.tuandev.fbsbarcode.integration.wb.WbSupplySummary;
+import com.tuandev.fbsbarcode.jdesk.shop.ShopActivityGate;
 import com.tuandev.fbsbarcode.models.Shop;
 import dev.jdesk.api.DesktopCommand;
 import dev.jdesk.api.ErrorCode;
@@ -31,24 +32,39 @@ public final class SupplyRefreshCommandService {
     private final Supplier<List<Shop>> shops;
     private final SupplyReader supplies;
     private final RefreshRunner refreshRunner;
+    private final ShopActivityGate activityGate;
     private final ConcurrentMap<Integer, RefreshJob> jobsByShop = new ConcurrentHashMap<>();
 
     public SupplyRefreshCommandService() {
+        this(new ShopActivityGate());
+    }
+
+    public SupplyRefreshCommandService(ShopActivityGate activityGate) {
         ShopRepository shopRepository = new ShopRepository();
         WbSupplyRepository supplyRepository = new WbSupplyRepository();
         SupplyLoadWorkflow workflow = new SupplyLoadWorkflow();
         this.shops = shopRepository::findAll;
         this.supplies = supplyRepository::findSupplySummary;
         this.refreshRunner = (shop, supplyId) -> workflow.refreshSupplyData(shop, supplyId).size();
+        this.activityGate = Objects.requireNonNull(activityGate, "activityGate");
     }
 
     SupplyRefreshCommandService(
             Supplier<List<Shop>> shops,
             SupplyReader supplies,
             RefreshRunner refreshRunner) {
+        this(shops, supplies, refreshRunner, new ShopActivityGate());
+    }
+
+    private SupplyRefreshCommandService(
+            Supplier<List<Shop>> shops,
+            SupplyReader supplies,
+            RefreshRunner refreshRunner,
+            ShopActivityGate activityGate) {
         this.shops = Objects.requireNonNull(shops, "shops");
         this.supplies = Objects.requireNonNull(supplies, "supplies");
         this.refreshRunner = Objects.requireNonNull(refreshRunner, "refreshRunner");
+        this.activityGate = Objects.requireNonNull(activityGate, "activityGate");
     }
 
     @DesktopCommand("supplies.refresh")
@@ -65,26 +81,47 @@ public final class SupplyRefreshCommandService {
                     null);
         }
 
-        Shop shop = safeRequireOwnedSupply(validated);
-        AtomicBoolean accepted = new AtomicBoolean();
-        RefreshJob job = jobsByShop.compute(shop.getId(), (shopId, existing) -> {
-            if (existing != null && existing.isRunning()) {
-                if (existing.supplyId.equals(validated.supplyId())) {
-                    return existing;
+        ShopActivityGate.Lease activity = beginActivity(validated.shopId());
+        boolean transferred = false;
+        try {
+            Shop shop = safeRequireOwnedSupply(validated);
+            AtomicBoolean accepted = new AtomicBoolean();
+            RefreshJob job = jobsByShop.compute(shop.getId(), (shopId, existing) -> {
+                if (existing != null && existing.isRunning()) {
+                    if (existing.supplyId.equals(validated.supplyId())) {
+                        return existing;
+                    }
+                    throw invalidRequest(
+                            "Для этого магазина уже обновляется другая поставка.", "shop_busy", true);
                 }
-                throw invalidRequest(
-                        "Для этого магазина уже обновляется другая поставка.", "shop_busy", true);
+                accepted.set(true);
+                return new RefreshJob(UUID.randomUUID().toString(), shopId, validated.supplyId());
+            });
+            if (accepted.get()) {
+                job.worker = Thread.ofVirtual()
+                        .name("wcode-supply-refresh-" + shop.getId())
+                        .start(() -> {
+                            try {
+                                runJob(job, shop);
+                            } finally {
+                                activity.close();
+                            }
+                        });
+                transferred = true;
             }
-            accepted.set(true);
-            return new RefreshJob(UUID.randomUUID().toString(), shopId, validated.supplyId());
-        });
-        if (accepted.get()) {
-            job.worker = Thread.ofVirtual()
-                    .name("wcode-supply-refresh-" + shop.getId())
-                    .start(() -> runJob(job, shop));
+            return CompletableFuture.completedFuture(new StartSupplyRefreshResponse(
+                    accepted.get(), job.shopId, job.supplyId, job.jobId));
+        } finally {
+            if (!transferred) activity.close();
         }
-        return CompletableFuture.completedFuture(new StartSupplyRefreshResponse(
-                accepted.get(), job.shopId, job.supplyId, job.jobId));
+    }
+
+    private ShopActivityGate.Lease beginActivity(int shopId) {
+        try {
+            return activityGate.begin(shopId);
+        } catch (ShopActivityGate.ShopBusyException exception) {
+            throw invalidRequest("Магазин удаляется. Повторите после завершения операции.", "shop_busy", true);
+        }
     }
 
     @DesktopCommand("supplies.refreshStatus")

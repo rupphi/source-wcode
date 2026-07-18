@@ -1,6 +1,7 @@
 import { Boxes, KeyRound, PackageSearch, RefreshCw, Store, Truck } from "lucide-react";
 import type { WildberriesSyncController } from "../wildberries/useWildberriesSync";
 import type { DashboardResponse, ShopSummary } from "../../generated/types";
+import type { AppCopy } from "../../i18n";
 
 export type DashboardState =
   | { status: "idle" }
@@ -149,16 +150,16 @@ function syncErrorMessage(errorKind: string, retryable: boolean): string {
     : "Синхронизацию нельзя запустить с текущими настройками магазина.";
 }
 
-export function EmptyWorkspace() {
+export function EmptyWorkspace({ copy }: { copy: AppCopy["shop"] }) {
   return (
     <section className="grid min-h-80 place-items-center rounded-2xl border border-dashed border-[var(--border-strong)] bg-[var(--surface-elevated)] p-8 text-center">
       <div>
         <div className="mx-auto mb-4 grid size-12 place-items-center rounded-xl bg-[var(--surface-muted)] text-[var(--text-secondary)]">
           <Store aria-hidden="true" size={22} />
         </div>
-        <h3 className="font-semibold">Добавьте магазин, чтобы начать работу</h3>
+        <h3 className="font-semibold">{copy.emptyTitle}</h3>
         <p className="mt-2 text-sm text-[var(--text-secondary)]">
-          Управление магазинами будет подключено в следующем разделе.
+          {copy.emptyDescription}
         </p>
       </div>
     </section>

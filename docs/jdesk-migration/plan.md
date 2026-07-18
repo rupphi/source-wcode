@@ -246,12 +246,20 @@ Trong dual-write phase, legacy credential là source-of-truth. Save ghi legacy +
 trước, OS store sau; fingerprint/version mismatch được reconcile về OS store mà không expose token.
 Tests bắt buộc cover crash/failure sau từng write và chứng minh JavaFX rollback vẫn dùng token mới.
 
+- [x] Land the typed, serialized SQLite CRUD/selection contract with bounded secret-free state,
+  generated-key correctness, explicit cascade confirmation and Java-side async-job deletion guard.
+- [x] Land the accessible React manager; edit token starts blank, successful/cancelled forms clear
+  token state, and malformed bridge responses never reach the DOM.
+- [ ] Add monotonic credential version/fingerprint and OS-store write-through/read-back verification
+  with reconciliation tests for every partial-failure point. Until then the row remains explicitly
+  `Foundation (legacy credential source)` rather than credential parity.
+
 ### Checkpoint B: Shop/WB
 
-- [ ] Existing shops can be viewed, created, edited and deleted with confirmation.
-- [ ] API key is masked and never returned after save.
-- [ ] Live WB sync passes for a user-selected shop.
-- [ ] Legacy JavaFX still reads data during rollback window.
+- [x] Existing shops can be viewed, created, edited and deleted with confirmation.
+- [x] API key is represented only by `tokenConfigured` and never returned after save.
+- [x] Live WB read sync passes for a user-selected shop (existing Phase 2 evidence).
+- [x] Legacy JavaFX still reads the authoritative SQLite token during the rollback window.
 
 ## Phase 4: Supply and order workspace
 

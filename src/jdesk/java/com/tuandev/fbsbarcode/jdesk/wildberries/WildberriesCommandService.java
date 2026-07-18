@@ -4,6 +4,7 @@ import com.tuandev.fbsbarcode.features.shop.ShopRepository;
 import com.tuandev.fbsbarcode.integration.wb.WbApiException;
 import com.tuandev.fbsbarcode.integration.wb.WbSyncReport;
 import com.tuandev.fbsbarcode.integration.wb.WbSyncWorkflow;
+import com.tuandev.fbsbarcode.jdesk.shop.ShopActivityGate;
 import com.tuandev.fbsbarcode.models.Shop;
 import dev.jdesk.api.DesktopCommand;
 import dev.jdesk.api.ErrorCode;
@@ -29,9 +30,14 @@ public final class WildberriesCommandService {
 
     private final Supplier<List<Shop>> shops;
     private final SyncRunner syncRunner;
+    private final ShopActivityGate activityGate;
     private final ConcurrentMap<Integer, SyncJob> jobsByShop = new ConcurrentHashMap<>();
 
     public WildberriesCommandService() {
+        this(new ShopActivityGate());
+    }
+
+    public WildberriesCommandService(ShopActivityGate activityGate) {
         ShopRepository shopRepository = new ShopRepository();
         WbSyncWorkflow workflow = new WbSyncWorkflow();
         this.shops = shopRepository::findAll;
@@ -41,11 +47,18 @@ public final class WildberriesCommandService {
             progress.accept("wildberries", 1, 1);
             return report;
         };
+        this.activityGate = Objects.requireNonNull(activityGate, "activityGate");
     }
 
     WildberriesCommandService(Supplier<List<Shop>> shops, SyncRunner syncRunner) {
+        this(shops, syncRunner, new ShopActivityGate());
+    }
+
+    WildberriesCommandService(
+            Supplier<List<Shop>> shops, SyncRunner syncRunner, ShopActivityGate activityGate) {
         this.shops = Objects.requireNonNull(shops, "shops");
         this.syncRunner = Objects.requireNonNull(syncRunner, "syncRunner");
+        this.activityGate = Objects.requireNonNull(activityGate, "activityGate");
     }
 
     @DesktopCommand("wildberries.syncOverview")
@@ -63,27 +76,47 @@ public final class WildberriesCommandService {
                     null);
         }
 
-        Shop shop = safeRequireShop(request.shopId());
-        if (shop.getApiKey() == null || shop.getApiKey().isBlank()) {
-            throw invalidRequest("Добавьте API-токен Wildberries для этого магазина.", "token_missing");
-        }
-
-        AtomicBoolean accepted = new AtomicBoolean();
-        SyncJob job = jobsByShop.compute(shop.getId(), (shopId, existing) -> {
-            if (existing != null && existing.isRunning()) {
-                return existing;
+        ShopActivityGate.Lease activity = beginActivity(request.shopId());
+        boolean transferred = false;
+        try {
+            Shop shop = safeRequireShop(request.shopId());
+            if (shop.getApiKey() == null || shop.getApiKey().isBlank()) {
+                throw invalidRequest("Добавьте API-токен Wildberries для этого магазина.", "token_missing");
             }
-            accepted.set(true);
-            return new SyncJob(UUID.randomUUID().toString(), shopId);
-        });
-        if (accepted.get()) {
-            EventEmitter emitter = emitter(context);
-            job.worker = Thread.ofVirtual()
-                    .name("wcode-wb-sync-" + shop.getId())
-                    .start(() -> runJob(job, shop, emitter));
+            AtomicBoolean accepted = new AtomicBoolean();
+            SyncJob job = jobsByShop.compute(shop.getId(), (shopId, existing) -> {
+                if (existing != null && existing.isRunning()) {
+                    return existing;
+                }
+                accepted.set(true);
+                return new SyncJob(UUID.randomUUID().toString(), shopId);
+            });
+            if (accepted.get()) {
+                EventEmitter emitter = emitter(context);
+                job.worker = Thread.ofVirtual()
+                        .name("wcode-wb-sync-" + shop.getId())
+                        .start(() -> {
+                            try {
+                                runJob(job, shop, emitter);
+                            } finally {
+                                activity.close();
+                            }
+                        });
+                transferred = true;
+            }
+            return CompletableFuture.completedFuture(
+                    new StartSyncResponse(accepted.get(), job.shopId, job.jobId));
+        } finally {
+            if (!transferred) activity.close();
         }
-        return CompletableFuture.completedFuture(
-                new StartSyncResponse(accepted.get(), job.shopId, job.jobId));
+    }
+
+    private ShopActivityGate.Lease beginActivity(int shopId) {
+        try {
+            return activityGate.begin(shopId);
+        } catch (ShopActivityGate.ShopBusyException exception) {
+            throw invalidRequest("Магазин удаляется. Повторите после завершения операции.", "shop_busy");
+        }
     }
 
     @DesktopCommand("wildberries.syncStatus")

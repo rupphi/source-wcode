@@ -23,10 +23,10 @@ Baseline: WCode `1.1.7`, branch point `61e8117`, 2026-07-18.
 | --- | --- | --- | --- |
 | App lifecycle/close guard | `MainApplication`, `Launcher` | smoke start/stop, busy-work close veto, recovery | Foundation |
 | Workspace shell/navigation | `HomeController`, `home-view.fxml` | all destinations, responsive/keyboard, persisted selection | Foundation |
-| Shop sidebar/header | `ShopSidebarController`, `WorkspaceHeaderController` | list/select/edit/delete/sync, no secret in bridge | Foundation |
+| Shop sidebar/header | `ShopSidebarController`, `WorkspaceHeaderController` | bounded list, persisted selection and accessible create/edit/confirmed-delete manager pass Java/React plus isolated native lifecycle; no secret is returned through the bridge | Foundation |
 | Dashboard | `DashboardController`, `DashboardRepository` | local KPIs + live refresh + all async states | Foundation |
 | WB overview sync | `WbSyncWorkflow` | read-only live sync, progress/cancel/retry, KPI refresh | Foundation |
-| Shop CRUD/token | `ShopDialogService`, `ShopWorkflow` | validated CRUD, masked secret, OS-store migration/rollback | Legacy |
+| Shop CRUD/token | `ShopDialogService`, `ShopWorkflow` | validated serialized CRUD, write-only token form, atomic selection/cascade and async-job exclusion pass Java/React plus isolated native lifecycle; OS-store version/fingerprint dual-write and plaintext retirement remain pending | Foundation (legacy credential source) |
 | Supply list | `SupplyListController` | paginated local list/search/status + detail selection/list-state restore native evidence | Foundation |
 | Supply detail/orders | `SupplyDetailController` | local detail/search/natural sort/page, opaque image assets and live WB refresh native evidence; GTIN pending | Foundation |
 | Excel order import | `ExcelOrderImportService`, `OrderImportWorkflow` | native open dialog, bounded XLSX parser, opaque session, live stickers, server paging/search, no path/secret crossing bridge | Foundation |

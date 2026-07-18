@@ -11,6 +11,7 @@ import com.tuandev.fbsbarcode.config.Database;
 import com.tuandev.fbsbarcode.features.shop.ShopRepository;
 import com.tuandev.fbsbarcode.integration.wb.WbApiException;
 import com.tuandev.fbsbarcode.integration.wb.WbSyncReport;
+import com.tuandev.fbsbarcode.jdesk.shop.ShopActivityGate;
 import com.tuandev.fbsbarcode.models.Shop;
 import com.tuandev.fbsbarcode.shared.AppDataLock;
 import com.tuandev.fbsbarcode.shared.AppPaths;
@@ -105,6 +106,71 @@ class WildberriesCommandServiceTest {
         assertFalse(duplicate.accepted());
         assertEquals(first.jobId(), duplicate.jobId());
         assertEquals(1, calls.get());
+    }
+
+    @Test
+    void sharedActivityGateMakesBackgroundSyncAndDeleteMutuallyExclusive() throws Exception {
+        ShopActivityGate gate = new ShopActivityGate();
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        WildberriesCommandService service = new WildberriesCommandService(
+                () -> List.of(new Shop(7, "Main shop", SECRET)),
+                (shop, progress) -> {
+                    started.countDown();
+                    try {
+                        assertTrue(release.await(5, TimeUnit.SECONDS));
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        throw new java.io.IOException("test interrupted", exception);
+                    }
+                    return new WbSyncReport(1, 1, 1, 1);
+                },
+                gate);
+        WildberriesCommandService.StartSyncResponse start = service
+                .startOverview(new WildberriesCommandService.StartSyncRequest(7), null)
+                .toCompletableFuture().join();
+        assertTrue(started.await(5, TimeUnit.SECONDS));
+
+        assertThrows(ShopActivityGate.ShopBusyException.class,
+                () -> gate.deleteWhenIdle(7, () -> "deleted"));
+        release.countDown();
+        awaitTerminal(service, start);
+
+        assertEquals("deleted", gate.deleteWhenIdle(7, () -> "deleted"));
+    }
+
+    @Test
+    void deleteLeaseRejectsSyncBeforeShopSnapshotIsResolved() throws Exception {
+        ShopActivityGate gate = new ShopActivityGate();
+        CountDownLatch deleting = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger shopReads = new AtomicInteger();
+        WildberriesCommandService service = new WildberriesCommandService(
+                () -> {
+                    shopReads.incrementAndGet();
+                    return List.of(new Shop(7, "Main shop", SECRET));
+                },
+                (shop, progress) -> new WbSyncReport(0, 0, 0, 0),
+                gate);
+        Thread deletion = Thread.ofVirtual().start(() -> gate.deleteWhenIdle(7, () -> {
+            deleting.countDown();
+            try {
+                assertTrue(release.await(5, TimeUnit.SECONDS));
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(exception);
+            }
+            return null;
+        }));
+        assertTrue(deleting.await(5, TimeUnit.SECONDS));
+
+        JDeskException busy = assertThrows(JDeskException.class,
+                () -> service.startOverview(new WildberriesCommandService.StartSyncRequest(7), null));
+
+        assertEquals("shop_busy", ((WildberriesCommandService.SyncError) busy.details()).kind());
+        assertEquals(0, shopReads.get());
+        release.countDown();
+        deletion.join();
     }
 
     @Test

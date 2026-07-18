@@ -31,6 +31,13 @@ vi.mock("./generated/commands", () => ({
       setLanguage: vi.fn(),
       setTheme: vi.fn(),
     },
+    shops: {
+      create: vi.fn(),
+      delete: vi.fn(),
+      list: vi.fn(),
+      select: vi.fn(),
+      update: vi.fn(),
+    },
     znack: {
       products: vi.fn(),
       saveSettings: vi.fn(),
@@ -96,6 +103,7 @@ const refreshLicense = vi.mocked(commands.license.refresh);
 const loadPreferences = vi.mocked(commands.preferences.load);
 const setLanguage = vi.mocked(commands.preferences.setLanguage);
 const setTheme = vi.mocked(commands.preferences.setTheme);
+const selectShopCommand = vi.mocked(commands.shops.select);
 const loadZnackSettings = vi.mocked(commands.znack.settings);
 const listSupplies = vi.mocked(commands.supplies.list);
 const loadSupplyDetail = vi.mocked(commands.supplies.detail);
@@ -226,6 +234,7 @@ describe("App", () => {
     loadPreferences.mockReset();
     setLanguage.mockReset();
     setTheme.mockReset();
+    selectShopCommand.mockReset();
     loadZnackSettings.mockReset();
     listSupplies.mockReset();
     loadSupplyDetail.mockReset();
@@ -980,6 +989,14 @@ describe("App", () => {
       hasSelectedShop: true,
       selectedShopId: 7,
     });
+    selectShopCommand.mockResolvedValue({
+      shops: [
+        { id: 7, name: "Основной магазин", tokenConfigured: true },
+        { id: 9, name: "Второй магазин", tokenConfigured: false },
+      ],
+      hasSelectedShop: true,
+      selectedShopId: 9,
+    });
     loadDashboard.mockImplementation(async ({ shopId }) => ({
       shopId,
       productCount: shopId === 7 ? 10 : 20,
@@ -991,6 +1008,7 @@ describe("App", () => {
     const picker = await screen.findByRole("combobox", { name: "Магазин" });
     await user.selectOptions(picker, "9");
 
+    expect(selectShopCommand).toHaveBeenCalledWith({ shopId: 9 });
     await waitFor(() => expect(loadDashboard).toHaveBeenLastCalledWith({ shopId: 9 }));
     expect(await screen.findByText("20")).toBeVisible();
     expect(screen.getByText("Токен не настроен")).toBeVisible();

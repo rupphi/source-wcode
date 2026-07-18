@@ -2,6 +2,8 @@
   "version": 1,
   "grants": [
     { "capability": "workspace:read", "windows": ["main"] },
+    { "capability": "shops:read", "windows": ["main"] },
+    { "capability": "shops:write", "windows": ["main"] },
     { "capability": "dashboard:read", "windows": ["main"] },
     { "capability": "supplies:read", "windows": ["main"] },
     { "capability": "packing:read", "windows": ["main"] },
