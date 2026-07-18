@@ -57,7 +57,7 @@ public final class TemplateDesignerCommandService {
         return request.mode();
     }
 
-    private static TemplateDesignerResponse toResponse(String mode, CatalogData catalog) {
+    static TemplateDesignerResponse toResponse(String mode, CatalogData catalog) {
         Objects.requireNonNull(catalog, "template catalog");
         List<PrintTemplate> templates = List.copyOf(
                 Objects.requireNonNull(catalog.templates(), "templates"));
@@ -160,6 +160,10 @@ public final class TemplateDesignerCommandService {
                 element.isBold(),
                 enumKey(align),
                 element.isShowHumanReadable());
+    }
+
+    static TemplateElementItem toItem(PrintTemplateElement element) {
+        return mapElement(element, new HashSet<>());
     }
 
     private static TemplatePaletteItem mapPaletteItem(

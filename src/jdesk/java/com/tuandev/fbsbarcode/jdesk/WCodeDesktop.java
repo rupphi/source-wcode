@@ -22,6 +22,8 @@ import com.tuandev.fbsbarcode.jdesk.supply.SupplyRefreshCommandService;
 import com.tuandev.fbsbarcode.jdesk.supply.SupplyRefreshCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.template.TemplateDesignerCommandService;
 import com.tuandev.fbsbarcode.jdesk.template.TemplateDesignerCommandServiceCommands;
+import com.tuandev.fbsbarcode.jdesk.template.TemplateDesignerMutationCommandService;
+import com.tuandev.fbsbarcode.jdesk.template.TemplateDesignerMutationCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.wildberries.WildberriesCommandService;
 import com.tuandev.fbsbarcode.jdesk.wildberries.WildberriesCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.workspace.JDeskCommands;
@@ -58,6 +60,8 @@ public final class WCodeDesktop {
             PrintHistoryReprintCommandService historyReprint = new PrintHistoryReprintCommandService();
             PrintExportCommandService printExport = new PrintExportCommandService();
             TemplateDesignerCommandService templates = new TemplateDesignerCommandService();
+            TemplateDesignerMutationCommandService templateMutations =
+                    new TemplateDesignerMutationCommandService();
             var printExportCommands = CommandTimeoutOverrides.withTimeout(
                     PrintExportCommandServiceCommands.create(printExport),
                     "printing.exportSupply",
@@ -82,7 +86,8 @@ public final class WCodeDesktop {
                             PrintHistoryCommandServiceCommands.create(printHistory),
                             historyReprintCommands,
                             printExportCommands,
-                            TemplateDesignerCommandServiceCommands.create(templates)))
+                            TemplateDesignerCommandServiceCommands.create(templates),
+                            TemplateDesignerMutationCommandServiceCommands.create(templateMutations)))
                     .capabilities(Capabilities.fromResource("jdesk-capabilities.json"))
                     .contentSecurityPolicy(Csp.defaults())
                     .assetRoute("order-images", orderImages)

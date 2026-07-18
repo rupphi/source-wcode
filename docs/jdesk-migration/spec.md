@@ -34,6 +34,10 @@ luồng hiện tại trong UI mới, nhanh, rõ trạng thái, dùng được b�
   copy/paste/delete, drag/resize, snap 1 mm và chỉnh x/y/width/height theo mm, font theo point.
 - Save boundary chuyển mm về PDF point, validate quota/text/numeric/required KIZ + Code128 +
   sticker-tail trước khi gọi `PrintTemplateService`; mọi lỗi repository/JSON chỉ trả safe envelope.
+- Write bridge dùng command typed riêng `create`, `duplicate`, `rename`, `delete`, `setDefault`,
+  `reset`, `save` và `createElement`; tất cả yêu cầu `templates:write`, kiểm tra target/name/quota
+  trước mutation và trả catalog mới cùng selected template ID. `save` không nhận default flag từ
+  frontend mà giữ trạng thái hiện có trong SQLite.
 - Template là dữ liệu SQLite cục bộ, không phụ thuộc shop và không gọi WB/Znack. Native test writer
   dùng bản sao/isolated app-data; live catalog smoke không làm seller-state mutation.
 
