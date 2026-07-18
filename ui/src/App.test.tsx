@@ -23,6 +23,8 @@ vi.mock("./generated/commands", () => ({
     printing: {
       setup: vi.fn(),
       saveOptions: vi.fn(),
+      exportSupply: vi.fn(),
+      openExport: vi.fn(),
     },
     wildberries: {
       syncOverview: vi.fn(),
@@ -43,6 +45,8 @@ const importExcel = vi.mocked(commands.orders.importExcel);
 const loadImportedOrders = vi.mocked(commands.orders.importedPage);
 const loadPrintSetup = vi.mocked(commands.printing.setup);
 const savePrintOptions = vi.mocked(commands.printing.saveOptions);
+const exportSupplyPdf = vi.mocked(commands.printing.exportSupply);
+const openExportedPdf = vi.mocked(commands.printing.openExport);
 const syncOverview = vi.mocked(commands.wildberries.syncOverview);
 const syncStatus = vi.mocked(commands.wildberries.syncStatus);
 const cancelSync = vi.mocked(commands.wildberries.cancelSync);
@@ -61,6 +65,8 @@ describe("App", () => {
     loadImportedOrders.mockReset();
     loadPrintSetup.mockReset();
     savePrintOptions.mockReset();
+    exportSupplyPdf.mockReset();
+    openExportedPdf.mockReset();
     syncOverview.mockReset();
     syncStatus.mockReset();
     cancelSync.mockReset();
@@ -772,6 +778,17 @@ describe("App", () => {
         { id: 10, name: "Компактный", defaultTemplate: false },
       ],
     });
+    exportSupplyPdf.mockResolvedValue({
+      cancelled: false,
+      exportId: "00000000-0000-4000-8000-000000000009",
+      labelsFileName: "labels.pdf",
+      detailsFileName: "NHAT_HANG-labels.pdf",
+      printJobId: "9007199254740993",
+      itemCount: 2,
+      pageCount: 10,
+      kizAttachmentCount: 1,
+    });
+    openExportedPdf.mockResolvedValue({ opened: true, fileName: "NHAT_HANG-labels.pdf" });
 
     render(<App />);
     await user.click(await screen.findByRole("button", { name: "Поставки FBS" }));
@@ -797,6 +814,27 @@ describe("App", () => {
     }));
     expect(await screen.findByText("Настройки сохранены")).toBeVisible();
     expect(screen.getByText("10 страниц PDF")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Создать PDF" }));
+    await waitFor(() => expect(exportSupplyPdf).toHaveBeenCalledWith({
+      shopId: 7,
+      supplyId: "WB-GI-1",
+      query: "",
+      sort: { bySubject: true, byArticle: true, byColor: true, bySize: true },
+      pageOrder: "sticker_then_barcode",
+      barcodeCopies: 4,
+    }));
+    expect(await screen.findByText("PDF готовы")).toBeVisible();
+    expect(screen.getByText("labels.pdf")).toBeVisible();
+    expect(screen.getByText("NHAT_HANG-labels.pdf")).toBeVisible();
+    expect(document.body).not.toHaveTextContent("/private/operator");
+
+    await user.click(screen.getByRole("button", { name: "Открыть лист подбора" }));
+    await waitFor(() => expect(openExportedPdf).toHaveBeenCalledWith({
+      shopId: 7,
+      exportId: "00000000-0000-4000-8000-000000000009",
+      fileKind: "details",
+    }));
     expect(document.body).not.toHaveTextContent(secret);
   });
 

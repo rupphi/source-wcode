@@ -86,6 +86,7 @@ export function SupplyDetailView({
     ? state
     : { status: "loading", requestKey };
   const supply = visibleState.status === "ready" ? visibleState.data.supply : summary;
+  const printableOrderCount = visibleState.status === "ready" ? visibleState.data.totalItems : supply.itemCount;
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -146,7 +147,13 @@ export function SupplyDetailView({
                   ? "Отменяем…"
                   : "Обновить из Wildberries"}
             </button>
-            <PrintSetupDialog shopId={shopId} orderCount={supply.itemCount} />
+            {!showImportedOrders && <PrintSetupDialog
+              shopId={shopId}
+              supplyId={summary.id}
+              query={query}
+              sort={sort}
+              orderCount={printableOrderCount}
+            />}
           </div>
         </div>
       </section>
