@@ -8,6 +8,7 @@ vi.mock("./generated/commands", () => ({
   commands: {
     workspace: { bootstrap: vi.fn() },
     dashboard: { load: vi.fn() },
+    supplies: { list: vi.fn() },
     wildberries: {
       syncOverview: vi.fn(),
       syncStatus: vi.fn(),
@@ -18,6 +19,7 @@ vi.mock("./generated/commands", () => ({
 
 const bootstrap = vi.mocked(commands.workspace.bootstrap);
 const loadDashboard = vi.mocked(commands.dashboard.load);
+const listSupplies = vi.mocked(commands.supplies.list);
 const syncOverview = vi.mocked(commands.wildberries.syncOverview);
 const syncStatus = vi.mocked(commands.wildberries.syncStatus);
 const cancelSync = vi.mocked(commands.wildberries.cancelSync);
@@ -27,6 +29,7 @@ describe("App", () => {
   beforeEach(() => {
     bootstrap.mockReset();
     loadDashboard.mockReset();
+    listSupplies.mockReset();
     syncOverview.mockReset();
     syncStatus.mockReset();
     cancelSync.mockReset();
@@ -173,5 +176,162 @@ describe("App", () => {
       "Токен Wildberries недействителен или не имеет нужных прав",
     );
     expect(document.body).not.toHaveTextContent("401");
+  });
+
+  it("opens a paginated local supply workspace without exposing secrets", async () => {
+    const user = userEvent.setup();
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Основной магазин", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard.mockResolvedValue({
+      shopId: 7,
+      productCount: 10,
+      newOrderCount: 1,
+      openSupplyCount: 20,
+    });
+    listSupplies.mockResolvedValue({
+      shopId: 7,
+      query: "",
+      status: "all",
+      page: 1,
+      pageSize: 25,
+      totalItems: 26,
+      totalPages: 2,
+      openItems: 20,
+      closedItems: 6,
+      items: [
+        {
+          id: "WB-GI-1",
+          name: "Поставка Москва",
+          status: "open",
+          mode: "b2b",
+          createdAt: "2026-07-18T10:00:00Z",
+          itemCount: 12,
+          apiKey: secret,
+        },
+      ],
+    } as unknown as Awaited<ReturnType<typeof commands.supplies.list>>);
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Поставки FBS" }));
+
+    expect(await screen.findByRole("heading", { name: "Поставки FBS" })).toBeVisible();
+    await waitFor(() =>
+      expect(listSupplies).toHaveBeenCalledWith({
+        shopId: 7,
+        query: "",
+        status: "all",
+        page: 1,
+        pageSize: 25,
+      }),
+    );
+    expect(screen.getByText("Поставка Москва")).toBeVisible();
+    expect(screen.getByText("WB-GI-1")).toBeVisible();
+    expect(screen.getByRole("button", { name: /Открытые.*20/ })).toBeVisible();
+    expect(screen.getByText("Страница 1 из 2")).toBeVisible();
+    expect(document.body).not.toHaveTextContent(secret);
+  });
+
+  it("searches, filters, and paginates supplies from the local bridge", async () => {
+    const user = userEvent.setup();
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Основной магазин", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard.mockResolvedValue({ shopId: 7, productCount: 10, newOrderCount: 1, openSupplyCount: 30 });
+    listSupplies.mockImplementation(async (request) => ({
+      ...request,
+      totalItems: 30,
+      totalPages: 2,
+      openItems: 30,
+      closedItems: 4,
+      items: [
+        {
+          id: `SUPPLY-${request.page}`,
+          name: `Поставка ${request.page}`,
+          status: request.status === "closed" ? "closed" : "open",
+          mode: "consumer",
+          createdAt: "2026-07-18T10:00:00Z",
+          itemCount: 5,
+        },
+      ],
+    }));
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Поставки FBS" }));
+    await user.click(await screen.findByRole("button", { name: /Открытые.*30/ }));
+
+    await waitFor(() =>
+      expect(listSupplies).toHaveBeenLastCalledWith({
+        shopId: 7,
+        query: "",
+        status: "open",
+        page: 1,
+        pageSize: 25,
+      }),
+    );
+
+    await user.type(screen.getByRole("searchbox", { name: "Поиск поставок" }), "  Москва  ");
+    await user.click(screen.getByRole("button", { name: "Найти" }));
+    await waitFor(() =>
+      expect(listSupplies).toHaveBeenLastCalledWith({
+        shopId: 7,
+        query: "Москва",
+        status: "open",
+        page: 1,
+        pageSize: 25,
+      }),
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Следующая страница" }));
+    await waitFor(() =>
+      expect(listSupplies).toHaveBeenLastCalledWith({
+        shopId: 7,
+        query: "Москва",
+        status: "open",
+        page: 2,
+        pageSize: 25,
+      }),
+    );
+    expect(await screen.findByText("SUPPLY-2")).toBeVisible();
+  });
+
+  it("shows a safe retry state when the supply query fails", async () => {
+    const user = userEvent.setup();
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Основной магазин", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard.mockResolvedValue({ shopId: 7, productCount: 10, newOrderCount: 1, openSupplyCount: 2 });
+    listSupplies
+      .mockRejectedValueOnce(new Error(`sqlite failure ${secret}`))
+      .mockResolvedValueOnce({
+        shopId: 7,
+        query: "",
+        status: "all",
+        page: 1,
+        pageSize: 25,
+        totalItems: 0,
+        totalPages: 0,
+        openItems: 0,
+        closedItems: 0,
+        items: [],
+      });
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Поставки FBS" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось загрузить поставки");
+    expect(document.body).not.toHaveTextContent(secret);
+    await user.click(screen.getByRole("button", { name: "Повторить" }));
+    expect(await screen.findByText("Поставок пока нет")).toBeVisible();
+    expect(listSupplies).toHaveBeenCalledTimes(2);
   });
 });

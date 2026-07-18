@@ -6,17 +6,34 @@ import {
   PackageSearch,
   Truck,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
-const navigation = [
-  { label: "Главная", icon: LayoutDashboard, active: true },
-  { label: "Поставки FBS", icon: Truck },
-  { label: "Заказы", icon: PackageSearch },
-  { label: "Печать штрихкодов", icon: Barcode },
-  { label: "Поставки FBO", icon: Boxes },
-  { label: "История печати", icon: History },
+export type WorkspaceView = "dashboard" | "supplies";
+
+type NavigationItem = {
+  label: string;
+  icon: LucideIcon;
+  view: WorkspaceView | null;
+};
+
+const navigation: NavigationItem[] = [
+  { label: "Главная", icon: LayoutDashboard, view: "dashboard" },
+  { label: "Поставки FBS", icon: Truck, view: "supplies" },
+  { label: "Заказы", icon: PackageSearch, view: null },
+  { label: "Печать штрихкодов", icon: Barcode, view: null },
+  { label: "Поставки FBO", icon: Boxes, view: null },
+  { label: "История печати", icon: History, view: null },
 ];
 
-export function Sidebar({ version }: { version: string }) {
+export function Sidebar({
+  version,
+  activeView,
+  onNavigate,
+}: {
+  version: string;
+  activeView: WorkspaceView;
+  onNavigate: (view: WorkspaceView) => void;
+}) {
   return (
     <aside className="border-b border-white/10 bg-[var(--sidebar)] text-white md:sticky md:top-0 md:flex md:h-screen md:flex-col md:border-r md:border-b-0">
       <div className="flex h-18 items-center gap-3 px-5">
@@ -30,27 +47,32 @@ export function Sidebar({ version }: { version: string }) {
           </p>
         </div>
       </div>
-      <nav className="hidden flex-1 px-3 py-5 md:block" aria-label="Основная навигация">
-        <p className="mb-2 px-3 text-[0.68rem] font-semibold tracking-[0.14em] text-white/35 uppercase">
+      <nav className="overflow-x-auto px-3 pb-3 md:block md:flex-1 md:py-5" aria-label="Основная навигация">
+        <p className="mb-2 hidden px-3 text-[0.68rem] font-semibold tracking-[0.14em] text-white/35 uppercase md:block">
           Работа
         </p>
-        <ul className="grid gap-1">
-          {navigation.map(({ label, icon: Icon, active }) => (
-            <li key={label}>
-              <button
-                className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition ${
-                  active
-                    ? "bg-white/11 font-semibold text-white"
-                    : "text-white/58 hover:bg-white/6 hover:text-white"
-                }`}
-                type="button"
-                aria-current={active ? "page" : undefined}
-              >
-                <Icon aria-hidden="true" size={18} strokeWidth={active ? 2.2 : 1.8} />
-                <span>{label}</span>
-              </button>
-            </li>
-          ))}
+        <ul className="flex gap-1 md:grid">
+          {navigation.map(({ label, icon: Icon, view }) => {
+            const active = view === activeView;
+            return (
+              <li className={view === null ? "hidden md:block" : "shrink-0"} key={label}>
+                <button
+                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition ${
+                    active
+                      ? "bg-white/11 font-semibold text-white"
+                      : "text-white/58 hover:bg-white/6 hover:text-white disabled:cursor-default disabled:opacity-45"
+                  }`}
+                  type="button"
+                  aria-current={active ? "page" : undefined}
+                  onClick={view === null ? undefined : () => onNavigate(view)}
+                  disabled={view === null}
+                >
+                  <Icon aria-hidden="true" size={18} strokeWidth={active ? 2.2 : 1.8} />
+                  <span>{label}</span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       </nav>
       <div className="hidden border-t border-white/8 p-4 md:block">

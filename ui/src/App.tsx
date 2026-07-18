@@ -2,13 +2,14 @@ import { CircleHelp, Settings } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CenteredState } from "./components/CenteredState";
 import { ShopPicker } from "./components/ShopPicker";
-import { Sidebar } from "./components/Sidebar";
+import { Sidebar, type WorkspaceView } from "./components/Sidebar";
 import {
   DashboardView,
   EmptyWorkspace,
   type DashboardState,
 } from "./features/dashboard/DashboardView";
 import { useWildberriesSync } from "./features/wildberries/useWildberriesSync";
+import { SupplyListView } from "./features/supplies/SupplyListView";
 import { commands } from "./generated/commands";
 import type { BootstrapResponse } from "./generated/types";
 
@@ -21,6 +22,7 @@ export function App() {
   const [workspace, setWorkspace] = useState<WorkspaceState>({ status: "loading" });
   const [dashboard, setDashboard] = useState<DashboardState>({ status: "idle" });
   const [selectedShopId, setSelectedShopId] = useState<number | null>(null);
+  const [activeView, setActiveView] = useState<WorkspaceView>("dashboard");
   const dashboardRequest = useRef(0);
 
   const loadDashboard = useCallback(async (shopId: number) => {
@@ -99,10 +101,23 @@ export function App() {
   }
 
   const selectedShop = workspace.data.shops.find((shop) => shop.id === selectedShopId) ?? null;
+  const pageCopy = activeView === "dashboard"
+    ? {
+        title: "Обзор магазина",
+        description: "Быстрый срез каталога, новых заказов и активных поставок без раскрытия API-токена.",
+      }
+    : {
+        title: "Поставки FBS",
+        description: "Локальный реестр поставок Wildberries с быстрым поиском, статусами и точной пагинацией.",
+      };
 
   return (
     <div className="min-h-screen bg-[var(--surface-canvas)] text-[var(--text-primary)] md:grid md:grid-cols-[15.5rem_1fr]">
-      <Sidebar version={workspace.data.app.version} />
+      <Sidebar
+        version={workspace.data.app.version}
+        activeView={activeView}
+        onNavigate={setActiveView}
+      />
       <div className="min-w-0">
         <header className="sticky top-0 z-20 flex min-h-18 items-center justify-between gap-4 border-b border-[var(--border-subtle)] bg-[color:var(--surface-elevated)] px-4 md:px-7">
           <div className="min-w-0">
@@ -128,9 +143,9 @@ export function App() {
                 <span className="h-2 w-2 rounded-full bg-[var(--accent)]" aria-hidden="true" />
                 Локальные данные WCode
               </p>
-              <h2 className="text-3xl font-semibold tracking-[-0.035em]">Обзор магазина</h2>
+              <h2 className="text-3xl font-semibold tracking-[-0.035em]">{pageCopy.title}</h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-secondary)]">
-                Быстрый срез каталога, новых заказов и активных поставок без раскрытия API-токена.
+                {pageCopy.description}
               </p>
             </div>
             <ShopPicker
@@ -142,6 +157,8 @@ export function App() {
 
           {selectedShop === null ? (
             <EmptyWorkspace />
+          ) : activeView === "supplies" ? (
+            <SupplyListView shopId={selectedShop.id} />
           ) : (
             <DashboardView shop={selectedShop} state={dashboard} sync={wildberriesSync} />
           )}
