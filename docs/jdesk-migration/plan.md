@@ -284,7 +284,7 @@ recover from rate limit/offline/error without JavaFX.
       opaque, expiring file sessions.
 - [x] Port bounded FBS/FBO template catalogs through typed DTOs with point→mm conversion,
       selectable layers and a responsive 58×40 visual preview.
-- [ ] Port template CRUD/default/reset/save and canvas add/copy/paste/delete/drag/resize editing.
+- [x] Port template CRUD/default/reset/save and canvas add/copy/paste/delete/drag/resize editing.
 - [ ] Validate physical 58×40 output and Windows printer behavior.
 
 Windows print gaps in jDesk 0.1.3 are a hard release risk. Preserve the existing Java PDF/OS

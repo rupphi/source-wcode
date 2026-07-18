@@ -3,38 +3,39 @@ import {
   Barcode,
   Box,
   Check,
+  Copy,
   Eye,
   EyeOff,
   Grid2X2,
   Layers3,
   MousePointer2,
+  Plus,
   RotateCcw,
+  Save,
+  Trash2,
   Type,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { commands } from "../../generated/commands";
 import type {
   TemplateDesignerResponse,
   TemplateElementItem,
+  TemplateMutationResponse,
+  TemplatePaletteItem,
   TemplateSummary,
 } from "../../generated/types";
+import { TemplateCanvas } from "./TemplateCanvas";
+import { clampMetric } from "./templateGeometry";
 
 type DesignerMode = "fbs" | "fbo";
 type LoadState =
   | { status: "loading" }
   | { status: "error" }
   | { status: "ready"; data: TemplateDesignerResponse };
+type NameAction = "create" | "duplicate" | "rename";
+type ConfirmAction = "delete" | "reset";
 
-const sampleText: Record<string, string> = {
-  article: "WB-1048",
-  brand: "WCODE STUDIO",
-  color: "Графит",
-  name: "Базовая футболка",
-  nm_id: "10492876",
-  ru_size: "RU 46",
-  size: "M",
-  subject_name: "Футболки",
-};
+const requiredTypes = new Set(["kiz_datamatrix", "barcode_code128", "sticker_tail"]);
 
 export function TemplateDesignerView() {
   const [mode, setMode] = useState<DesignerMode>("fbs");
@@ -42,17 +43,27 @@ export function TemplateDesignerView() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [selectedElementId, setSelectedElementId] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [snap, setSnap] = useState(true);
+  const [paletteKey, setPaletteKey] = useState("");
+  const [clipboard, setClipboard] = useState<TemplateElementItem | null>(null);
+  const [nameAction, setNameAction] = useState<NameAction | null>(null);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  const [notice, setNotice] = useState<{ kind: "error" | "success"; text: string } | null>(null);
 
   useEffect(() => {
     let active = true;
     void commands.templates.loadDesigner({ mode }).then(
       (data) => {
         if (!active) return;
-        const initialTemplate = data.templates.find((template) => template.defaultTemplate)
-          ?? data.templates[0];
+        const initialTemplate = data.templates.find((template) => template.defaultTemplate) ?? data.templates[0];
         setState({ status: "ready", data });
         setSelectedTemplateId(initialTemplate?.id ?? "");
         setSelectedElementId(initialTemplate?.elements[0]?.id ?? "");
+        setPaletteKey(data.palette[0]?.key ?? "");
+        setDirty(false);
+        setClipboard(null);
       },
       () => {
         if (active) setState({ status: "error" });
@@ -63,12 +74,146 @@ export function TemplateDesignerView() {
     };
   }, [mode, reloadKey]);
 
+  const selectedTemplate = state.status === "ready"
+    ? state.data.templates.find((template) => template.id === selectedTemplateId) ?? state.data.templates[0] ?? null
+    : null;
+  const selectedElement = selectedTemplate?.elements.find((element) => element.id === selectedElementId)
+    ?? selectedTemplate?.elements[0]
+    ?? null;
+
   const selectMode = (nextMode: DesignerMode) => {
     if (nextMode === mode) return;
+    if (dirty) {
+      setNotice({ kind: "error", text: "Сначала сохраните или отмените изменения." });
+      return;
+    }
     setState({ status: "loading" });
     setSelectedTemplateId("");
     setSelectedElementId("");
+    setNotice(null);
     setMode(nextMode);
+  };
+
+  const selectTemplate = (template: TemplateSummary) => {
+    if (dirty && template.id !== selectedTemplate?.id) {
+      setNotice({ kind: "error", text: "Сначала сохраните или отмените изменения." });
+      return;
+    }
+    setSelectedTemplateId(template.id);
+    setSelectedElementId(template.elements[0]?.id ?? "");
+    setNotice(null);
+  };
+
+  const replaceDesigner = (response: TemplateMutationResponse, successText: string) => {
+    const template = response.designer.templates.find((item) => item.id === response.selectedTemplateId)
+      ?? response.designer.templates[0];
+    setState({ status: "ready", data: response.designer });
+    setSelectedTemplateId(template?.id ?? "");
+    setSelectedElementId(template?.elements[0]?.id ?? "");
+    setPaletteKey((current) => current || response.designer.palette[0]?.key || "");
+    setDirty(false);
+    setClipboard(null);
+    setNotice({ kind: "success", text: successText });
+  };
+
+  const runMutation = async (operation: () => Promise<TemplateMutationResponse>, successText: string) => {
+    setBusy(true);
+    setNotice(null);
+    try {
+      replaceDesigner(await operation(), successText);
+    } catch {
+      setNotice({ kind: "error", text: "Операция не выполнена. Локальные данные не изменены." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const updateTemplate = (updater: (template: TemplateSummary) => TemplateSummary) => {
+    if (state.status !== "ready" || selectedTemplate === null) return;
+    const updated = updater(selectedTemplate);
+    setState({
+      status: "ready",
+      data: { ...state.data, templates: state.data.templates.map((item) => item.id === updated.id ? updated : item) },
+    });
+    setDirty(true);
+    setNotice(null);
+  };
+
+  const updateElement = (id: string, patch: Partial<TemplateElementItem>) => {
+    updateTemplate((template) => ({
+      ...template,
+      elements: template.elements.map((element) => element.id === id ? { ...element, ...patch } : element),
+    }));
+  };
+
+  const addElement = async () => {
+    if (selectedTemplate === null || state.status !== "ready" || !paletteKey) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      const zIndex = Math.max(0, ...selectedTemplate.elements.map((element) => element.zIndex)) + 1;
+      const element = await commands.templates.createElement({ mode, paletteKey, zIndex });
+      updateTemplate((template) => ({ ...template, elements: [...template.elements, element] }));
+      setSelectedElementId(element.id);
+    } catch {
+      setNotice({ kind: "error", text: "Элемент не добавлен. Попробуйте ещё раз." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyElement = () => {
+    if (selectedElement !== null) setClipboard(selectedElement);
+  };
+
+  const pasteElement = () => {
+    if (clipboard === null || selectedTemplate === null || state.status !== "ready") return;
+    if (selectedTemplate.elements.length >= state.data.maxElements) {
+      setNotice({ kind: "error", text: "Достигнут лимит элементов в шаблоне." });
+      return;
+    }
+    const zIndex = Math.max(0, ...selectedTemplate.elements.map((element) => element.zIndex)) + 1;
+    const id = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `copy-${Date.now()}`;
+    const copy = {
+      ...clipboard,
+      id,
+      label: `${clipboard.label} — копия`,
+      xMm: clampMetric(clipboard.xMm + 1, 0, state.data.pageWidthMm - clipboard.widthMm),
+      yMm: clampMetric(clipboard.yMm + 1, 0, state.data.pageHeightMm - clipboard.heightMm),
+      zIndex,
+    };
+    updateTemplate((template) => ({ ...template, elements: [...template.elements, copy] }));
+    setSelectedElementId(copy.id);
+  };
+
+  const deleteElement = () => {
+    if (selectedTemplate === null || selectedElement === null) return;
+    const sameType = selectedTemplate.elements.filter((element) => element.type === selectedElement.type);
+    if (requiredTypes.has(selectedElement.type) && sameType.length === 1) {
+      setNotice({ kind: "error", text: "Этот обязательный элемент нельзя удалить." });
+      return;
+    }
+    const remaining = selectedTemplate.elements.filter((element) => element.id !== selectedElement.id);
+    updateTemplate((template) => ({ ...template, elements: remaining }));
+    setSelectedElementId(remaining[0]?.id ?? "");
+  };
+
+  const save = () => {
+    if (selectedTemplate === null) return;
+    void runMutation(() => commands.templates.save({
+      mode,
+      template: {
+        id: selectedTemplate.id,
+        name: selectedTemplate.name,
+        elements: selectedTemplate.elements.map((element) => ({ ...element })),
+      },
+    }), "Шаблон сохранён");
+  };
+
+  const discard = () => {
+    setState({ status: "loading" });
+    setReloadKey((value) => value + 1);
+    setNotice(null);
   };
 
   if (state.status === "loading") return <DesignerLoading mode={mode} onMode={selectMode} />;
@@ -93,41 +238,112 @@ export function TemplateDesignerView() {
     );
   }
 
-  const selectedTemplate = state.data.templates.find((template) => template.id === selectedTemplateId)
-    ?? state.data.templates[0]
-    ?? null;
-  const selectedElement = selectedTemplate?.elements.find((element) => element.id === selectedElementId)
-    ?? selectedTemplate?.elements[0]
-    ?? null;
-
-  const selectTemplate = (template: TemplateSummary) => {
-    setSelectedTemplateId(template.id);
-    setSelectedElementId(template.elements[0]?.id ?? "");
-  };
-
   return (
     <div className="space-y-4">
       <ModeBar mode={mode} onMode={selectMode} />
+      <DesignerToolbar
+        template={selectedTemplate}
+        dirty={dirty}
+        busy={busy}
+        atTemplateLimit={state.data.templates.length >= state.data.maxTemplates}
+        onNameAction={setNameAction}
+        onConfirmAction={setConfirmAction}
+        onDefault={() => selectedTemplate && void runMutation(
+          () => commands.templates.setDefault({ mode, templateId: selectedTemplate.id }),
+          "Шаблон выбран по умолчанию",
+        )}
+        onSave={save}
+        onDiscard={discard}
+      />
+      {dirty && <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-900">Есть несохранённые изменения</div>}
+      {notice && (
+        <div className={`rounded-xl border px-4 py-2.5 text-sm ${notice.kind === "error" ? "border-red-200 bg-red-50 text-red-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`} role={notice.kind === "error" ? "alert" : "status"}>
+          {notice.text}
+        </div>
+      )}
       {selectedTemplate === null ? (
         <EmptyDesigner />
       ) : (
         <div className="grid items-start gap-4 xl:grid-cols-[14rem_minmax(25rem,1fr)_18rem]">
           <CatalogPanel
             templates={state.data.templates}
+            palette={state.data.palette}
+            paletteKey={paletteKey}
             selectedTemplateId={selectedTemplate.id}
             selectedElementId={selectedElement?.id ?? ""}
+            busy={busy}
+            atElementLimit={selectedTemplate.elements.length >= state.data.maxElements}
+            onPalette={setPaletteKey}
+            onAdd={() => void addElement()}
             onTemplate={selectTemplate}
             onElement={setSelectedElementId}
           />
-          <CanvasPanel
-            template={selectedTemplate}
-            selectedElementId={selectedElement?.id ?? ""}
-            widthMm={state.data.pageWidthMm}
-            heightMm={state.data.pageHeightMm}
-            onElement={setSelectedElementId}
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-3 py-2 shadow-[var(--shadow-control)]">
+              <div className="flex flex-wrap gap-2">
+                <ControlButton label="Копировать элемент" disabled={selectedElement === null || busy} onClick={copyElement}><Copy size={15} /></ControlButton>
+                <ControlButton label="Вставить элемент" disabled={clipboard === null || busy} onClick={pasteElement}><Plus size={15} /></ControlButton>
+                <ControlButton label="Удалить элемент" danger disabled={selectedElement === null || busy} onClick={deleteElement}><Trash2 size={15} /></ControlButton>
+              </div>
+              <label className="flex items-center gap-2 text-xs font-medium text-[var(--text-secondary)]">
+                <input type="checkbox" checked={snap} onChange={(event) => setSnap(event.target.checked)} />
+                Шаг 1 мм
+              </label>
+            </div>
+            <TemplateCanvas
+              template={selectedTemplate}
+              selectedElementId={selectedElement?.id ?? ""}
+              widthMm={state.data.pageWidthMm}
+              heightMm={state.data.pageHeightMm}
+              snap={snap}
+              disabled={busy}
+              onElement={setSelectedElementId}
+              onChange={updateElement}
+            />
+          </div>
+          <InspectorPanel
+            element={selectedElement}
+            pageWidthMm={state.data.pageWidthMm}
+            pageHeightMm={state.data.pageHeightMm}
+            disabled={busy}
+            onChange={(patch) => selectedElement && updateElement(selectedElement.id, patch)}
           />
-          <InspectorPanel element={selectedElement} />
         </div>
+      )}
+      {nameAction && (
+        <NameDialog
+          action={nameAction}
+          initialName={nameAction === "rename" ? selectedTemplate?.name ?? "" : ""}
+          busy={busy}
+          onClose={() => setNameAction(null)}
+          onSubmit={(name) => {
+            setNameAction(null);
+            if (nameAction === "create") {
+              void runMutation(() => commands.templates.create({ mode, name }), "Шаблон создан");
+            } else if (nameAction === "duplicate" && selectedTemplate) {
+              void runMutation(() => commands.templates.duplicate({ mode, templateId: selectedTemplate.id, name }), "Копия шаблона создана");
+            } else if (selectedTemplate) {
+              void runMutation(() => commands.templates.rename({ mode, templateId: selectedTemplate.id, name }), "Шаблон переименован");
+            }
+          }}
+        />
+      )}
+      {confirmAction && selectedTemplate && (
+        <ConfirmDialog
+          action={confirmAction}
+          templateName={selectedTemplate.name}
+          busy={busy}
+          onClose={() => setConfirmAction(null)}
+          onConfirm={() => {
+            setConfirmAction(null);
+            void runMutation(
+              () => confirmAction === "delete"
+                ? commands.templates.delete({ mode, templateId: selectedTemplate.id })
+                : commands.templates.reset({ mode, templateId: selectedTemplate.id }),
+              confirmAction === "delete" ? "Шаблон удалён" : "Шаблон сброшен",
+            );
+          }}
+        />
       )}
     </div>
   );
@@ -158,16 +374,92 @@ function ModeBar({ mode, onMode }: { mode: DesignerMode; onMode: (mode: Designer
   );
 }
 
+function DesignerToolbar({
+  template,
+  dirty,
+  busy,
+  atTemplateLimit,
+  onNameAction,
+  onConfirmAction,
+  onDefault,
+  onSave,
+  onDiscard,
+}: {
+  template: TemplateSummary | null;
+  dirty: boolean;
+  busy: boolean;
+  atTemplateLimit: boolean;
+  onNameAction: (action: NameAction) => void;
+  onConfirmAction: (action: ConfirmAction) => void;
+  onDefault: () => void;
+  onSave: () => void;
+  onDiscard: () => void;
+}) {
+  const mutationsDisabled = busy || dirty;
+  return (
+    <section className="flex flex-wrap items-center gap-2 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-3 shadow-[var(--shadow-panel)]" aria-label="Управление шаблоном">
+      <ControlButton label="Создать шаблон" disabled={mutationsDisabled || atTemplateLimit} onClick={() => onNameAction("create")}><Plus size={15} /></ControlButton>
+      <ControlButton label="Дублировать шаблон" disabled={mutationsDisabled || template === null || atTemplateLimit} onClick={() => onNameAction("duplicate")}><Copy size={15} /></ControlButton>
+      <ControlButton label="Переименовать шаблон" disabled={mutationsDisabled || template === null} onClick={() => onNameAction("rename")}><Type size={15} /></ControlButton>
+      <ControlButton label="Сделать шаблоном по умолчанию" disabled={mutationsDisabled || template === null || template.defaultTemplate} onClick={onDefault}><Check size={15} /></ControlButton>
+      <ControlButton label="Сбросить шаблон" disabled={mutationsDisabled || template === null} onClick={() => onConfirmAction("reset")}><RotateCcw size={15} /></ControlButton>
+      <ControlButton label="Удалить шаблон" danger disabled={mutationsDisabled || template === null} onClick={() => onConfirmAction("delete")}><Trash2 size={15} /></ControlButton>
+      <span className="min-w-2 flex-1" />
+      {dirty && <ControlButton label="Отменить изменения" disabled={busy} onClick={onDiscard}><RotateCcw size={15} /></ControlButton>}
+      <ControlButton label="Сохранить шаблон" primary disabled={busy || !dirty || template === null} onClick={onSave}><Save size={15} /></ControlButton>
+    </section>
+  );
+}
+
+function ControlButton({
+  label,
+  children,
+  disabled,
+  danger = false,
+  primary = false,
+  onClick,
+}: {
+  label: string;
+  children: React.ReactNode;
+  disabled: boolean;
+  danger?: boolean;
+  primary?: boolean;
+  onClick: () => void;
+}) {
+  const tone = primary
+    ? "bg-[var(--accent-strong)] text-white hover:brightness-95"
+    : danger
+      ? "border border-red-200 bg-white text-red-700 hover:bg-red-50"
+      : "border border-[var(--border-subtle)] bg-white text-[var(--text-primary)] hover:border-[var(--border-strong)]";
+  return (
+    <button className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-45 ${tone}`} type="button" disabled={disabled} onClick={onClick} aria-label={label}>
+      {children}<span>{label}</span>
+    </button>
+  );
+}
+
 function CatalogPanel({
   templates,
+  palette,
+  paletteKey,
   selectedTemplateId,
   selectedElementId,
+  busy,
+  atElementLimit,
+  onPalette,
+  onAdd,
   onTemplate,
   onElement,
 }: {
   templates: TemplateSummary[];
+  palette: TemplatePaletteItem[];
+  paletteKey: string;
   selectedTemplateId: string;
   selectedElementId: string;
+  busy: boolean;
+  atElementLimit: boolean;
+  onPalette: (key: string) => void;
+  onAdd: () => void;
   onTemplate: (template: TemplateSummary) => void;
   onElement: (id: string) => void;
 }) {
@@ -175,10 +467,7 @@ function CatalogPanel({
   return (
     <aside className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
       <div className="border-b border-[var(--border-subtle)] p-4">
-        <div className="flex items-center gap-2">
-          <Layers3 aria-hidden="true" size={17} />
-          <h3 className="text-sm font-semibold">Шаблоны</h3>
-        </div>
+        <div className="flex items-center gap-2"><Layers3 aria-hidden="true" size={17} /><h3 className="text-sm font-semibold">Шаблоны</h3></div>
         <div className="mt-3 grid gap-2">
           {templates.map((template) => (
             <button
@@ -199,6 +488,15 @@ function CatalogPanel({
       </div>
       {selectedTemplate && (
         <div className="p-4">
+          <div className="mb-4 grid gap-2">
+            <label className="text-[0.68rem] font-semibold tracking-[0.1em] text-[var(--text-muted)] uppercase">
+              Новый элемент
+              <select className="mt-1.5 w-full rounded-lg border border-[var(--border-subtle)] bg-white px-2.5 py-2 text-xs font-medium normal-case tracking-normal text-[var(--text-primary)]" aria-label="Новый элемент" value={paletteKey} onChange={(event) => onPalette(event.target.value)}>
+                {palette.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+              </select>
+            </label>
+            <button className="rounded-lg bg-[var(--accent-soft)] px-3 py-2 text-xs font-semibold text-[var(--accent-strong)] disabled:opacity-45" type="button" disabled={busy || atElementLimit || !paletteKey} onClick={onAdd}>Добавить элемент</button>
+          </div>
           <p className="mb-2 text-[0.68rem] font-semibold tracking-[0.12em] text-[var(--text-muted)] uppercase">Слои</p>
           <div className="grid gap-1.5">
             {[...selectedTemplate.elements].sort((left, right) => right.zIndex - left.zIndex).map((element) => (
@@ -209,8 +507,7 @@ function CatalogPanel({
                 aria-label={`Выбрать слой ${element.label}`}
                 onClick={() => onElement(element.id)}
               >
-                <ElementIcon type={element.type} />
-                <span className="min-w-0 flex-1 truncate">{element.label}</span>
+                <ElementIcon type={element.type} /><span className="min-w-0 flex-1 truncate">{element.label}</span>
                 {element.visible ? <Eye aria-label="Виден" size={14} /> : <EyeOff aria-label="Скрыт" size={14} />}
               </button>
             ))}
@@ -221,170 +518,128 @@ function CatalogPanel({
   );
 }
 
-function CanvasPanel({
-  template,
-  selectedElementId,
-  widthMm,
-  heightMm,
-  onElement,
-}: {
-  template: TemplateSummary;
-  selectedElementId: string;
-  widthMm: number;
-  heightMm: number;
-  onElement: (id: string) => void;
-}) {
-  return (
-    <section className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[#e8ebe7] shadow-[var(--shadow-panel)]">
-      <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-4 py-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold">{template.name}</p>
-          <p className="mt-0.5 text-xs text-[var(--text-muted)]">Масштаб по размеру рабочей области</p>
-        </div>
-        <span className="shrink-0 rounded-lg bg-[var(--surface-muted)] px-2.5 py-1.5 text-xs font-semibold">{formatNumber(widthMm)} × {formatNumber(heightMm)} мм</span>
-      </div>
-      <div className="grid min-h-[27rem] place-items-center overflow-auto p-5 sm:p-8">
-        <div
-          className="template-canvas relative w-full max-w-[42rem] overflow-hidden border border-slate-300 bg-white shadow-[0_18px_45px_rgb(20_35_29_/_0.15)]"
-          style={{ aspectRatio: `${widthMm} / ${heightMm}` }}
-          aria-label={`Предпросмотр шаблона ${template.name}`}
-        >
-          {template.elements.filter((element) => element.visible).map((element) => (
-            <CanvasElement
-              element={element}
-              widthMm={widthMm}
-              heightMm={heightMm}
-              selected={element.id === selectedElementId}
-              onSelect={() => onElement(element.id)}
-              key={element.id}
-            />
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function CanvasElement({
+function InspectorPanel({
   element,
-  widthMm,
-  heightMm,
-  selected,
-  onSelect,
+  pageWidthMm,
+  pageHeightMm,
+  disabled,
+  onChange,
 }: {
-  element: TemplateElementItem;
-  widthMm: number;
-  heightMm: number;
-  selected: boolean;
-  onSelect: () => void;
+  element: TemplateElementItem | null;
+  pageWidthMm: number;
+  pageHeightMm: number;
+  disabled: boolean;
+  onChange: (patch: Partial<TemplateElementItem>) => void;
 }) {
-  const style = useMemo(() => ({
-    left: `${(element.xMm / widthMm) * 100}%`,
-    top: `${(element.yMm / heightMm) * 100}%`,
-    width: `${(element.widthMm / widthMm) * 100}%`,
-    height: `${(element.heightMm / heightMm) * 100}%`,
-    zIndex: element.zIndex,
-  }), [element, widthMm, heightMm]);
-  return (
-    <button
-      className={`absolute min-h-px min-w-px overflow-hidden border text-slate-950 transition ${selected ? "border-emerald-500 ring-2 ring-emerald-400/45" : "border-transparent hover:border-emerald-400/60"}`}
-      style={style}
-      type="button"
-      aria-label={`Выбрать элемент ${element.label}`}
-      onClick={onSelect}
-    >
-      <ElementPreview element={element} />
-    </button>
-  );
-}
-
-function ElementPreview({ element }: { element: TemplateElementItem }) {
-  if (element.type === "barcode_code128") {
-    return <span className="flex h-full flex-col justify-end gap-[3%] p-[3%]"><span className="barcode-sample min-h-0 flex-1" /><span className="truncate text-center text-[clamp(0.35rem,1vw,0.65rem)]">2039556250474</span></span>;
+  if (element === null) {
+    return <aside className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)]"><p className="py-8 text-center text-xs leading-5 text-[var(--text-muted)]">Выберите слой на макете, чтобы изменить его параметры.</p></aside>;
   }
-  if (element.type === "kiz_datamatrix") {
-    return <span className="data-matrix-sample block size-full" />;
-  }
-  if (element.type === "separator_line") {
-    return <span className="block h-1/2 border-b border-slate-950" />;
-  }
-  const text = element.type === "static_text"
-    ? `${element.prefix}${element.content}`
-    : element.type === "sticker_tail"
-      ? `${element.prefix}0474`
-      : `${element.prefix}${sampleText[element.fieldKey] ?? element.label}`;
-  return (
-    <span
-      className="flex size-full items-center overflow-hidden px-[2%] leading-tight"
-      style={{
-        fontSize: `clamp(0.35rem, ${(element.fontSizePt / 8) * 1.15}vw, 0.9rem)`,
-        fontWeight: element.bold ? 700 : 500,
-        justifyContent: element.align === "right" ? "flex-end" : element.align === "center" ? "center" : "flex-start",
-        textAlign: element.align as "left" | "center" | "right",
-      }}
-    >
-      {text || element.label}
-    </span>
-  );
-}
-
-function InspectorPanel({ element }: { element: TemplateElementItem | null }) {
+  const metric = (key: "xMm" | "yMm" | "widthMm" | "heightMm", value: number) => {
+    const minimum = key === "widthMm" || key === "heightMm" ? 0.1 : 0;
+    const maximum = key === "xMm"
+      ? pageWidthMm - element.widthMm
+      : key === "yMm"
+        ? pageHeightMm - element.heightMm
+        : key === "widthMm"
+          ? pageWidthMm - element.xMm
+          : pageHeightMm - element.yMm;
+    onChange({ [key]: clampMetric(value, minimum, maximum) });
+  };
   return (
     <aside className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)]">
-      <div className="flex items-center gap-2 border-b border-[var(--border-subtle)] pb-3">
-        <MousePointer2 aria-hidden="true" size={17} />
-        <h3 className="text-sm font-semibold">Параметры элемента</h3>
+      <div className="flex items-center gap-2 border-b border-[var(--border-subtle)] pb-3"><MousePointer2 aria-hidden="true" size={17} /><h3 className="text-sm font-semibold">Параметры элемента</h3></div>
+      <div className="mt-4 space-y-4">
+        <TextField label="Название" value={element.label} disabled={disabled} onChange={(label) => onChange({ label })} />
+        {(element.type === "text_field" || element.type === "static_text" || element.type === "sticker_tail") && <TextField label="Префикс" value={element.prefix} disabled={disabled} onChange={(prefix) => onChange({ prefix })} />}
+        {element.type === "static_text" && <TextField label="Текст" value={element.content} disabled={disabled} onChange={(content) => onChange({ content })} />}
+        <label className="flex items-center justify-between rounded-xl border border-[var(--border-subtle)] px-3 py-2.5 text-xs font-semibold">
+          Виден<input type="checkbox" aria-label="Виден" checked={element.visible} disabled={disabled} onChange={(event) => onChange({ visible: event.target.checked })} />
+        </label>
+        <fieldset>
+          <legend className="mb-2 text-[0.68rem] font-semibold tracking-[0.1em] text-[var(--text-muted)] uppercase">Геометрия</legend>
+          <div className="grid grid-cols-2 gap-2">
+            <MetricField label="X, мм" value={element.xMm} disabled={disabled} onChange={(value) => metric("xMm", value)} />
+            <MetricField label="Y, мм" value={element.yMm} disabled={disabled} onChange={(value) => metric("yMm", value)} />
+            <MetricField label="Ширина, мм" value={element.widthMm} disabled={disabled} onChange={(value) => metric("widthMm", value)} />
+            <MetricField label="Высота, мм" value={element.heightMm} disabled={disabled} onChange={(value) => metric("heightMm", value)} />
+          </div>
+        </fieldset>
+        {!new Set(["kiz_datamatrix", "separator_line"]).has(element.type) && (
+          <div className="grid grid-cols-2 gap-2">
+            <MetricField label="Шрифт, pt" value={element.fontSizePt} disabled={disabled} onChange={(value) => onChange({ fontSizePt: clampMetric(value, 1, 72) })} />
+            <label className="text-[0.68rem] font-medium text-[var(--text-secondary)]">Выравнивание<select className="mt-1 w-full rounded-lg border border-[var(--border-subtle)] bg-white px-2 py-2 text-xs" value={element.align} disabled={disabled} onChange={(event) => onChange({ align: event.target.value })}><option value="left">Слева</option><option value="center">По центру</option><option value="right">Справа</option></select></label>
+            <label className="flex items-center gap-2 text-xs font-medium"><input type="checkbox" checked={element.bold} disabled={disabled} onChange={(event) => onChange({ bold: event.target.checked })} />Жирный</label>
+            {element.type === "barcode_code128" && <label className="flex items-center gap-2 text-xs font-medium"><input type="checkbox" checked={element.humanReadable} disabled={disabled} onChange={(event) => onChange({ humanReadable: event.target.checked })} />Цифры штрихкода</label>}
+          </div>
+        )}
+        <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-2.5 text-xs leading-5 text-[var(--text-secondary)]">Координаты заданы в миллиметрах и ограничены рабочей областью.</div>
       </div>
-      {element === null ? (
-        <p className="py-8 text-center text-xs leading-5 text-[var(--text-muted)]">Выберите слой на макете, чтобы увидеть его точные параметры.</p>
-      ) : (
-        <div className="mt-4 space-y-5">
-          <div>
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold">{element.label}</p>
-                <p className="mt-1 text-xs text-[var(--text-muted)]">{element.type.replaceAll("_", " ")}</p>
-              </div>
-              <span className={`rounded-full px-2 py-1 text-[0.65rem] font-semibold ${element.visible ? "bg-[var(--accent-soft)] text-[var(--accent-strong)]" : "bg-slate-100 text-slate-500"}`}>
-                {element.visible ? "Виден" : "Скрыт"}
-              </span>
-            </div>
-          </div>
-          <fieldset>
-            <legend className="mb-2 text-[0.68rem] font-semibold tracking-[0.1em] text-[var(--text-muted)] uppercase">Геометрия</legend>
-            <div className="grid grid-cols-2 gap-2">
-              <MetricField label="X, мм" value={element.xMm} />
-              <MetricField label="Y, мм" value={element.yMm} />
-              <MetricField label="Ширина, мм" value={element.widthMm} />
-              <MetricField label="Высота, мм" value={element.heightMm} />
-            </div>
-          </fieldset>
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <Property label="Шрифт" value={`${formatNumber(element.fontSizePt)} pt`} />
-            <Property label="Слой" value={String(element.zIndex)} />
-            <Property label="Начертание" value={element.bold ? "Жирное" : "Обычное"} />
-            <Property label="Выравнивание" value={element.align} />
-          </div>
-          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-2.5 text-xs leading-5 text-[var(--text-secondary)]">
-            Координаты показаны в миллиметрах; размер шрифта — в типографских пунктах.
-          </div>
-        </div>
-      )}
     </aside>
   );
 }
 
-function MetricField({ label, value }: { label: string; value: number }) {
+function TextField({ label, value, disabled, onChange }: { label: string; value: string; disabled: boolean; onChange: (value: string) => void }) {
+  return <label className="block text-[0.68rem] font-medium text-[var(--text-secondary)]">{label}<input className="mt-1 w-full rounded-lg border border-[var(--border-subtle)] bg-white px-2.5 py-2 text-xs text-[var(--text-primary)]" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} /></label>;
+}
+
+function MetricField({ label, value, disabled, onChange }: { label: string; value: number; disabled: boolean; onChange: (value: number) => void }) {
+  const [draft, setDraft] = useState(String(roundMetric(value)));
+  const [focused, setFocused] = useState(false);
+  const displayValue = focused ? draft : String(roundMetric(value));
   return (
     <label className="text-[0.68rem] font-medium text-[var(--text-secondary)]">
       {label}
-      <input className="mt-1 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-2.5 py-2 text-xs font-semibold text-[var(--text-primary)]" aria-label={label} type="number" value={roundMetric(value)} readOnly />
+      <input className="mt-1 w-full rounded-lg border border-[var(--border-subtle)] bg-white px-2.5 py-2 text-xs font-semibold text-[var(--text-primary)]" aria-label={label} type="number" step="0.1" value={displayValue} disabled={disabled} onFocus={() => {
+        setDraft(String(roundMetric(value)));
+        setFocused(true);
+      }} onBlur={() => {
+        setFocused(false);
+        if (draft === "") setDraft(String(roundMetric(value)));
+      }} onChange={(event) => {
+        setDraft(event.target.value);
+        const next = event.target.valueAsNumber;
+        if (Number.isFinite(next)) onChange(next);
+      }} />
     </label>
   );
 }
 
-function Property({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-xl border border-[var(--border-subtle)] px-3 py-2.5"><p className="text-[0.65rem] text-[var(--text-muted)]">{label}</p><p className="mt-1 truncate font-semibold capitalize">{value}</p></div>;
+function NameDialog({ action, initialName, busy, onClose, onSubmit }: { action: NameAction; initialName: string; busy: boolean; onClose: () => void; onSubmit: (name: string) => void }) {
+  const [name, setName] = useState(initialName);
+  const labels = action === "create" ? { title: "Создать шаблон", submit: "Создать" } : action === "duplicate" ? { title: "Дублировать шаблон", submit: "Дублировать" } : { title: "Переименовать шаблон", submit: "Переименовать" };
+  return (
+    <Modal title={labels.title} onClose={onClose}>
+      <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); const trimmed = name.trim(); if (trimmed) onSubmit(trimmed); }}>
+        <label className="block text-sm font-medium">Название шаблона<input autoFocus className="mt-2 w-full rounded-xl border border-[var(--border-strong)] px-3 py-2.5" aria-label="Название шаблона" value={name} maxLength={120} disabled={busy} onChange={(event) => setName(event.target.value)} /></label>
+        <div className="flex justify-end gap-2"><DialogCancel onClick={onClose} /><button className="rounded-lg bg-[var(--accent-strong)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-45" type="submit" disabled={busy || !name.trim()}>{labels.submit}</button></div>
+      </form>
+    </Modal>
+  );
+}
+
+function ConfirmDialog({ action, templateName, busy, onClose, onConfirm }: { action: ConfirmAction; templateName: string; busy: boolean; onClose: () => void; onConfirm: () => void }) {
+  const reset = action === "reset";
+  return (
+    <Modal title={reset ? "Сбросить шаблон?" : "Удалить шаблон?"} onClose={onClose}>
+      <p className="text-sm leading-6 text-[var(--text-secondary)]">{reset ? `Макет «${templateName}» вернётся к системной раскладке.` : `Шаблон «${templateName}» будет удалён без возможности восстановления.`}</p>
+      <div className="mt-5 flex justify-end gap-2"><DialogCancel onClick={onClose} /><button className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-45 ${reset ? "bg-[var(--accent-strong)]" : "bg-red-700"}`} type="button" disabled={busy} onClick={onConfirm}>{reset ? "Сбросить" : "Удалить"}</button></div>
+    </Modal>
+  );
+}
+
+function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="w-full max-w-md rounded-2xl border border-[var(--border-subtle)] bg-white p-5 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="template-dialog-title">
+        <div className="mb-4 flex items-start justify-between gap-3"><h2 className="text-lg font-semibold" id="template-dialog-title">{title}</h2><button className="rounded-lg px-2 py-1 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-muted)]" type="button" aria-label="Закрыть" onClick={onClose}>×</button></div>
+        {children}
+      </section>
+    </div>
+  );
+}
+
+function DialogCancel({ onClick }: { onClick: () => void }) {
+  return <button className="rounded-lg border border-[var(--border-subtle)] px-4 py-2 text-sm font-semibold" type="button" onClick={onClick}>Отмена</button>;
 }
 
 function ElementIcon({ type }: { type: string }) {
@@ -395,26 +650,11 @@ function ElementIcon({ type }: { type: string }) {
 }
 
 function DesignerLoading({ mode, onMode }: { mode: DesignerMode; onMode: (mode: DesignerMode) => void }) {
-  return (
-    <div className="space-y-4">
-      <ModeBar mode={mode} onMode={onMode} />
-      <section className="grid gap-4 xl:grid-cols-[14rem_minmax(25rem,1fr)_18rem]" aria-label="Загрузка шаблонов">
-        {["h-72", "h-[34rem]", "h-80"].map((height, index) => <span className={`${height} animate-pulse rounded-2xl bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]`} key={index} />)}
-      </section>
-    </div>
-  );
+  return <div className="space-y-4"><ModeBar mode={mode} onMode={onMode} /><section className="grid gap-4 xl:grid-cols-[14rem_minmax(25rem,1fr)_18rem]" aria-label="Загрузка шаблонов">{["h-72", "h-[34rem]", "h-80"].map((height, index) => <span className={`${height} animate-pulse rounded-2xl bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]`} key={index} />)}</section></div>;
 }
 
 function EmptyDesigner() {
-  return (
-    <section className="grid min-h-72 place-items-center rounded-2xl border border-dashed border-[var(--border-strong)] bg-[var(--surface-elevated)] p-8 text-center">
-      <div><RotateCcw className="mx-auto mb-3 text-[var(--text-muted)]" aria-hidden="true" size={28} /><h3 className="font-semibold">Шаблонов пока нет</h3><p className="mt-2 text-sm text-[var(--text-secondary)]">Создайте первый макет 58 × 40 мм для этого режима.</p></div>
-    </section>
-  );
-}
-
-function formatNumber(value: number) {
-  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(value);
+  return <section className="grid min-h-72 place-items-center rounded-2xl border border-dashed border-[var(--border-strong)] bg-[var(--surface-elevated)] p-8 text-center"><div><RotateCcw className="mx-auto mb-3 text-[var(--text-muted)]" aria-hidden="true" size={28} /><h3 className="font-semibold">Шаблонов пока нет</h3><p className="mt-2 text-sm text-[var(--text-secondary)]">Создайте первый макет 58 × 40 мм для этого режима.</p></div></section>;
 }
 
 function roundMetric(value: number) {

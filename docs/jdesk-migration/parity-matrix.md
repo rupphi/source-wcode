@@ -34,7 +34,7 @@ Baseline: WCode `1.1.7`, branch point `61e8117`, 2026-07-18.
 | FBS packing | `PackingController` | read-only new/preparation/dispatch board, search/category/paging and supply detail are native-tested; selection/create/add/deliver + KIZ preflight pending | Foundation (read) |
 | Print/export | `OrderExportWorkflow`, print services | macOS live WB PDF/save/open passed; physical 58×40 Windows test pending | Foundation |
 | Print history/reprint | `PrintHistoryController` | bounded history/search/status page and native reprint/save/open pass on live KingRussia job; unsupported-image regression remains covered by legacy service test; Windows native evidence pending | Foundation |
-| Template designer | `PrintTemplateDesignerController` | typed FBS/FBO catalog, mm inspector and responsive 58×40 read preview are native-tested; CRUD/elements/editing/layout persistence pending | Foundation (read) |
+| Template designer | `PrintTemplateDesignerController` | typed FBS/FBO catalog; CRUD/default/reset; palette/add/copy/paste/delete; bounded mm inspector, drag/resize geometry and persisted 58×40 layout are covered by Java/React tests plus native isolated-SQLite lifecycle at 1440×900 and 960×640 | Parity |
 | FBO packing | `FboPackingController` | search/category/pagination/quantity/single+batch print | Legacy |
 | GTIN/KIZ mapping | `KizMappingController`, `KizGtinMappingEditor` | inventory/filter/edit/sync/progress/error | Legacy |
 | Znack settings/products | `ZnackAutomationController` | settings, signature cert, product lifecycle | Legacy |

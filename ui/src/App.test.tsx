@@ -34,7 +34,15 @@ vi.mock("./generated/commands", () => ({
       openHistoryReprint: vi.fn(),
     },
     templates: {
+      create: vi.fn(),
+      createElement: vi.fn(),
+      delete: vi.fn(),
+      duplicate: vi.fn(),
       loadDesigner: vi.fn(),
+      rename: vi.fn(),
+      reset: vi.fn(),
+      save: vi.fn(),
+      setDefault: vi.fn(),
     },
     wildberries: {
       syncOverview: vi.fn(),
@@ -67,10 +75,103 @@ const loadPrintHistory = vi.mocked(commands.printing.history);
 const reprintHistory = vi.mocked(reprintHistoryPdf);
 const openHistoryReprint = vi.mocked(commands.printing.openHistoryReprint);
 const loadTemplateDesigner = vi.mocked(commands.templates.loadDesigner);
+const createTemplate = vi.mocked(commands.templates.create);
+const createTemplateElement = vi.mocked(commands.templates.createElement);
+const deleteTemplate = vi.mocked(commands.templates.delete);
+const duplicateTemplate = vi.mocked(commands.templates.duplicate);
+const renameTemplate = vi.mocked(commands.templates.rename);
+const resetTemplate = vi.mocked(commands.templates.reset);
+const saveTemplate = vi.mocked(commands.templates.save);
+const setDefaultTemplate = vi.mocked(commands.templates.setDefault);
 const syncOverview = vi.mocked(commands.wildberries.syncOverview);
 const syncStatus = vi.mocked(commands.wildberries.syncStatus);
 const cancelSync = vi.mocked(commands.wildberries.cancelSync);
 const secret = "wb-secret-that-must-not-enter-the-dom";
+
+function editableDesigner(mode: string, id: string, name: string) {
+  return {
+    mode,
+    pageWidthMm: 58,
+    pageHeightMm: 40,
+    maxTemplates: 100,
+    maxElements: 100,
+    templates: [{
+      id,
+      name,
+      defaultTemplate: true,
+      elements: [{
+        id: "kiz",
+        type: "kiz_datamatrix",
+        fieldKey: "",
+        label: "KIZ",
+        prefix: "",
+        content: "",
+        xMm: 2,
+        yMm: 3,
+        widthMm: 18,
+        heightMm: 18,
+        visible: true,
+        zIndex: 1,
+        fontSizePt: 8,
+        bold: false,
+        align: "left",
+        humanReadable: false,
+      }, {
+        id: "barcode",
+        type: "barcode_code128",
+        fieldKey: "",
+        label: "Штрихкод",
+        prefix: "",
+        content: "",
+        xMm: 2,
+        yMm: 27,
+        widthMm: 53,
+        heightMm: 8,
+        visible: true,
+        zIndex: 2,
+        fontSizePt: 8,
+        bold: false,
+        align: "center",
+        humanReadable: true,
+      }, {
+        id: "tail",
+        type: "sticker_tail",
+        fieldKey: "",
+        label: "Стикер",
+        prefix: "",
+        content: "",
+        xMm: 47,
+        yMm: 36,
+        widthMm: 8,
+        heightMm: 3,
+        visible: true,
+        zIndex: 3,
+        fontSizePt: 9,
+        bold: true,
+        align: "left",
+        humanReadable: false,
+      }, {
+        id: "article",
+        type: "text_field",
+        fieldKey: "article",
+        label: "Артикул",
+        prefix: "Арт. ",
+        content: "",
+        xMm: 22,
+        yMm: 12,
+        widthMm: 34,
+        heightMm: 5,
+        visible: true,
+        zIndex: 4,
+        fontSizePt: 8,
+        bold: true,
+        align: "left",
+        humanReadable: false,
+      }],
+    }],
+    palette: [{ key: "static_text", label: "Текст", type: "static_text", fieldKey: "" }],
+  } as Awaited<ReturnType<typeof commands.templates.loadDesigner>>;
+}
 
 describe("App", () => {
   beforeEach(() => {
@@ -92,6 +193,14 @@ describe("App", () => {
     reprintHistory.mockReset();
     openHistoryReprint.mockReset();
     loadTemplateDesigner.mockReset();
+    createTemplate.mockReset();
+    createTemplateElement.mockReset();
+    deleteTemplate.mockReset();
+    duplicateTemplate.mockReset();
+    renameTemplate.mockReset();
+    resetTemplate.mockReset();
+    saveTemplate.mockReset();
+    setDefaultTemplate.mockReset();
     syncOverview.mockReset();
     syncStatus.mockReset();
     cancelSync.mockReset();
@@ -206,6 +315,143 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Повторить" }));
     expect(await screen.findByText("Шаблонов пока нет")).toBeVisible();
     expect(loadTemplateDesigner).toHaveBeenCalledTimes(2);
+  });
+
+  it("edits, adds, copies, removes, and saves a typed template draft", async () => {
+    const user = userEvent.setup();
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [],
+      hasSelectedShop: false,
+      selectedShopId: 0,
+    });
+    const designer = editableDesigner("fbs", "1", "Рабочий FBS");
+    loadTemplateDesigner.mockResolvedValue(designer);
+    createTemplateElement.mockResolvedValue({
+      id: "static-1",
+      type: "static_text",
+      fieldKey: "",
+      label: "Текст",
+      prefix: "",
+      content: "Новый текст",
+      xMm: 25,
+      yMm: 11,
+      widthMm: 30,
+      heightMm: 4,
+      visible: true,
+      zIndex: 5,
+      fontSizePt: 8,
+      bold: false,
+      align: "left",
+      humanReadable: false,
+    });
+    const savedBase = designer.templates[0];
+    if (!savedBase) throw new Error("editable designer fixture requires a template");
+    saveTemplate.mockImplementation(async ({ template }) => ({
+      designer: {
+        ...designer,
+        templates: [{ ...savedBase, name: template.name, elements: template.elements }],
+      },
+      selectedTemplateId: template.id,
+    }));
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Дизайн этикеток" }));
+    await user.click(await screen.findByRole("button", { name: "Выбрать слой Артикул" }));
+    const xField = screen.getByRole("spinbutton", { name: "X, мм" });
+    await user.clear(xField);
+    await user.type(xField, "4");
+    await user.click(screen.getByRole("checkbox", { name: "Виден" }));
+    expect(screen.getByText("Есть несохранённые изменения")).toBeVisible();
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "Новый элемент" }), "static_text");
+    await user.click(screen.getByRole("button", { name: "Добавить элемент" }));
+    await waitFor(() => expect(createTemplateElement).toHaveBeenCalledWith({
+      mode: "fbs",
+      paletteKey: "static_text",
+      zIndex: 5,
+    }));
+    expect(await screen.findByRole("button", { name: "Выбрать слой Текст" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Копировать элемент" }));
+    await user.click(screen.getByRole("button", { name: "Вставить элемент" }));
+    await user.click(screen.getByRole("button", { name: "Удалить элемент" }));
+
+    await user.click(screen.getByRole("button", { name: "Сохранить шаблон" }));
+    await waitFor(() => expect(saveTemplate).toHaveBeenCalledWith({
+      mode: "fbs",
+      template: expect.objectContaining({
+        id: "1",
+        name: "Рабочий FBS",
+        elements: expect.arrayContaining([
+          expect.objectContaining({ id: "article", xMm: 4, visible: false }),
+          expect.objectContaining({ id: "static-1" }),
+        ]),
+      }),
+    }));
+    expect(await screen.findByText("Шаблон сохранён")).toBeVisible();
+  });
+
+  it("runs template CRUD, default, and reset through explicit dialogs", async () => {
+    const user = userEvent.setup();
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [],
+      hasSelectedShop: false,
+      selectedShopId: 0,
+    });
+    const initial = editableDesigner("fbs", "1", "Основной");
+    const initialTemplate = initial.templates[0];
+    if (!initialTemplate) throw new Error("editable designer fixture requires a template");
+    const createdDesigner = {
+      ...initial,
+      templates: [...initial.templates, { ...initialTemplate, id: "2", name: "Новый макет", defaultTemplate: false }],
+    };
+    loadTemplateDesigner.mockResolvedValue(initial);
+    createTemplate.mockResolvedValue({ designer: createdDesigner, selectedTemplateId: "2" });
+    renameTemplate.mockResolvedValue({
+      designer: { ...createdDesigner, templates: createdDesigner.templates.map((item) => item.id === "2" ? { ...item, name: "Переименован" } : item) },
+      selectedTemplateId: "2",
+    });
+    const createdTemplate = createdDesigner.templates[1];
+    if (!createdTemplate) throw new Error("created designer fixture requires the new template");
+    duplicateTemplate.mockResolvedValue({
+      designer: { ...createdDesigner, templates: [...createdDesigner.templates, { ...createdTemplate, id: "3", name: "Копия" }] },
+      selectedTemplateId: "3",
+    });
+    setDefaultTemplate.mockResolvedValue({ designer: createdDesigner, selectedTemplateId: "2" });
+    resetTemplate.mockResolvedValue({ designer: createdDesigner, selectedTemplateId: "2" });
+    deleteTemplate.mockResolvedValue({ designer: initial, selectedTemplateId: "1" });
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Дизайн этикеток" }));
+    await user.click(await screen.findByRole("button", { name: "Создать шаблон" }));
+    await user.type(screen.getByRole("textbox", { name: "Название шаблона" }), "Новый макет");
+    await user.click(screen.getByRole("button", { name: "Создать" }));
+    await waitFor(() => expect(createTemplate).toHaveBeenCalledWith({ mode: "fbs", name: "Новый макет" }));
+
+    await user.click(screen.getByRole("button", { name: "Переименовать шаблон" }));
+    const nameField = screen.getByRole("textbox", { name: "Название шаблона" });
+    await user.clear(nameField);
+    await user.type(nameField, "Переименован");
+    await user.click(screen.getByRole("button", { name: "Переименовать" }));
+    await waitFor(() => expect(renameTemplate).toHaveBeenCalledWith({ mode: "fbs", templateId: "2", name: "Переименован" }));
+
+    await user.click(screen.getByRole("button", { name: "Сделать шаблоном по умолчанию" }));
+    await waitFor(() => expect(setDefaultTemplate).toHaveBeenCalledWith({ mode: "fbs", templateId: "2" }));
+    await user.click(screen.getByRole("button", { name: "Сбросить шаблон" }));
+    expect(await screen.findByRole("dialog", { name: "Сбросить шаблон?" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Сбросить" }));
+    await waitFor(() => expect(resetTemplate).toHaveBeenCalledWith({ mode: "fbs", templateId: "2" }));
+
+    await user.click(screen.getByRole("button", { name: "Дублировать шаблон" }));
+    await user.type(screen.getByRole("textbox", { name: "Название шаблона" }), "Копия");
+    await user.click(screen.getByRole("button", { name: "Дублировать" }));
+    await waitFor(() => expect(duplicateTemplate).toHaveBeenCalledWith({ mode: "fbs", templateId: "2", name: "Копия" }));
+
+    await user.click(screen.getByRole("button", { name: "Удалить шаблон" }));
+    expect(await screen.findByRole("dialog", { name: "Удалить шаблон?" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Удалить" }));
+    await waitFor(() => expect(deleteTemplate).toHaveBeenCalledWith({ mode: "fbs", templateId: "3" }));
   });
 
   it("opens the read-only FBS packing board and keeps tab filters scoped", async () => {
