@@ -6,6 +6,8 @@ import com.tuandev.fbsbarcode.jdesk.supply.SupplyCommandService;
 import com.tuandev.fbsbarcode.jdesk.supply.SupplyCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.supply.SupplyDetailCommandService;
 import com.tuandev.fbsbarcode.jdesk.supply.SupplyDetailCommandServiceCommands;
+import com.tuandev.fbsbarcode.jdesk.supply.SupplyRefreshCommandService;
+import com.tuandev.fbsbarcode.jdesk.supply.SupplyRefreshCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.wildberries.WildberriesCommandService;
 import com.tuandev.fbsbarcode.jdesk.wildberries.WildberriesCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.workspace.JDeskCommands;
@@ -35,13 +37,15 @@ public final class WCodeDesktop {
             SupplyCommandService supplies = new SupplyCommandService();
             OrderImageAssetService orderImages = new OrderImageAssetService();
             SupplyDetailCommandService supplyDetails = new SupplyDetailCommandService(orderImages);
+            SupplyRefreshCommandService supplyRefresh = new SupplyRefreshCommandService();
             JDeskApplication.Builder application = JDeskApplication.builder()
                     .id("com.tuandev.wcode")
                     .commands(JDeskCommands.combine(
                             WorkspaceCommandServiceCommands.create(workspace),
                             WildberriesCommandServiceCommands.create(wildberries),
                             SupplyCommandServiceCommands.create(supplies),
-                            SupplyDetailCommandServiceCommands.create(supplyDetails)))
+                            SupplyDetailCommandServiceCommands.create(supplyDetails),
+                            SupplyRefreshCommandServiceCommands.create(supplyRefresh)))
                     .capabilities(Capabilities.fromResource("jdesk-capabilities.json"))
                     .contentSecurityPolicy(Csp.defaults())
                     .assetRoute("order-images", orderImages)
