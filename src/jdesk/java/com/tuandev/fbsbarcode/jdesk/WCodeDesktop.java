@@ -5,6 +5,8 @@ import com.tuandev.fbsbarcode.jdesk.order.ExcelOrderImportCommandService;
 import com.tuandev.fbsbarcode.jdesk.order.ExcelOrderImportCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.print.PrintCommandService;
 import com.tuandev.fbsbarcode.jdesk.print.PrintCommandServiceCommands;
+import com.tuandev.fbsbarcode.jdesk.print.PrintExportCommandService;
+import com.tuandev.fbsbarcode.jdesk.print.PrintExportCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.supply.OrderImageAssetService;
 import com.tuandev.fbsbarcode.jdesk.supply.SupplyCommandService;
 import com.tuandev.fbsbarcode.jdesk.supply.SupplyCommandServiceCommands;
@@ -42,6 +44,7 @@ public final class WCodeDesktop {
             OrderImageAssetService orderImages = new OrderImageAssetService();
             ExcelOrderImportCommandService excelOrders = new ExcelOrderImportCommandService(orderImages);
             PrintCommandService printing = new PrintCommandService();
+            PrintExportCommandService printExport = new PrintExportCommandService();
             SupplyDetailCommandService supplyDetails = new SupplyDetailCommandService(orderImages);
             SupplyRefreshCommandService supplyRefresh = new SupplyRefreshCommandService();
             JDeskApplication.Builder application = JDeskApplication.builder()
@@ -53,7 +56,8 @@ public final class WCodeDesktop {
                             SupplyDetailCommandServiceCommands.create(supplyDetails),
                             SupplyRefreshCommandServiceCommands.create(supplyRefresh),
                             ExcelOrderImportCommandServiceCommands.create(excelOrders),
-                            PrintCommandServiceCommands.create(printing)))
+                            PrintCommandServiceCommands.create(printing),
+                            PrintExportCommandServiceCommands.create(printExport)))
                     .capabilities(Capabilities.fromResource("jdesk-capabilities.json"))
                     .contentSecurityPolicy(Csp.defaults())
                     .assetRoute("order-images", orderImages)

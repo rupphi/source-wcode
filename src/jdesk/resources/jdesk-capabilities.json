@@ -7,6 +7,7 @@
     { "capability": "orders:import", "windows": ["main"] },
     { "capability": "printing:read", "windows": ["main"] },
     { "capability": "printing:configure", "windows": ["main"] },
+    { "capability": "printing:export", "windows": ["main"] },
     { "capability": "wildberries:sync", "windows": ["main"] }
   ]
 }
