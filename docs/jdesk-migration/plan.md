@@ -321,7 +321,8 @@ path or add a verified Windows adapter; do not claim parity from macOS/browser p
 - [x] Port bounded active/deleted product pages and atomic batch hide/restore with shop-scoped audit.
 - [x] Native-test settings save/restore and product hide/restore on isolated app-data at 1440×857
       and 960×640 with bounded DOM, accessible controls, clean console and no remote mutation.
-- [ ] Port purchase pipeline and progress events with idempotency/recovery.
+- [x] Port purchase preview/confirmation, persisted idempotency key, bounded orders/journal and
+      authoritative progress polling/events without exposing KIZ or upstream payloads.
 - [x] Port certificate discovery/test through a ten-minute opaque, shop-scoped discovery session;
       persist verified selection and audit atomically without exposing signer material.
 - [x] Port participant product sync as one bounded, resumable job per shop with safe status/error DTO,
@@ -329,7 +330,7 @@ path or add a verified Windows adapter; do not claim parity from macOS/browser p
 - [x] Native-test isolated certificate-empty and unverified-sync states at 1440×857 with clean
       console, accessible controls, bounded DOM and unchanged signer/audit/product checkpoint.
 - [ ] Port CryptoPro certificate discovery/signing on Windows.
-- [ ] Port introduction status/retry and audit-safe errors.
+- [x] Port introduction status/retry and audit-safe errors without re-buying downloaded codes.
 
 Any real KIZ purchase/introduction mutation requires explicit approval and a dedicated shop/test
 artifact. Recovery/idempotency tests precede implementation changes.

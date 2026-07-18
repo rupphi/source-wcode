@@ -8,18 +8,22 @@ import {
   KeyRound,
   PackageSearch,
   RefreshCw,
+  ScrollText,
+  ShoppingCart,
   RotateCcw,
   Save,
   Search,
   ShieldCheck,
   SlidersHorizontal,
   Tag,
+  X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { commands } from "../../generated/commands";
-import type { CertificateDiscoveryResponse, ProductsResponse, SettingsResponse } from "../../generated/types";
+import type { CertificateDiscoveryResponse, ProductItem, ProductsResponse, PurchasePreview, SettingsResponse } from "../../generated/types";
+import { ZnackLogsPanel, ZnackPurchasesPanel } from "./ZnackOperationsPanel";
 
-type Tab = "settings" | "products" | "deleted";
+type Tab = "settings" | "products" | "deleted" | "purchases" | "logs";
 type SettingsState =
   | { status: "loading" }
   | { status: "error" }
@@ -31,6 +35,15 @@ type ProductState =
 type CertificateState =
   | { status: "idle" | "loading" | "error" }
   | { status: "ready"; data: CertificateDiscoveryResponse };
+type PurchaseDialogState = {
+  shopId: number;
+  gtin: string;
+  productName: string;
+  quantity: string;
+  preview: PurchasePreview | null;
+  busy: boolean;
+  error: string;
+};
 
 type SettingsDraft = Pick<
   SettingsResponse,
@@ -125,6 +138,8 @@ export function ZnackView({ shopId }: { shopId: number }) {
   const [productRetry, setProductRetry] = useState(0);
   const [syncStarting, setSyncStarting] = useState(false);
   const [syncJob, setSyncJob] = useState<{ jobId: string; cancelling: boolean } | null>(null);
+  const [purchaseDialog, setPurchaseDialog] = useState<PurchaseDialogState | null>(null);
+  const [operationsRefresh, setOperationsRefresh] = useState(0);
   const settingsRequest = useRef(0);
   const productsRequest = useRef(0);
 
@@ -153,7 +168,7 @@ export function ZnackView({ shopId }: { shopId: number }) {
 
   const deleted = tab === "deleted";
   useEffect(() => {
-    if (tab === "settings") return;
+    if (tab !== "products" && tab !== "deleted") return;
     const request = ++productsRequest.current;
     let active = true;
     void commands.znack.products({
@@ -248,7 +263,7 @@ export function ZnackView({ shopId }: { shopId: number }) {
     setSelected(new Set());
     setProductNotice("");
     setProductError("");
-    if (next !== "settings") setProductState({ status: "loading" });
+    if (next === "products" || next === "deleted") setProductState({ status: "loading" });
   };
 
   const settingsDirty = useMemo(() => {
@@ -423,6 +438,68 @@ export function ZnackView({ shopId }: { shopId: number }) {
     setPage(next);
   };
 
+  const openPurchase = (product: ProductItem) => {
+    setPurchaseDialog({
+      shopId,
+      gtin: product.gtin,
+      productName: product.productName,
+      quantity: "1",
+      preview: null,
+      busy: false,
+      error: "",
+    });
+  };
+
+  const preparePurchase = async () => {
+    if (!purchaseDialog || purchaseDialog.shopId !== shopId
+      || settingsState.status !== "ready" || settingsDirty || purchaseDialog.busy) return;
+    const quantity = Number(purchaseDialog.quantity);
+    if (!Number.isInteger(quantity) || quantity <= 0 || quantity > 10_000) {
+      setPurchaseDialog({ ...purchaseDialog, error: "Укажите целое количество от 1 до 10 000." });
+      return;
+    }
+    setPurchaseDialog({ ...purchaseDialog, busy: true, error: "" });
+    try {
+      const response = await commands.znack.preparePurchase({
+        shopId,
+        gtin: purchaseDialog.gtin,
+        quantity,
+        version: settingsState.data.version,
+      });
+      if (response.shopId !== shopId || !UUID.test(response.purchaseId)
+        || response.gtin !== purchaseDialog.gtin || response.quantity !== quantity
+        || response.version !== settingsState.data.version || Number.isNaN(Date.parse(response.expiresAt))) {
+        throw new Error("Unexpected purchase preview");
+      }
+      setPurchaseDialog({ ...purchaseDialog, quantity: String(quantity), preview: response, busy: false, error: "" });
+    } catch {
+      setPurchaseDialog((current) => current ? { ...current, busy: false, error: "Не удалось подготовить покупку. Обновите данные и повторите." } : null);
+    }
+  };
+
+  const confirmPurchase = async () => {
+    if (!purchaseDialog?.preview || purchaseDialog.shopId !== shopId
+      || settingsState.status !== "ready" || purchaseDialog.busy) return;
+    const preview = purchaseDialog.preview;
+    setPurchaseDialog({ ...purchaseDialog, busy: true, error: "" });
+    try {
+      const response = await commands.znack.startPurchase({
+        shopId,
+        purchaseId: preview.purchaseId,
+        version: settingsState.data.version,
+        confirmed: true,
+      });
+      if (response.purchase.purchaseId !== preview.purchaseId || response.purchase.gtin !== preview.gtin) {
+        throw new Error("Unexpected purchase response");
+      }
+      setPurchaseDialog(null);
+      setOperationsRefresh((value) => value + 1);
+      changeTab("purchases");
+    } catch {
+      setPurchaseDialog((current) => current ? { ...current, busy: false, error: "Покупка не запущена. Проверьте состояние заказа перед повтором." } : null);
+    }
+  };
+
   return (
     <section className="space-y-5" aria-label="Znack Automation">
       <div className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-card)]">
@@ -448,6 +525,8 @@ export function ZnackView({ shopId }: { shopId: number }) {
             ["settings", "Настройки", SlidersHorizontal],
             ["products", "Товары", PackageSearch],
             ["deleted", "Скрытые", Archive],
+            ["purchases", "Покупки", ShoppingCart],
+            ["logs", "Журнал", ScrollText],
           ] as const).map(([value, label, Icon]) => (
             <button
               key={value}
@@ -488,7 +567,7 @@ export function ZnackView({ shopId }: { shopId: number }) {
               onTestCertificate={() => void testSelectedCertificate()}
             />
           </div>
-        ) : (
+        ) : tab === "products" || tab === "deleted" ? (
           <div id={`znack-panel-${tab}`} role="tabpanel" aria-label={deleted ? "Скрытые" : "Товары"} className="p-4 lg:p-5">
             <ProductPanel
               deleted={deleted}
@@ -515,10 +594,38 @@ export function ZnackView({ shopId }: { shopId: number }) {
               onRetry={reloadProducts}
               onSync={() => void startSync()}
               onCancelSync={() => void cancelSync()}
+              canPurchase={settingsState.status === "ready"
+                && settingsState.data.signatureStatus === "VERIFIED" && !settingsDirty}
+              onBuy={openPurchase}
             />
+          </div>
+        ) : tab === "purchases" ? (
+          <div id="znack-panel-purchases" role="tabpanel" aria-label="Покупки" className="p-4 lg:p-5">
+            <ZnackPurchasesPanel
+              shopId={shopId}
+              settingsVersion={settingsState.status === "ready" ? settingsState.data.version : ""}
+              canMutate={settingsState.status === "ready"
+                && settingsState.data.signatureStatus === "VERIFIED" && !settingsDirty}
+              refreshToken={operationsRefresh}
+            />
+          </div>
+        ) : (
+          <div id="znack-panel-logs" role="tabpanel" aria-label="Журнал" className="p-4 lg:p-5">
+            <ZnackLogsPanel shopId={shopId} />
           </div>
         )}
       </div>
+      {purchaseDialog?.shopId === shopId ? (
+        <PurchaseDialog
+          state={purchaseDialog}
+          canPurchase={settingsState.status === "ready"
+            && settingsState.data.signatureStatus === "VERIFIED" && !settingsDirty}
+          onState={setPurchaseDialog}
+          onClose={() => setPurchaseDialog(null)}
+          onPrepare={() => void preparePurchase()}
+          onConfirm={() => void confirmPurchase()}
+        />
+      ) : null}
     </section>
   );
 }
@@ -718,6 +825,8 @@ function ProductPanel({
   onRetry,
   onSync,
   onCancelSync,
+  canPurchase,
+  onBuy,
 }: {
   deleted: boolean;
   state: ProductState;
@@ -742,6 +851,8 @@ function ProductPanel({
   onRetry: () => void;
   onSync: () => void;
   onCancelSync: () => void;
+  canPurchase: boolean;
+  onBuy: (product: ProductItem) => void;
 }) {
   const data = state.status === "ready" ? state.data : null;
   return (
@@ -825,20 +936,21 @@ function ProductPanel({
       ) : null}
       {data && data.items.length > 0 ? (
         <div className="overflow-hidden rounded-xl border border-[var(--border-subtle)]">
-          <div className="hidden grid-cols-[2.2rem_9.5rem_minmax(15rem,1.3fr)_minmax(8rem,.7fr)_minmax(12rem,.8fr)] gap-3 border-b border-[var(--border-subtle)] bg-[var(--surface-muted)] px-4 py-3 text-xs font-semibold tracking-wide text-[var(--text-muted)] uppercase lg:grid">
-            <span /><span>GTIN</span><span>Товар</span><span>Классификация</span><span>Готовность</span>
+          <div className="hidden grid-cols-[2.2rem_9.5rem_minmax(14rem,1.2fr)_minmax(8rem,.6fr)_minmax(11rem,.8fr)_7rem] gap-3 border-b border-[var(--border-subtle)] bg-[var(--surface-muted)] px-4 py-3 text-xs font-semibold tracking-wide text-[var(--text-muted)] uppercase lg:grid">
+            <span /><span>GTIN</span><span>Товар</span><span>Классификация</span><span>Готовность</span><span>КИЗ</span>
           </div>
           <ul className="divide-y divide-[var(--border-subtle)]">
             {data.items.map((item) => {
               const mark = readiness(item.goodMarkStatus, "mark");
               const turn = readiness(item.goodTurnStatus, "turn");
               return (
-                <li key={item.gtin} className="grid gap-3 px-4 py-4 lg:grid-cols-[2.2rem_9.5rem_minmax(15rem,1.3fr)_minmax(8rem,.7fr)_minmax(12rem,.8fr)] lg:items-center">
+                <li key={item.gtin} className="grid gap-3 px-4 py-4 lg:grid-cols-[2.2rem_9.5rem_minmax(14rem,1.2fr)_minmax(8rem,.6fr)_minmax(11rem,.8fr)_7rem] lg:items-center">
                   <input type="checkbox" className="size-4 accent-[var(--accent)]" aria-label={`Выбрать GTIN ${item.gtin}`} checked={selected.has(item.gtin)} onChange={() => onToggleSelected(item.gtin)} />
                   <code className="text-xs font-semibold text-[var(--text-primary)]">{item.gtin}</code>
                   <div className="min-w-0"><p className="truncate text-sm font-semibold">{item.productName || "Без названия"}</p><p className="mt-1 truncate text-xs text-[var(--text-muted)]">{item.category || "Без категории"}</p></div>
                   <div className="text-xs text-[var(--text-secondary)]"><p>ТН ВЭД {item.tnVed || "—"}</p><p className="mt-1">CIS {item.cisType || "—"}</p></div>
                   <div className="flex flex-wrap gap-1.5"><span className={mark.className}>{mark.label}</span><span className={turn.className}>{turn.label}</span></div>
+                  {!deleted ? <button className="secondary-button justify-center" type="button" disabled={!canPurchase} onClick={() => onBuy(item)} aria-label={`Купить КИЗ для ${item.gtin}`}><ShoppingCart aria-hidden="true" size={15} />Купить</button> : <span />}
                 </li>
               );
             })}
@@ -852,6 +964,61 @@ function ProductPanel({
           <button className="secondary-button" type="button" disabled={!data.hasMore || state.status === "loading"} onClick={() => onPage(page + 1)} aria-label="Следующая страница товаров Znack">Вперёд<ChevronRight aria-hidden="true" size={16} /></button>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function PurchaseDialog({
+  state,
+  canPurchase,
+  onState,
+  onClose,
+  onPrepare,
+  onConfirm,
+}: {
+  state: PurchaseDialogState;
+  canPurchase: boolean;
+  onState: (state: PurchaseDialogState) => void;
+  onClose: () => void;
+  onPrepare: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-labelledby="purchase-dialog-title">
+      <div className="w-full max-w-lg rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-5 shadow-2xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h4 id="purchase-dialog-title" className="text-lg font-semibold">{state.preview ? "Подтверждение покупки КИЗ" : "Подготовить покупку КИЗ"}</h4>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">{state.productName || "Товар без названия"}</p>
+          </div>
+          <button className="icon-button" type="button" aria-label="Закрыть покупку КИЗ" disabled={state.busy} onClick={onClose}><X aria-hidden="true" size={18} /></button>
+        </div>
+        <div className="mt-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-muted)] p-4">
+          <div className="flex items-center justify-between gap-3"><span className="text-xs text-[var(--text-muted)]">GTIN</span><code className="text-xs font-semibold">{state.gtin}</code></div>
+          {state.preview ? (
+            <>
+              <div className="mt-3 flex items-center justify-between gap-3"><span className="text-xs text-[var(--text-muted)]">Количество</span><strong className="text-sm">{state.preview.quantity}</strong></div>
+              {state.preview.autoIntroduction ? <p className="mt-4 flex items-start gap-2 rounded-lg bg-[var(--warning-soft)] p-3 text-xs leading-5 text-[var(--text-secondary)]"><ShieldCheck aria-hidden="true" className="mt-0.5 shrink-0 text-[var(--warning)]" size={14} /><span><strong className="block text-[var(--text-primary)]">Автоматический ввод в оборот включён</strong>После загрузки кодов WCode отправит документ только при готовых данных и документах.</span></p> : <p className="mt-4 text-xs leading-5 text-[var(--text-muted)]">Коды будут загружены локально без автоматического ввода в оборот.</p>}
+            </>
+          ) : (
+            <label className="field-label mt-4">
+              <span>Количество КИЗ</span>
+              <input type="number" min={1} max={10_000} step={1} className="text-input" value={state.quantity} disabled={state.busy} onChange={(event) => onState({ ...state, quantity: event.target.value, error: "" })} />
+            </label>
+          )}
+        </div>
+        {state.error ? <p className="mt-3 text-sm text-[var(--danger)]" role="alert">{state.error}</p> : null}
+        {!canPurchase ? <p className="mt-3 text-xs leading-5 text-[var(--warning)]">Сохраните настройки и проверьте сертификат CryptoPro.</p> : null}
+        <p className="mt-4 text-xs leading-5 text-[var(--text-muted)]">Покупка может создать платный заказ Znack. UUID подтверждения сохраняется до первого сетевого вызова и блокирует повторное списание.</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button className="secondary-button" type="button" disabled={state.busy} onClick={onClose}>Отмена</button>
+          {state.preview ? (
+            <button className="primary-button" type="button" aria-label="Подтвердить покупку КИЗ" disabled={!canPurchase || state.busy} onClick={onConfirm}>{state.busy ? <RefreshCw aria-hidden="true" className="animate-spin" size={16} /> : <ShoppingCart aria-hidden="true" size={16} />}{state.busy ? "Запуск…" : "Подтвердить покупку КИЗ"}</button>
+          ) : (
+            <button className="primary-button" type="button" aria-label="Подготовить покупку" disabled={!canPurchase || state.busy} onClick={onPrepare}>{state.busy ? <RefreshCw aria-hidden="true" className="animate-spin" size={16} /> : <ShieldCheck aria-hidden="true" size={16} />}{state.busy ? "Проверка…" : "Подготовить покупку"}</button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

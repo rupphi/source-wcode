@@ -134,7 +134,7 @@ export function App() {
     },
     znack: {
       title: "Znack Automation",
-      description: "Настройки OMS, безопасный статус подписи и локальный жизненный цикл зарегистрированных GTIN.",
+      description: "Настройки OMS, каталог GTIN, идемпотентные покупки КИЗ, ввод в оборот и безопасный журнал операций.",
     },
     templates: {
       title: "Дизайн этикеток",

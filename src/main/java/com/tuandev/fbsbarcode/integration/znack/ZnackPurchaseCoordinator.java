@@ -19,6 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -59,6 +60,10 @@ public class ZnackPurchaseCoordinator {
 
     public static ZnackPurchaseCoordinator create(ZnackRepository repository) {
         Settings settings = repository.getSettings();
+        return create(repository, settings);
+    }
+
+    private static ZnackPurchaseCoordinator create(ZnackRepository repository, Settings settings) {
         ZnackSignatureProvider signer = settings.signerCertificate() == null || settings.signerCertificate().isBlank()
                 ? ZnackSignatureProvider.unconfigured()
                 : new CryptoProSignatureProvider(settings.cryptcpPath(), settings.signerCertificate(),
@@ -87,18 +92,89 @@ public class ZnackPurchaseCoordinator {
     }
 
     public long start(Settings settings, String gtin, int quantity) throws Exception {
+        return start(settings, gtin, quantity, null);
+    }
+
+    public long start(Settings settings, String gtin, int quantity, String requestKey) throws Exception {
+        ZnackPurchasePipelineState replay = replay(requestKey, gtin, quantity);
+        if (replay != null) return replay.id();
         validatePrerequisites(settings, gtin, quantity);
         long pipelineId;
         synchronized (CREATE_LOCK) {
+            replay = replay(requestKey, gtin, quantity);
+            if (replay != null) return replay.id();
             ZnackPurchasePipelineState active = repository.findActivePipeline(gtin).orElse(null);
             if (active != null) {
                 throw new IllegalStateException("A KIZ purchase pipeline is already active for GTIN " + active.gtin());
             }
-            pipelineId = repository.createPipeline(gtin, quantity);
+            pipelineId = repository.createPipeline(gtin, quantity, requestKey);
         }
         advance(settings, pipelineId);
         schedule(pipelineId);
         return pipelineId;
+    }
+
+    /** Persists an idempotent jDesk purchase before any remote mutation, then advances it off-command. */
+    public long enqueue(Settings settings, String gtin, int quantity, String requestKey) throws Exception {
+        requireRequestKey(requestKey);
+        ZnackPurchasePipelineState replay = replay(requestKey, gtin, quantity);
+        if (replay != null) return replay.id();
+        validatePrerequisites(settings, gtin, quantity);
+        long pipelineId;
+        synchronized (CREATE_LOCK) {
+            replay = replay(requestKey, gtin, quantity);
+            if (replay != null) return replay.id();
+            ZnackPurchasePipelineState active = repository.findActivePipeline(gtin).orElse(null);
+            if (active != null) {
+                throw new IllegalStateException("A KIZ purchase pipeline is already active for GTIN " + active.gtin());
+            }
+            pipelineId = repository.createPipeline(gtin, quantity, requestKey);
+        }
+        Thread.ofVirtual().name("wcode-znack-purchase-" + repository.shop().shopId() + "-" + pipelineId)
+                .start(() -> advanceEnqueued(pipelineId, settings));
+        return pipelineId;
+    }
+
+    private void advanceEnqueued(long pipelineId, Settings expectedSettings) {
+        ZnackPurchaseCoordinator latestCoordinator = this;
+        try {
+            ZnackPurchasePipelineState pipeline = repository.findPipeline(pipelineId).orElseThrow();
+            Settings latest = repository.getSettings();
+            if (!latest.equals(expectedSettings)) {
+                throw new IllegalStateException("Znack settings changed before the purchase started.");
+            }
+            latestCoordinator = create(repository, latest);
+            latestCoordinator.validatePrerequisites(latest, pipeline.gtin(), pipeline.quantity());
+            latestCoordinator.advance(latest, pipelineId);
+        } catch (Exception error) {
+            ZnackPurchasePipelineState current = repository.findPipeline(pipelineId).orElse(null);
+            if (current != null && current.stage() == PurchaseStage.VALIDATING) {
+                repository.updatePipeline(pipelineId, null, PurchaseStage.FAILED, error.getMessage());
+                repository.log("PURCHASE_PIPELINE", current.gtin(), "ERROR", error.getMessage(), httpStatus(error));
+            }
+        } finally {
+            latestCoordinator.schedule(pipelineId);
+        }
+    }
+
+    private ZnackPurchasePipelineState replay(String requestKey, String gtin, int quantity) {
+        if (requestKey == null || requestKey.isBlank()) return null;
+        requireRequestKey(requestKey);
+        ZnackPurchasePipelineState existing = repository.findPipelineByRequestKey(requestKey).orElse(null);
+        if (existing == null) return null;
+        String normalized = GtinNormalizer.requireProductionOrderable(gtin);
+        if (!existing.gtin().equals(normalized) || existing.quantity() != quantity) {
+            throw new IllegalArgumentException("Purchase request does not match its persisted pipeline.");
+        }
+        return existing;
+    }
+
+    private void requireRequestKey(String requestKey) {
+        try {
+            if (requestKey == null || !UUID.fromString(requestKey).toString().equals(requestKey)) throw new IllegalArgumentException();
+        } catch (IllegalArgumentException error) {
+            throw new IllegalArgumentException("Purchase request key is invalid.");
+        }
     }
 
     /**
@@ -109,17 +185,24 @@ public class ZnackPurchaseCoordinator {
     public void retryIntroduction(Settings settings, String gtin) throws Exception {
         ZnackPurchasePipelineState pipeline = repository.findLatestIntroductionFailedPipeline(gtin)
                 .orElseThrow(() -> new IllegalStateException("No failed introduction to retry for GTIN " + gtin));
+        retryIntroduction(settings, pipeline.id());
+    }
+
+    public void retryIntroduction(Settings settings, long pipelineId) throws Exception {
+        ZnackPurchasePipelineState pipeline = repository.findPipeline(pipelineId)
+                .filter(candidate -> candidate.stage() == PurchaseStage.INTRODUCTION_FAILED)
+                .orElseThrow(() -> new IllegalStateException("No failed introduction to retry for pipeline " + pipelineId));
         if (pipeline.orderId() == null || repository.findCodes(pipeline.orderId()).isEmpty()) {
             throw new IllegalStateException("The failed introduction has no downloaded codes to retry.");
         }
         synchronized (CREATE_LOCK) {
-            if (repository.findActivePipeline(gtin).isPresent()) {
-                throw new IllegalStateException("A KIZ purchase pipeline is already active for GTIN " + gtin);
+            if (repository.findActivePipeline(pipeline.gtin()).isPresent()) {
+                throw new IllegalStateException("A KIZ purchase pipeline is already active for GTIN " + pipeline.gtin());
             }
             repository.updatePipeline(pipeline.id(), pipeline.orderId(),
                     PurchaseStage.WAITING_INTRODUCTION_READINESS, null);
         }
-        repository.log("INTRODUCTION_RETRY", gtin, "INFO", "RETRY_REQUESTED", null);
+        repository.log("INTRODUCTION_RETRY", pipeline.gtin(), "INFO", "RETRY_REQUESTED", null);
         try {
             advance(settings, pipeline.id());
         } finally {

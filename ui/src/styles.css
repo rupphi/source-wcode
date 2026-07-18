@@ -218,6 +218,18 @@ input:focus-visible {
   color: var(--warning);
 }
 
+.status-danger {
+  border-color: color-mix(in srgb, var(--danger) 20%, var(--border-subtle));
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.status-info {
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--border-subtle));
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
 .template-canvas {
   background-image:
     linear-gradient(rgb(20 35 29 / 0.045) 1px, transparent 1px),

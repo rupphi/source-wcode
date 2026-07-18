@@ -3,8 +3,10 @@ package com.tuandev.fbsbarcode.integration.znack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.util.List;
+import java.util.UUID;
 
 public final class ZnackSchemaSupport {
     public static final String AMBIGUOUS_MIGRATION_NOTICE = "znack_ambiguous_migration_notice";
@@ -20,6 +22,7 @@ public final class ZnackSchemaSupport {
             migrateLegacy(connection);
         }
         createTables(connection);
+        addPurchaseIdempotencyColumns(connection);
         addCryptoProColumns(connection);
         addIntroductionColumns(connection);
         addInventoryColumns(connection);
@@ -198,7 +201,7 @@ public final class ZnackSchemaSupport {
             st.execute("""
                     CREATE TABLE IF NOT EXISTS znack_purchase_pipelines(
                     id INTEGER PRIMARY KEY AUTOINCREMENT,shop_id INTEGER NOT NULL,gtin TEXT NOT NULL,quantity INTEGER NOT NULL,
-                    order_id INTEGER,stage TEXT NOT NULL,error_message TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,
+                    order_id INTEGER,request_key TEXT,stage TEXT NOT NULL,error_message TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,
                     FOREIGN KEY(shop_id,gtin) REFERENCES znack_products(shop_id,gtin) ON DELETE CASCADE,
                     FOREIGN KEY(shop_id,order_id) REFERENCES kiz_orders(shop_id,id),
                     FOREIGN KEY(shop_id) REFERENCES shops(id) ON DELETE CASCADE)
@@ -230,6 +233,33 @@ public final class ZnackSchemaSupport {
                     ON znack_purchase_pipelines(shop_id,gtin)
                     WHERE stage NOT IN ('COMPLETED','INTRODUCED','FAILED','INTRODUCTION_FAILED',
                                         'INTRODUCTION_SKIPPED_MISSING_DOCUMENTS','INTRODUCTION_SKIPPED_MISSING_METADATA')
+                    """);
+        }
+    }
+
+    private static void addPurchaseIdempotencyColumns(Connection c) throws SQLException {
+        if (!tableExists(c, "znack_purchase_pipelines")) return;
+        try (Statement st = c.createStatement()) {
+            if (!hasColumn(c, "znack_purchase_pipelines", "request_key")) {
+                st.execute("ALTER TABLE znack_purchase_pipelines ADD COLUMN request_key TEXT");
+            }
+            try (ResultSet rows = st.executeQuery(
+                    "SELECT id,shop_id FROM znack_purchase_pipelines WHERE request_key IS NULL")) {
+                try (PreparedStatement update = c.prepareStatement(
+                        "UPDATE znack_purchase_pipelines SET request_key=? WHERE id=? AND request_key IS NULL")) {
+                    while (rows.next()) {
+                        String seed = "wcode-znack-purchase:" + rows.getInt("shop_id") + ":" + rows.getLong("id");
+                        update.setString(1, UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8)).toString());
+                        update.setLong(2, rows.getLong("id"));
+                        update.addBatch();
+                    }
+                    update.executeBatch();
+                }
+            }
+            st.execute("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS uq_znack_purchase_pipeline_request
+                    ON znack_purchase_pipelines(shop_id,request_key)
+                    WHERE request_key IS NOT NULL
                     """);
         }
     }

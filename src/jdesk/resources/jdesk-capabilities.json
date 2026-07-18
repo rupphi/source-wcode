@@ -13,6 +13,8 @@
     { "capability": "znack:configure", "windows": ["main"] },
     { "capability": "znack:certificate", "windows": ["main"] },
     { "capability": "znack:sync", "windows": ["main"] },
+    { "capability": "znack:purchase", "windows": ["main"] },
+    { "capability": "znack:introduction", "windows": ["main"] },
     { "capability": "znack:products:write", "windows": ["main"] },
     { "capability": "orders:import", "windows": ["main"] },
     { "capability": "printing:read", "windows": ["main"] },

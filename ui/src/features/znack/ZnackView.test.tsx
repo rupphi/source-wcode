@@ -13,8 +13,14 @@ vi.mock("../../generated/commands", () => ({
       startProductSync: vi.fn(),
       productSyncStatus: vi.fn(),
       cancelProductSync: vi.fn(),
+      operationLogs: vi.fn(),
+      preparePurchase: vi.fn(),
+      purchaseStatus: vi.fn(),
+      purchases: vi.fn(),
+      retryIntroduction: vi.fn(),
       saveSettings: vi.fn(),
       setProductVisibility: vi.fn(),
+      startPurchase: vi.fn(),
       settings: vi.fn(),
     },
   },
@@ -29,9 +35,16 @@ const testCertificate = vi.mocked(commands.znack.testCertificate);
 const startProductSync = vi.mocked(commands.znack.startProductSync);
 const productSyncStatus = vi.mocked(commands.znack.productSyncStatus);
 const cancelProductSync = vi.mocked(commands.znack.cancelProductSync);
+const operationLogs = vi.mocked(commands.znack.operationLogs);
+const preparePurchase = vi.mocked(commands.znack.preparePurchase);
+const purchaseStatus = vi.mocked(commands.znack.purchaseStatus);
+const loadPurchases = vi.mocked(commands.znack.purchases);
+const retryIntroduction = vi.mocked(commands.znack.retryIntroduction);
+const startPurchase = vi.mocked(commands.znack.startPurchase);
 const gtin = "04601234567890";
 const secondGtin = "04601234567891";
 const secret = "znack-private-selector-must-not-enter-the-dom";
+const purchaseId = "44444444-4444-4444-8444-444444444444";
 
 function settings(version = "a".repeat(64)) {
   return {
@@ -62,6 +75,24 @@ function product(currentGtin = gtin, name = "Ботинки Alpine", deleted = f
   };
 }
 
+function purchase(stage = "polling_order", state = "running") {
+  return {
+    purchaseId,
+    gtin,
+    productName: "Ботинки Alpine",
+    quantity: 2,
+    stage,
+    state,
+    downloadedCodes: state === "completed" ? 2 : 0,
+    progress: state === "completed" ? 100 : 35,
+    errorKind: "",
+    retryable: state === "running",
+    canRetryIntroduction: false,
+    createdAt: "2026-07-18T00:00:00Z",
+    updatedAt: "2026-07-18T00:01:00Z",
+  };
+}
+
 describe("ZnackView", () => {
   beforeEach(() => {
     loadSettings.mockReset();
@@ -73,6 +104,12 @@ describe("ZnackView", () => {
     startProductSync.mockReset();
     productSyncStatus.mockReset();
     cancelProductSync.mockReset();
+    operationLogs.mockReset();
+    preparePurchase.mockReset();
+    purchaseStatus.mockReset();
+    loadPurchases.mockReset();
+    retryIntroduction.mockReset();
+    startPurchase.mockReset();
     loadSettings.mockResolvedValue(settings());
     saveSettings.mockResolvedValue(settings("b".repeat(64)));
     loadProducts.mockImplementation(async (request) => ({
@@ -125,6 +162,41 @@ describe("ZnackView", () => {
       cancelRequested: true,
       shopId: 7,
       jobId: "33333333-3333-4333-8333-333333333333",
+    });
+    preparePurchase.mockResolvedValue({
+      shopId: 7,
+      purchaseId,
+      gtin,
+      productName: "Ботинки Alpine",
+      quantity: 2,
+      autoIntroduction: true,
+      warnings: ["automatic_introduction"],
+      expiresAt: "2026-07-18T00:10:00Z",
+      version: "a".repeat(64),
+    });
+    startPurchase.mockResolvedValue({ accepted: true, purchase: purchase() });
+    loadPurchases.mockResolvedValue({
+      shopId: 7,
+      page: 1,
+      pageSize: 50,
+      hasMore: false,
+      items: [purchase()],
+    });
+    purchaseStatus.mockResolvedValue(purchase("completed", "completed"));
+    retryIntroduction.mockResolvedValue(purchase("waiting_introduction_readiness", "running"));
+    operationLogs.mockResolvedValue({
+      shopId: 7,
+      page: 1,
+      pageSize: 50,
+      hasMore: false,
+      items: [{
+        action: "purchase_pipeline",
+        entityGtin: gtin,
+        severity: "error",
+        messageKind: "upstream_error",
+        httpClass: "5xx",
+        createdAt: "2026-07-18T00:02:00Z",
+      }],
     });
   });
 
@@ -320,5 +392,114 @@ describe("ZnackView", () => {
     });
     await user.click(screen.getByRole("tab", { name: "Товары" }));
     expect(await screen.findByText("Локальный каталог Znack пока пуст")).toBeVisible();
+  });
+
+  it("previews and explicitly confirms a KIZ purchase before showing persisted progress", async () => {
+    const user = userEvent.setup();
+    purchaseStatus
+      .mockResolvedValueOnce(purchase("downloading_codes", "running"))
+      .mockResolvedValueOnce(purchase("completed", "completed"));
+    render(<ZnackView shopId={7} />);
+    await screen.findByDisplayValue("OMS-7");
+    await user.click(screen.getByRole("tab", { name: "Товары" }));
+    await screen.findByText("Ботинки Alpine");
+
+    await user.click(screen.getByRole("button", { name: `Купить КИЗ для ${gtin}` }));
+    const quantity = screen.getByRole("spinbutton", { name: "Количество КИЗ" });
+    await user.clear(quantity);
+    await user.type(quantity, "2");
+    await user.click(screen.getByRole("button", { name: "Подготовить покупку" }));
+
+    expect(preparePurchase).toHaveBeenCalledWith({
+      shopId: 7,
+      gtin,
+      quantity: 2,
+      version: "a".repeat(64),
+    });
+    expect(await screen.findByText("Автоматический ввод в оборот включён")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Подтвердить покупку КИЗ" }));
+    expect(startPurchase).toHaveBeenCalledWith({
+      shopId: 7,
+      purchaseId,
+      version: "a".repeat(64),
+      confirmed: true,
+    });
+
+    expect(await screen.findByRole("tab", { name: "Покупки" })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText("Коды загружены: 2 из 2")).toBeVisible();
+    await waitFor(() => expect(purchaseStatus).toHaveBeenCalledTimes(2));
+    expect(purchaseStatus).toHaveBeenLastCalledWith({ shopId: 7, purchaseId });
+    expect(document.body).not.toHaveTextContent(secret);
+  });
+
+  it("shows bounded purchase recovery and sanitized operation journal", async () => {
+    const user = userEvent.setup();
+    loadPurchases.mockResolvedValueOnce({
+      shopId: 7,
+      page: 1,
+      pageSize: 50,
+      hasMore: false,
+      items: [{
+        ...purchase("introduction_failed", "attention"),
+        downloadedCodes: 2,
+        progress: 100,
+        errorKind: "introduction_failed",
+        retryable: true,
+        canRetryIntroduction: true,
+      }],
+    });
+    render(<ZnackView shopId={7} />);
+    await screen.findByDisplayValue("OMS-7");
+    await user.click(screen.getByRole("tab", { name: "Покупки" }));
+
+    expect(await screen.findByText("Ввод в оборот требует внимания")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: `Повторить ввод в оборот для ${gtin}` }));
+    expect(await screen.findByText("Коды уже куплены и не будут заказаны повторно.")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Подтвердить повтор ввода в оборот" }));
+    expect(retryIntroduction).toHaveBeenCalledWith({
+      shopId: 7,
+      purchaseId,
+      version: "a".repeat(64),
+      confirmed: true,
+    });
+
+    await user.click(screen.getByRole("tab", { name: "Журнал" }));
+    expect(await screen.findByText("Ошибка внешнего сервиса")).toBeVisible();
+    expect(screen.getByText("HTTP 5xx")).toBeVisible();
+    expect(operationLogs).toHaveBeenCalledWith({ shopId: 7, page: 1, pageSize: 50 });
+    expect(document.body).not.toHaveTextContent(secret);
+  });
+
+  it("rejects malformed purchase and journal responses before rendering bridge data", async () => {
+    const user = userEvent.setup();
+    loadPurchases.mockResolvedValueOnce({
+      shopId: 7,
+      page: 1,
+      pageSize: 50,
+      hasMore: false,
+      items: [{ ...purchase(), stage: secret }],
+    });
+    operationLogs.mockResolvedValueOnce({
+      shopId: 7,
+      page: 1,
+      pageSize: 50,
+      hasMore: false,
+      items: [{
+        action: "purchase_pipeline",
+        entityGtin: secret,
+        severity: "error",
+        messageKind: "upstream_error",
+        httpClass: "5xx",
+        createdAt: "2026-07-18T00:02:00Z",
+      }],
+    });
+    render(<ZnackView shopId={7} />);
+    await screen.findByDisplayValue("OMS-7");
+
+    await user.click(screen.getByRole("tab", { name: "Покупки" }));
+    expect(await screen.findByText("Не удалось загрузить покупки Znack")).toBeVisible();
+    await user.click(screen.getByRole("tab", { name: "Журнал" }));
+    expect(await screen.findByText("Не удалось загрузить журнал Znack")).toBeVisible();
+    expect(document.body).not.toHaveTextContent(secret);
   });
 });

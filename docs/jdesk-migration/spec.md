@@ -120,10 +120,29 @@ luồng hiện tại trong UI mới, nhanh, rõ trạng thái, dùng được b�
   sync bắt đầu, interrupt network wait khi có thể, nhưng không hứa rollback các batch local đã commit
   atomically bởi legacy sync. Completed/failed/cancelled job giữ bounded trong bộ nhớ và retry tạo job
   mới; token, API response, participant identity và raw error không qua bridge.
+- `znack.preparePurchase` chỉ đọc local state, yêu cầu production GTIN đang active, quantity 1–10.000,
+  settings version hiện hành, verified certificate và không có pipeline active. Response là preview
+  shop-scoped TTL 10 phút với UUID purchase opaque, tên/GTIN/quantity, auto-introduction flag và
+  warning allowlist; không gọi Znack và không tạo đơn.
+- `znack.startPurchase` dùng capability `znack:purchase`, yêu cầu preview UUID còn hạn, version hiện
+  hành và xác nhận explicit từ dialog. Purchase UUID được persist thành unique idempotency key trước
+  khi worker gọi remote; replay cùng UUID trả cùng pipeline, kể cả sau restart, và không thể tạo đơn
+  thứ hai. Worker re-resolve settings/product trước mutation. `CREATING_ORDER` sau kết quả mơ hồ là
+  terminal-manual state: tuyệt đối không auto retry vì có thể đã tính phí.
+- `znack.purchases`, `znack.purchaseStatus` và `znack.retryIntroduction` là shop-scoped, bounded và
+  dùng purchase UUID opaque. DTO chỉ trả product label, GTIN, quantity, stage/state allowlist, aggregate
+  downloaded count, timestamp, safe error kind/retry flags. Retry introduction chỉ tái dùng mã đã tải
+  của pipeline `INTRODUCTION_FAILED`, không mua lại mã; command re-resolve verified settings và chặn
+  concurrent pipeline. Progress event chỉ advisory, polling persisted status là authoritative.
+- `znack.operationLogs` phân trang local journal theo shop và trả action/severity/message đã sanitize,
+  HTTP class allowlist cùng timestamp. Local DB id, external order/document id, raw KIZ, signature,
+  participant/token, request/response/payload, SQL/stack trace và raw upstream error không qua bridge.
 - React phải có loading/empty/error/retry, bounded search/category/page, dirty/stale settings state,
-  explicit save, certificate discover/select/test, resumable sync status/cancel và reversible
-  hide/restore feedback. Thay shop phải vô hiệu response/session/job cũ. Live native CryptoPro/remote
-  sync chỉ chạy khi có approval; unavailable/empty states có thể smoke trên isolated app-data.
+  explicit save, certificate discover/select/test, resumable sync status/cancel, reversible
+  hide/restore feedback, purchase preview/confirmation, persisted progress, introduction retry và
+  bounded audit journal. Thay shop phải vô hiệu response/session/job cũ. Live native CryptoPro/remote
+  sync/purchase/introduction chỉ chạy khi có approval; unavailable/seeded local states có thể smoke
+  trên isolated app-data.
 
 ## Tech Stack
 

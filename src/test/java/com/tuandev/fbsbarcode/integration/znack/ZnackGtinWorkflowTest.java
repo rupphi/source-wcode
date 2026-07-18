@@ -314,6 +314,43 @@ class ZnackGtinWorkflowTest {
         assertEquals(1, new ZnackGtinInventoryService().availableCount(1, A));
     }
 
+    @Test void persistedPurchaseRequestKeyMakesCompletedAndInFlightReplaysIdempotent() throws Exception {
+        Settings settings = testedSettings();
+        AtomicInteger buys = new AtomicInteger();
+        ZnackKizOrderService orderService = new ZnackKizOrderService(null,null,null,repository) {
+            @Override public KizOrder buy(Settings ignored, String gtin, int quantity) {
+                buys.incrementAndGet();
+                long id = repository.createDraft(gtin, quantity);
+                repository.updateOrder(id, "external", "CREATED", OrderStatus.SUBMITTED, null);
+                return repository.findOrder(id).orElseThrow();
+            }
+            @Override public KizOrder refresh(Settings ignored, long id) {
+                repository.updateOrder(id, null, "READY", OrderStatus.CODES_READY, null);
+                return repository.findOrder(id).orElseThrow();
+            }
+        };
+        ZnackKizCodeService codeService = new ZnackKizCodeService(null,null,repository) {
+            @Override public int download(Settings ignored, long id) {
+                KizOrder order = repository.findOrder(id).orElseThrow();
+                int inserted = repository.insertCodes(id, order.gtin(), new DownloadedCodes(List.of("idempotent-code"), "b"));
+                repository.updateOrder(id, null, "READY", OrderStatus.CODES_DOWNLOADED, null);
+                return inserted;
+            }
+        };
+        String requestKey = "7bdb5a31-fc71-4ab2-91ff-a7529e1816f5";
+        ZnackPurchaseCoordinator coordinator = new ZnackPurchaseCoordinator(repository, orderService, codeService, null);
+
+        long first = coordinator.start(settings, A, 1, requestKey);
+        assertEquals(first, coordinator.start(settings, A, 1, requestKey));
+        coordinator.resume(settings);
+        assertEquals(PurchaseStage.COMPLETED, repository.findPipeline(first).orElseThrow().stage());
+        assertEquals(first, new ZnackPurchaseCoordinator(repository, orderService, codeService, null)
+                .start(settings, A, 1, requestKey));
+        assertEquals(1, buys.get());
+        assertThrows(IllegalArgumentException.class, () -> coordinator.start(settings, A, 2, requestKey));
+        assertEquals(1, buys.get());
+    }
+
     @Test void ambiguousCreateIsPersistedAndNeverRetriedAutomatically() throws Exception {
         Settings settings = testedSettings();
         AtomicInteger buys = new AtomicInteger();
@@ -826,6 +863,27 @@ class ZnackGtinWorkflowTest {
 
         assertTrue(fresh > failed);
         assertEquals(PurchaseStage.INTRODUCTION_FAILED, repository.findPipeline(failed).orElseThrow().stage());
+    }
+
+    @Test void introductionRetryTargetsTheSelectedPipelineWhenOneGtinHasSeveralFailures() throws Exception {
+        long firstOrder = repository.createDraft(A, 1);
+        repository.insertCodes(firstOrder, A, new DownloadedCodes(List.of("retry-selected-pipeline"), "first"));
+        long firstPipeline = repository.createPipeline(A, 1);
+        repository.updatePipeline(firstPipeline, firstOrder, PurchaseStage.INTRODUCTION_FAILED, "first failure");
+        long newerOrder = repository.createDraft(A, 1);
+        repository.insertCodes(newerOrder, A, new DownloadedCodes(List.of("leave-newer-pipeline"), "second"));
+        long newerPipeline = repository.createPipeline(A, 1);
+        repository.updatePipeline(newerPipeline, newerOrder, PurchaseStage.INTRODUCTION_FAILED, "newer failure");
+        ZnackPurchaseCoordinator coordinator = new ZnackPurchaseCoordinator(repository, null, null, null) {
+            @Override void schedule(long ignoredPipeline) {
+            }
+        };
+
+        coordinator.retryIntroduction(testedSettings(), firstPipeline);
+
+        assertEquals(PurchaseStage.COMPLETED, repository.findPipeline(firstPipeline).orElseThrow().stage());
+        assertEquals(PurchaseStage.INTRODUCTION_FAILED,
+                repository.findPipeline(newerPipeline).orElseThrow().stage());
     }
 
     @Test void introductionProcessedWithErrorsBecomesRetryableWithoutBlockingNewPurchases() throws Exception {
