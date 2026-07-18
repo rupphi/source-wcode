@@ -1,6 +1,8 @@
 package com.tuandev.fbsbarcode.jdesk;
 
 import com.tuandev.fbsbarcode.BuildConfig;
+import com.tuandev.fbsbarcode.jdesk.supply.SupplyCommandService;
+import com.tuandev.fbsbarcode.jdesk.supply.SupplyCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.wildberries.WildberriesCommandService;
 import com.tuandev.fbsbarcode.jdesk.wildberries.WildberriesCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.workspace.JDeskCommands;
@@ -27,11 +29,13 @@ public final class WCodeDesktop {
             boolean smokeTest = Arrays.asList(args).contains("--jdesk-smoke");
             WorkspaceCommandService workspace = new WorkspaceCommandService();
             WildberriesCommandService wildberries = new WildberriesCommandService();
+            SupplyCommandService supplies = new SupplyCommandService();
             JDeskApplication.Builder application = JDeskApplication.builder()
                     .id("com.tuandev.wcode")
                     .commands(JDeskCommands.combine(
                             WorkspaceCommandServiceCommands.create(workspace),
-                            WildberriesCommandServiceCommands.create(wildberries)))
+                            WildberriesCommandServiceCommands.create(wildberries),
+                            SupplyCommandServiceCommands.create(supplies)))
                     .capabilities(Capabilities.fromResource("jdesk-capabilities.json"))
                     .contentSecurityPolicy(Csp.defaults())
                     .window(WindowConfig.builder()
