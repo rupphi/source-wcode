@@ -260,9 +260,11 @@ Vertical slices, each with contract → RED test → Java adapter → React UI �
 - [x] Paginated supply list with search/status/filter.
 - [x] Supply detail and paginated order table with stable sorting/search.
 - [x] Cached product-image preview via asset route, never remote URL or oversized JSON.
-- [ ] Sticker preview via asset route or binary stream as part of the print workflow.
 - [x] Refresh orders/status and restore selection.
-- [ ] Excel import/export and native file dialogs.
+- [x] Excel order import through a native open dialog, bounded parser, opaque paged session and
+      live sticker lookup.
+- [ ] Sticker preview and PDF save/open are intentionally handled as one print transaction in
+      Phase 5. The legacy workflow does not provide a separate Excel-export feature.
 
 ### Checkpoint C: FBS read workflow
 

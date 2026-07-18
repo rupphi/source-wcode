@@ -4,7 +4,7 @@ Baseline: WCode `1.1.7`, branch point `61e8117`, 2026-07-18.
 
 ## Baseline evidence
 
-- `./mvnw -B verify`: **PASS**, 185 tests, 0 failures/errors/skips.
+- `./mvnw -B verify`: **PASS**, 195 tests, 0 failures/errors/skips.
 - Java sources: 180 total; 30 import JavaFX/MaterialFX/Ikonli directly.
 - UI resources: 12 FXML views + JavaFX theme CSS.
 - Existing live database (read-only inventory): 8 shops, 17.922 products, 8.938 supplies,
@@ -29,6 +29,7 @@ Baseline: WCode `1.1.7`, branch point `61e8117`, 2026-07-18.
 | Shop CRUD/token | `ShopDialogService`, `ShopWorkflow` | validated CRUD, masked secret, OS-store migration/rollback | Legacy |
 | Supply list | `SupplyListController` | paginated local list/search/status + detail selection/list-state restore native evidence | Foundation |
 | Supply detail/orders | `SupplyDetailController` | local detail/search/natural sort/page, opaque image assets and live WB refresh native evidence; GTIN pending | Foundation |
+| Excel order import | `ExcelOrderImportService`, `OrderImportWorkflow` | native open dialog, bounded XLSX parser, opaque session, live stickers, server paging/search, no path/secret crossing bridge | Foundation |
 | Deliver supply | `SupplyDetailController.onDeliver` | explicit-confirm mutation test on approved shop | Legacy |
 | FBS packing | `PackingController` | new/preparation/dispatch tabs, selection, create/add | Legacy |
 | Print/export | `OrderExportWorkflow`, print services | PDF parity, save/open, physical 58×40 Windows test | Legacy |
