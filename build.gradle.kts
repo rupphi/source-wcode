@@ -138,6 +138,9 @@ tasks.named<JavaExec>("run") {
         "jdesk.assets.dir",
         layout.projectDirectory.dir("ui/dist").asFile.absolutePath,
     )
+    System.getProperty("wcode.appdata.dir")?.let { appDataDir ->
+        systemProperty("wcode.appdata.dir", appDataDir)
+    }
 }
 
 tasks.register("dev") {

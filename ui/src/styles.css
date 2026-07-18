@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --surface-canvas: #f3f4f1;
+  --surface-elevated: #ffffff;
+  --surface-muted: #edf0eb;
+  --sidebar: #14231d;
+  --text-primary: #17211d;
+  --text-secondary: #66716c;
+  --text-muted: #8b9490;
+  --border-subtle: #dfe4df;
+  --border-strong: #cbd2cc;
+  --accent: #53d397;
+  --accent-strong: #167a50;
+  --accent-soft: #dcf7e9;
+  --shadow-panel: 0 1px 2px rgb(20 35 29 / 0.04), 0 10px 30px rgb(20 35 29 / 0.035);
+  --shadow-control: 0 1px 2px rgb(20 35 29 / 0.05);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  background: var(--surface-canvas);
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--surface-canvas);
+}
+
+button,
+select {
+  font: inherit;
+}
+
+button:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+.icon-button {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  background: var(--surface-elevated);
+  color: var(--text-secondary);
+  transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
+}
+
+.icon-button:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-muted);
+  color: var(--text-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
