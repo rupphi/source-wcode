@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "grants": [
+    { "capability": "workspace:read", "windows": ["main"] },
+    { "capability": "dashboard:read", "windows": ["main"] }
+  ]
+}

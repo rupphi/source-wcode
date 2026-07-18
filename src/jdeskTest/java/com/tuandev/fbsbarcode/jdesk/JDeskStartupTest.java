@@ -1,0 +1,70 @@
+package com.tuandev.fbsbarcode.jdesk;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.Statement;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+class JDeskStartupTest {
+    @TempDir Path tempDir;
+
+    @Test
+    void snapshotsExistingDatabaseOnceBeforeWriterVersionInitializes() throws Exception {
+        Path appData = tempDir.resolve("app-data");
+        Files.createDirectories(appData);
+        Path database = appData.resolve("database.db");
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database);
+                Statement statement = connection.createStatement()) {
+            statement.execute("CREATE TABLE legacy_marker(value TEXT NOT NULL)");
+            statement.execute("INSERT INTO legacy_marker(value) VALUES ('preserve-me')");
+        }
+
+        String previousAppData = System.getProperty("wcode.appdata.dir");
+        System.setProperty("wcode.appdata.dir", appData.toString());
+        try {
+            try (JDeskStartup.Session ignored = JDeskStartup.prepare(appData, "1.1.7")) {
+                assertTrue(hasTable(database, "shops"));
+                assertTrue(Files.exists(appData.resolve("writer-state/jdesk-1.1.7.ready")));
+                assertEquals(1, snapshotCount(appData));
+            }
+
+            try (JDeskStartup.Session ignored = JDeskStartup.prepare(appData, "1.1.7")) {
+                assertEquals(1, snapshotCount(appData));
+            }
+        } finally {
+            if (previousAppData == null) {
+                System.clearProperty("wcode.appdata.dir");
+            } else {
+                System.setProperty("wcode.appdata.dir", previousAppData);
+            }
+        }
+    }
+
+    private static long snapshotCount(Path appData) throws Exception {
+        Path snapshots = appData.resolve("snapshots");
+        if (!Files.exists(snapshots)) {
+            return 0;
+        }
+        try (var entries = Files.list(snapshots)) {
+            return entries.filter(Files::isDirectory).count();
+        }
+    }
+
+    private static boolean hasTable(Path database, String name) throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database);
+                var statement = connection.prepareStatement(
+                        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")) {
+            statement.setString(1, name);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next();
+            }
+        }
+    }
+}
