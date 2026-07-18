@@ -116,6 +116,37 @@ public class WbSupplyRepository {
         }
     }
 
+    public WbSupplySummary findSupplySummary(int shopId, String supplyId) {
+        if (shopId <= 0 || supplyId == null || supplyId.isBlank()) {
+            throw new IllegalArgumentException("Invalid supply lookup");
+        }
+        String sql = """
+                SELECT s.supply_id,
+                       s.name,
+                       s.done,
+                       s.is_b2b,
+                       s.created_at,
+                       COALESCE(NULLIF((
+                           SELECT COUNT(*)
+                           FROM wb_supply_orders so
+                           WHERE so.shop_id = s.shop_id
+                             AND so.supply_id = s.supply_id
+                       ), 0), s.order_count, 0) AS item_count
+                FROM wb_supplies s
+                WHERE s.shop_id = ? AND s.supply_id = ?
+                """;
+        try (Connection conn = Database.getConnection();
+             PreparedStatement statement = conn.prepareStatement(sql)) {
+            statement.setInt(1, shopId);
+            statement.setString(2, supplyId);
+            try (ResultSet rs = statement.executeQuery()) {
+                return rs.next() ? toSummary(rs) : null;
+            }
+        } catch (SQLException exception) {
+            throw new RuntimeException(exception);
+        }
+    }
+
     public SupplyPage findSupplyPage(
             int shopId, String query, Boolean done, int limit, int offset) {
         if (shopId <= 0 || query == null || limit <= 0 || limit > 100 || offset < 0) {

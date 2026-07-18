@@ -14,6 +14,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WbOrderRepositorySupplyDetailsTest {
@@ -339,5 +340,27 @@ class WbOrderRepositorySupplyDetailsTest {
 
         assertEquals(1, result.totalItems());
         assertEquals("WB-LITERAL", result.items().getFirst().getSupplyId());
+    }
+
+    @Test
+    void shouldFindOneSupplyOnlyWithinTheRequestedShop() throws Exception {
+        System.setProperty("wcode.appdata.dir", tempDir.toString());
+        Database.initDatabase();
+        try (Connection conn = Database.getConnection();
+             Statement st = conn.createStatement()) {
+            st.execute("INSERT INTO shops(id, name, api_key) VALUES (1, 'One', 'token'), (2, 'Two', 'token')");
+            st.execute("""
+                    INSERT INTO wb_supplies(shop_id, supply_id, name, done, order_count, created_at, synced_at)
+                    VALUES
+                      (1, 'WB-ONE', 'First', 0, 3, '2026-07-03T00:00:00Z', 'now'),
+                      (2, 'WB-TWO', 'Second', 1, 4, '2026-07-04T00:00:00Z', 'now')
+                    """);
+        }
+
+        WbSupplyRepository repository = new WbSupplyRepository();
+
+        assertEquals("First", repository.findSupplySummary(1, "WB-ONE").getName());
+        assertEquals(3, repository.findSupplySummary(1, "WB-ONE").getItemCount());
+        assertNull(repository.findSupplySummary(1, "WB-TWO"));
     }
 }
