@@ -8,17 +8,28 @@ vi.mock("./generated/commands", () => ({
   commands: {
     workspace: { bootstrap: vi.fn() },
     dashboard: { load: vi.fn() },
+    wildberries: {
+      syncOverview: vi.fn(),
+      syncStatus: vi.fn(),
+      cancelSync: vi.fn(),
+    },
   },
 }));
 
 const bootstrap = vi.mocked(commands.workspace.bootstrap);
 const loadDashboard = vi.mocked(commands.dashboard.load);
+const syncOverview = vi.mocked(commands.wildberries.syncOverview);
+const syncStatus = vi.mocked(commands.wildberries.syncStatus);
+const cancelSync = vi.mocked(commands.wildberries.cancelSync);
 const secret = "wb-secret-that-must-not-enter-the-dom";
 
 describe("App", () => {
   beforeEach(() => {
     bootstrap.mockReset();
     loadDashboard.mockReset();
+    syncOverview.mockReset();
+    syncStatus.mockReset();
+    cancelSync.mockReset();
   });
 
   it("loads sanitized shops and the selected shop dashboard", async () => {
@@ -88,5 +99,79 @@ describe("App", () => {
     expect(document.body).not.toHaveTextContent("raw database details");
     await user.click(screen.getByRole("button", { name: "Повторить" }));
     expect(await screen.findByText("Добавьте магазин, чтобы начать работу")).toBeVisible();
+  });
+
+  it("syncs Wildberries in the background and reloads local KPIs", async () => {
+    const user = userEvent.setup();
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Основной магазин", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard
+      .mockResolvedValueOnce({ shopId: 7, productCount: 10, newOrderCount: 1, openSupplyCount: 2 })
+      .mockResolvedValueOnce({ shopId: 7, productCount: 12, newOrderCount: 1, openSupplyCount: 3 });
+    syncOverview.mockResolvedValue({ accepted: true, shopId: 7, jobId: "job-7" });
+    syncStatus.mockResolvedValue({
+      jobId: "job-7",
+      shopId: 7,
+      state: "completed",
+      products: 2,
+      supplies: 1,
+      orders: 0,
+      statuses: 0,
+      completedAt: "2026-07-18T10:20:00Z",
+      errorKind: "",
+      httpStatus: 0,
+      retryable: false,
+    });
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Синхронизировать с Wildberries" }));
+
+    await waitFor(() => expect(syncOverview).toHaveBeenCalledWith({ shopId: 7 }));
+    await waitFor(() => expect(syncStatus).toHaveBeenCalledWith({ shopId: 7, jobId: "job-7" }));
+    await waitFor(() => expect(loadDashboard).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("Синхронизация завершена")).toBeVisible();
+    expect(screen.getByText("12")).toBeVisible();
+  });
+
+  it("shows an actionable token error without upstream details", async () => {
+    const user = userEvent.setup();
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Основной магазин", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard.mockResolvedValue({
+      shopId: 7,
+      productCount: 10,
+      newOrderCount: 1,
+      openSupplyCount: 2,
+    });
+    syncOverview.mockResolvedValue({ accepted: true, shopId: 7, jobId: "job-7" });
+    syncStatus.mockResolvedValue({
+      jobId: "job-7",
+      shopId: 7,
+      state: "failed",
+      products: 0,
+      supplies: 0,
+      orders: 0,
+      statuses: 0,
+      completedAt: "2026-07-18T10:20:00Z",
+      errorKind: "token_invalid",
+      httpStatus: 401,
+      retryable: false,
+    });
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Синхронизировать с Wildberries" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Токен Wildberries недействителен или не имеет нужных прав",
+    );
+    expect(document.body).not.toHaveTextContent("401");
   });
 });

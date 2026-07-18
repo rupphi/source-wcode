@@ -13,6 +13,10 @@ import {
   Truck,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useWildberriesSync,
+  type WildberriesSyncController,
+} from "./features/wildberries/useWildberriesSync";
 import { commands } from "./generated/commands";
 import type { BootstrapResponse, DashboardResponse, ShopSummary } from "./generated/types";
 
@@ -58,6 +62,7 @@ export function App() {
       }
     }
   }, []);
+  const wildberriesSync = useWildberriesSync(selectedShopId, loadDashboard);
 
   useEffect(() => {
     let active = true;
@@ -159,7 +164,7 @@ export function App() {
           {selectedShop === null ? (
             <EmptyWorkspace />
           ) : (
-            <Dashboard shop={selectedShop} state={dashboard} onRefresh={() => loadDashboard(selectedShop.id)} />
+            <Dashboard shop={selectedShop} state={dashboard} sync={wildberriesSync} />
           )}
         </main>
       </div>
@@ -242,13 +247,14 @@ function ShopPicker({
 function Dashboard({
   shop,
   state,
-  onRefresh,
+  sync,
 }: {
   shop: ShopSummary;
   state: DashboardState;
-  onRefresh: () => void | Promise<void>;
+  sync: WildberriesSyncController;
 }) {
   const data = state.status === "ready" ? state.data : null;
+  const syncing = ["starting", "running", "cancelling"].includes(sync.state.status);
   const metrics = [
     { label: "Товаров в каталоге", value: data?.productCount, icon: Boxes },
     { label: "Новых заказов", value: data?.newOrderCount, icon: PackageSearch },
@@ -274,14 +280,16 @@ function Dashboard({
           <button
             className="inline-flex h-10 items-center gap-2 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-4 text-sm font-semibold shadow-[var(--shadow-control)] transition hover:border-[var(--accent)] hover:text-[var(--accent-strong)] disabled:cursor-wait disabled:opacity-55"
             type="button"
-            onClick={() => void onRefresh()}
-            disabled={state.status === "loading"}
+            onClick={() => void (syncing ? sync.cancel() : sync.start())}
+            disabled={!shop.tokenConfigured || sync.state.status === "cancelling"}
           >
-            <RefreshCw className={state.status === "loading" ? "animate-spin" : ""} size={16} />
-            Обновить
+            <RefreshCw className={syncing ? "animate-spin" : ""} size={16} />
+            {syncing ? "Отменить синхронизацию" : "Синхронизировать с Wildberries"}
           </button>
         </div>
       </section>
+
+      <SyncNotice state={sync.state} />
 
       {state.status === "error" && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
@@ -315,6 +323,61 @@ function Dashboard({
       </section>
     </div>
   );
+}
+
+function SyncNotice({ state }: { state: WildberriesSyncController["state"] }) {
+  if (state.status === "idle") return null;
+  if (state.status === "starting" || state.status === "running" || state.status === "cancelling") {
+    return (
+      <div
+        className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"
+        role="status"
+        aria-live="polite"
+      >
+        {state.status === "cancelling"
+          ? "Останавливаем после безопасного завершения текущего шага…"
+          : "Получаем актуальные данные Wildberries в фоновом режиме…"}
+      </div>
+    );
+  }
+  if (state.status === "completed") {
+    return (
+      <div
+        className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"
+        role="status"
+      >
+        <span className="font-semibold">Синхронизация завершена</span>
+        <span className="ml-2 text-emerald-800">
+          Обновлено: товаров {numberFormat.format(state.result.products)}, поставок{" "}
+          {numberFormat.format(state.result.supplies)}.
+        </span>
+      </div>
+    );
+  }
+  if (state.status === "cancelled") {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700" role="status">
+        Синхронизация остановлена. Уже сохранённые страницы данных оставлены без изменений.
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+      {syncErrorMessage(state.errorKind, state.retryable)}
+    </div>
+  );
+}
+
+function syncErrorMessage(errorKind: string, retryable: boolean): string {
+  if (errorKind === "token_invalid" || errorKind === "token_missing") {
+    return "Токен Wildberries недействителен или не имеет нужных прав. Проверьте настройки магазина.";
+  }
+  if (errorKind === "rate_limited") {
+    return "Wildberries временно ограничил запросы. Повторите синхронизацию позже.";
+  }
+  return retryable
+    ? "Wildberries не завершил синхронизацию. Локальные данные сохранены — можно повторить попытку."
+    : "Синхронизацию нельзя запустить с текущими настройками магазина.";
 }
 
 function EmptyWorkspace() {
