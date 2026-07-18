@@ -25,6 +25,7 @@ describe("App", () => {
     bootstrap.mockResolvedValue({
       app: { name: "WCode", version: "1.1.7" },
       shops: [{ id: 7, name: "Основной магазин", tokenConfigured: true, apiKey: secret }],
+      hasSelectedShop: true,
       selectedShopId: 7,
     } as unknown as Awaited<ReturnType<typeof commands.workspace.bootstrap>>);
     loadDashboard.mockResolvedValue({
@@ -52,6 +53,7 @@ describe("App", () => {
         { id: 7, name: "Основной магазин", tokenConfigured: true },
         { id: 9, name: "Второй магазин", tokenConfigured: false },
       ],
+      hasSelectedShop: true,
       selectedShopId: 7,
     });
     loadDashboard.mockImplementation(async ({ shopId }) => ({
@@ -76,7 +78,8 @@ describe("App", () => {
     bootstrap.mockResolvedValueOnce({
       app: { name: "WCode", version: "1.1.7" },
       shops: [],
-      selectedShopId: null,
+      hasSelectedShop: false,
+      selectedShopId: 0,
     });
 
     render(<App />);

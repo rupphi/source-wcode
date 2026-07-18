@@ -61,10 +61,12 @@ export function App() {
 
   useEffect(() => {
     let active = true;
-    void commands.workspace.bootstrap({}).then(
+    void commands.workspace.bootstrap({ locale: document.documentElement.lang || "ru" }).then(
       (response) => {
         if (!active) return;
-        const initialShopId = response.selectedShopId ?? response.shops[0]?.id ?? null;
+        const initialShopId = response.hasSelectedShop
+          ? response.selectedShopId
+          : (response.shops[0]?.id ?? null);
         setWorkspace({ status: "ready", data: response });
         setSelectedShopId(initialShopId);
         if (initialShopId !== null) {
@@ -88,8 +90,10 @@ export function App() {
     setWorkspace({ status: "loading" });
     setDashboard({ status: "idle" });
     try {
-      const response = await commands.workspace.bootstrap({});
-      const initialShopId = response.selectedShopId ?? response.shops[0]?.id ?? null;
+      const response = await commands.workspace.bootstrap({ locale: document.documentElement.lang || "ru" });
+      const initialShopId = response.hasSelectedShop
+        ? response.selectedShopId
+        : (response.shops[0]?.id ?? null);
       setWorkspace({ status: "ready", data: response });
       setSelectedShopId(initialShopId);
       if (initialShopId !== null) {

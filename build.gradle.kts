@@ -14,6 +14,7 @@ java {
 
 val jdeskVersion = "0.1.3"
 val junitVersion = "5.12.1"
+val jdeskAutomationRuntime = configurations.create("jdeskAutomationRuntime")
 val platform = when {
     System.getProperty("os.name").startsWith("Mac", ignoreCase = true) -> "macos"
     System.getProperty("os.name").startsWith("Windows", ignoreCase = true) -> "windows"
@@ -24,6 +25,7 @@ dependencies {
     implementation("dev.jdesk:jdesk-api:$jdeskVersion")
     implementation("dev.jdesk:jdesk-runtime:$jdeskVersion")
     runtimeOnly("dev.jdesk:jdesk-platform-$platform:$jdeskVersion")
+    jdeskAutomationRuntime("dev.jdesk:jdesk-automation:$jdeskVersion")
     compileOnly("com.fasterxml.jackson.core:jackson-databind:2.19.0")
 
     implementation("com.itextpdf:barcodes:8.0.3")
@@ -129,6 +131,7 @@ tasks.test {
 
 tasks.named<JavaExec>("run") {
     dependsOn("jdeskFrontendBuild")
+    classpath += jdeskAutomationRuntime
     doNotTrackState("launches a desktop application")
     jvmArgs("--enable-native-access=ALL-UNNAMED")
     if (System.getProperty("os.name").startsWith("Mac", ignoreCase = true)) {
@@ -140,6 +143,12 @@ tasks.named<JavaExec>("run") {
     )
     System.getProperty("wcode.appdata.dir")?.let { appDataDir ->
         systemProperty("wcode.appdata.dir", appDataDir)
+    }
+    if (System.getProperty("jdesk.automation")?.toBoolean() == true) {
+        systemProperty("jdesk.automation", "true")
+    }
+    System.getProperty("jdesk.automation.dir")?.let { automationDir ->
+        systemProperty("jdesk.automation.dir", automationDir)
     }
 }
 

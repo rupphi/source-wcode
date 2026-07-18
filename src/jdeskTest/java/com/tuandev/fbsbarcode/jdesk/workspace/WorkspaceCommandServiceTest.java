@@ -5,13 +5,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.tuandev.fbsbarcode.features.dashboard.DashboardKpis;
 import com.tuandev.fbsbarcode.models.Shop;
 import dev.jdesk.api.ErrorCode;
 import dev.jdesk.api.JDeskException;
+import dev.jdesk.runtime.json.JacksonJsonCodec;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 
@@ -26,13 +27,14 @@ class WorkspaceCommandServiceTest {
                 7);
 
         WorkspaceCommandService.BootstrapResponse response = service
-                .bootstrap(new WorkspaceCommandService.BootstrapRequest(), null)
+                .bootstrap(new WorkspaceCommandService.BootstrapRequest("ru"), null)
                 .toCompletableFuture()
                 .join();
 
         assertEquals("WCode", response.app().name());
         assertEquals("1.1.7", response.app().version());
-        assertEquals(Optional.of(7), response.selectedShopId());
+        assertTrue(response.hasSelectedShop());
+        assertEquals(7, response.selectedShopId());
         assertEquals(List.of(new WorkspaceCommandService.ShopSummary(7, "Main shop", true)), response.shops());
         assertFalse(response.toString().contains(SECRET));
     }
@@ -78,6 +80,27 @@ class WorkspaceCommandServiceTest {
     }
 
     @Test
+    void bootstrapRejectsMalformedLocaleBeforeRepositoryAccess() {
+        AtomicBoolean repositoryCalled = new AtomicBoolean();
+        WorkspaceCommandService service = new WorkspaceCommandService(
+                () -> {
+                    repositoryCalled.set(true);
+                    return List.of();
+                },
+                ignored -> new DashboardKpis(0, 0, 0),
+                () -> null,
+                () -> "1.1.7");
+
+        JDeskException error = assertThrows(
+                JDeskException.class,
+                () -> service.bootstrap(
+                        new WorkspaceCommandService.BootstrapRequest("ru<script>"), null));
+
+        assertEquals(ErrorCode.INVALID_REQUEST, error.code());
+        assertFalse(repositoryCalled.get());
+    }
+
+    @Test
     void unexpectedFailureBecomesSafeErrorWithoutCauseOrRawMessage() {
         WorkspaceCommandService service = new WorkspaceCommandService(
                 () -> {
@@ -89,13 +112,55 @@ class WorkspaceCommandServiceTest {
 
         JDeskException error = assertThrows(
                 JDeskException.class,
-                () -> service.bootstrap(new WorkspaceCommandService.BootstrapRequest(), null));
+                () -> service.bootstrap(new WorkspaceCommandService.BootstrapRequest("ru"), null));
 
         assertEquals(ErrorCode.INTERNAL_ERROR, error.code());
         assertTrue(error.publicMessage().startsWith("Operation failed. Reference: "));
         assertFalse(error.publicMessage().contains(SECRET));
         assertNull(error.details());
         assertNull(error.getCause());
+    }
+
+    @Test
+    void readsConfiguredLiveWorkspaceOnlyWhenExplicitlyEnabled() {
+        assumeTrue("1".equals(System.getenv("WCODE_LIVE_READ_SMOKE")));
+        WorkspaceCommandService service = new WorkspaceCommandService();
+
+        WorkspaceCommandService.BootstrapResponse bootstrap = service
+                .bootstrap(new WorkspaceCommandService.BootstrapRequest("ru"), null)
+                .toCompletableFuture()
+                .join();
+
+        assertFalse(bootstrap.shops().isEmpty());
+        assertTrue(bootstrap.shops().stream().allMatch(shop -> shop.id() > 0));
+        assertFalse(bootstrap.toString().toLowerCase().contains("api_key"));
+        if (bootstrap.hasSelectedShop()) {
+            int shopId = bootstrap.selectedShopId();
+            WorkspaceCommandService.DashboardResponse dashboard = service
+                    .loadDashboard(new WorkspaceCommandService.DashboardRequest(shopId), null)
+                    .toCompletableFuture()
+                    .join();
+            assertEquals(shopId, dashboard.shopId());
+        }
+    }
+
+    @Test
+    void bridgeCodecRoundTripsBootstrapWithoutOptionalSupport() {
+        JacksonJsonCodec codec = new JacksonJsonCodec();
+        WorkspaceCommandService.BootstrapRequest request =
+                codec.decode("{\"locale\":\"ru\"}", WorkspaceCommandService.BootstrapRequest.class);
+
+        WorkspaceCommandService service = service(
+                List.of(new Shop(7, "Main shop", SECRET)),
+                new DashboardKpis(12, 3, 2),
+                7);
+        WorkspaceCommandService.BootstrapResponse response =
+                service.bootstrap(request, null).toCompletableFuture().join();
+        String json = codec.encode(response);
+
+        assertTrue(json.contains("\"hasSelectedShop\":true"));
+        assertTrue(json.contains("\"selectedShopId\":7"));
+        assertFalse(json.contains(SECRET));
     }
 
     private static WorkspaceCommandService service(

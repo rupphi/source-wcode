@@ -12,13 +12,14 @@ import dev.jdesk.api.InvocationContext;
 import dev.jdesk.api.RequiresCapability;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.CompletionStage;
 import java.util.function.IntFunction;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 
 public final class WorkspaceCommandService {
     private static final int MAX_SHOP_NAME_LENGTH = 120;
+    private static final Pattern LOCALE_PATTERN = Pattern.compile("[a-z]{2}(?:-[A-Z]{2})?");
 
     private final Supplier<List<Shop>> shops;
     private final IntFunction<DashboardKpis> dashboard;
@@ -49,8 +50,10 @@ public final class WorkspaceCommandService {
     @RequiresCapability("workspace:read")
     public CompletionStage<BootstrapResponse> bootstrap(
             BootstrapRequest request, InvocationContext context) {
-        if (request == null) {
-            throw SafeCommandExecutor.invalidRequest("Bootstrap request is required.");
+        if (request == null
+                || request.locale() == null
+                || !LOCALE_PATTERN.matcher(request.locale()).matches()) {
+            throw SafeCommandExecutor.invalidRequest("A supported locale is required.");
         }
         return SafeCommandExecutor.execute(() -> {
             List<ShopSummary> summaries = requireShops().stream().map(WorkspaceCommandService::toSummary).toList();
@@ -62,7 +65,8 @@ public final class WorkspaceCommandService {
             return new BootstrapResponse(
                     new AppMetadata("WCode", requireVersion(appVersion.get())),
                     summaries,
-                    Optional.ofNullable(selected));
+                    selected != null,
+                    selected == null ? 0 : selected);
         });
     }
 
@@ -113,7 +117,7 @@ public final class WorkspaceCommandService {
         return version;
     }
 
-    public record BootstrapRequest() {
+    public record BootstrapRequest(String locale) {
     }
 
     public record AppMetadata(String name, String version) {
@@ -123,7 +127,7 @@ public final class WorkspaceCommandService {
     }
 
     public record BootstrapResponse(
-            AppMetadata app, List<ShopSummary> shops, Optional<Integer> selectedShopId) {
+            AppMetadata app, List<ShopSummary> shops, boolean hasSelectedShop, int selectedShopId) {
     }
 
     public record DashboardRequest(int shopId) {
