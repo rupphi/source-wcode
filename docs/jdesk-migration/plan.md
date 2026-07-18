@@ -322,7 +322,12 @@ path or add a verified Windows adapter; do not claim parity from macOS/browser p
 - [x] Native-test settings save/restore and product hide/restore on isolated app-data at 1440×857
       and 960×640 with bounded DOM, accessible controls, clean console and no remote mutation.
 - [ ] Port purchase pipeline and progress events with idempotency/recovery.
-- [ ] Port certificate discovery/test and participant product sync without exposing signer material.
+- [x] Port certificate discovery/test through a ten-minute opaque, shop-scoped discovery session;
+      persist verified selection and audit atomically without exposing signer material.
+- [x] Port participant product sync as one bounded, resumable job per shop with safe status/error DTO,
+      cooperative cancellation and explicit non-rollback boundary for already committed local batches.
+- [x] Native-test isolated certificate-empty and unverified-sync states at 1440×857 with clean
+      console, accessible controls, bounded DOM and unchanged signer/audit/product checkpoint.
 - [ ] Port CryptoPro certificate discovery/signing on Windows.
 - [ ] Port introduction status/retry and audit-safe errors.
 

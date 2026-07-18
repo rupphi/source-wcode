@@ -169,7 +169,11 @@ public final class ZnackCommandService {
     }
 
     private SettingsResponse toSettingsResponse(int shopId, Settings settings) {
-        CertificateSummary certificate = certificateSummary(settings, clock.instant());
+        return toSettingsResponse(shopId, settings, clock.instant());
+    }
+
+    static SettingsResponse toSettingsResponse(int shopId, Settings settings, Instant now) {
+        CertificateSummary certificate = certificateSummary(settings, now);
         return new SettingsResponse(
                 shopId,
                 safeSourceText(settings.omsId(), MAX_OMS_ID_LENGTH),
@@ -192,7 +196,9 @@ public final class ZnackCommandService {
         boolean expired = false;
         try {
             JsonObject metadata = JsonParser.parseString(value(settings.certificateMetadataJson())).getAsJsonObject();
-            label = safeSourceText(jsonString(metadata, "subject"), MAX_LABEL_LENGTH);
+            String displayLabel = jsonString(metadata, "label");
+            label = safeSourceText(displayLabel.isBlank() ? jsonString(metadata, "subject") : displayLabel,
+                    MAX_LABEL_LENGTH);
             String validToValue = jsonString(metadata, "validTo");
             if (!validToValue.isBlank()) {
                 Instant expiry = Instant.parse(validToValue);
@@ -379,7 +385,7 @@ public final class ZnackCommandService {
         return value.codePoints().anyMatch(Character::isISOControl);
     }
 
-    private static String settingsVersion(Settings settings) {
+    static String settingsVersion(Settings settings) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             for (Object value : List.of(

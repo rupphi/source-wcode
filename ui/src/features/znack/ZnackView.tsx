@@ -5,6 +5,7 @@ import {
   ChevronRight,
   EyeOff,
   FileText,
+  KeyRound,
   PackageSearch,
   RefreshCw,
   RotateCcw,
@@ -16,7 +17,7 @@ import {
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { commands } from "../../generated/commands";
-import type { ProductsResponse, SettingsResponse } from "../../generated/types";
+import type { CertificateDiscoveryResponse, ProductsResponse, SettingsResponse } from "../../generated/types";
 
 type Tab = "settings" | "products" | "deleted";
 type SettingsState =
@@ -27,6 +28,9 @@ type ProductState =
   | { status: "idle" | "loading" }
   | { status: "error" }
   | { status: "ready"; data: ProductsResponse };
+type CertificateState =
+  | { status: "idle" | "loading" | "error" }
+  | { status: "ready"; data: CertificateDiscoveryResponse };
 
 type SettingsDraft = Pick<
   SettingsResponse,
@@ -66,6 +70,17 @@ function matchesProducts(
     && response.categories.every((category, index) => category === categories[index]);
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+function matchesDiscovery(response: CertificateDiscoveryResponse, shopId: number) {
+  return response.shopId === shopId
+    && UUID.test(response.sessionId)
+    && !Number.isNaN(Date.parse(response.expiresAt))
+    && response.items.length <= 100
+    && response.items.every((item) => UUID.test(item.certificateId)
+      && ["SELECTABLE", "EXPIRED", "NO_PRIVATE_KEY"].includes(item.status));
+}
+
 function signatureCopy(status: string) {
   switch (status) {
     case "VERIFIED":
@@ -73,9 +88,9 @@ function signatureCopy(status: string) {
     case "EXPIRED":
       return { title: "Сертификат истёк", detail: "Выберите и проверьте действующий сертификат.", tone: "danger" };
     case "NOT_VERIFIED":
-      return { title: "Подпись не проверена", detail: "Проверка CryptoPro будет доступна в следующем этапе.", tone: "warning" };
+      return { title: "Подпись не проверена", detail: "Найдите сертификат CryptoPro и подтвердите подпись.", tone: "warning" };
     default:
-      return { title: "Сертификат не настроен", detail: "Настройка CryptoPro будет доступна в следующем этапе.", tone: "neutral" };
+      return { title: "Сертификат не настроен", detail: "Поиск выполняется локально, selector остаётся в Java.", tone: "neutral" };
   }
 }
 
@@ -94,6 +109,9 @@ export function ZnackView({ shopId }: { shopId: number }) {
   const [settingsNotice, setSettingsNotice] = useState("");
   const [settingsError, setSettingsError] = useState("");
   const [settingsRetry, setSettingsRetry] = useState(0);
+  const [certificateState, setCertificateState] = useState<CertificateState>({ status: "idle" });
+  const [selectedCertificate, setSelectedCertificate] = useState("");
+  const [testingCertificate, setTestingCertificate] = useState(false);
   const [productState, setProductState] = useState<ProductState>({ status: "idle" });
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
@@ -105,6 +123,8 @@ export function ZnackView({ shopId }: { shopId: number }) {
   const [productNotice, setProductNotice] = useState("");
   const [productError, setProductError] = useState("");
   const [productRetry, setProductRetry] = useState(0);
+  const [syncStarting, setSyncStarting] = useState(false);
+  const [syncJob, setSyncJob] = useState<{ jobId: string; cancelling: boolean } | null>(null);
   const settingsRequest = useRef(0);
   const productsRequest = useRef(0);
 
@@ -162,6 +182,49 @@ export function ZnackView({ shopId }: { shopId: number }) {
       productsRequest.current += 1;
     };
   }, [categories, deleted, page, productRetry, query, shopId, tab]);
+
+  const activeSyncJobId = syncJob?.jobId ?? "";
+  useEffect(() => {
+    if (!activeSyncJobId) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      try {
+        const response = await commands.znack.productSyncStatus({ shopId, jobId: activeSyncJobId });
+        if (!active) return;
+        if (response.shopId !== shopId || response.jobId !== activeSyncJobId
+          || !["running", "completed", "failed", "cancelled"].includes(response.state)
+          || response.products < 0) {
+          throw new Error("Unexpected Znack sync status");
+        }
+        if (response.state === "running") {
+          timer = setTimeout(() => void poll(), 600);
+          return;
+        }
+        setSyncJob(null);
+        if (response.state === "completed") {
+          setProductNotice(`Синхронизировано товаров: ${response.products}`);
+          setProductState({ status: "loading" });
+          setProductRetry((value) => value + 1);
+        } else if (response.state === "cancelled") {
+          setProductNotice("Синхронизация остановлена. Уже сохранённые локальные пакеты не откатываются.");
+        } else {
+          setProductError(response.retryable
+            ? "Синхронизация не завершена. Проверьте соединение и повторите."
+            : "Синхронизация отклонена. Проверьте сертификат и настройки Znack.");
+        }
+      } catch {
+        if (!active) return;
+        setSyncJob(null);
+        setProductError("Не удалось получить статус синхронизации Znack.");
+      }
+    };
+    void poll();
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [activeSyncJobId, shopId]);
 
   const reloadSettings = () => {
     setSettingsState({ status: "loading" });
@@ -222,6 +285,82 @@ export function ZnackView({ shopId }: { shopId: number }) {
       setSettingsError("Не удалось сохранить настройки. Загрузите актуальные данные и повторите.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const discover = async () => {
+    if (settingsDirty || certificateState.status === "loading" || testingCertificate) return;
+    setCertificateState({ status: "loading" });
+    setSelectedCertificate("");
+    setSettingsNotice("");
+    setSettingsError("");
+    try {
+      const response = await commands.znack.discoverCertificates({ shopId });
+      if (!matchesDiscovery(response, shopId)) throw new Error("Unexpected certificate discovery response");
+      setCertificateState({ status: "ready", data: response });
+    } catch {
+      setCertificateState({ status: "error" });
+      setSettingsError("Не удалось найти сертификаты CryptoPro. Проверьте установку и повторите.");
+    }
+  };
+
+  const testSelectedCertificate = async () => {
+    if (settingsState.status !== "ready" || certificateState.status !== "ready"
+      || !selectedCertificate || settingsDirty || testingCertificate) return;
+    setTestingCertificate(true);
+    setSettingsNotice("");
+    setSettingsError("");
+    try {
+      const response = await commands.znack.testCertificate({
+        shopId,
+        sessionId: certificateState.data.sessionId,
+        certificateId: selectedCertificate,
+        version: settingsState.data.version,
+      });
+      if (!matchesSettings(response, shopId) || response.signatureStatus !== "VERIFIED") {
+        throw new Error("Unexpected certificate test response");
+      }
+      setSettingsState({ status: "ready", data: response });
+      setDraft(editable(response));
+      setCertificateState({ status: "idle" });
+      setSelectedCertificate("");
+      setSettingsNotice("Сертификат проверен и сохранён");
+    } catch {
+      setCertificateState({ status: "idle" });
+      setSelectedCertificate("");
+      setSettingsError("Проверка сертификата не выполнена. Найдите сертификаты заново и повторите.");
+    } finally {
+      setTestingCertificate(false);
+    }
+  };
+
+  const startSync = async () => {
+    if (settingsState.status !== "ready" || settingsState.data.signatureStatus !== "VERIFIED"
+      || settingsDirty || syncStarting || syncJob) return;
+    setSyncStarting(true);
+    setProductNotice("");
+    setProductError("");
+    try {
+      const response = await commands.znack.startProductSync({ shopId, version: settingsState.data.version });
+      if (response.shopId !== shopId || !UUID.test(response.jobId)) throw new Error("Unexpected sync response");
+      setSyncJob({ jobId: response.jobId, cancelling: false });
+    } catch {
+      setProductError("Не удалось запустить синхронизацию. Проверьте подпись и настройки Znack.");
+    } finally {
+      setSyncStarting(false);
+    }
+  };
+
+  const cancelSync = async () => {
+    if (!syncJob || syncJob.cancelling) return;
+    const jobId = syncJob.jobId;
+    setSyncJob({ jobId, cancelling: true });
+    try {
+      const response = await commands.znack.cancelProductSync({ shopId, jobId });
+      if (response.shopId !== shopId || response.jobId !== jobId) throw new Error("Unexpected cancel response");
+    } catch {
+      setSyncJob({ jobId, cancelling: false });
+      setProductError("Не удалось запросить остановку синхронизации.");
     }
   };
 
@@ -293,14 +432,14 @@ export function ZnackView({ shopId }: { shopId: number }) {
               <Tag aria-hidden="true" size={21} />
             </div>
             <div>
-              <h3 className="text-lg font-semibold tracking-[-0.02em]">Локальный контур Znack</h3>
+              <h3 className="text-lg font-semibold tracking-[-0.02em]">Защищённый контур Znack</h3>
               <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--text-secondary)]">
-                Настройки и локальный жизненный цикл GTIN. Секретные параметры подписи остаются в Java.
+                CryptoPro, синхронизация каталога и локальный жизненный цикл GTIN без передачи секретов в WebView.
               </p>
             </div>
           </div>
           <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-3 py-1.5 text-xs font-semibold text-[var(--text-secondary)]">
-            <ShieldCheck aria-hidden="true" size={14} /> Локальный контур
+            <ShieldCheck aria-hidden="true" size={14} /> Secure Java bridge
           </div>
         </div>
 
@@ -341,6 +480,12 @@ export function ZnackView({ shopId }: { shopId: number }) {
               onDraft={setDraft}
               onSave={() => void save()}
               onRetry={reloadSettings}
+              certificateState={certificateState}
+              selectedCertificate={selectedCertificate}
+              testingCertificate={testingCertificate}
+              onDiscover={() => void discover()}
+              onSelectCertificate={setSelectedCertificate}
+              onTestCertificate={() => void testSelectedCertificate()}
             />
           </div>
         ) : (
@@ -356,6 +501,10 @@ export function ZnackView({ shopId }: { shopId: number }) {
               mutating={mutating}
               notice={productNotice}
               error={productError}
+              canSync={settingsState.status === "ready"
+                && settingsState.data.signatureStatus === "VERIFIED" && !settingsDirty}
+              syncStarting={syncStarting}
+              syncJob={syncJob}
               onQueryInput={setQueryInput}
               onSearch={search}
               onToggleCategory={toggleCategory}
@@ -364,6 +513,8 @@ export function ZnackView({ shopId }: { shopId: number }) {
               onVisibility={() => void changeVisibility()}
               onPage={changePage}
               onRetry={reloadProducts}
+              onSync={() => void startSync()}
+              onCancelSync={() => void cancelSync()}
             />
           </div>
         )}
@@ -380,9 +531,15 @@ function SettingsPanel({
   saving,
   notice,
   error,
+  certificateState,
+  selectedCertificate,
+  testingCertificate,
   onDraft,
   onSave,
   onRetry,
+  onDiscover,
+  onSelectCertificate,
+  onTestCertificate,
 }: {
   state: SettingsState;
   draft: SettingsDraft | null;
@@ -391,9 +548,15 @@ function SettingsPanel({
   saving: boolean;
   notice: string;
   error: string;
+  certificateState: CertificateState;
+  selectedCertificate: string;
+  testingCertificate: boolean;
   onDraft: (draft: SettingsDraft) => void;
   onSave: () => void;
   onRetry: () => void;
+  onDiscover: () => void;
+  onSelectCertificate: (certificateId: string) => void;
+  onTestCertificate: () => void;
 }) {
   if (state.status === "loading") return <PanelLoading label="Загрузка настроек Znack" />;
   if (state.status === "error" || draft === null) {
@@ -455,6 +618,74 @@ function SettingsPanel({
         </div>
         {state.data.certificateLabel ? <p className="mt-4 text-sm font-medium">{state.data.certificateLabel}</p> : null}
         {state.data.certificateValidTo ? <p className="mt-1 text-xs text-[var(--text-muted)]">Действует до {state.data.certificateValidTo}</p> : null}
+        <div className="mt-4 border-t border-[var(--border-subtle)] pt-4">
+          <button
+            className="secondary-button w-full justify-center"
+            type="button"
+            aria-label="Найти сертификаты CryptoPro"
+            disabled={dirty || certificateState.status === "loading" || testingCertificate}
+            onClick={onDiscover}
+          >
+            {certificateState.status === "loading"
+              ? <RefreshCw aria-hidden="true" className="animate-spin" size={16} />
+              : <KeyRound aria-hidden="true" size={16} />}
+            {certificateState.status === "loading" ? "Поиск…" : "Найти сертификаты"}
+          </button>
+          {dirty ? <p className="mt-2 text-xs leading-5 text-[var(--warning)]">Сначала сохраните изменения настроек.</p> : null}
+          {certificateState.status === "error" ? <p className="mt-2 text-xs text-[var(--danger)]">Поиск не выполнен.</p> : null}
+          {certificateState.status === "ready" ? (
+            <div className="mt-3 space-y-2">
+              {certificateState.data.items.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-[var(--border-subtle)] p-3 text-xs leading-5 text-[var(--text-muted)]">
+                  Доступные сертификаты не найдены.
+                </p>
+              ) : certificateState.data.items.map((certificate) => {
+                const selectable = certificate.status === "SELECTABLE";
+                return (
+                  <label
+                    key={certificate.certificateId}
+                    className={`block rounded-lg border p-3 transition ${selectedCertificate === certificate.certificateId
+                      ? "border-[var(--accent)] bg-[var(--accent-soft)]"
+                      : "border-[var(--border-subtle)] bg-[var(--surface-elevated)]"}`}
+                  >
+                    <span className="flex items-start gap-2">
+                      <input
+                        type="radio"
+                        name="znack-certificate"
+                        className="mt-0.5 accent-[var(--accent)]"
+                        disabled={!selectable || testingCertificate}
+                        checked={selectedCertificate === certificate.certificateId}
+                        onChange={() => onSelectCertificate(certificate.certificateId)}
+                        aria-label={`${certificate.label}${certificate.inn ? `, ИНН ${certificate.inn}` : ""}`}
+                      />
+                      <span className="min-w-0">
+                        <strong className="block truncate text-xs text-[var(--text-primary)]">{certificate.label}</strong>
+                        {certificate.inn ? <span className="mt-1 block text-[11px] text-[var(--text-muted)]">ИНН {certificate.inn}</span> : null}
+                        <span className="mt-1 block text-[11px] text-[var(--text-muted)]">
+                          {certificate.status === "EXPIRED" ? "Срок действия истёк"
+                            : certificate.status === "NO_PRIVATE_KEY" ? "Закрытый ключ недоступен"
+                              : certificate.validTo ? `Действует до ${certificate.validTo}` : "Готов к проверке"}
+                        </span>
+                      </span>
+                    </span>
+                  </label>
+                );
+              })}
+              {certificateState.data.items.length > 0 ? (
+                <button
+                  className="primary-button w-full justify-center"
+                  type="button"
+                  aria-label="Проверить выбранный сертификат"
+                  disabled={!selectedCertificate || testingCertificate}
+                  onClick={onTestCertificate}
+                >
+                  {testingCertificate ? <RefreshCw aria-hidden="true" className="animate-spin" size={16} /> : <ShieldCheck aria-hidden="true" size={16} />}
+                  {testingCertificate ? "Ожидание CryptoPro…" : "Проверить сертификат"}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
         <p className="mt-4 border-t border-[var(--border-subtle)] pt-4 text-xs leading-5 text-[var(--text-muted)]">
           Selector, thumbprint, executable paths и metadata сертификата не передаются в WebView.
         </p>
@@ -474,6 +705,9 @@ function ProductPanel({
   mutating,
   notice,
   error,
+  canSync,
+  syncStarting,
+  syncJob,
   onQueryInput,
   onSearch,
   onToggleCategory,
@@ -482,6 +716,8 @@ function ProductPanel({
   onVisibility,
   onPage,
   onRetry,
+  onSync,
+  onCancelSync,
 }: {
   deleted: boolean;
   state: ProductState;
@@ -493,6 +729,9 @@ function ProductPanel({
   mutating: boolean;
   notice: string;
   error: string;
+  canSync: boolean;
+  syncStarting: boolean;
+  syncJob: { jobId: string; cancelling: boolean } | null;
   onQueryInput: (value: string) => void;
   onSearch: (event: FormEvent) => void;
   onToggleCategory: (category: string) => void;
@@ -501,10 +740,45 @@ function ProductPanel({
   onVisibility: () => void;
   onPage: (page: number) => void;
   onRetry: () => void;
+  onSync: () => void;
+  onCancelSync: () => void;
 }) {
   const data = state.status === "ready" ? state.data : null;
   return (
     <div className="space-y-4">
+      {!deleted || syncJob ? (
+        <div className="flex flex-col gap-3 rounded-xl border border-[var(--border-subtle)] bg-[linear-gradient(120deg,color-mix(in_srgb,var(--accent)_9%,var(--surface-muted)),var(--surface-muted))] p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold">Каталог участника Честный ЗНАК</p>
+            <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
+              Авторизация и подпись выполняются в Java. Локальные пакеты сохраняются последовательно.
+            </p>
+          </div>
+          {syncJob ? (
+            <button
+              className="secondary-button shrink-0"
+              type="button"
+              disabled={syncJob.cancelling}
+              onClick={onCancelSync}
+              aria-label="Остановить синхронизацию товаров Znack"
+            >
+              <RefreshCw aria-hidden="true" className="animate-spin" size={16} />
+              {syncJob.cancelling ? "Остановка…" : "Остановить"}
+            </button>
+          ) : (
+            <button
+              className="primary-button shrink-0"
+              type="button"
+              disabled={!canSync || syncStarting}
+              onClick={onSync}
+              aria-label="Синхронизировать товары Znack"
+            >
+              <RefreshCw aria-hidden="true" className={syncStarting ? "animate-spin" : ""} size={16} />
+              {syncStarting ? "Запуск…" : "Синхронизировать"}
+            </button>
+          )}
+        </div>
+      ) : null}
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h4 className="text-base font-semibold">{deleted ? "Скрытые GTIN" : "Локальный каталог товаров"}</h4>
@@ -546,7 +820,7 @@ function ProductPanel({
       {state.status === "error" ? <PanelError message="Не удалось загрузить каталог Znack" button="Повторить" onRetry={onRetry} /> : null}
       {data && data.items.length === 0 ? (
         <div className="grid min-h-64 place-items-center rounded-xl border border-dashed border-[var(--border-subtle)] bg-[var(--surface-muted)] p-8 text-center">
-          <div><PackageSearch aria-hidden="true" className="mx-auto text-[var(--text-muted)]" size={28} /><h5 className="mt-3 font-semibold">{deleted ? "Скрытых GTIN нет" : "Локальный каталог Znack пока пуст"}</h5><p className="mt-1 text-sm text-[var(--text-muted)]">{deleted ? "Скрытые товары появятся здесь." : "Синхронизация с Znack будет подключена следующим этапом."}</p></div>
+          <div><PackageSearch aria-hidden="true" className="mx-auto text-[var(--text-muted)]" size={28} /><h5 className="mt-3 font-semibold">{deleted ? "Скрытых GTIN нет" : "Локальный каталог Znack пока пуст"}</h5><p className="mt-1 text-sm text-[var(--text-muted)]">{deleted ? "Скрытые товары появятся здесь." : "Проверьте сертификат и запустите синхронизацию каталога."}</p></div>
         </div>
       ) : null}
       {data && data.items.length > 0 ? (

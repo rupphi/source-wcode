@@ -8,6 +8,11 @@ vi.mock("../../generated/commands", () => ({
   commands: {
     znack: {
       products: vi.fn(),
+      discoverCertificates: vi.fn(),
+      testCertificate: vi.fn(),
+      startProductSync: vi.fn(),
+      productSyncStatus: vi.fn(),
+      cancelProductSync: vi.fn(),
       saveSettings: vi.fn(),
       setProductVisibility: vi.fn(),
       settings: vi.fn(),
@@ -19,6 +24,11 @@ const loadSettings = vi.mocked(commands.znack.settings);
 const saveSettings = vi.mocked(commands.znack.saveSettings);
 const loadProducts = vi.mocked(commands.znack.products);
 const setVisibility = vi.mocked(commands.znack.setProductVisibility);
+const discoverCertificates = vi.mocked(commands.znack.discoverCertificates);
+const testCertificate = vi.mocked(commands.znack.testCertificate);
+const startProductSync = vi.mocked(commands.znack.startProductSync);
+const productSyncStatus = vi.mocked(commands.znack.productSyncStatus);
+const cancelProductSync = vi.mocked(commands.znack.cancelProductSync);
 const gtin = "04601234567890";
 const secondGtin = "04601234567891";
 const secret = "znack-private-selector-must-not-enter-the-dom";
@@ -58,6 +68,11 @@ describe("ZnackView", () => {
     saveSettings.mockReset();
     loadProducts.mockReset();
     setVisibility.mockReset();
+    discoverCertificates.mockReset();
+    testCertificate.mockReset();
+    startProductSync.mockReset();
+    productSyncStatus.mockReset();
+    cancelProductSync.mockReset();
     loadSettings.mockResolvedValue(settings());
     saveSettings.mockResolvedValue(settings("b".repeat(64)));
     loadProducts.mockImplementation(async (request) => ({
@@ -73,6 +88,44 @@ describe("ZnackView", () => {
       deleted: request.deleted,
       changed: request.gtins.length,
     }));
+    discoverCertificates.mockResolvedValue({
+      shopId: 7,
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      expiresAt: "2026-07-18T00:10:00Z",
+      items: [{
+        certificateId: "22222222-2222-4222-8222-222222222222",
+        label: "ООО Новый владелец",
+        inn: "7700000000",
+        validFrom: "2025-07-18",
+        validTo: "2027-07-18",
+        hasPrivateKey: true,
+        status: "SELECTABLE",
+      }],
+    });
+    testCertificate.mockResolvedValue({
+      ...settings("c".repeat(64)),
+      certificateLabel: "ООО Новый владелец",
+    });
+    startProductSync.mockResolvedValue({
+      accepted: true,
+      shopId: 7,
+      jobId: "33333333-3333-4333-8333-333333333333",
+    });
+    productSyncStatus.mockResolvedValue({
+      jobId: "33333333-3333-4333-8333-333333333333",
+      shopId: 7,
+      state: "completed",
+      phase: "completed",
+      products: 42,
+      completedAt: "2026-07-18T00:01:00Z",
+      errorKind: "",
+      retryable: false,
+    });
+    cancelProductSync.mockResolvedValue({
+      cancelRequested: true,
+      shopId: 7,
+      jobId: "33333333-3333-4333-8333-333333333333",
+    });
   });
 
   it("loads safe settings and saves only editable fields with the opaque version", async () => {
@@ -140,6 +193,77 @@ describe("ZnackView", () => {
     await user.click(screen.getByRole("button", { name: "Следующая страница товаров Znack" }));
     expect(await screen.findByText("Кеды North")).toBeVisible();
     expect(screen.getByText("Страница 2")).toBeVisible();
+  });
+
+  it("discovers and tests a certificate using only opaque ids and the current version", async () => {
+    const user = userEvent.setup();
+    loadSettings.mockResolvedValue(settings());
+    render(<ZnackView shopId={7} />);
+    await screen.findByDisplayValue("OMS-7");
+
+    await user.click(screen.getByRole("button", { name: "Найти сертификаты CryptoPro" }));
+    expect(await screen.findByText("ООО Новый владелец")).toBeVisible();
+    expect(screen.getByText("ИНН 7700000000")).toBeVisible();
+    await user.click(screen.getByRole("radio", { name: /ООО Новый владелец/ }));
+    await user.click(screen.getByRole("button", { name: "Проверить выбранный сертификат" }));
+
+    expect(testCertificate).toHaveBeenCalledWith({
+      shopId: 7,
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      certificateId: "22222222-2222-4222-8222-222222222222",
+      version: "a".repeat(64),
+    });
+    expect(await screen.findByText("Сертификат проверен и сохранён")).toBeVisible();
+    expect(screen.getByText("ООО Новый владелец")).toBeVisible();
+    expect(document.body).not.toHaveTextContent(secret);
+  });
+
+  it("runs participant product sync as a polled job and refreshes the local catalog", async () => {
+    const user = userEvent.setup();
+    render(<ZnackView shopId={7} />);
+    await screen.findByDisplayValue("OMS-7");
+    await user.click(screen.getByRole("tab", { name: "Товары" }));
+    await screen.findByText("Ботинки Alpine");
+    const readsBeforeSync = loadProducts.mock.calls.length;
+
+    await user.click(screen.getByRole("button", { name: "Синхронизировать товары Znack" }));
+
+    expect(startProductSync).toHaveBeenCalledWith({ shopId: 7, version: "a".repeat(64) });
+    await waitFor(() => expect(productSyncStatus).toHaveBeenCalledWith({
+      shopId: 7,
+      jobId: "33333333-3333-4333-8333-333333333333",
+    }));
+    expect(await screen.findByText("Синхронизировано товаров: 42")).toBeVisible();
+    await waitFor(() => expect(loadProducts.mock.calls.length).toBeGreaterThan(readsBeforeSync));
+    expect(document.body).not.toHaveTextContent(secret);
+  });
+
+  it("requests cooperative cancellation for a running product sync job", async () => {
+    const user = userEvent.setup();
+    productSyncStatus.mockResolvedValue({
+      jobId: "33333333-3333-4333-8333-333333333333",
+      shopId: 7,
+      state: "running",
+      phase: "downloading",
+      products: 0,
+      completedAt: "",
+      errorKind: "",
+      retryable: false,
+    });
+    const view = render(<ZnackView shopId={7} />);
+    await screen.findByDisplayValue("OMS-7");
+    await user.click(screen.getByRole("tab", { name: "Товары" }));
+    await screen.findByText("Ботинки Alpine");
+    await user.click(screen.getByRole("button", { name: "Синхронизировать товары Znack" }));
+
+    const stop = await screen.findByRole("button", { name: "Остановить синхронизацию товаров Znack" });
+    await user.click(stop);
+
+    expect(cancelProductSync).toHaveBeenCalledWith({
+      shopId: 7,
+      jobId: "33333333-3333-4333-8333-333333333333",
+    });
+    view.unmount();
   });
 
   it("hides and restores bounded selections then refreshes the current list", async () => {

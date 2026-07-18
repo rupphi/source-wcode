@@ -37,6 +37,8 @@ import com.tuandev.fbsbarcode.jdesk.workspace.WorkspaceCommandService;
 import com.tuandev.fbsbarcode.jdesk.workspace.WorkspaceCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.znack.ZnackCommandService;
 import com.tuandev.fbsbarcode.jdesk.znack.ZnackCommandServiceCommands;
+import com.tuandev.fbsbarcode.jdesk.znack.ZnackAutomationCommandService;
+import com.tuandev.fbsbarcode.jdesk.znack.ZnackAutomationCommandServiceCommands;
 import com.tuandev.fbsbarcode.shared.AppDataLock;
 import com.tuandev.fbsbarcode.shared.AppPaths;
 import dev.jdesk.api.ApplicationHandle;
@@ -65,6 +67,7 @@ public final class WCodeDesktop {
             FboPrintCommandService fboPrinting = new FboPrintCommandService();
             KizMappingCommandService kizMappings = new KizMappingCommandService();
             ZnackCommandService znack = new ZnackCommandService();
+            ZnackAutomationCommandService znackAutomation = new ZnackAutomationCommandService();
             PackingCommandService packing = new PackingCommandService(orderImages);
             ExcelOrderImportCommandService excelOrders = new ExcelOrderImportCommandService(orderImages);
             PrintCommandService printing = new PrintCommandService();
@@ -86,6 +89,14 @@ public final class WCodeDesktop {
                     FboPrintCommandServiceCommands.create(fboPrinting),
                     "fbo.export",
                     Duration.ofMinutes(10));
+            var znackAutomationCommands = CommandTimeoutOverrides.withTimeout(
+                    ZnackAutomationCommandServiceCommands.create(znackAutomation),
+                    "znack.discoverCertificates",
+                    Duration.ofMinutes(10));
+            znackAutomationCommands = CommandTimeoutOverrides.withTimeout(
+                    znackAutomationCommands,
+                    "znack.testCertificate",
+                    Duration.ofMinutes(10));
             SupplyDetailCommandService supplyDetails = new SupplyDetailCommandService(orderImages);
             SupplyRefreshCommandService supplyRefresh = new SupplyRefreshCommandService();
             JDeskApplication.Builder application = JDeskApplication.builder()
@@ -99,6 +110,7 @@ public final class WCodeDesktop {
                             fboPrintCommands,
                             KizMappingCommandServiceCommands.create(kizMappings),
                             ZnackCommandServiceCommands.create(znack),
+                            znackAutomationCommands,
                             SupplyDetailCommandServiceCommands.create(supplyDetails),
                             SupplyRefreshCommandServiceCommands.create(supplyRefresh),
                             ExcelOrderImportCommandServiceCommands.create(excelOrders),

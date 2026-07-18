@@ -101,11 +101,29 @@ luồng hiện tại trong UI mới, nhanh, rõ trạng thái, dùng được b�
   certificate fields, pipeline payload, deletion timestamp hay remote response.
 - `znack.setProductVisibility` nhận tối đa 100 production GTIN, re-resolve toàn bộ ownership và
   expected active/deleted state trong một `BEGIN IMMEDIATE` transaction rồi mới ẩn/khôi phục và ghi
-  audit log. Partial/stale/cross-shop batch phải rollback; permanent purge, certificate
-  discovery/test và remote sync là command riêng ở increment sau.
+  audit log. Partial/stale/cross-shop batch phải rollback; permanent purge là command riêng ở
+  increment sau.
+- `znack.discoverCertificates` re-resolve shop/settings ở Java, chạy CryptoPro ngoài UI thread và
+  trả tối đa 100 certificate summary đã sanitize. Mỗi certificate dùng UUID opaque, shop-scoped,
+  single-use discovery session TTL 10 phút; selector, thumbprint, subject/issuer đầy đủ, raw output,
+  provider path và executable diagnostics không qua bridge. Summary chỉ gồm owner label, INN,
+  validity dates, private-key/selectable flags và trạng thái allowlist.
+- `znack.testCertificate` yêu cầu discovery session/certificate UUID, settings version hiện hành và
+  capability `znack:certificate`. Java re-resolve opaque ID, expiry/private-key/settings, ký payload
+  test bằng selector nội bộ rồi mới atomically lưu selection/metadata/test timestamp cùng audit.
+  Failed/cancelled/stale tests không thay settings; public error chỉ dùng kind allowlist. Command có
+  timeout 10 phút vì CryptoPro có thể mở PIN prompt.
+- `znack.startProductSync`, `znack.productSyncStatus` và `znack.cancelProductSync` dùng capability
+  `znack:sync`, UUID job shop-scoped và tối đa một job đang chạy trên mỗi shop. Worker re-resolve
+  verified settings, signer và participant API hoàn toàn ở Java; response chỉ có state/phase/count,
+  completion time và safe error kind. Cancel là cooperative: phải ngăn mutation nếu nhận trước khi
+  sync bắt đầu, interrupt network wait khi có thể, nhưng không hứa rollback các batch local đã commit
+  atomically bởi legacy sync. Completed/failed/cancelled job giữ bounded trong bộ nhớ và retry tạo job
+  mới; token, API response, participant identity và raw error không qua bridge.
 - React phải có loading/empty/error/retry, bounded search/category/page, dirty/stale settings state,
-  explicit save và reversible hide/restore feedback. Live native smoke chỉ đọc; lifecycle mutation
-  dùng isolated app-data.
+  explicit save, certificate discover/select/test, resumable sync status/cancel và reversible
+  hide/restore feedback. Thay shop phải vô hiệu response/session/job cũ. Live native CryptoPro/remote
+  sync chỉ chạy khi có approval; unavailable/empty states có thể smoke trên isolated app-data.
 
 ## Tech Stack
 

@@ -8,6 +8,25 @@ import java.time.Instant;
 import java.util.*;
 
 public final class ZnackRepository {
+    private static final String SETTINGS_UPSERT = """
+            INSERT INTO znack_settings(shop_id,true_api_base_url,suz_base_url,oms_id,oms_connection,participant_inn,
+            producer_inn,owner_inn,signer_executable,signer_certificate,signer_arguments_json,document_number,
+            document_date,pdf_folder,auto_introduction,certificate_list_executable,certificate_list_arguments_json,
+            certificate_metadata_json,signer_tested_at,certmgr_path,cryptcp_path,csptest_path,cryptopro_timeout_seconds,
+            document_expiry_date,document_type,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(shop_id) DO UPDATE SET true_api_base_url=excluded.true_api_base_url,suz_base_url=excluded.suz_base_url,
+            oms_id=excluded.oms_id,oms_connection=excluded.oms_connection,participant_inn=excluded.participant_inn,
+            producer_inn=excluded.producer_inn,owner_inn=excluded.owner_inn,signer_executable=excluded.signer_executable,
+            signer_certificate=excluded.signer_certificate,signer_arguments_json=excluded.signer_arguments_json,
+            document_number=excluded.document_number,document_date=excluded.document_date,pdf_folder=excluded.pdf_folder,
+            auto_introduction=excluded.auto_introduction,certificate_list_executable=excluded.certificate_list_executable,
+            certificate_list_arguments_json=excluded.certificate_list_arguments_json,certificate_metadata_json=excluded.certificate_metadata_json,
+            signer_tested_at=excluded.signer_tested_at,certmgr_path=excluded.certmgr_path,cryptcp_path=excluded.cryptcp_path,
+            csptest_path=excluded.csptest_path,cryptopro_timeout_seconds=excluded.cryptopro_timeout_seconds,
+            document_expiry_date=excluded.document_expiry_date,document_type=excluded.document_type,
+            updated_at=excluded.updated_at
+            """;
     private final ShopContext shop;
 
     public ZnackRepository(ShopContext shop) {
@@ -17,10 +36,53 @@ public final class ZnackRepository {
     public ShopContext shop() { return shop; }
 
     public Settings getSettings() {
-        try (Connection c=Database.getConnection(); PreparedStatement ps=c.prepareStatement("SELECT * FROM znack_settings WHERE shop_id=?")) {
-            ps.setInt(1,shop.shopId());
-            try(ResultSet r=ps.executeQuery()){
-                if(!r.next())return Settings.empty();
+        try (Connection c=Database.getConnection()) {
+            return getSettings(c);
+        }catch(SQLException e){throw new RuntimeException(e);}
+    }
+
+    public void saveSettings(Settings s) {
+        try(Connection c=Database.getConnection()){
+            saveSettings(c,s);
+        }catch(SQLException e){throw new RuntimeException(e);}
+    }
+
+    /** Persists a successfully tested selector and its audit entry in one optimistic transaction. */
+    public void saveVerifiedCertificate(Settings expected, Settings verified) {
+        Objects.requireNonNull(expected, "expected");
+        Objects.requireNonNull(verified, "verified");
+        try (Connection connection = Database.getConnection(); Statement transaction = connection.createStatement()) {
+            transaction.execute("BEGIN IMMEDIATE");
+            try {
+                if (!expected.equals(getSettings(connection))) throw new SettingsConflictException();
+                saveSettings(connection, verified);
+                try (PreparedStatement audit = connection.prepareStatement("""
+                        INSERT INTO znack_operation_logs
+                        (shop_id,shop_name,action,entity_reference,severity,message,http_status,created_at)
+                        VALUES(?,?, 'SIGNATURE_TEST',NULL,'INFO','VERIFIED',NULL,?)
+                        """)) {
+                    audit.setInt(1, shop.shopId());
+                    audit.setString(2, shop.shopName());
+                    audit.setString(3, Instant.now().toString());
+                    audit.executeUpdate();
+                }
+                transaction.execute("COMMIT");
+            } catch (SQLException | RuntimeException error) {
+                transaction.execute("ROLLBACK");
+                throw error;
+            }
+        } catch (SettingsConflictException error) {
+            throw error;
+        } catch (SQLException error) {
+            throw new RuntimeException(error);
+        }
+    }
+
+    private Settings getSettings(Connection connection) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT * FROM znack_settings WHERE shop_id=?")) {
+            statement.setInt(1, shop.shopId());
+            try (ResultSet r = statement.executeQuery()) {
+                if (!r.next()) return Settings.empty();
                 return new Settings(r.getString("true_api_base_url"),r.getString("suz_base_url"),r.getString("oms_id"),r.getString("oms_connection"),
                         r.getString("participant_inn"),r.getString("producer_inn"),r.getString("owner_inn"),r.getString("signer_executable"),
                         r.getString("signer_certificate"),r.getString("signer_arguments_json"),r.getString("document_number"),r.getString("document_date"),
@@ -29,30 +91,11 @@ public final class ZnackRepository {
                         r.getString("certmgr_path"),r.getString("cryptcp_path"),r.getString("csptest_path"),r.getInt("cryptopro_timeout_seconds"),
                         r.getString("document_expiry_date"),r.getString("document_type"));
             }
-        }catch(SQLException e){throw new RuntimeException(e);}
+        }
     }
 
-    public void saveSettings(Settings s) {
-        String sql="""
-                INSERT INTO znack_settings(shop_id,true_api_base_url,suz_base_url,oms_id,oms_connection,participant_inn,
-                producer_inn,owner_inn,signer_executable,signer_certificate,signer_arguments_json,document_number,
-                document_date,pdf_folder,auto_introduction,certificate_list_executable,certificate_list_arguments_json,
-                certificate_metadata_json,signer_tested_at,certmgr_path,cryptcp_path,csptest_path,cryptopro_timeout_seconds,
-                document_expiry_date,document_type,updated_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                ON CONFLICT(shop_id) DO UPDATE SET true_api_base_url=excluded.true_api_base_url,suz_base_url=excluded.suz_base_url,
-                oms_id=excluded.oms_id,oms_connection=excluded.oms_connection,participant_inn=excluded.participant_inn,
-                producer_inn=excluded.producer_inn,owner_inn=excluded.owner_inn,signer_executable=excluded.signer_executable,
-                signer_certificate=excluded.signer_certificate,signer_arguments_json=excluded.signer_arguments_json,
-                document_number=excluded.document_number,document_date=excluded.document_date,pdf_folder=excluded.pdf_folder,
-                auto_introduction=excluded.auto_introduction,certificate_list_executable=excluded.certificate_list_executable,
-                certificate_list_arguments_json=excluded.certificate_list_arguments_json,certificate_metadata_json=excluded.certificate_metadata_json,
-                signer_tested_at=excluded.signer_tested_at,certmgr_path=excluded.certmgr_path,cryptcp_path=excluded.cryptcp_path,
-                csptest_path=excluded.csptest_path,cryptopro_timeout_seconds=excluded.cryptopro_timeout_seconds,
-                document_expiry_date=excluded.document_expiry_date,document_type=excluded.document_type,
-                updated_at=excluded.updated_at
-                """;
-        try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement(sql)){
+    private void saveSettings(Connection connection, Settings s) throws SQLException {
+        try (PreparedStatement ps = connection.prepareStatement(SETTINGS_UPSERT)) {
             int i=1;ps.setInt(i++,shop.shopId());ps.setString(i++,s.trueApiBaseUrl());ps.setString(i++,s.suzBaseUrl());ps.setString(i++,s.omsId());
             ps.setString(i++,s.omsConnection());ps.setString(i++,s.participantInn());ps.setString(i++,s.producerInn());ps.setString(i++,s.ownerInn());
             ps.setString(i++,s.signerExecutable());ps.setString(i++,s.signerCertificate());ps.setString(i++,s.signerArgumentsJson());
@@ -60,9 +103,14 @@ public final class ZnackRepository {
             ps.setString(i++,s.certificateListExecutable());ps.setString(i++,s.certificateListArgumentsJson());ps.setString(i++,s.certificateMetadataJson());
             ps.setString(i++,s.signerTestedAt()==null?null:s.signerTestedAt().toString());ps.setString(i++,s.certmgrPath());ps.setString(i++,s.cryptcpPath());
             ps.setString(i++,s.csptestPath());ps.setInt(i++,s.resolvedCryptoProTimeoutSeconds());ps.setString(i++,s.documentExpiryDate());
-            ps.setString(i++,s.documentType());
-            ps.setString(i,Instant.now().toString());ps.executeUpdate();
-        }catch(SQLException e){throw new RuntimeException(e);}
+            ps.setString(i++,s.documentType());ps.setString(i,Instant.now().toString());ps.executeUpdate();
+        }
+    }
+
+    public static final class SettingsConflictException extends RuntimeException {
+        public SettingsConflictException() {
+            super("Znack settings changed concurrently.");
+        }
     }
 
     public void upsertProducts(List<Product> products){
