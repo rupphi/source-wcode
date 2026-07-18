@@ -1,9 +1,10 @@
-import { AlertCircle, ArrowLeft, Check, PackageOpen, Search, SlidersHorizontal } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { AlertCircle, ArrowLeft, Check, PackageOpen, RefreshCw, Search, SlidersHorizontal } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { commands } from "../../generated/commands";
 import type { OrderSortRequest, SupplyDetailResponse, SupplyItem } from "../../generated/types";
 import { OrderTable, OrderTableLoading } from "./OrderTable";
 import { Pagination } from "./SupplyTable";
+import { useSupplyRefresh, type SupplyRefreshState } from "./useSupplyRefresh";
 
 type DetailState =
   | { status: "loading"; requestKey: string }
@@ -22,10 +23,12 @@ export function SupplyDetailView({
   shopId,
   summary,
   onBack,
+  onSupplyRefreshed,
 }: {
   shopId: number;
   summary: SupplyItem;
   onBack: () => void;
+  onSupplyRefreshed: () => void;
 }) {
   const [draftQuery, setDraftQuery] = useState("");
   const [query, setQuery] = useState("");
@@ -35,6 +38,11 @@ export function SupplyDetailView({
   const [state, setState] = useState<DetailState>({ status: "loading", requestKey: "" });
   const requestSequence = useRef(0);
   const requestKey = JSON.stringify([shopId, summary.id, query, page, sort, retryKey]);
+  const reloadLocal = useCallback(async () => {
+    setRetryKey((key) => key + 1);
+    onSupplyRefreshed();
+  }, [onSupplyRefreshed]);
+  const refresh = useSupplyRefresh(shopId, summary.id, reloadLocal);
 
   useEffect(() => {
     const requestId = ++requestSequence.current;
@@ -51,6 +59,11 @@ export function SupplyDetailView({
         if (!active || requestSequence.current !== requestId) return;
         if (!matchesRequest(response, summary.id, query, page, sort)) {
           setState({ status: "error", requestKey });
+          return;
+        }
+        const lastPage = Math.max(1, response.totalPages);
+        if (page > lastPage) {
+          setPage(lastPage);
           return;
         }
         setState({ status: "ready", requestKey, data: response });
@@ -108,12 +121,33 @@ export function SupplyDetailView({
             <h3 className="truncate text-2xl font-semibold tracking-[-0.03em]">{supply.name}</h3>
             <p className="mt-1 font-mono text-xs text-[var(--text-muted)]">{supply.id}</p>
           </div>
-          <div className="rounded-xl bg-[var(--surface-muted)] px-4 py-3 text-right">
-            <p className="text-xs font-semibold text-[var(--text-secondary)]">Заказов в поставке</p>
-            <p className="mt-1 text-2xl font-semibold tabular-nums">{supply.itemCount}</p>
+          <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
+            <div className="rounded-xl bg-[var(--surface-muted)] px-4 py-3 text-right">
+              <p className="text-xs font-semibold text-[var(--text-secondary)]">Заказов в поставке</p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums">{supply.itemCount}</p>
+            </div>
+            <button
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-4 text-sm font-semibold shadow-[var(--shadow-control)] transition hover:border-[var(--accent)] hover:text-[var(--accent-strong)] disabled:cursor-wait disabled:opacity-55"
+              disabled={refresh.state.status === "cancelling"}
+              onClick={() => void (["starting", "running"].includes(refresh.state.status) ? refresh.cancel() : refresh.start())}
+              type="button"
+            >
+              <RefreshCw
+                aria-hidden="true"
+                className={["starting", "running", "cancelling"].includes(refresh.state.status) ? "animate-spin" : ""}
+                size={16}
+              />
+              {refresh.state.status === "starting" || refresh.state.status === "running"
+                ? "Отменить обновление"
+                : refresh.state.status === "cancelling"
+                  ? "Отменяем…"
+                  : "Обновить из Wildberries"}
+            </button>
           </div>
         </div>
       </section>
+
+      <RefreshNotice state={refresh.state} />
 
       <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)] md:p-5">
         <form className="flex flex-col gap-3 sm:flex-row" onSubmit={submitSearch} role="search">
@@ -170,6 +204,55 @@ export function SupplyDetailView({
       )}
     </div>
   );
+}
+
+function RefreshNotice({ state }: { state: SupplyRefreshState }) {
+  if (state.status === "idle") return null;
+  if (state.status === "starting" || state.status === "running" || state.status === "cancelling") {
+    return (
+      <section className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900" role="status" aria-live="polite">
+        {state.status === "cancelling"
+          ? "Останавливаем обновление. Уже сохранённые локальные страницы останутся доступными."
+          : "Получаем заказы и актуальные статусы Wildberries…"}
+      </section>
+    );
+  }
+  if (state.status === "completed") {
+    return (
+      <section className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" role="status" aria-live="polite">
+        <span className="font-semibold">Данные поставки обновлены</span>.{" "}
+        Локально доступно заказов: {state.result.localOrders}.
+      </section>
+    );
+  }
+  if (state.status === "cancelled") {
+    return (
+      <section className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="status" aria-live="polite">
+        Обновление остановлено. Уже полученные данные сохранены локально.
+      </section>
+    );
+  }
+  return (
+    <section className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900" role="alert">
+      <span className="font-semibold">Не удалось обновить поставку.</span>{" "}
+      {refreshErrorMessage(state.errorKind, state.retryable)}
+    </section>
+  );
+}
+
+function refreshErrorMessage(errorKind: string, retryable: boolean): string {
+  if (errorKind === "token_invalid") {
+    return "Проверьте API-токен Wildberries и право Marketplace.";
+  }
+  if (errorKind === "rate_limited") {
+    return "Wildberries ограничил частоту запросов. Повторите через несколько минут.";
+  }
+  if (errorKind === "shop_busy") {
+    return "Для этого магазина уже обновляется другая поставка.";
+  }
+  return retryable
+    ? "Локальные данные сохранены. Проверьте соединение и повторите попытку."
+    : "Проверьте настройки магазина и повторите попытку.";
 }
 
 function matchesRequest(

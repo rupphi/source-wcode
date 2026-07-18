@@ -85,6 +85,7 @@ export function SupplyListView({ shopId }: { shopId: number }) {
         shopId={shopId}
         summary={selectedSupply.item}
         onBack={() => setSelectedSupply(null)}
+        onSupplyRefreshed={() => setRetryKey((key) => key + 1)}
       />
     );
   }

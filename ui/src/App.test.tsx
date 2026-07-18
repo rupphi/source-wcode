@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { JDeskError } from "jdesk-client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { commands } from "./generated/commands";
@@ -8,7 +9,13 @@ vi.mock("./generated/commands", () => ({
   commands: {
     workspace: { bootstrap: vi.fn() },
     dashboard: { load: vi.fn() },
-    supplies: { list: vi.fn(), detail: vi.fn() },
+    supplies: {
+      list: vi.fn(),
+      detail: vi.fn(),
+      refresh: vi.fn(),
+      refreshStatus: vi.fn(),
+      cancelRefresh: vi.fn(),
+    },
     wildberries: {
       syncOverview: vi.fn(),
       syncStatus: vi.fn(),
@@ -21,6 +28,9 @@ const bootstrap = vi.mocked(commands.workspace.bootstrap);
 const loadDashboard = vi.mocked(commands.dashboard.load);
 const listSupplies = vi.mocked(commands.supplies.list);
 const loadSupplyDetail = vi.mocked(commands.supplies.detail);
+const refreshSupply = vi.mocked(commands.supplies.refresh);
+const refreshSupplyStatus = vi.mocked(commands.supplies.refreshStatus);
+const cancelSupplyRefresh = vi.mocked(commands.supplies.cancelRefresh);
 const syncOverview = vi.mocked(commands.wildberries.syncOverview);
 const syncStatus = vi.mocked(commands.wildberries.syncStatus);
 const cancelSync = vi.mocked(commands.wildberries.cancelSync);
@@ -32,6 +42,9 @@ describe("App", () => {
     loadDashboard.mockReset();
     listSupplies.mockReset();
     loadSupplyDetail.mockReset();
+    refreshSupply.mockReset();
+    refreshSupplyStatus.mockReset();
+    cancelSupplyRefresh.mockReset();
     syncOverview.mockReset();
     syncStatus.mockReset();
     cancelSync.mockReset();
@@ -511,5 +524,128 @@ describe("App", () => {
       expect(loadSupplyDetail).toHaveBeenLastCalledWith(expect.objectContaining({ query: "SKU-1", page: 2 })),
     );
     expect(await screen.findByText("ORDER-2")).toBeVisible();
+  });
+
+  it("refreshes supply orders in the background without losing detail selection", async () => {
+    const user = userEvent.setup();
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Основной магазин", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard.mockResolvedValue({ shopId: 7, productCount: 10, newOrderCount: 1, openSupplyCount: 1 });
+    const supply = {
+      id: "WB-GI-1",
+      name: "Поставка Москва",
+      status: "open",
+      mode: "consumer",
+      createdAt: "2026-07-18T10:00:00Z",
+      itemCount: 30,
+    };
+    let refreshed = false;
+    listSupplies.mockImplementation(async () => ({
+      shopId: 7,
+      query: "",
+      status: "all",
+      page: 1,
+      pageSize: 25,
+      totalItems: 1,
+      totalPages: 1,
+      openItems: 1,
+      closedItems: 0,
+      items: [{ ...supply, itemCount: refreshed ? 31 : 30 }],
+    }));
+    loadSupplyDetail.mockImplementation(async (request) => ({
+      supply: { ...supply, itemCount: refreshed ? 31 : 30 },
+      query: request.query,
+      page: request.page,
+      pageSize: request.pageSize,
+      totalItems: 30,
+      totalPages: 2,
+      sort: request.sort,
+      items: [{
+        orderId: `ORDER-${request.page}`,
+        nmId: "1001",
+        name: "Куртка",
+        brand: "Brand",
+        subject: "Одежда",
+        article: "ART-1",
+        color: "Синий",
+        size: "M",
+        russianSize: "44",
+        barcode: "SKU-1",
+        createdAt: "2026-07-18T10:00:00Z",
+        priceKopecks: 10_000,
+        supplierStatus: refreshed ? "complete" : "confirm",
+        wbStatus: refreshed ? "sorted" : "waiting",
+        requiresKiz: false,
+        imagePath: "",
+      }],
+    }));
+    refreshSupply
+      .mockRejectedValueOnce(new JDeskError(
+        "INVALID_REQUEST",
+        "safe public message",
+        { kind: "shop_busy", retryable: true },
+      ))
+      .mockResolvedValueOnce({
+        accepted: true,
+        shopId: 7,
+        supplyId: "WB-GI-1",
+        jobId: "00000000-0000-0000-0000-000000000001",
+      });
+    refreshSupplyStatus.mockImplementation(async () => {
+      refreshed = true;
+      return {
+        jobId: "00000000-0000-0000-0000-000000000001",
+        shopId: 7,
+        supplyId: "WB-GI-1",
+        state: "completed",
+        localOrders: 31,
+        completedAt: "2026-07-18T11:00:00Z",
+        errorKind: "",
+        httpStatus: 0,
+        retryable: false,
+      };
+    });
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Поставки FBS" }));
+    await user.click(await screen.findByRole("button", { name: "Открыть поставку Поставка Москва" }));
+    await user.click(await screen.findByRole("checkbox", { name: "Размер" }));
+    await user.type(screen.getByRole("searchbox", { name: "Поиск заказов" }), "SKU-1");
+    await user.click(screen.getByRole("button", { name: "Найти заказ" }));
+    await user.click(await screen.findByRole("button", { name: "Следующая страница заказов" }));
+    await screen.findByText("ORDER-2");
+
+    await user.click(screen.getByRole("button", { name: "Обновить из Wildberries" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Для этого магазина уже обновляется другая поставка",
+    );
+    expect(document.body).not.toHaveTextContent("safe public message");
+    await user.click(screen.getByRole("button", { name: "Обновить из Wildberries" }));
+
+    await waitFor(() => expect(refreshSupply).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(refreshSupplyStatus).toHaveBeenCalledWith({
+      shopId: 7,
+      supplyId: "WB-GI-1",
+      jobId: "00000000-0000-0000-0000-000000000001",
+    }));
+    await waitFor(() => expect(loadSupplyDetail).toHaveBeenLastCalledWith(expect.objectContaining({
+      shopId: 7,
+      supplyId: "WB-GI-1",
+      query: "SKU-1",
+      page: 2,
+      sort: { bySubject: true, byArticle: true, byColor: true, bySize: false },
+    })));
+    await waitFor(() => expect(listSupplies).toHaveBeenCalledTimes(3));
+    expect(await screen.findByText("Данные поставки обновлены")).toBeVisible();
+    expect(screen.getByText("В доставке")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Поставка Москва" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "К списку поставок" }));
+    const openSupply = await screen.findByRole("button", { name: "Открыть поставку Поставка Москва" });
+    expect(openSupply.closest("tr")).toHaveTextContent("31");
   });
 });
