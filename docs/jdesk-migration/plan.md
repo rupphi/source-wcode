@@ -73,10 +73,10 @@ Feature parity + early Windows native gates
 
 **Acceptance criteria:**
 
-- [ ] Gradle 9.6.1 wrapper and jDesk 0.1.3 resolve only from public registries.
-- [ ] Core sources compile while JavaFX source is explicitly excluded.
-- [ ] Shared dependency versions/resource filtering match the Maven build.
-- [ ] `jdeskDoctor` and empty app classes pass without changing Maven build.
+- [x] Gradle 9.6.1 wrapper and jDesk 0.1.3 resolve only from public registries.
+- [x] Core sources compile while JavaFX source is explicitly excluded.
+- [x] Shared dependency versions/resource filtering match the Maven build.
+- [x] `jdeskDoctor` and empty app classes pass without changing Maven build.
 
 **Verification:** `./gradlew clean classes jdeskDoctor`; `./mvnw -B verify`.
 **Files:** `settings.gradle.kts`, `build.gradle.kts`, Gradle wrapper generated files, `.gitignore`.
@@ -87,9 +87,9 @@ Feature parity + early Windows native gates
 
 **Acceptance criteria:**
 
-- [ ] JavaFX and jDesk request the same app-data lock before database initialization.
-- [ ] A second process fails safely without touching SQLite; tests use isolated app-data paths.
-- [ ] Lock is released on orderly exit and OS process termination.
+- [x] JavaFX and jDesk request the same app-data lock before database initialization.
+- [x] A second process fails safely without touching SQLite; tests use isolated app-data paths.
+- [x] Lock is released on orderly exit and OS process termination.
 
 **Verification:** JUnit contention/release tests and two-process smoke.
 **Files:** shared lock service, JavaFX launcher integration, jDesk main integration, test (max 4).
@@ -100,11 +100,11 @@ Feature parity + early Windows native gates
 
 **Acceptance criteria:**
 
-- [ ] Snapshot dùng SQLite backup API dưới shared lock, bao gồm committed WAL state, rồi verify
+- [x] Snapshot dùng SQLite backup API dưới shared lock, bao gồm committed WAL state, rồi verify
   checksum trước khi migration/writer version tiếp tục.
 - [ ] Snapshot được tạo trước first launch, mỗi schema-changing migration và mỗi canary writer
   version; retention giữ rollback points còn hiệu lực.
-- [ ] Restore cần xác nhận và tạo snapshot/export của database mới hơn trước khi thay thế.
+- [x] Restore cần xác nhận và tạo snapshot/export của database mới hơn trước khi thay thế.
 - [ ] Transaction/version marker fail-closed; recovery CLI ngoài normal DB bootstrap có thể
   list/verify/restore khi cả hai UI không khởi động.
 
@@ -117,9 +117,9 @@ Feature parity + early Windows native gates
 
 **Acceptance criteria:**
 
-- [ ] Test fails for missing command service, then passes after implementation task.
-- [ ] Bootstrap returns app metadata, sanitized shops and selected shop id.
-- [ ] Dashboard command validates shop id and returns local KPIs without API key.
+- [x] Test fails for missing command service, then passes after implementation task.
+- [x] Bootstrap returns app metadata, sanitized shops and selected shop id.
+- [x] Dashboard command validates shop id and returns local KPIs without API key.
 
 **Verification:** `./gradlew test --tests '*WorkspaceCommandServiceTest'`.
 **Files:** `src/jdeskTest/.../WorkspaceCommandServiceTest.java`, test fake/fixture if required.
@@ -130,12 +130,12 @@ Feature parity + early Windows native gates
 
 **Acceptance criteria:**
 
-- [ ] Database initializes before first command.
-- [ ] `workspace.bootstrap` and `dashboard.load` use explicit capabilities.
-- [ ] Central command error boundary converts expected/unexpected failures to safe allowlisted
+- [x] Database initializes before first command.
+- [x] `workspace.bootstrap` and `dashboard.load` use explicit capabilities.
+- [x] Central command error boundary converts expected/unexpected failures to safe allowlisted
   envelopes; fault-injection never exposes raw throwable/upstream/SQL text.
-- [ ] Generated Java registry and TS binding compile.
-- [ ] `--jdesk-smoke` starts and stops cleanly.
+- [x] Generated Java registry and TS binding compile.
+- [x] `--jdesk-smoke` starts and stops cleanly.
 
 **Verification:** RED test becomes green; `./gradlew bindings classes`.
 **Files:** `src/jdesk/java/.../Main.java`, `WorkspaceCommandService.java`, safe error mapper,
@@ -147,9 +147,9 @@ Feature parity + early Windows native gates
 
 **Acceptance criteria:**
 
-- [ ] React 19, Vite 7, Tailwind 4 and jdesk-client are lockfile-pinned.
-- [ ] strict typecheck, lint, Vitest and production build scripts exist.
-- [ ] CSP-compatible build contains no inline/eval requirement.
+- [x] React 19, Vite 7, Tailwind 4 and jdesk-client are lockfile-pinned.
+- [x] strict typecheck, lint, Vitest and production build scripts exist.
+- [x] CSP-compatible build contains no inline/eval requirement.
 - [ ] Production window loads bundled content only; external navigation is blocked or handed to the
   system browser without bridge capabilities.
 
@@ -163,9 +163,9 @@ Feature parity + early Windows native gates
 
 **Acceptance criteria:**
 
-- [ ] Responsive application shell with sidebar/compact navigation and visible focus.
-- [ ] Semantic color/type/spacing tokens support light/dark/system.
-- [ ] Real WCode navigation labels, no placeholder copy or generic AI visual style.
+- [x] Responsive application shell with sidebar/compact navigation and visible focus.
+- [x] Semantic color/type/spacing tokens support light/dark/system.
+- [x] Real WCode navigation labels, no placeholder copy or generic AI visual style.
 
 **Verification:** component tests + 320/768/1024/1440 screenshots.
 **Files:** `ui/src/styles.css`, `ui/src/App.tsx`, `ui/src/components/AppShell.tsx`, shell test.
@@ -176,9 +176,9 @@ Feature parity + early Windows native gates
 
 **Acceptance criteria:**
 
-- [ ] UI loads existing shops through generated command, selects saved/default shop.
-- [ ] Dashboard handles loading, success, empty and error states.
-- [ ] No API key exists in DOM, command response, console or frontend types.
+- [x] UI loads existing shops through generated command, selects saved/default shop.
+- [x] Dashboard handles loading, success, empty and error states.
+- [x] No API key exists in DOM, command response, console or frontend types.
 
 **Verification:** Vitest behavior tests + jDesk automation against temp and live DB.
 **Files:** feature components/hooks/tests, generated bindings only as build output.
@@ -201,12 +201,12 @@ Feature parity + early Windows native gates
 
 ### Checkpoint A: Foundation
 
-- [ ] Legacy Maven verify passes.
-- [ ] jDesk Java/frontend gates pass.
-- [ ] Native app shows existing shop/dashboard data with clean console.
-- [ ] No secret is returned by Java, rendered in DOM after submit or written to console/logs.
-- [ ] Shared live database cannot be opened by both entry points concurrently.
-- [ ] Verified SQLite/WAL snapshot exists for the current writer/schema version.
+- [x] Legacy Maven verify passes.
+- [x] jDesk Java/frontend gates pass.
+- [x] Native app shows existing shop/dashboard data with clean console.
+- [x] No secret is returned by Java, rendered in DOM after submit or written to console/logs.
+- [x] Shared live database cannot be opened by both entry points concurrently.
+- [x] Verified SQLite/WAL snapshot exists for the current writer/schema version.
 - [ ] Fault-injection and external-navigation tests prove exception/capability containment.
 
 ## Phase 2: Wildberries read synchronization

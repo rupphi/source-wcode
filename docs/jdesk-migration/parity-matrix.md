@@ -21,10 +21,11 @@ Baseline: WCode `1.1.7`, branch point `61e8117`, 2026-07-18.
 
 | Area | Legacy source/oracle | Required jDesk evidence | Status |
 | --- | --- | --- | --- |
-| App lifecycle/close guard | `MainApplication`, `Launcher` | smoke start/stop, busy-work close veto, recovery | Legacy |
-| Workspace shell/navigation | `HomeController`, `home-view.fxml` | all destinations, responsive/keyboard, persisted selection | Legacy |
-| Shop sidebar/header | `ShopSidebarController`, `WorkspaceHeaderController` | list/select/edit/delete/sync, no secret in bridge | Legacy |
-| Dashboard | `DashboardController`, `DashboardRepository` | local KPIs + live refresh + all async states | Legacy |
+| App lifecycle/close guard | `MainApplication`, `Launcher` | smoke start/stop, busy-work close veto, recovery | Foundation |
+| Workspace shell/navigation | `HomeController`, `home-view.fxml` | all destinations, responsive/keyboard, persisted selection | Foundation |
+| Shop sidebar/header | `ShopSidebarController`, `WorkspaceHeaderController` | list/select/edit/delete/sync, no secret in bridge | Foundation |
+| Dashboard | `DashboardController`, `DashboardRepository` | local KPIs + live refresh + all async states | Foundation |
+| WB overview sync | `WbSyncWorkflow` | read-only live sync, progress/cancel/retry, KPI refresh | Foundation |
 | Shop CRUD/token | `ShopDialogService`, `ShopWorkflow` | validated CRUD, masked secret, OS-store migration/rollback | Legacy |
 | Supply list | `SupplyListController` | open supply list, refetch, selection restore | Legacy |
 | Supply detail/orders | `SupplyDetailController` | table/detail/filter/sort/status/GTIN refresh | Legacy |
@@ -42,7 +43,7 @@ Baseline: WCode `1.1.7`, branch point `61e8117`, 2026-07-18.
 | Update | `UpdateDialogService`, `UpdateInstallerService` | signed download/install/rollback on Windows | Legacy |
 | Language/theme | `I18nService`, `ThemeService` | RU/EN/VI/ZH, light/dark/system persisted | Legacy |
 | Error report/diagnostics | `ErrorReportDialog`, `ReportApiClient` | redacted support flow, no secret/stack leak | Legacy |
-| Packaging | Maven `release.yml`, jpackage | jDesk EXE/MSI/portable, checksum/SBOM/sign/upgrade | Legacy |
+| Packaging | Maven `release.yml`, jpackage | jDesk EXE/MSI/portable, checksum/SBOM/sign/upgrade | Foundation |
 
 ## Direct JavaFX dependency inventory
 
