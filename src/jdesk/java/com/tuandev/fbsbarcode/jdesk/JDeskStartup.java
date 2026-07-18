@@ -33,6 +33,8 @@ public final class JDeskStartup {
 
         AppDataLock ownership = AppDataLock.acquire(normalizedDir, "jdesk");
         try {
+            LocalDataSnapshotService snapshots = new LocalDataSnapshotService();
+            snapshots.recoverInterrupted(ownership);
             AppDataRecoveryService.recoverIfNeededOnStartup();
             Path marker = normalizedDir.resolve("writer-state").resolve("jdesk-" + appVersion + ".ready");
             if (isReady(marker, appVersion)) {
@@ -44,8 +46,8 @@ public final class JDeskStartup {
             String snapshotChecksum = "none";
             if (Files.isRegularFile(database)) {
                 int schemaVersion = readSchemaVersion(database);
-                LocalDataSnapshotService.Snapshot snapshot = new LocalDataSnapshotService()
-                        .create(ownership, appVersion, schemaVersion, "jdesk-writer-" + appVersion.toLowerCase());
+                LocalDataSnapshotService.Snapshot snapshot = snapshots.create(
+                        ownership, appVersion, schemaVersion, "jdesk-writer-" + appVersion.toLowerCase());
                 snapshotChecksum = snapshot.sha256();
             }
 
