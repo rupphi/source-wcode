@@ -33,6 +33,9 @@ vi.mock("./generated/commands", () => ({
       reprintHistory: vi.fn(),
       openHistoryReprint: vi.fn(),
     },
+    templates: {
+      loadDesigner: vi.fn(),
+    },
     wildberries: {
       syncOverview: vi.fn(),
       syncStatus: vi.fn(),
@@ -63,6 +66,7 @@ const openExportedPdf = vi.mocked(commands.printing.openExport);
 const loadPrintHistory = vi.mocked(commands.printing.history);
 const reprintHistory = vi.mocked(reprintHistoryPdf);
 const openHistoryReprint = vi.mocked(commands.printing.openHistoryReprint);
+const loadTemplateDesigner = vi.mocked(commands.templates.loadDesigner);
 const syncOverview = vi.mocked(commands.wildberries.syncOverview);
 const syncStatus = vi.mocked(commands.wildberries.syncStatus);
 const cancelSync = vi.mocked(commands.wildberries.cancelSync);
@@ -87,9 +91,121 @@ describe("App", () => {
     loadPrintHistory.mockReset();
     reprintHistory.mockReset();
     openHistoryReprint.mockReset();
+    loadTemplateDesigner.mockReset();
     syncOverview.mockReset();
     syncStatus.mockReset();
     cancelSync.mockReset();
+  });
+
+  it("opens the typed FBS and FBO template catalogs without raw layout data", async () => {
+    const user = userEvent.setup();
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Основной магазин", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard.mockResolvedValue({
+      shopId: 7,
+      productCount: 10,
+      newOrderCount: 3,
+      openSupplyCount: 1,
+    });
+    loadTemplateDesigner.mockImplementation(async ({ mode }) => ({
+      mode,
+      pageWidthMm: 58,
+      pageHeightMm: 40,
+      maxTemplates: 100,
+      maxElements: 100,
+      templates: [{
+        id: mode === "fbs" ? "1" : "2",
+        name: mode === "fbs" ? "Базовый FBS" : "Основной FBO",
+        defaultTemplate: true,
+        elements: [{
+          id: `${mode}-article`,
+          type: "text_field",
+          fieldKey: "article",
+          label: "Артикул",
+          prefix: "Арт. ",
+          content: "",
+          xMm: 2,
+          yMm: 3,
+          widthMm: 24,
+          heightMm: 5,
+          visible: true,
+          zIndex: 3,
+          fontSizePt: 8,
+          bold: true,
+          align: "left",
+          humanReadable: false,
+        }, {
+          id: `${mode}-barcode`,
+          type: "barcode_code128",
+          fieldKey: "",
+          label: "Штрихкод",
+          prefix: "",
+          content: "",
+          xMm: 30,
+          yMm: 3,
+          widthMm: 25,
+          heightMm: 13,
+          visible: true,
+          zIndex: 2,
+          fontSizePt: 8,
+          bold: false,
+          align: "center",
+          humanReadable: true,
+        }],
+      }],
+      palette: [{ key: "text_field:article", label: "Артикул", type: "text_field", fieldKey: "article" }],
+      rawLayoutJson: secret,
+    } as unknown as Awaited<ReturnType<typeof commands.templates.loadDesigner>>));
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Дизайн этикеток" }));
+
+    expect(await screen.findByRole("heading", { name: "Дизайн этикеток" })).toBeVisible();
+    await waitFor(() => expect(loadTemplateDesigner).toHaveBeenLastCalledWith({ mode: "fbs" }));
+    expect(screen.getByRole("button", { name: "Шаблон Базовый FBS" })).toBeVisible();
+    expect(screen.getByText("58 × 40 мм")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Выбрать элемент Артикул" }));
+    expect(screen.getByRole("spinbutton", { name: "X, мм" })).toHaveValue(2);
+    expect(screen.getByRole("spinbutton", { name: "Ширина, мм" })).toHaveValue(24);
+
+    await user.click(screen.getByRole("tab", { name: "FBO" }));
+    await waitFor(() => expect(loadTemplateDesigner).toHaveBeenLastCalledWith({ mode: "fbo" }));
+    expect(await screen.findByRole("button", { name: "Шаблон Основной FBO" })).toBeVisible();
+    expect(document.body).not.toHaveTextContent(secret);
+  });
+
+  it("keeps the local template designer available without a shop and retries safely", async () => {
+    const user = userEvent.setup();
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [],
+      hasSelectedShop: false,
+      selectedShopId: 0,
+    });
+    loadTemplateDesigner
+      .mockRejectedValueOnce(new Error(`sqlite ${secret}`))
+      .mockResolvedValueOnce({
+        mode: "fbs",
+        pageWidthMm: 58,
+        pageHeightMm: 40,
+        maxTemplates: 100,
+        maxElements: 100,
+        templates: [],
+        palette: [],
+      });
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Дизайн этикеток" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось загрузить шаблоны");
+    expect(document.body).not.toHaveTextContent(secret);
+    await user.click(screen.getByRole("button", { name: "Повторить" }));
+    expect(await screen.findByText("Шаблонов пока нет")).toBeVisible();
+    expect(loadTemplateDesigner).toHaveBeenCalledTimes(2);
   });
 
   it("opens the read-only FBS packing board and keeps tab filters scoped", async () => {

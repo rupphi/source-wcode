@@ -282,7 +282,9 @@ recover from rate limit/offline/error without JavaFX.
       availability/preflight states on an explicitly approved shop.
 - [x] Port bounded print history/search/status pagination and native history reprint/save/open with
       opaque, expiring file sessions.
-- [ ] Port template designer with unit conversion and visual preview.
+- [x] Port bounded FBS/FBO template catalogs through typed DTOs with point→mm conversion,
+      selectable layers and a responsive 58×40 visual preview.
+- [ ] Port template CRUD/default/reset/save and canvas add/copy/paste/delete/drag/resize editing.
 - [ ] Validate physical 58×40 output and Windows printer behavior.
 
 Windows print gaps in jDesk 0.1.3 are a hard release risk. Preserve the existing Java PDF/OS

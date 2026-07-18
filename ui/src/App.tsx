@@ -12,6 +12,7 @@ import { useWildberriesSync } from "./features/wildberries/useWildberriesSync";
 import { SupplyListView } from "./features/supplies/SupplyListView";
 import { PackingView } from "./features/packing/PackingView";
 import { PrintHistoryView } from "./features/history/PrintHistoryView";
+import { TemplateDesignerView } from "./features/templates/TemplateDesignerView";
 import { commands } from "./generated/commands";
 import type { BootstrapResponse } from "./generated/types";
 
@@ -120,6 +121,10 @@ export function App() {
       title: "История печати",
       description: "Журнал локальных PDF-заданий с безопасным статусом, шаблоном и точным количеством этикеток.",
     },
+    templates: {
+      title: "Дизайн этикеток",
+      description: "Локальные шаблоны FBS и FBO с точной геометрией 58 × 40 мм и визуальной проверкой каждого элемента.",
+    },
   }[activeView];
 
   return (
@@ -159,14 +164,23 @@ export function App() {
                 {pageCopy.description}
               </p>
             </div>
-            <ShopPicker
-              shops={workspace.data.shops}
-              selectedId={selectedShopId}
-              onSelect={selectShop}
-            />
+            {activeView === "templates" ? (
+              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-4 py-3 shadow-[var(--shadow-control)]">
+                <p className="text-xs font-semibold text-[var(--text-primary)]">Локальная библиотека</p>
+                <p className="mt-0.5 text-xs text-[var(--text-muted)]">Не зависит от выбранного магазина</p>
+              </div>
+            ) : (
+              <ShopPicker
+                shops={workspace.data.shops}
+                selectedId={selectedShopId}
+                onSelect={selectShop}
+              />
+            )}
           </section>
 
-          {selectedShop === null ? (
+          {activeView === "templates" ? (
+            <TemplateDesignerView />
+          ) : selectedShop === null ? (
             <EmptyWorkspace />
           ) : activeView === "supplies" ? (
             <SupplyListView shopId={selectedShop.id} />

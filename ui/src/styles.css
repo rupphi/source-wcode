@@ -73,6 +73,38 @@ input:focus-visible {
   opacity: 0.4;
 }
 
+.template-canvas {
+  background-image:
+    linear-gradient(rgb(20 35 29 / 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(20 35 29 / 0.045) 1px, transparent 1px);
+  background-size: calc(100% / 58) calc(100% / 40);
+}
+
+.barcode-sample {
+  background: repeating-linear-gradient(
+    90deg,
+    #111827 0,
+    #111827 2px,
+    transparent 2px,
+    transparent 4px,
+    #111827 4px,
+    #111827 5px,
+    transparent 5px,
+    transparent 8px
+  );
+}
+
+.data-matrix-sample {
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, #111827 25%, transparent 25%),
+    linear-gradient(-45deg, #111827 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #111827 75%),
+    linear-gradient(-45deg, transparent 75%, #111827 75%);
+  background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+  background-size: 8px 8px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
