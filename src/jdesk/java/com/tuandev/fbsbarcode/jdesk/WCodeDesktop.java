@@ -27,6 +27,7 @@ import dev.jdesk.api.JDeskApplication;
 import dev.jdesk.api.LifecycleListener;
 import dev.jdesk.api.WindowConfig;
 import dev.jdesk.runtime.config.Capabilities;
+import java.time.Duration;
 import java.util.Arrays;
 
 public final class WCodeDesktop {
@@ -45,6 +46,10 @@ public final class WCodeDesktop {
             ExcelOrderImportCommandService excelOrders = new ExcelOrderImportCommandService(orderImages);
             PrintCommandService printing = new PrintCommandService();
             PrintExportCommandService printExport = new PrintExportCommandService();
+            var printExportCommands = CommandTimeoutOverrides.withTimeout(
+                    PrintExportCommandServiceCommands.create(printExport),
+                    "printing.exportSupply",
+                    Duration.ofMinutes(10));
             SupplyDetailCommandService supplyDetails = new SupplyDetailCommandService(orderImages);
             SupplyRefreshCommandService supplyRefresh = new SupplyRefreshCommandService();
             JDeskApplication.Builder application = JDeskApplication.builder()
@@ -57,7 +62,7 @@ public final class WCodeDesktop {
                             SupplyRefreshCommandServiceCommands.create(supplyRefresh),
                             ExcelOrderImportCommandServiceCommands.create(excelOrders),
                             PrintCommandServiceCommands.create(printing),
-                            PrintExportCommandServiceCommands.create(printExport)))
+                            printExportCommands))
                     .capabilities(Capabilities.fromResource("jdesk-capabilities.json"))
                     .contentSecurityPolicy(Csp.defaults())
                     .assetRoute("order-images", orderImages)
