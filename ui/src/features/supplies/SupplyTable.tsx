@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, CalendarDays } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUpRight, CalendarDays } from "lucide-react";
 import type { SupplyItem } from "../../generated/types";
 
 const numberFormat = new Intl.NumberFormat("ru-RU");
@@ -7,7 +7,7 @@ const dateTimeFormat = new Intl.DateTimeFormat("ru-RU", {
   timeStyle: "short",
 });
 
-export function SupplyTable({ items }: { items: SupplyItem[] }) {
+export function SupplyTable({ items, onOpen }: { items: SupplyItem[]; onOpen: (item: SupplyItem) => void }) {
   return (
     <section className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
       <div className="overflow-x-auto">
@@ -19,6 +19,7 @@ export function SupplyTable({ items }: { items: SupplyItem[] }) {
               <th className="px-4 py-3.5" scope="col">Схема</th>
               <th className="px-4 py-3.5" scope="col">Создана</th>
               <th className="px-5 py-3.5 text-right" scope="col">Товаров</th>
+              <th className="w-16 px-4 py-3.5" scope="col"><span className="sr-only">Действия</span></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border-subtle)]">
@@ -38,6 +39,16 @@ export function SupplyTable({ items }: { items: SupplyItem[] }) {
                 </td>
                 <td className="px-5 py-4 text-right text-sm font-semibold tabular-nums">
                   {numberFormat.format(item.itemCount)}
+                </td>
+                <td className="px-4 py-4">
+                  <button
+                    className="icon-button"
+                    type="button"
+                    aria-label={`Открыть поставку ${item.name}`}
+                    onClick={() => onOpen(item)}
+                  >
+                    <ArrowUpRight aria-hidden="true" size={17} />
+                  </button>
                 </td>
               </tr>
             ))}
@@ -67,16 +78,22 @@ export function Pagination({
   totalPages,
   totalItems,
   onPage,
+  ariaLabel = "Пагинация поставок",
+  previousLabel = "Предыдущая страница",
+  nextLabel = "Следующая страница",
 }: {
   page: number;
   totalPages: number;
   totalItems: number;
   onPage: (page: number) => void;
+  ariaLabel?: string;
+  previousLabel?: string;
+  nextLabel?: string;
 }) {
   return (
     <nav
       className="flex flex-col items-center justify-between gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-4 py-3 sm:flex-row"
-      aria-label="Пагинация поставок"
+      aria-label={ariaLabel}
     >
       <p className="text-sm text-[var(--text-secondary)]">
         Найдено <span className="font-semibold text-[var(--text-primary)]">{numberFormat.format(totalItems)}</span>
@@ -85,7 +102,7 @@ export function Pagination({
         <button
           className="icon-button"
           type="button"
-          aria-label="Предыдущая страница"
+          aria-label={previousLabel}
           disabled={page <= 1}
           onClick={() => onPage(page - 1)}
         >
@@ -97,7 +114,7 @@ export function Pagination({
         <button
           className="icon-button"
           type="button"
-          aria-label="Следующая страница"
+          aria-label={nextLabel}
           disabled={page >= totalPages}
           onClick={() => onPage(page + 1)}
         >

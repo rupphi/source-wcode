@@ -5,7 +5,8 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { commands } from "../../generated/commands";
-import type { ListSuppliesResponse } from "../../generated/types";
+import type { ListSuppliesResponse, SupplyItem } from "../../generated/types";
+import { SupplyDetailView } from "./SupplyDetailView";
 import { Pagination, SupplyTable } from "./SupplyTable";
 
 type SupplyStatus = "all" | "open" | "closed";
@@ -24,6 +25,7 @@ export function SupplyListView({ shopId }: { shopId: number }) {
   const [page, setPage] = useState(1);
   const [retryKey, setRetryKey] = useState(0);
   const [state, setState] = useState<SupplyListState>({ status: "loading", requestKey: "" });
+  const [selectedSupply, setSelectedSupply] = useState<{ shopId: number; item: SupplyItem } | null>(null);
   const requestSequence = useRef(0);
   const requestKey = JSON.stringify([shopId, query, filter, page, retryKey]);
 
@@ -77,6 +79,16 @@ export function SupplyListView({ shopId }: { shopId: number }) {
   const closedItems = data?.closedItems ?? 0;
   const totalItems = openItems + closedItems;
 
+  if (selectedSupply?.shopId === shopId) {
+    return (
+      <SupplyDetailView
+        shopId={shopId}
+        summary={selectedSupply.item}
+        onBack={() => setSelectedSupply(null)}
+      />
+    );
+  }
+
   return (
     <div className="grid gap-5">
       <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)] md:p-5">
@@ -127,7 +139,10 @@ export function SupplyListView({ shopId }: { shopId: number }) {
       ) : visibleState.data.items.length === 0 ? (
         <EmptyState hasQuery={query.length > 0 || filter !== "all"} />
       ) : (
-        <SupplyTable items={visibleState.data.items} />
+        <SupplyTable
+          items={visibleState.data.items}
+          onOpen={(item) => setSelectedSupply({ shopId, item })}
+        />
       )}
 
       {visibleState.status === "ready" && visibleState.data.items.length > 0 && (

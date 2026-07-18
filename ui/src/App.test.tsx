@@ -8,7 +8,7 @@ vi.mock("./generated/commands", () => ({
   commands: {
     workspace: { bootstrap: vi.fn() },
     dashboard: { load: vi.fn() },
-    supplies: { list: vi.fn() },
+    supplies: { list: vi.fn(), detail: vi.fn() },
     wildberries: {
       syncOverview: vi.fn(),
       syncStatus: vi.fn(),
@@ -20,6 +20,7 @@ vi.mock("./generated/commands", () => ({
 const bootstrap = vi.mocked(commands.workspace.bootstrap);
 const loadDashboard = vi.mocked(commands.dashboard.load);
 const listSupplies = vi.mocked(commands.supplies.list);
+const loadSupplyDetail = vi.mocked(commands.supplies.detail);
 const syncOverview = vi.mocked(commands.wildberries.syncOverview);
 const syncStatus = vi.mocked(commands.wildberries.syncStatus);
 const cancelSync = vi.mocked(commands.wildberries.cancelSync);
@@ -30,6 +31,7 @@ describe("App", () => {
     bootstrap.mockReset();
     loadDashboard.mockReset();
     listSupplies.mockReset();
+    loadSupplyDetail.mockReset();
     syncOverview.mockReset();
     syncStatus.mockReset();
     cancelSync.mockReset();
@@ -333,5 +335,175 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Повторить" }));
     expect(await screen.findByText("Поставок пока нет")).toBeVisible();
     expect(listSupplies).toHaveBeenCalledTimes(2);
+  });
+
+  it("opens a supply order detail with precise identifiers and no remote image data", async () => {
+    const user = userEvent.setup();
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Основной магазин", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard.mockResolvedValue({ shopId: 7, productCount: 10, newOrderCount: 1, openSupplyCount: 1 });
+    listSupplies.mockResolvedValue({
+      shopId: 7,
+      query: "",
+      status: "all",
+      page: 1,
+      pageSize: 25,
+      totalItems: 1,
+      totalPages: 1,
+      openItems: 1,
+      closedItems: 0,
+      items: [{
+        id: "WB-GI-1",
+        name: "Поставка Москва",
+        status: "open",
+        mode: "b2b",
+        createdAt: "2026-07-18T10:00:00Z",
+        itemCount: 1,
+      }],
+    });
+    loadSupplyDetail.mockResolvedValue({
+      supply: {
+        id: "WB-GI-1",
+        name: "Поставка Москва",
+        status: "open",
+        mode: "b2b",
+        createdAt: "2026-07-18T10:00:00Z",
+        itemCount: 1,
+      },
+      query: "",
+      page: 1,
+      pageSize: 25,
+      totalItems: 1,
+      totalPages: 1,
+      sort: { bySubject: true, byArticle: true, byColor: true, bySize: true },
+      items: [{
+        orderId: "9007199254740993",
+        nmId: "1001",
+        name: "Куртка",
+        brand: "WCode Brand",
+        subject: "Одежда",
+        article: "ART-1",
+        color: "Синий",
+        size: "M",
+        russianSize: "44",
+        barcode: "SKU-1",
+        createdAt: "2026-07-18T10:00:00Z",
+        priceKopecks: 12_345,
+        supplierStatus: "confirm",
+        wbStatus: "sorted",
+        requiresKiz: true,
+        imageUrl: `https://untrusted.example/${secret}`,
+      }],
+    } as unknown as Awaited<ReturnType<typeof commands.supplies.detail>>);
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Поставки FBS" }));
+    await user.click(await screen.findByRole("button", { name: "Открыть поставку Поставка Москва" }));
+
+    await waitFor(() =>
+      expect(loadSupplyDetail).toHaveBeenCalledWith({
+        shopId: 7,
+        supplyId: "WB-GI-1",
+        query: "",
+        page: 1,
+        pageSize: 25,
+        sort: { bySubject: true, byArticle: true, byColor: true, bySize: true },
+      }),
+    );
+    expect(await screen.findByRole("heading", { name: "Поставка Москва" })).toBeVisible();
+    expect(screen.getByText("9007199254740993")).toBeVisible();
+    expect(screen.getByText("Куртка")).toBeVisible();
+    expect(screen.getByText("123,45 ₽")).toBeVisible();
+    expect(screen.getByText("Требуется КИЗ")).toBeVisible();
+    expect(document.body).not.toHaveTextContent(secret);
+
+    await user.click(screen.getByRole("button", { name: "К списку поставок" }));
+    expect(await screen.findByText("Поставка Москва")).toBeVisible();
+  });
+
+  it("searches, sorts, and paginates supply orders through the typed detail command", async () => {
+    const user = userEvent.setup();
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Основной магазин", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard.mockResolvedValue({ shopId: 7, productCount: 10, newOrderCount: 1, openSupplyCount: 1 });
+    const supply = {
+      id: "WB-GI-1",
+      name: "Поставка Москва",
+      status: "open",
+      mode: "consumer",
+      createdAt: "2026-07-18T10:00:00Z",
+      itemCount: 30,
+    };
+    listSupplies.mockResolvedValue({
+      shopId: 7,
+      query: "",
+      status: "all",
+      page: 1,
+      pageSize: 25,
+      totalItems: 1,
+      totalPages: 1,
+      openItems: 1,
+      closedItems: 0,
+      items: [supply],
+    });
+    loadSupplyDetail.mockImplementation(async (request) => ({
+      supply,
+      query: request.query,
+      page: request.page,
+      pageSize: request.pageSize,
+      totalItems: 30,
+      totalPages: 2,
+      sort: request.sort,
+      items: [{
+        orderId: `ORDER-${request.page}`,
+        nmId: "1001",
+        name: `Куртка ${request.page}`,
+        brand: "Brand",
+        subject: "Одежда",
+        article: "ART-1",
+        color: "Синий",
+        size: "M",
+        russianSize: "44",
+        barcode: "SKU-1",
+        createdAt: "2026-07-18T10:00:00Z",
+        priceKopecks: 10_000,
+        supplierStatus: "confirm",
+        wbStatus: "sorted",
+        requiresKiz: false,
+      }],
+    }));
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Поставки FBS" }));
+    await user.click(await screen.findByRole("button", { name: "Открыть поставку Поставка Москва" }));
+    await screen.findByText("ORDER-1");
+
+    await user.click(screen.getByRole("checkbox", { name: "Размер" }));
+    await waitFor(() =>
+      expect(loadSupplyDetail).toHaveBeenLastCalledWith(expect.objectContaining({
+        page: 1,
+        sort: { bySubject: true, byArticle: true, byColor: true, bySize: false },
+      })),
+    );
+
+    await user.type(screen.getByRole("searchbox", { name: "Поиск заказов" }), "  SKU-1  ");
+    await user.click(screen.getByRole("button", { name: "Найти заказ" }));
+    await waitFor(() =>
+      expect(loadSupplyDetail).toHaveBeenLastCalledWith(expect.objectContaining({ query: "SKU-1", page: 1 })),
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Следующая страница заказов" }));
+    await waitFor(() =>
+      expect(loadSupplyDetail).toHaveBeenLastCalledWith(expect.objectContaining({ query: "SKU-1", page: 2 })),
+    );
+    expect(await screen.findByText("ORDER-2")).toBeVisible();
   });
 });
