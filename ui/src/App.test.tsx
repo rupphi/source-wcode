@@ -396,6 +396,7 @@ describe("App", () => {
         supplierStatus: "confirm",
         wbStatus: "sorted",
         requiresKiz: true,
+        imagePath: `jdesk://app/order-images/${"A".repeat(43)}.png`,
         imageUrl: `https://untrusted.example/${secret}`,
       }],
     } as unknown as Awaited<ReturnType<typeof commands.supplies.detail>>);
@@ -419,6 +420,10 @@ describe("App", () => {
     expect(screen.getByText("Куртка")).toBeVisible();
     expect(screen.getByText("123,45 ₽")).toBeVisible();
     expect(screen.getByText("Требуется КИЗ")).toBeVisible();
+    expect(screen.getByRole("img", { name: "Фото товара Куртка" })).toHaveAttribute(
+      "src",
+      `jdesk://app/order-images/${"A".repeat(43)}.png`,
+    );
     expect(document.body).not.toHaveTextContent(secret);
 
     await user.click(screen.getByRole("button", { name: "К списку поставок" }));
@@ -478,6 +483,7 @@ describe("App", () => {
         supplierStatus: "confirm",
         wbStatus: "sorted",
         requiresKiz: false,
+        imagePath: "",
       }],
     }));
 

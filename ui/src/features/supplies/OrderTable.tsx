@@ -1,5 +1,8 @@
-import { CalendarDays, KeyRound } from "lucide-react";
+import { useState } from "react";
+import { CalendarDays, ImageIcon, KeyRound } from "lucide-react";
 import type { OrderItem } from "../../generated/types";
+
+const SAFE_ORDER_IMAGE_PATH = /^jdesk:\/\/app\/order-images\/[A-Za-z0-9_-]{43}\.png$/;
 
 const priceFormat = new Intl.NumberFormat("ru-RU", {
   minimumFractionDigits: 2,
@@ -33,9 +36,14 @@ export function OrderTable({ items }: { items: OrderItem[] }) {
                   </p>
                 </td>
                 <td className="px-4 py-4 align-top">
-                  <p className="max-w-xs truncate text-sm font-semibold">{item.name}</p>
-                  <p className="mt-1 text-xs text-[var(--text-secondary)]">{[item.brand, item.subject].filter(Boolean).join(" · ") || "—"}</p>
-                  {item.nmId && <p className="mt-1 text-xs text-[var(--text-muted)]">nmID {item.nmId}</p>}
+                  <div className="flex min-w-0 items-start gap-3">
+                    <OrderThumbnail name={item.name} path={item.imagePath} />
+                    <div className="min-w-0">
+                      <p className="max-w-64 truncate text-sm font-semibold">{item.name}</p>
+                      <p className="mt-1 max-w-64 truncate text-xs text-[var(--text-secondary)]">{[item.brand, item.subject].filter(Boolean).join(" · ") || "—"}</p>
+                      {item.nmId && <p className="mt-1 text-xs text-[var(--text-muted)]">nmID {item.nmId}</p>}
+                    </div>
+                  </div>
                 </td>
                 <td className="px-4 py-4 align-top text-sm">
                   <p className="font-medium">{item.article || "—"}</p>
@@ -64,6 +72,28 @@ export function OrderTable({ items }: { items: OrderItem[] }) {
         </table>
       </div>
     </section>
+  );
+}
+
+function OrderThumbnail({ name, path }: { name: string; path: string }) {
+  const [failed, setFailed] = useState(false);
+  const canRender = SAFE_ORDER_IMAGE_PATH.test(path) && !failed;
+
+  return (
+    <div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-muted)] text-[var(--text-muted)]">
+      {canRender ? (
+        <img
+          alt={`Фото товара ${name}`}
+          className="size-full object-cover"
+          decoding="async"
+          loading="lazy"
+          onError={() => setFailed(true)}
+          src={path}
+        />
+      ) : (
+        <ImageIcon aria-hidden="true" size={19} />
+      )}
+    </div>
   );
 }
 
