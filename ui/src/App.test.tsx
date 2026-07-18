@@ -20,6 +20,10 @@ vi.mock("./generated/commands", () => ({
       importExcel: vi.fn(),
       importedPage: vi.fn(),
     },
+    printing: {
+      setup: vi.fn(),
+      saveOptions: vi.fn(),
+    },
     wildberries: {
       syncOverview: vi.fn(),
       syncStatus: vi.fn(),
@@ -37,6 +41,8 @@ const refreshSupplyStatus = vi.mocked(commands.supplies.refreshStatus);
 const cancelSupplyRefresh = vi.mocked(commands.supplies.cancelRefresh);
 const importExcel = vi.mocked(commands.orders.importExcel);
 const loadImportedOrders = vi.mocked(commands.orders.importedPage);
+const loadPrintSetup = vi.mocked(commands.printing.setup);
+const savePrintOptions = vi.mocked(commands.printing.saveOptions);
 const syncOverview = vi.mocked(commands.wildberries.syncOverview);
 const syncStatus = vi.mocked(commands.wildberries.syncStatus);
 const cancelSync = vi.mocked(commands.wildberries.cancelSync);
@@ -53,6 +59,8 @@ describe("App", () => {
     cancelSupplyRefresh.mockReset();
     importExcel.mockReset();
     loadImportedOrders.mockReset();
+    loadPrintSetup.mockReset();
+    savePrintOptions.mockReset();
     syncOverview.mockReset();
     syncStatus.mockReset();
     cancelSync.mockReset();
@@ -699,6 +707,97 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Вернуться к заказам поставки" }));
     expect(await screen.findByText("LOCAL-1")).toBeVisible();
+  });
+
+  it("loads and persists the bounded print setup for the selected supply", async () => {
+    const user = userEvent.setup();
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Основной магазин", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard.mockResolvedValue({ shopId: 7, productCount: 10, newOrderCount: 1, openSupplyCount: 1 });
+    const supply = {
+      id: "WB-GI-1",
+      name: "Поставка Москва",
+      status: "open",
+      mode: "consumer",
+      createdAt: "2026-07-18T10:00:00Z",
+      itemCount: 2,
+    };
+    listSupplies.mockResolvedValue({
+      shopId: 7,
+      query: "",
+      status: "all",
+      page: 1,
+      pageSize: 25,
+      totalItems: 1,
+      totalPages: 1,
+      openItems: 1,
+      closedItems: 0,
+      items: [supply],
+    });
+    loadSupplyDetail.mockResolvedValue({
+      supply,
+      query: "",
+      page: 1,
+      pageSize: 25,
+      totalItems: 2,
+      totalPages: 1,
+      sort: { bySubject: true, byArticle: true, byColor: true, bySize: true },
+      items: [],
+    });
+    loadPrintSetup.mockResolvedValue({
+      shopId: 7,
+      pageOrder: "barcode_then_sticker",
+      barcodeCopies: 2,
+      defaultTemplateId: 9,
+      pageWidthMm: 58,
+      pageHeightMm: 40,
+      templates: [
+        { id: 9, name: "Основной шаблон", defaultTemplate: true },
+        { id: 10, name: "Компактный", defaultTemplate: false },
+      ],
+    });
+    savePrintOptions.mockResolvedValue({
+      shopId: 7,
+      pageOrder: "sticker_then_barcode",
+      barcodeCopies: 4,
+      defaultTemplateId: 9,
+      pageWidthMm: 58,
+      pageHeightMm: 40,
+      templates: [
+        { id: 9, name: "Основной шаблон", defaultTemplate: true },
+        { id: 10, name: "Компактный", defaultTemplate: false },
+      ],
+    });
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Поставки FBS" }));
+    await user.click(await screen.findByRole("button", { name: "Открыть поставку Поставка Москва" }));
+    await user.click(await screen.findByRole("button", { name: "Настроить печать" }));
+
+    await waitFor(() => expect(loadPrintSetup).toHaveBeenCalledWith({ shopId: 7 }));
+    expect(await screen.findByRole("dialog", { name: "Настройка печати" })).toBeVisible();
+    expect(screen.getByText("Основной шаблон")).toBeVisible();
+    expect(screen.getByText("58 × 40 мм")).toBeVisible();
+    expect(screen.getByText("6 страниц PDF")).toBeVisible();
+
+    await user.click(screen.getByRole("radio", { name: "Стикер WB, затем этикетка" }));
+    const copies = screen.getByRole("spinbutton", { name: "Копий этикетки" });
+    await user.clear(copies);
+    await user.type(copies, "4");
+    await user.click(screen.getByRole("button", { name: "Сохранить настройки" }));
+
+    await waitFor(() => expect(savePrintOptions).toHaveBeenCalledWith({
+      shopId: 7,
+      pageOrder: "sticker_then_barcode",
+      barcodeCopies: 4,
+    }));
+    expect(await screen.findByText("Настройки сохранены")).toBeVisible();
+    expect(screen.getByText("10 страниц PDF")).toBeVisible();
+    expect(document.body).not.toHaveTextContent(secret);
   });
 
   it("refreshes supply orders in the background without losing detail selection", async () => {

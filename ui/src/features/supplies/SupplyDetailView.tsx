@@ -2,6 +2,7 @@ import { AlertCircle, ArrowLeft, Check, PackageOpen, RefreshCw, Search, SlidersH
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { commands } from "../../generated/commands";
 import type { OrderSortRequest, SupplyDetailResponse, SupplyItem } from "../../generated/types";
+import { PrintSetupDialog } from "../printing/PrintSetupDialog";
 import { OrderTable, OrderTableLoading } from "./OrderTable";
 import { ExcelImportPanel } from "./ExcelImportPanel";
 import { Pagination } from "./SupplyTable";
@@ -145,6 +146,7 @@ export function SupplyDetailView({
                   ? "Отменяем…"
                   : "Обновить из Wildberries"}
             </button>
+            <PrintSetupDialog shopId={shopId} orderCount={supply.itemCount} />
           </div>
         </div>
       </section>
