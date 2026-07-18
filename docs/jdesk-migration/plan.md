@@ -257,11 +257,11 @@ Tests bắt buộc cover crash/failure sau từng write và chứng minh JavaFX 
 
 Vertical slices, each with contract → RED test → Java adapter → React UI → native E2E:
 
-1. Paginated open supply list with search/status/filter.
-2. Supply detail and order table with stable sorting.
-3. Sticker/image preview via asset route or binary stream, never oversized JSON.
-4. Refresh orders/status and restore selection.
-5. Excel import/export and native file dialogs.
+- [x] Paginated supply list with search/status/filter.
+- [ ] Supply detail and order table with stable sorting.
+- [ ] Sticker/image preview via asset route or binary stream, never oversized JSON.
+- [ ] Refresh orders/status and restore selection.
+- [ ] Excel import/export and native file dialogs.
 
 ### Checkpoint C: FBS read workflow
 
