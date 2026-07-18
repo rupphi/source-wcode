@@ -61,7 +61,6 @@ sourceSets {
             exclude(
                 "com/tuandev/fbsbarcode/Launcher.java",
                 "com/tuandev/fbsbarcode/MainApplication.java",
-                "com/tuandev/fbsbarcode/features/print/KizAttachmentCoordinator.java",
                 "com/tuandev/fbsbarcode/features/print/PrintOptionsDialogService.java",
                 "com/tuandev/fbsbarcode/features/print/PrintTemplateDesignerService.java",
                 "com/tuandev/fbsbarcode/features/shop/ShopDialogService.java",
