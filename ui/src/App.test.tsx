@@ -591,7 +591,13 @@ describe("App", () => {
       }],
     });
     const sessionId = "00000000-0000-4000-8000-000000000001";
-    importExcel.mockResolvedValueOnce({
+    importExcel
+      .mockRejectedValueOnce(new JDeskError(
+        "INTERNAL_ERROR",
+        "safe public message",
+        { kind: "rate_limited", httpStatus: 429, retryable: true },
+      ))
+      .mockResolvedValueOnce({
       cancelled: false,
       sessionId,
       fileName: "orders.xlsx",
@@ -614,7 +620,7 @@ describe("App", () => {
         stickerAvailable: true,
         imagePath: `jdesk://app/order-images/${"B".repeat(43)}.jpg`,
       }],
-    });
+      });
     loadImportedOrders.mockImplementation(async (request) => ({
       cancelled: false,
       sessionId,
@@ -646,7 +652,14 @@ describe("App", () => {
     await screen.findByText("LOCAL-1");
     await user.click(screen.getByRole("button", { name: "Импортировать Excel" }));
 
-    await waitFor(() => expect(importExcel).toHaveBeenCalledWith({ shopId: 7, pageSize: 25 }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Wildberries ограничил частоту запросов стикеров",
+    );
+    expect(document.body).not.toHaveTextContent("safe public message");
+    await user.click(screen.getByRole("button", { name: "Импортировать Excel" }));
+
+    await waitFor(() => expect(importExcel).toHaveBeenCalledTimes(2));
+    expect(importExcel).toHaveBeenLastCalledWith({ shopId: 7, pageSize: 25 });
     expect(await screen.findByRole("heading", { name: "Заказы из orders.xlsx" })).toBeVisible();
     expect(screen.getByText("9007199254740993")).toBeVisible();
     expect(screen.queryByText("LOCAL-1")).not.toBeInTheDocument();

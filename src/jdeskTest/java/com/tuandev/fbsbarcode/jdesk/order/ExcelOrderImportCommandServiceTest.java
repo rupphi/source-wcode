@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.tuandev.fbsbarcode.features.order.ExcelOrderImportService;
+import com.tuandev.fbsbarcode.integration.wb.WbApiException;
 import com.tuandev.fbsbarcode.jdesk.supply.OrderImageAssetService;
 import com.tuandev.fbsbarcode.models.Order;
 import com.tuandev.fbsbarcode.models.Shop;
@@ -150,6 +151,20 @@ class ExcelOrderImportCommandServiceTest {
                 new ExcelOrderImportCommandService.ImportExcelRequest(7, 25), null));
         assertEquals(ErrorCode.INTERNAL_ERROR, unavailable.code());
         assertFalse(unavailable.publicMessage().contains(SECRET));
+
+        ExcelOrderImportCommandService rateLimited = service(
+                context -> CompletableFuture.completedFuture(Optional.of(SELECTED_FILE)),
+                path -> List.of(order(101, "ART-1", "One")),
+                (token, orderIds) -> {
+                    throw new WbApiException("upstream " + SECRET, 429, SECRET);
+                });
+
+        JDeskException limited = asyncError(() -> rateLimited.importExcel(
+                new ExcelOrderImportCommandService.ImportExcelRequest(7, 25), null));
+        assertEquals(
+                new ExcelOrderImportCommandService.ExcelImportError("rate_limited", 429, true),
+                limited.details());
+        assertFalse(limited.publicMessage().contains(SECRET));
     }
 
     private ExcelOrderImportCommandService service(

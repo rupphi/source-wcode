@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
+import { JDeskError } from "jdesk-client";
 import { useRef, useState, type FormEvent } from "react";
 import { commands } from "../../generated/commands";
 import type { ImportedOrderItem, ImportedOrderPage } from "../../generated/types";
@@ -21,8 +22,10 @@ const SAFE_IMAGE_PATH = /^jdesk:\/\/app\/order-images\/[A-Za-z0-9_-]{43}\.(?:png
 type ImportState =
   | { status: "idle" }
   | { status: "importing" }
-  | { status: "error" }
+  | { status: "error"; kind: ImportErrorKind }
   | { status: "ready"; data: ImportedOrderPage; pageLoading: boolean; pageError: boolean; actionError: boolean };
+
+type ImportErrorKind = "invalid_file" | "token_invalid" | "rate_limited" | "unavailable";
 
 export function ExcelImportPanel({
   shopId,
@@ -49,16 +52,18 @@ export function ExcelImportPanel({
         return;
       }
       if (!isSafePage(response)) {
-        setState(previous === null ? { status: "error" } : { ...previous, actionError: true });
+        setState(previous === null ? { status: "error", kind: "invalid_file" } : { ...previous, actionError: true });
         onActiveChange(previous !== null);
         return;
       }
       setDraftQuery("");
       setState({ status: "ready", data: response, pageLoading: false, pageError: false, actionError: false });
       onActiveChange(true);
-    } catch {
+    } catch (error) {
       if (requestSequence.current === requestId) {
-        setState(previous === null ? { status: "error" } : { ...previous, actionError: true });
+        setState(previous === null
+          ? { status: "error", kind: excelImportErrorKind(error) }
+          : { ...previous, actionError: true });
         onActiveChange(previous !== null);
       }
     }
@@ -117,7 +122,7 @@ export function ExcelImportPanel({
             {state.status === "error" && (
               <p className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-red-700" role="alert">
                 <AlertCircle aria-hidden="true" size={14} />
-                Не удалось импортировать файл. Проверьте формат, токен и соединение.
+                {excelImportErrorMessage(state.kind)}
               </p>
             )}
           </div>
@@ -342,4 +347,26 @@ function isSafeItem(item: ImportedOrderItem): boolean {
 
 function safeText(value: string, maxLength: number): boolean {
   return typeof value === "string" && value.length <= maxLength && !/\p{Cc}/u.test(value);
+}
+
+function excelImportErrorKind(error: unknown): ImportErrorKind {
+  if (!(error instanceof JDeskError)) return "unavailable";
+  if (error.data !== null && typeof error.data === "object") {
+    const kind = (error.data as { kind?: unknown }).kind;
+    if (kind === "token_invalid" || kind === "rate_limited") return kind;
+  }
+  return error.code === "INVALID_REQUEST" ? "invalid_file" : "unavailable";
+}
+
+function excelImportErrorMessage(kind: ImportErrorKind): string {
+  if (kind === "rate_limited") {
+    return "Wildberries ограничил частоту запросов стикеров. Подождите и повторите импорт.";
+  }
+  if (kind === "token_invalid") {
+    return "Токен выбранного магазина не даёт доступ к стикерам Wildberries.";
+  }
+  if (kind === "invalid_file") {
+    return "Файл не распознан как поддерживаемая выгрузка Wildberries XLSX.";
+  }
+  return "Не удалось импортировать файл. Проверьте соединение и повторите попытку.";
 }

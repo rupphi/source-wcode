@@ -2,6 +2,7 @@ package com.tuandev.fbsbarcode.jdesk.order;
 
 import com.tuandev.fbsbarcode.features.order.ExcelOrderImportService;
 import com.tuandev.fbsbarcode.features.shop.ShopRepository;
+import com.tuandev.fbsbarcode.integration.wb.WbApiException;
 import com.tuandev.fbsbarcode.integration.wb.WbStickerService;
 import com.tuandev.fbsbarcode.jdesk.SafeCommandExecutor;
 import com.tuandev.fbsbarcode.jdesk.supply.OrderImageAssetService;
@@ -166,6 +167,16 @@ public final class ExcelOrderImportCommandService {
         try {
             loaded = List.copyOf(Objects.requireNonNull(
                     stickers.read(shop.getApiKey(), orderIds), "stickers"));
+        } catch (WbApiException exception) {
+            String kind = exception.isContentPermissionError()
+                    ? "token_invalid"
+                    : exception.isRateLimited() ? "rate_limited" : "upstream";
+            boolean retryable = exception.isRateLimited() || exception.getStatusCode() >= 500;
+            throw new JDeskException(
+                    ErrorCode.INTERNAL_ERROR,
+                    "Wildberries stickers could not be loaded.",
+                    new ExcelImportError(kind, exception.getStatusCode(), retryable),
+                    null);
         } catch (IOException exception) {
             throw new JDeskException(
                     ErrorCode.INTERNAL_ERROR,
@@ -385,6 +396,9 @@ public final class ExcelOrderImportCommandService {
             String sticker,
             boolean stickerAvailable,
             String imagePath) {
+    }
+
+    public record ExcelImportError(String kind, int httpStatus, boolean retryable) {
     }
 
     public record ImportedOrderPage(
