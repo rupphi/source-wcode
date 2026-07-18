@@ -3,6 +3,7 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 .kotlin
+.gradle/
 
 ### IntelliJ IDEA ###
 .idea/modules.xml
@@ -39,6 +40,8 @@ build/
 out/
 out-*/
 runtime/
+ui/node_modules/
+ui/dist/
 
 ### Downloaded JavaFX jmods (fetched by build scripts, not source) ###
 javafx-jmods-*/
