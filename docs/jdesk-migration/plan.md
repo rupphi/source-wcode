@@ -459,6 +459,11 @@ checkpoint after every 2–3 journeys runs the full frontend suite.
 **Dependencies:** Task 8.5.4.
 **Scope:** M per journey.
 
+- [x] Supply list: observer/fallback appends bounded pages, keeps earlier rows on retry, resets
+      immediately for shop/query/status and collapses secondary columns without horizontal overflow.
+- [ ] Supply detail/orders, packing, Excel import, print history, GTIN inventory/mapping, FBO catalog
+      and Znack products/purchases/logs.
+
 ### Task 8.5.6: Remove technical copy and consolidate action density
 
 **Acceptance criteria:** RU/EN/VI/ZH reachable copy contains no implementation terminology outside
