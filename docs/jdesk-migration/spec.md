@@ -409,6 +409,10 @@ Không snapshot toàn trang để thay thế behavior assertion. Test bug phải
 - Snapshot SQLite/WAL nhất quán, checksum và verify trước mỗi schema-changing migration/canary
   writer version; không chỉ backup một lần ở first launch.
 - Migration fail phải fail-closed và restore được bằng recovery CLI ngoài normal app bootstrap;
+  installed image phải có secondary `WCode-Recovery` launcher. Ready marker có SHA chỉ hợp lệ nếu
+  còn ít nhất một snapshot cùng SHA verify được. Retention giữ toàn bộ cửa sổ rollback 30 ngày,
+  hai verified fallback mới nhất mỗi reason và snapshot được marker tham chiếu; entry lạ/corrupt
+  được giữ làm forensic evidence thay vì tự xóa.
   credential dual-write dùng legacy source-of-truth + version/fingerprint reconciliation cho đến
   khi rollback window kết thúc.
 - Chạy legacy verify và các gate jDesk/frontend liên quan sau mỗi increment.

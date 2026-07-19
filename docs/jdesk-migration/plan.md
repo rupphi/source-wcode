@@ -105,7 +105,7 @@ Feature parity + early Windows native gates
 - [ ] Snapshot được tạo trước first launch, mỗi schema-changing migration và mỗi canary writer
   version; retention giữ rollback points còn hiệu lực.
 - [x] Restore cần xác nhận và tạo snapshot/export của database mới hơn trước khi thay thế.
-- [ ] Transaction/version marker fail-closed; recovery CLI ngoài normal DB bootstrap có thể
+- [x] Transaction/version marker fail-closed; packaged recovery CLI ngoài normal DB bootstrap có thể
   list/verify/restore khi cả hai UI không khởi động.
 
 **Verification:** JUnit WAL/snapshot/corruption tests trên app-data temp + restore rehearsal.

@@ -1,3 +1,7 @@
+import java.nio.file.Files
+import java.time.Instant
+import java.time.temporal.ChronoUnit
+
 plugins {
     id("dev.jdesk.application") version "0.1.3"
     application
@@ -139,6 +143,161 @@ tasks.test {
     useJUnitPlatform()
 }
 
+// jDesk 0.1.3 passes every runtime JAR to jdeps as both a classpath entry and a root. Named
+// multi-release dependencies such as sqlite-jdbc and POI then cannot resolve their automatic-module
+// dependencies because the plugin supplies only --class-path. Build one classes-only analysis JAR
+// without module descriptors so jdeps can discover the complete JDK-module set in the unnamed
+// module. The authoritative package task still copies every original runtime JAR unchanged.
+val jdeskJdepsAnalysisJar = tasks.register<Jar>("jdeskJdepsAnalysisJar") {
+    archiveClassifier.set("jdeps-analysis")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
+    from(sourceSets.main.map { it.output })
+    from(configurations.runtimeClasspath.map { classpath ->
+        classpath.filter { it.extension == "jar" }.map { zipTree(it) }
+    })
+    include("**/*.class")
+    exclude("module-info.class", "META-INF/versions/*/module-info.class")
+}
+
+tasks.named<dev.jdesk.gradle.tasks.JDeskRuntimeImageTask>("jdeskRuntimeImage") {
+    appClasspath.setFrom(jdeskJdepsAnalysisJar.flatMap { it.archiveFile })
+}
+
+tasks.named<dev.jdesk.gradle.tasks.JDeskPackageTask>("jdeskPackage") {
+    appVersion.set(project.version.toString())
+}
+
+val wcodePackageInput = tasks.register<Sync>("wcodePackageInput") {
+    dependsOn(tasks.named("jar"))
+    from(tasks.named<Jar>("jar").flatMap { it.archiveFile })
+    from(configurations.runtimeClasspath)
+    into(layout.buildDirectory.dir("jdesk/package-input"))
+}
+
+val wcodePackageImage = tasks.register<Exec>("wcodePackageImage") {
+    group = "jdesk"
+    description = "Builds the WCode app-image with the offline recovery launcher."
+    dependsOn(wcodePackageInput, tasks.named("jdeskRuntimeImage"))
+    val packageRoot = layout.buildDirectory.dir("jdesk/package")
+    val packageInput = layout.buildDirectory.dir("jdesk/package-input")
+    val runtimeImage = layout.buildDirectory.dir("jdesk/runtime-image")
+    val recoveryLauncher = layout.projectDirectory.file("packaging/WCode-Recovery.properties")
+    inputs.file(recoveryLauncher)
+    outputs.dir(packageRoot)
+    doFirst {
+        delete(packageRoot)
+        val javaHome = javaToolchains.launcherFor {
+            languageVersion = JavaLanguageVersion.of(25)
+        }.get().metadata.installationPath
+        val executable = javaHome.file(
+            "bin/jpackage" + if (platform == "windows") ".exe" else "",
+        ).asFile.absolutePath
+        val arguments = mutableListOf(
+            executable,
+            "--type", "app-image",
+            "--name", "WCode",
+            "--input", packageInput.get().asFile.absolutePath,
+            "--main-jar", tasks.named<Jar>("jar").get().archiveFileName.get(),
+            "--main-class", "com.tuandev.fbsbarcode.jdesk.WCodeDesktop",
+            "--runtime-image", runtimeImage.get().asFile.absolutePath,
+            "--dest", packageRoot.get().asFile.absolutePath,
+            "--app-version", project.version.toString(),
+            "--java-options", "--enable-native-access=ALL-UNNAMED",
+            "--java-options", "-Djdesk.assets.classpath=web",
+            "--java-options", "-Djdesk.applicationName=WCode",
+            "--add-launcher", "WCode-Recovery=${recoveryLauncher.asFile.absolutePath}",
+        )
+        if (platform == "macos") {
+            arguments.addAll(listOf(
+                "--java-options", "-XstartOnFirstThread",
+                "--mac-package-identifier", "com.tuandev.wcode",
+            ))
+        }
+        commandLine(arguments)
+    }
+}
+
+val wcodePackageEvidence = tasks.register("wcodePackageEvidence") {
+    dependsOn(wcodePackageImage)
+    val packageRoot = layout.buildDirectory.dir("jdesk/package")
+    inputs.dir(packageRoot)
+    outputs.files(
+        packageRoot.map { it.file("checksums.sha256") },
+        packageRoot.map { it.file("sbom.cyclonedx.json") },
+        packageRoot.map { it.file("sbom.spdx.json") },
+    )
+    doLast {
+        val root = packageRoot.get().asFile.toPath()
+        listOf("checksums.sha256", "sbom.cyclonedx.json", "sbom.spdx.json")
+            .forEach { Files.deleteIfExists(root.resolve(it)) }
+        val checksums = dev.jdesk.packager.ReleaseArtifacts.writeChecksums(
+            root,
+            root.resolve("checksums.sha256"),
+        )
+        val artifacts = buildList {
+            add(tasks.named<Jar>("jar").get().archiveFile.get().asFile.toPath())
+            configurations.runtimeClasspath.get().files
+                .filter { it.isFile }
+                .mapTo(this) { it.toPath() }
+        }.distinct()
+        val components = dev.jdesk.packager.ReleaseArtifacts.inspectJars(artifacts)
+        dev.jdesk.packager.ReleaseArtifacts.writeSbom(
+            root.resolve("sbom.cyclonedx.json"),
+            "com.tuandev.wcode",
+            project.version.toString(),
+            checksums,
+            components,
+        )
+        val sourceDateEpoch = System.getenv("SOURCE_DATE_EPOCH")
+        val createdAt = if (sourceDateEpoch != null && sourceDateEpoch.matches(Regex("\\d+"))) {
+            Instant.ofEpochSecond(sourceDateEpoch.toLong())
+        } else {
+            Instant.now()
+        }.truncatedTo(ChronoUnit.SECONDS).toString()
+        dev.jdesk.packager.ReleaseArtifacts.writeSpdxSbom(
+            root.resolve("sbom.spdx.json"),
+            "com.tuandev.wcode",
+            project.version.toString(),
+            checksums,
+            components,
+            createdAt,
+        )
+    }
+}
+
+val wcodePackageVerify = tasks.register("wcodePackageVerify") {
+    dependsOn(wcodePackageEvidence)
+    val packageRoot = layout.buildDirectory.dir("jdesk/package")
+    inputs.dir(packageRoot)
+    doLast {
+        val root = packageRoot.get().asFile.toPath()
+        val recoveryRelative = when (platform) {
+            "macos" -> "WCode.app/Contents/MacOS/WCode-Recovery"
+            "windows" -> "WCode/WCode-Recovery.exe"
+            else -> "WCode/bin/WCode-Recovery"
+        }
+        val recovery = root.resolve(recoveryRelative)
+        if (Files.isSymbolicLink(recovery) || !Files.isRegularFile(recovery)) {
+            throw GradleException("The packaged offline recovery launcher is missing or unsafe.")
+        }
+        for (evidence in listOf("checksums.sha256", "sbom.cyclonedx.json", "sbom.spdx.json")) {
+            val evidenceFile = root.resolve(evidence)
+            if (!Files.isRegularFile(evidenceFile)
+                    || !Files.readString(evidenceFile).contains(recoveryRelative)) {
+                throw GradleException("$evidence does not describe the offline recovery launcher.")
+            }
+        }
+    }
+}
+
+tasks.register("wcodePackage") {
+    group = "jdesk"
+    description = "Builds WCode, its offline recovery launcher, checksums, and SBOMs."
+    dependsOn(wcodePackageVerify)
+}
+
 tasks.named<JavaExec>("run") {
     dependsOn("jdeskFrontendBuild")
     classpath += jdeskAutomationRuntime
@@ -193,6 +352,6 @@ tasks.register("bindings") {
 
 tasks.register("pkg") {
     group = "jdesk"
-    description = "Alias for jdeskPackage."
-    dependsOn("jdeskPackage")
+    description = "Alias for the authoritative WCode package with offline recovery evidence."
+    dependsOn("wcodePackage")
 }

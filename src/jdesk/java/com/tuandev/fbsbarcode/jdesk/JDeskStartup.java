@@ -14,6 +14,7 @@ import java.nio.file.StandardCopyOption;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.List;
 import java.util.regex.Pattern;
 
 /** Performs fail-closed data ownership, recovery, snapshot and database initialization. */
@@ -39,9 +40,10 @@ public final class JDeskStartup {
             snapshots.recoverInterrupted(ownership);
             AppDataRecoveryService.recoverIfNeededOnStartup();
             Path marker = normalizedDir.resolve("writer-state").resolve("jdesk-" + appVersion + ".ready");
-            if (isReady(marker, appVersion)) {
+            if (isReady(marker, appVersion, snapshots, ownership)) {
                 Database.initDatabase();
                 initializeCredentialSchema();
+                snapshots.retainRollbackWindow(ownership);
                 return new Session(ownership, appVersion, normalizedDir);
             }
 
@@ -57,6 +59,7 @@ public final class JDeskStartup {
             Database.initDatabase();
             initializeCredentialSchema();
             writeReadyMarker(marker, appVersion, snapshotChecksum);
+            snapshots.retainRollbackWindow(ownership);
             return new Session(ownership, appVersion, normalizedDir);
         } catch (Exception exception) {
             ownership.close();
@@ -72,15 +75,31 @@ public final class JDeskStartup {
         }
     }
 
-    private static boolean isReady(Path marker, String appVersion) {
+    private static boolean isReady(
+            Path marker,
+            String appVersion,
+            LocalDataSnapshotService snapshots,
+            AppDataLock ownership) {
         try {
-            if (!Files.isRegularFile(marker)) {
+            if (Files.isSymbolicLink(marker)
+                    || !Files.isRegularFile(marker, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                    || Files.size(marker) > 4096) {
                 return false;
             }
-            String content = Files.readString(marker, StandardCharsets.UTF_8);
-            return content.contains("writerVersion=" + appVersion + System.lineSeparator())
-                    && content.contains("dataMigration=" + DATA_MIGRATION + System.lineSeparator())
-                    && content.matches("(?s).*snapshotSha256=(none|[0-9a-f]{64})\\R.*");
+            List<String> lines = Files.readAllLines(marker, StandardCharsets.UTF_8);
+            if (lines.size() != 3
+                    || !("writerVersion=" + appVersion).equals(lines.get(0))
+                    || !("dataMigration=" + DATA_MIGRATION).equals(lines.get(1))) {
+                return false;
+            }
+            String snapshotLine = lines.get(2);
+            String prefix = "snapshotSha256=";
+            String expected = snapshotLine.startsWith(prefix) ? snapshotLine.substring(prefix.length()) : "";
+            if (!("none".equals(expected) || expected.matches("[0-9a-f]{64}"))) {
+                return false;
+            }
+            return "none".equals(expected) || snapshots.list(ownership).stream()
+                    .anyMatch(snapshot -> expected.equals(snapshot.sha256()) && snapshots.verify(snapshot));
         } catch (IOException exception) {
             return false;
         }
@@ -125,8 +144,9 @@ public final class JDeskStartup {
         public synchronized void createSignedUpdateSnapshot() throws Exception {
             Path database = appDataDir.resolve("database.db");
             int schemaVersion = readSchemaVersion(database);
-            new LocalDataSnapshotService().create(
-                    ownership, appVersion, schemaVersion, "signed-update-install");
+            LocalDataSnapshotService snapshots = new LocalDataSnapshotService();
+            snapshots.create(ownership, appVersion, schemaVersion, "signed-update-install");
+            snapshots.retainRollbackWindow(ownership);
         }
 
         @Override

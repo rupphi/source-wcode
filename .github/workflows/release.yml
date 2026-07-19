@@ -93,11 +93,15 @@ jobs:
           UPDATE_MANIFEST_PUBLIC_KEY: ${{ secrets.UPDATE_MANIFEST_PUBLIC_KEY }}
           UPDATE_SIGNING_PUBLISHER: ${{ secrets.UPDATE_SIGNING_PUBLISHER }}
         run: |
-          .\gradlew.bat clean test bindings jdeskFrontendBuild jdeskDoctor jdeskPackage "-PappVersion=$env:APP_VERSION"
+          .\gradlew.bat clean test bindings jdeskFrontendBuild jdeskDoctor wcodePackage "-PappVersion=$env:APP_VERSION"
           node --test tools/update-manifest.test.mjs
           $launcher = Join-Path $PWD 'build\jdesk\package\WCode\WCode.exe'
+          $recoveryLauncher = Join-Path $PWD 'build\jdesk\package\WCode\WCode-Recovery.exe'
           if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
             throw 'The packaged jDesk WCode.exe was not found.'
+          }
+          if (-not (Test-Path -LiteralPath $recoveryLauncher -PathType Leaf)) {
+            throw 'The packaged offline WCode-Recovery.exe was not found.'
           }
 
       - name: Sign app-image and build stable signed installers
@@ -132,7 +136,13 @@ jobs:
 
             $image = Join-Path $PWD 'build\jdesk\package\WCode'
             Sign-And-Verify (Join-Path $image 'WCode.exe')
+            Sign-And-Verify (Join-Path $image 'WCode-Recovery.exe')
+            .\gradlew.bat wcodePackageEvidence -x wcodePackageImage "-PappVersion=$env:APP_VERSION"
+            if ($LASTEXITCODE -ne 0) { throw 'Signed app-image evidence generation failed.' }
             New-Item -ItemType Directory -Force -Path release | Out-Null
+            Copy-Item build\jdesk\package\checksums.sha256 release\WCode-app-image-checksums.sha256
+            Copy-Item build\jdesk\package\sbom.cyclonedx.json release\WCode-sbom.cyclonedx.json
+            Copy-Item build\jdesk\package\sbom.spdx.json release\WCode-sbom.spdx.json
             Compress-Archive -Path (Join-Path $image '*') -DestinationPath release\WCode-portable.zip
 
             jpackage --type msi --name $env:APP_NAME --app-image $image --dest release `
@@ -206,5 +216,8 @@ jobs:
             release/WCode.msi `
             release/WCode.exe `
             release/WCode-portable.zip `
+            release/WCode-app-image-checksums.sha256 `
+            release/WCode-sbom.cyclonedx.json `
+            release/WCode-sbom.spdx.json `
             release/update-manifest.json
           gh release edit $tag --repo $env:RELEASE_REPO --draft=false --latest

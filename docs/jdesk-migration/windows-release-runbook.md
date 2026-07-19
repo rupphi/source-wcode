@@ -37,15 +37,17 @@ A `vMAJOR.MINOR.PATCH` tag runs `.github/workflows/release.yml` and must fail be
 any trust input is absent. The workflow:
 
 1. Runs frontend lint, strict typecheck, tests, build and high-severity audit; Maven verify; Gradle
-   tests, bindings, frontend build, doctor and jDesk package.
-2. Authenticode-signs and verifies the packaged launcher.
+   tests, bindings, frontend build, doctor and the WCode package with offline recovery launcher.
+2. Authenticode-signs and verifies both packaged launchers, then regenerates app-image checksums,
+   CycloneDX and SPDX so their hashes describe the signed bytes.
 3. Builds EXE and MSI from the jDesk app-image with upgrade UUID
    `23fbb124-e6d5-4f34-92f7-b0329d05f646`, then signs, timestamps and verifies both installers and
    the exact publisher.
 4. Hashes the final signed MSI, creates `update-manifest.json`, signs its exact payload bytes with
    Ed25519 and independently checks version, size and SHA-256.
-5. Uploads MSI, EXE, portable ZIP and manifest to a draft release; only the final step makes that
-   draft latest. A failed run must never publish an unsigned or partially uploaded latest release.
+5. Uploads MSI, EXE, portable ZIP, app-image checksums, both SBOM formats and manifest to a draft
+   release; only the final step makes that draft latest. A failed run must never publish an unsigned
+   or partially uploaded latest release.
 
 Never replace an installer after publishing its manifest. Publish a new patch version instead;
 otherwise every pinned client correctly rejects the changed hash.

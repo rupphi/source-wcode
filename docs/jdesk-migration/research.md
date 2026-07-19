@@ -15,6 +15,17 @@ https://docs.oracle.com/en/java/javase/25/docs/specs/man/jpackage.html,
 https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/security/Signature.html,
 https://learn.microsoft.com/en-us/windows/win32/seccrypto/using-signtool-to-verify-a-file-signature.
 
+Packaging/recovery checkpoint (2026-07-19): jDesk 0.1.3 passes every runtime JAR to `jdeps` as
+both classpath and root input. Named multi-release JARs (`sqlite-jdbc`, POI) then fail resolution
+because their automatic-module dependencies are not on `--module-path`. WCode builds one
+classes-only, descriptor-free analysis JAR solely for jdeps; original runtime JARs remain unchanged
+in the package. Oracle documents `--class-path` and `--module-path` as distinct jdeps inputs, and
+JDK 25 `jpackage --add-launcher` as the supported secondary-entry-point mechanism. WCode therefore
+uses its own thin package task over the jDesk runtime/package input to add a console-capable
+`WCode-Recovery` launcher, then regenerates jDesk checksums/CycloneDX/SPDX after signing. Sources:
+https://docs.oracle.com/en/java/javase/20/docs/specs/man/jdeps.html,
+https://docs.oracle.com/en/java/javase/25/docs/specs/man/jpackage.html.
+
 ## Kết luận
 
 jDesk phù hợp để thay lớp JavaFX của WCode vì framework giữ Java 25 làm lõi ứng dụng,

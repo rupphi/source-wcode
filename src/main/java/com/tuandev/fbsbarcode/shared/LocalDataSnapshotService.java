@@ -19,12 +19,19 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Instant;
+import java.time.InstantSource;
+import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.sqlite.SQLiteConnection;
 import org.sqlite.SQLiteErrorCode;
@@ -36,6 +43,10 @@ public final class LocalDataSnapshotService {
     private static final Pattern SNAPSHOT_ID_PATTERN =
             Pattern.compile("[0-9]{13}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
     private static final Pattern CHECKSUM_PATTERN = Pattern.compile("[0-9a-f]{64}");
+    private static final Pattern MARKER_CHECKSUM =
+            Pattern.compile("(?m)^snapshotSha256=([0-9a-f]{64})$");
+    private static final int ROLLBACK_WINDOW_DAYS = 30;
+    private static final int FALLBACKS_PER_REASON = 2;
     private static final String DATABASE_NAME = "database.db";
     private static final String WAL_NAME = DATABASE_NAME + "-wal";
     private static final String SHM_NAME = DATABASE_NAME + "-shm";
@@ -45,13 +56,23 @@ public final class LocalDataSnapshotService {
     private static final String NONE = "none";
 
     private final RecoveryHooks hooks;
+    private final InstantSource timeSource;
 
     public LocalDataSnapshotService() {
-        this(point -> {});
+        this(point -> {}, InstantSource.system());
     }
 
     LocalDataSnapshotService(RecoveryHooks hooks) {
+        this(hooks, InstantSource.system());
+    }
+
+    LocalDataSnapshotService(InstantSource timeSource) {
+        this(point -> {}, timeSource);
+    }
+
+    private LocalDataSnapshotService(RecoveryHooks hooks, InstantSource timeSource) {
         this.hooks = Objects.requireNonNull(hooks, "hooks");
+        this.timeSource = Objects.requireNonNull(timeSource, "timeSource");
     }
 
     public Snapshot create(AppDataLock ownership, String appVersion, int schemaVersion, String reason)
@@ -67,7 +88,7 @@ public final class LocalDataSnapshotService {
         Path liveDatabase = appDataDir.resolve(DATABASE_NAME);
         requireRegularFileNoLinks(liveDatabase, "The live WCode database does not exist.");
 
-        Instant createdAt = Instant.now();
+        Instant createdAt = timeSource.instant();
         String snapshotId = newId(createdAt);
         Path snapshotsDir = appDataDir.resolve("snapshots");
         requireSafeDirectory(snapshotsDir, true, "The WCode snapshot directory is unsafe.");
@@ -162,6 +183,54 @@ public final class LocalDataSnapshotService {
                     .sorted(Comparator.comparing(Snapshot::createdAt).reversed())
                     .toList();
         }
+    }
+
+    /** Removes only expired, verified snapshots while preserving active rollback and forensic evidence. */
+    public RetentionResult retainRollbackWindow(AppDataLock ownership) throws IOException {
+        Objects.requireNonNull(ownership, "ownership");
+        Path appDataDir = ownership.requireOwnedAppDataDir();
+        Path snapshotsDir = appDataDir.resolve("snapshots");
+        if (Files.notExists(snapshotsDir, LinkOption.NOFOLLOW_LINKS)) {
+            return new RetentionResult(0, 0);
+        }
+        requireSafeDirectory(snapshotsDir, false, "The WCode snapshot directory is unsafe.");
+
+        List<Snapshot> verified = list(ownership).stream().filter(this::verify).toList();
+        Set<String> markerChecksums = referencedSnapshotChecksums(appDataDir);
+        Set<Snapshot> markerProtected = new HashSet<>();
+        Set<String> unmatchedMarkerChecksums = new HashSet<>(markerChecksums);
+        for (Snapshot snapshot : verified) {
+            if (unmatchedMarkerChecksums.remove(snapshot.sha256())) {
+                markerProtected.add(snapshot);
+            }
+        }
+        Set<Snapshot> fallbacks = new HashSet<>();
+        Map<String, Integer> fallbackCount = new HashMap<>();
+        for (Snapshot snapshot : verified) {
+            int count = fallbackCount.getOrDefault(snapshot.reason(), 0);
+            if (count < FALLBACKS_PER_REASON) {
+                fallbacks.add(snapshot);
+                fallbackCount.put(snapshot.reason(), count + 1);
+            }
+        }
+
+        Instant cutoff = timeSource.instant().minus(ROLLBACK_WINDOW_DAYS, ChronoUnit.DAYS);
+        int deleted = 0;
+        int retained = 0;
+        for (Snapshot snapshot : verified) {
+            if (!snapshot.createdAt().isBefore(cutoff)
+                    || markerProtected.contains(snapshot)
+                    || fallbacks.contains(snapshot)) {
+                retained++;
+                continue;
+            }
+            if (deleteExpiredSnapshot(snapshotsDir, snapshot)) {
+                deleted++;
+            } else {
+                retained++;
+            }
+        }
+        return new RetentionResult(deleted, retained);
     }
 
     public Snapshot load(AppDataLock ownership, String snapshotId) throws IOException {
@@ -594,6 +663,53 @@ public final class LocalDataSnapshotService {
         return properties;
     }
 
+    private static Set<String> referencedSnapshotChecksums(Path appDataDir) throws IOException {
+        Path writerState = appDataDir.resolve("writer-state");
+        if (Files.notExists(writerState, LinkOption.NOFOLLOW_LINKS)) {
+            return Set.of();
+        }
+        requireSafeDirectory(writerState, false, "The WCode writer-state directory is unsafe.");
+        Set<String> checksums = new HashSet<>();
+        try (var markers = Files.list(writerState)) {
+            for (Path marker : markers.toList()) {
+                if (Files.isSymbolicLink(marker)
+                        || !Files.isRegularFile(marker, LinkOption.NOFOLLOW_LINKS)
+                        || Files.size(marker) > 4096) {
+                    continue;
+                }
+                Matcher matcher = MARKER_CHECKSUM.matcher(Files.readString(marker, StandardCharsets.UTF_8));
+                while (matcher.find()) checksums.add(matcher.group(1));
+            }
+        }
+        return Set.copyOf(checksums);
+    }
+
+    private boolean deleteExpiredSnapshot(Path snapshotsDir, Snapshot snapshot) {
+        Path directory = snapshot.database().getParent();
+        try {
+            if (directory == null
+                    || !SNAPSHOT_ID_PATTERN.matcher(directory.getFileName().toString()).matches()
+                    || !verify(snapshot)) {
+                return false;
+            }
+            validateContainedDirectory(snapshotsDir, directory, "The WCode snapshot is unsafe.");
+            Set<String> entries;
+            try (var files = Files.list(directory)) {
+                entries = files.map(path -> path.getFileName().toString()).collect(java.util.stream.Collectors.toSet());
+            }
+            if (!entries.equals(Set.of(DATABASE_NAME, SNAPSHOT_METADATA))) {
+                return false;
+            }
+            Files.delete(snapshot.metadata());
+            Files.delete(snapshot.database());
+            Files.delete(directory);
+            forceDirectory(snapshotsDir);
+            return true;
+        } catch (IOException | RuntimeException exception) {
+            return false;
+        }
+    }
+
     private static void validateBundleSidecar(Path root, Path sidecar, String checksum) throws IOException {
         requireOptionalChecksum(checksum, sidecar.getFileName().toString());
         if (NONE.equals(checksum)) {
@@ -993,6 +1109,14 @@ public final class LocalDataSnapshotService {
             Objects.requireNonNull(restoredSnapshot, "restoredSnapshot");
             Objects.requireNonNull(recoveryBundle, "recoveryBundle");
             Objects.requireNonNull(restoredAt, "restoredAt");
+        }
+    }
+
+    public record RetentionResult(int deleted, int retained) {
+        public RetentionResult {
+            if (deleted < 0 || retained < 0) {
+                throw new IllegalArgumentException("Retention counts must not be negative");
+            }
         }
     }
 

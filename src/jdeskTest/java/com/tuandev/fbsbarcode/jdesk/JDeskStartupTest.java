@@ -84,6 +84,76 @@ class JDeskStartupTest {
         }
     }
 
+    @Test
+    void readyMarkerCannotBypassTheGateWhenItsReferencedSnapshotIsCorrupt() throws Exception {
+        Path appData = tempDir.resolve("corrupt-marker-app-data");
+        Files.createDirectories(appData);
+        Path database = appData.resolve("database.db");
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database);
+                Statement statement = connection.createStatement()) {
+            statement.execute("CREATE TABLE legacy_marker(value TEXT NOT NULL)");
+        }
+
+        String previousAppData = System.getProperty("wcode.appdata.dir");
+        System.setProperty("wcode.appdata.dir", appData.toString());
+        try {
+            try (JDeskStartup.Session ignored = JDeskStartup.prepare(appData, "1.1.7")) {
+                assertEquals(1, snapshotCount(appData));
+            }
+            Path snapshotDatabase;
+            try (var paths = Files.walk(appData.resolve("snapshots"))) {
+                snapshotDatabase = paths.filter(path -> path.getFileName().toString().equals("database.db"))
+                        .findFirst()
+                        .orElseThrow();
+            }
+            Files.write(snapshotDatabase, new byte[] {1}, java.nio.file.StandardOpenOption.APPEND);
+
+            try (JDeskStartup.Session ignored = JDeskStartup.prepare(appData, "1.1.7")) {
+                assertEquals(2, snapshotCount(appData));
+            }
+        } finally {
+            if (previousAppData == null) {
+                System.clearProperty("wcode.appdata.dir");
+            } else {
+                System.setProperty("wcode.appdata.dir", previousAppData);
+            }
+        }
+    }
+
+    @Test
+    void readyMarkerCannotBypassTheGateWhenItContainsUnexpectedProperties() throws Exception {
+        Path appData = tempDir.resolve("unexpected-marker-property-app-data");
+        Files.createDirectories(appData);
+        Path database = appData.resolve("database.db");
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database);
+                Statement statement = connection.createStatement()) {
+            statement.execute("CREATE TABLE legacy_marker(value TEXT NOT NULL)");
+        }
+
+        String previousAppData = System.getProperty("wcode.appdata.dir");
+        System.setProperty("wcode.appdata.dir", appData.toString());
+        try {
+            try (JDeskStartup.Session ignored = JDeskStartup.prepare(appData, "1.1.7")) {
+                assertEquals(1, snapshotCount(appData));
+            }
+            Path marker = appData.resolve("writer-state/jdesk-1.1.7.ready");
+            Files.writeString(
+                    marker,
+                    "unexpected=true" + System.lineSeparator(),
+                    java.nio.file.StandardOpenOption.APPEND);
+
+            try (JDeskStartup.Session ignored = JDeskStartup.prepare(appData, "1.1.7")) {
+                assertEquals(2, snapshotCount(appData));
+            }
+        } finally {
+            if (previousAppData == null) {
+                System.clearProperty("wcode.appdata.dir");
+            } else {
+                System.setProperty("wcode.appdata.dir", previousAppData);
+            }
+        }
+    }
+
     private static long snapshotCount(Path appData) throws Exception {
         Path snapshots = appData.resolve("snapshots");
         if (!Files.exists(snapshots)) {

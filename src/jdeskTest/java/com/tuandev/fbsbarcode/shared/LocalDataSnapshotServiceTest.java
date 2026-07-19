@@ -15,6 +15,9 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.time.Instant;
+import java.time.InstantSource;
+import java.time.temporal.ChronoUnit;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
@@ -87,6 +90,44 @@ class LocalDataSnapshotServiceTest {
             assertEquals(LocalDataSnapshotService.IntegrityStatus.VERIFIED, result.recoveryBundle().integrityStatus());
             assertEquals(1, service.list(ownership).size());
             assertFalse(Files.exists(pendingJournal(appData)));
+        }
+    }
+
+    @Test
+    void retentionKeepsTheRollbackWindowRecentHistoryMarkerReferencesAndUnknownEvidence()
+            throws Exception {
+        Path appData = tempDir.resolve("retention-app-data");
+        Files.createDirectories(appData);
+        Path database = appData.resolve("database.db");
+        createInventoryDatabase(database, "retention");
+        Instant now = Instant.parse("2026-07-19T00:00:00Z");
+
+        try (AppDataLock ownership = AppDataLock.acquire(appData, "retention-test")) {
+            LocalDataSnapshotService.Snapshot markerProtected = snapshotAt(
+                    ownership, now.minus(60, ChronoUnit.DAYS));
+            LocalDataSnapshotService.Snapshot expired = snapshotAt(
+                    ownership, now.minus(50, ChronoUnit.DAYS));
+            LocalDataSnapshotService.Snapshot olderFallback = snapshotAt(
+                    ownership, now.minus(40, ChronoUnit.DAYS));
+            LocalDataSnapshotService.Snapshot recent = snapshotAt(
+                    ownership, now.minus(10, ChronoUnit.DAYS));
+            Path unknown = Files.createDirectory(appData.resolve("snapshots/unknown-forensic-entry"));
+            Files.writeString(unknown.resolve("do-not-delete.txt"), "preserve");
+            Files.createDirectories(appData.resolve("writer-state"));
+            Files.writeString(
+                    appData.resolve("writer-state/jdesk-1.1.7.ready"),
+                    "snapshotSha256=" + markerProtected.sha256() + System.lineSeparator());
+
+            LocalDataSnapshotService.RetentionResult result =
+                    new LocalDataSnapshotService(InstantSource.fixed(now))
+                            .retainRollbackWindow(ownership);
+
+            assertEquals(1, result.deleted());
+            assertFalse(Files.exists(expired.database().getParent()));
+            assertTrue(Files.isDirectory(markerProtected.database().getParent()));
+            assertTrue(Files.isDirectory(olderFallback.database().getParent()));
+            assertTrue(Files.isDirectory(recent.database().getParent()));
+            assertTrue(Files.isRegularFile(unknown.resolve("do-not-delete.txt")));
         }
     }
 
@@ -396,6 +437,17 @@ class LocalDataSnapshotServiceTest {
             assertEquals(2, countInventoryRows(liveDatabase));
             assertTrue(failure.getSuppressed().length >= 1);
         }
+    }
+
+    private static LocalDataSnapshotService.Snapshot snapshotAt(
+            AppDataLock ownership, Instant createdAt) throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                        "jdbc:sqlite:" + ownership.requireOwnedAppDataDir().resolve("database.db"));
+                Statement statement = connection.createStatement()) {
+            statement.execute("INSERT INTO inventory(name) VALUES ('" + createdAt.toEpochMilli() + "')");
+        }
+        return new LocalDataSnapshotService(InstantSource.fixed(createdAt))
+                .create(ownership, "1.1.7", 1, "before-migration");
     }
 
     private static void createInventoryDatabase(Path database, String... names) throws Exception {
