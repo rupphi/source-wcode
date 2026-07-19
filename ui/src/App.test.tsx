@@ -2020,7 +2020,18 @@ describe("App", () => {
         sticker: "12 34",
         stickerAvailable: true,
         imagePath: `jdesk://app/order-images/${"B".repeat(43)}.jpg`,
-      }],
+      }, ...(request.page === 2 ? [{
+        orderId: "9007199254740994",
+        name: "Повтор импортированного товара",
+        brand: "Excel Brand",
+        article: "ART-EXCEL",
+        color: "Чёрный",
+        size: "L",
+        barcode: "SKU-EXCEL",
+        sticker: "12 34",
+        stickerAvailable: true,
+        imagePath: `jdesk://app/order-images/${"B".repeat(43)}.jpg`,
+      }] : [])],
     }));
 
     render(<App />);
@@ -2049,6 +2060,7 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "Следующая страница импортированных заказов" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Показать ещё импортированных заказов" }));
     expect(await screen.findByText("9007199254740994")).toBeVisible();
+    expect(screen.getAllByText("9007199254740994")).toHaveLength(1);
     expect(screen.getByText("9007199254740993")).toBeVisible();
 
     await user.type(screen.getByRole("searchbox", { name: "Поиск импортированных заказов" }), "  ART-EXCEL  ");

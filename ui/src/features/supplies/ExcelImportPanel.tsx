@@ -281,7 +281,13 @@ function importedPageStatus(state: Extract<ImportState, { status: "ready" }>): I
 
 function appendImportedOrders(existing: readonly ImportedOrderItem[], incoming: readonly ImportedOrderItem[]) {
   const seen = new Set(existing.map((item) => item.orderId));
-  return [...existing, ...incoming.filter((item) => !seen.has(item.orderId))];
+  const items = [...existing];
+  for (const item of incoming) {
+    if (seen.has(item.orderId)) continue;
+    seen.add(item.orderId);
+    items.push(item);
+  }
+  return items;
 }
 
 function ImportMetric({ label, value }: { label: string; value: string }) {
