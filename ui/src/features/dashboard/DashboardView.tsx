@@ -1,7 +1,10 @@
 import { Boxes, KeyRound, PackageSearch, RefreshCw, Store, Truck } from "lucide-react";
+import { useMemo } from "react";
 import type { WildberriesSyncController } from "../wildberries/useWildberriesSync";
 import type { DashboardResponse, ShopSummary } from "../../generated/types";
 import type { AppCopy } from "../../i18n";
+import { interpolate } from "../../i18n";
+import type { DashboardCopy } from "./dashboardI18n";
 
 export type DashboardState =
   | { status: "idle" }
@@ -9,23 +12,26 @@ export type DashboardState =
   | { status: "error" }
   | { status: "ready"; data: DashboardResponse };
 
-const numberFormat = new Intl.NumberFormat("ru-RU");
-
 export function DashboardView({
+  copy,
+  locale,
   shop,
   state,
   sync,
 }: {
+  copy: DashboardCopy;
+  locale: string;
   shop: ShopSummary;
   state: DashboardState;
   sync: WildberriesSyncController;
 }) {
+  const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   const data = state.status === "ready" ? state.data : null;
   const syncing = ["starting", "running", "cancelling"].includes(sync.state.status);
   const metrics = [
-    { label: "Товаров в каталоге", value: data?.productCount, icon: Boxes },
-    { label: "Новых заказов", value: data?.newOrderCount, icon: PackageSearch },
-    { label: "Открытых поставок", value: data?.openSupplyCount, icon: Truck },
+    { label: copy.products, value: data?.productCount, icon: Boxes },
+    { label: copy.orders, value: data?.newOrderCount, icon: PackageSearch },
+    { label: copy.supplies, value: data?.openSupplyCount, icon: Truck },
   ];
 
   return (
@@ -39,7 +45,7 @@ export function DashboardView({
             <h3 className="truncate font-semibold">{shop.name}</h3>
             <p className="mt-1 flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
               <KeyRound aria-hidden="true" size={13} />
-              {shop.tokenConfigured ? "Токен подключён" : "Токен не настроен"}
+              {shop.tokenConfigured ? copy.tokenConnected : copy.tokenMissing}
             </p>
           </div>
         </div>
@@ -51,20 +57,20 @@ export function DashboardView({
             disabled={!shop.tokenConfigured || sync.state.status === "cancelling"}
           >
             <RefreshCw className={syncing ? "animate-spin" : ""} size={16} />
-            {syncing ? "Отменить синхронизацию" : "Синхронизировать с Wildberries"}
+            {syncing ? copy.syncCancel : copy.syncStart}
           </button>
         </div>
       </section>
 
-      <SyncNotice state={sync.state} />
+      <SyncNotice copy={copy} numberFormat={numberFormat} state={sync.state} />
 
       {state.status === "error" && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
-          Не удалось загрузить показатели. Повторите попытку.
+          {copy.loadError}
         </div>
       )}
 
-      <section className="grid gap-4 md:grid-cols-3" aria-label="Ключевые показатели">
+      <section className="grid gap-4 md:grid-cols-3" aria-label={copy.metricsAria}>
         {metrics.map(({ label, value, icon: Icon }) => (
           <article
             className="relative overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-5 shadow-[var(--shadow-panel)] md:p-6"
@@ -80,7 +86,7 @@ export function DashboardView({
               {state.status === "loading" || state.status === "idle" ? (
                 <span
                   className="inline-block h-9 w-24 animate-pulse rounded-lg bg-[var(--surface-muted)]"
-                  aria-label="Загрузка"
+                  aria-label={copy.loading}
                 />
               ) : value === undefined ? (
                 "—"
@@ -95,7 +101,7 @@ export function DashboardView({
   );
 }
 
-function SyncNotice({ state }: { state: WildberriesSyncController["state"] }) {
+function SyncNotice({ copy, numberFormat, state }: { copy: DashboardCopy; numberFormat: Intl.NumberFormat; state: WildberriesSyncController["state"] }) {
   if (state.status === "idle") return null;
   if (state.status === "starting" || state.status === "running" || state.status === "cancelling") {
     return (
@@ -105,8 +111,8 @@ function SyncNotice({ state }: { state: WildberriesSyncController["state"] }) {
         aria-live="polite"
       >
         {state.status === "cancelling"
-          ? "Останавливаем после безопасного завершения текущего шага…"
-          : "Получаем актуальные данные Wildberries в фоновом режиме…"}
+          ? copy.sync.stopping
+          : copy.sync.running}
       </div>
     );
   }
@@ -116,10 +122,12 @@ function SyncNotice({ state }: { state: WildberriesSyncController["state"] }) {
         className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"
         role="status"
       >
-        <span className="font-semibold">Синхронизация завершена</span>
+        <span className="font-semibold">{copy.sync.completed}</span>
         <span className="ml-2 text-emerald-800">
-          Обновлено: товаров {numberFormat.format(state.result.products)}, поставок{" "}
-          {numberFormat.format(state.result.supplies)}.
+          {interpolate(copy.sync.completedDetail, {
+            products: numberFormat.format(state.result.products),
+            supplies: numberFormat.format(state.result.supplies),
+          })}
         </span>
       </div>
     );
@@ -127,27 +135,27 @@ function SyncNotice({ state }: { state: WildberriesSyncController["state"] }) {
   if (state.status === "cancelled") {
     return (
       <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-4 py-3 text-sm text-[var(--text-secondary)]" role="status">
-        Синхронизация остановлена. Уже сохранённые страницы данных оставлены без изменений.
+        {copy.sync.cancelled}
       </div>
     );
   }
   return (
     <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
-      {syncErrorMessage(state.errorKind, state.retryable)}
+      {syncErrorMessage(copy, state.errorKind, state.retryable)}
     </div>
   );
 }
 
-function syncErrorMessage(errorKind: string, retryable: boolean): string {
+function syncErrorMessage(copy: DashboardCopy, errorKind: string, retryable: boolean): string {
   if (errorKind === "token_invalid" || errorKind === "token_missing") {
-    return "Токен Wildberries недействителен или не имеет нужных прав. Проверьте настройки магазина.";
+    return copy.sync.tokenInvalid;
   }
   if (errorKind === "rate_limited") {
-    return "Wildberries временно ограничил запросы. Повторите синхронизацию позже.";
+    return copy.sync.rateLimited;
   }
   return retryable
-    ? "Wildberries не завершил синхронизацию. Локальные данные сохранены — можно повторить попытку."
-    : "Синхронизацию нельзя запустить с текущими настройками магазина.";
+    ? copy.sync.retryable
+    : copy.sync.blocked;
 }
 
 export function EmptyWorkspace({ copy }: { copy: AppCopy["shop"] }) {

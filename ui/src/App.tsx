@@ -8,6 +8,7 @@ import {
   EmptyWorkspace,
   type DashboardState,
 } from "./features/dashboard/DashboardView";
+import { getDashboardCopy } from "./features/dashboard/dashboardI18n";
 import { useWildberriesSync } from "./features/wildberries/useWildberriesSync";
 import { SupplyListView } from "./features/supplies/SupplyListView";
 import { getSupplyCopy, getSupplyLocale } from "./features/supplies/supplyI18n";
@@ -325,7 +326,13 @@ export function App() {
           ) : activeView === "history" ? (
             <PrintHistoryView key={selectedShop.id} shopId={selectedShop.id} />
           ) : (
-            <DashboardView shop={selectedShop} state={dashboard} sync={wildberriesSync} />
+            <DashboardView
+              copy={getDashboardCopy(preferences.language)}
+              locale={getSupplyLocale(preferences.language)}
+              shop={selectedShop}
+              state={dashboard}
+              sync={wildberriesSync}
+            />
           )}
         </main>
       </div>

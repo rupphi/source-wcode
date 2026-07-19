@@ -369,6 +369,8 @@ artifact. Recovery/idempotency tests precede implementation changes.
 - [x] Apply dark/light/system design tokens before workspace render and native-test both explicit
       themes plus an emulated system preference without horizontal overflow or contrast regressions.
 - [x] Translate the shared shell and settings/license surface in RU/EN/VI/ZH.
+- [x] Translate the complete dashboard and read-only WB overview-sync states in RU/EN/VI/ZH,
+      including locale KPI formatting and runtime language changes without a new read or sync.
 - [x] Translate the complete FBS supplies journey in RU/EN/VI/ZH: list/detail/orders, Excel import,
       GTIN inventory, print setup and guarded delivery/purchase dialogs with locale formatting.
 - [x] Translate the complete FBS packing board in RU/EN/VI/ZH and share its guarded

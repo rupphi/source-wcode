@@ -1188,6 +1188,42 @@ describe("App", () => {
     expect(document.body).not.toHaveTextContent(secret);
   });
 
+  it("localizes the dashboard at runtime without reloading or starting synchronization", async () => {
+    const user = userEvent.setup();
+    loadPreferences.mockResolvedValue({ language: "en", theme: "dark" });
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Main shop", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard.mockResolvedValue({
+      shopId: 7,
+      productCount: 17_922,
+      newOrderCount: 31,
+      openSupplyCount: 8,
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("Products in catalog")).toBeVisible();
+    expect(screen.getByText("Token connected")).toBeVisible();
+    const readsBeforeLanguageChange = loadDashboard.mock.calls.length;
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Language" }), "vi");
+    await user.click(await screen.findByRole("button", { name: "Đóng cài đặt" }));
+    expect(await screen.findByText("Sản phẩm trong danh mục")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Cài đặt" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Ngôn ngữ" }), "zh");
+    await user.click(await screen.findByRole("button", { name: "关闭设置" }));
+    expect(await screen.findByText("目录商品")).toBeVisible();
+    expect(document.documentElement.lang).toBe("zh");
+    expect(loadDashboard).toHaveBeenCalledTimes(readsBeforeLanguageChange);
+    expect(syncOverview).not.toHaveBeenCalled();
+  });
+
   it("loads the newly selected shop and ignores no interaction state", async () => {
     const user = userEvent.setup();
     bootstrap.mockResolvedValue({
@@ -1242,11 +1278,12 @@ describe("App", () => {
     expect(await screen.findByText("Добавьте магазин, чтобы начать работу")).toBeVisible();
   });
 
-  it("syncs Wildberries in the background and reloads local KPIs", async () => {
+  it("localizes completed Wildberries synchronization and reloads local KPIs", async () => {
     const user = userEvent.setup();
+    loadPreferences.mockResolvedValue({ language: "en", theme: "dark" });
     bootstrap.mockResolvedValue({
       app: { name: "WCode", version: "1.1.7" },
-      shops: [{ id: 7, name: "Основной магазин", tokenConfigured: true }],
+      shops: [{ id: 7, name: "Main shop", tokenConfigured: true }],
       hasSelectedShop: true,
       selectedShopId: 7,
     });
@@ -1269,12 +1306,13 @@ describe("App", () => {
     });
 
     render(<App />);
-    await user.click(await screen.findByRole("button", { name: "Синхронизировать с Wildberries" }));
+    await user.click(await screen.findByRole("button", { name: "Synchronize with Wildberries" }));
 
     await waitFor(() => expect(syncOverview).toHaveBeenCalledWith({ shopId: 7 }));
     await waitFor(() => expect(syncStatus).toHaveBeenCalledWith({ shopId: 7, jobId: "job-7" }));
     await waitFor(() => expect(loadDashboard).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText("Синхронизация завершена")).toBeVisible();
+    expect(await screen.findByText("Synchronization completed")).toBeVisible();
+    expect(screen.getByText("Updated products: 2 · updated supplies: 1.")).toBeVisible();
     expect(screen.getByText("12")).toBeVisible();
   });
 
