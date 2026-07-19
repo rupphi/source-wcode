@@ -65,6 +65,7 @@ const ru = {
     empty: "GTIN не найдены. Синхронизация запускается только из раздела Znack.", unnamed: "Без названия", uncategorized: "Без категории",
     rules: "правил: {count}", available: "{count} KIZ доступно", buyLabel: "Купить КИЗ для {gtin}", buy: "Купить",
     previousPage: "Предыдущая страница GTIN поставки", back: "Назад", page: "Страница {page}", nextPage: "Следующая страница GTIN поставки", next: "Далее",
+    loadMore: "Показать ещё GTIN", loadingMore: "Загружаем ещё GTIN…", loadMoreError: "Не удалось загрузить ещё GTIN", allLoaded: "Все GTIN загружены", added: "Добавлено GTIN: {count}",
     started: "Покупка КИЗ запущена для {gtin}",
   },
   orders: {
@@ -142,6 +143,7 @@ const en: SupplyCopy = {
     empty: "No GTINs found. Synchronization starts only from the Znack section.", unnamed: "Unnamed product", uncategorized: "Uncategorized",
     rules: "rules: {count}", available: "{count} KIZ available", buyLabel: "Buy KIZ for {gtin}", buy: "Buy",
     previousPage: "Previous supply GTIN page", back: "Back", page: "Page {page}", nextPage: "Next supply GTIN page", next: "Next",
+    loadMore: "Show more GTINs", loadingMore: "Loading more GTINs…", loadMoreError: "Could not load more GTINs", allLoaded: "All GTINs loaded", added: "GTINs added: {count}",
     started: "KIZ purchase started for {gtin}",
   },
   orders: {
@@ -223,6 +225,7 @@ const vi: SupplyCopy = {
     loading: "Đang tải danh mục GTIN cục bộ…", loadError: "Không thể tải danh mục GTIN cục bộ.", empty: "Không tìm thấy GTIN. Chỉ có thể bắt đầu đồng bộ từ mục Znack.",
     unnamed: "Sản phẩm chưa có tên", uncategorized: "Chưa phân loại", rules: "quy tắc: {count}", available: "Có sẵn {count} KIZ",
     buyLabel: "Mua KIZ cho {gtin}", buy: "Mua", previousPage: "Trang GTIN trước", back: "Trước", page: "Trang {page}", nextPage: "Trang GTIN sau", next: "Sau",
+    loadMore: "Hiện thêm GTIN", loadingMore: "Đang tải thêm GTIN…", loadMoreError: "Không thể tải thêm GTIN", allLoaded: "Đã tải tất cả GTIN", added: "Đã thêm {count} GTIN",
     started: "Đã bắt đầu mua KIZ cho {gtin}",
   },
   orders: {
@@ -304,6 +307,7 @@ const zh: SupplyCopy = {
     loading: "正在加载本地 GTIN 目录…", loadError: "无法加载本地 GTIN 目录。", empty: "未找到 GTIN。同步只能从 Znack 页面启动。",
     unnamed: "未命名商品", uncategorized: "未分类", rules: "规则：{count}", available: "可用 KIZ：{count}",
     buyLabel: "为 {gtin} 购买 KIZ", buy: "购买", previousPage: "上一页供货 GTIN", back: "上一页", page: "第 {page} 页", nextPage: "下一页供货 GTIN", next: "下一页",
+    loadMore: "显示更多 GTIN", loadingMore: "正在加载更多 GTIN…", loadMoreError: "无法加载更多 GTIN", allLoaded: "已加载全部 GTIN", added: "已添加 {count} 个 GTIN",
     started: "已开始为 {gtin} 购买 KIZ",
   },
   orders: {

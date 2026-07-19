@@ -42,6 +42,7 @@ describe("useBoundedInfinitePages", () => {
 
     await waitFor(() => expect(result.current.status).toBe("ready"));
     expect(result.current.summary).toEqual({ total: 3 });
+    expect(result.current.addedCount).toBe(0);
     act(() => {
       result.current.loadMore();
       result.current.loadMore();

@@ -103,8 +103,39 @@ describe("SupplyGtinInventory", () => {
     const confirmation = await screen.findByRole("dialog", { name: "Подтверждение покупки КИЗ" });
     await user.click(within(confirmation).getByRole("button", { name: "Подтвердить покупку КИЗ" }));
     expect(startPurchase).toHaveBeenCalledWith({ shopId: 7, purchaseId, version, confirmed: true });
-    expect(await screen.findByRole("status")).toHaveTextContent("Покупка КИЗ запущена");
+    expect(await screen.findByText(`Покупка КИЗ запущена для ${gtin}`)).toBeVisible();
     await waitFor(() => expect(catalog).toHaveBeenCalledTimes(2));
+  });
+
+  it("appends the next bounded GTIN batch without replacing loaded products", async () => {
+    const user = userEvent.setup();
+    catalog.mockImplementation(async (request) => ({
+      ...request,
+      hasMore: request.page === 1,
+      availableCategories: [],
+      items: [{
+        gtin: request.page === 1 ? "04601234567890" : "04601234567891",
+        productName: `Товар ${request.page}`,
+        category: "Обувь",
+        available: 1,
+        reserved: 0,
+        consumed: 0,
+        mappingRuleCount: 1,
+        orderStatus: "CODES_READY",
+        pipelineStage: "COMPLETED",
+        errorMessage: "",
+        syncedAt: "2026-07-19T17:00:00Z",
+      }],
+    }));
+    render(<SupplyGtinInventory shopId={7} licenseAllowed />);
+
+    expect(await screen.findByText("Товар 1")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Следующая страница GTIN поставки" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Показать ещё GTIN" }));
+
+    expect(await screen.findByText("Товар 2")).toBeVisible();
+    expect(screen.getByText("Товар 1")).toBeVisible();
+    expect(catalog).toHaveBeenLastCalledWith({ shopId: 7, query: "", categories: [], page: 2, pageSize: 10 });
   });
 
   it("keeps purchase disabled when the shared license oracle denies it", async () => {

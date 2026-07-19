@@ -69,7 +69,7 @@ export function useBoundedInfinitePages<T, Summary = never>({
             items: next,
             page,
             hasMore: response.hasMore,
-            addedCount: next.length - base.length,
+            addedCount: initial ? 0 : next.length - base.length,
             summary: response.summary ?? current.summary,
             status: "ready",
           };

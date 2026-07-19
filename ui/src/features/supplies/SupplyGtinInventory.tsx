@@ -1,16 +1,14 @@
-import { AlertCircle, ChevronLeft, ChevronRight, PackageCheck, Search, ShoppingCart } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { AlertCircle, PackageCheck, Search, ShoppingCart } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { InfiniteLoadTrigger } from "../../components/InfiniteLoadTrigger";
+import { useBoundedInfinitePages } from "../../components/useBoundedInfinitePages";
 import { commands } from "../../generated/commands";
-import type { CatalogResponse, GtinItem, SettingsResponse } from "../../generated/types";
+import type { GtinItem, SettingsResponse } from "../../generated/types";
 import { interpolate } from "../../i18n";
 import { matchesCatalogResponse } from "../kizmapping/kizCatalogContract";
 import { ZnackPurchaseDialog } from "../znack/ZnackPurchaseDialog";
 import { defaultSupplyCopy, type SupplyCopy } from "./supplyI18n";
 
-type CatalogState =
-  | { status: "loading"; requestKey: string }
-  | { status: "error"; requestKey: string }
-  | { status: "ready"; requestKey: string; data: CatalogResponse };
 type SettingsState =
   | { status: "loading" | "error" }
   | { status: "ready"; data: SettingsResponse };
@@ -24,34 +22,26 @@ const TERMINAL_STAGES = new Set([
 export function SupplyGtinInventory({ shopId, licenseAllowed, copy = defaultSupplyCopy, locale = "ru-RU" }: { shopId: number; licenseAllowed: boolean; copy?: SupplyCopy; locale?: string }) {
   const [draftQuery, setDraftQuery] = useState("");
   const [query, setQuery] = useState("");
-  const [page, setPage] = useState(1);
   const [retryKey, setRetryKey] = useState(0);
   const [settingsRetry, setSettingsRetry] = useState(0);
-  const [catalog, setCatalog] = useState<CatalogState>({ status: "loading", requestKey: "" });
   const [settings, setSettings] = useState<SettingsState>({ status: "loading" });
   const [purchaseTarget, setPurchaseTarget] = useState<GtinItem | null>(null);
   const [notice, setNotice] = useState("");
-  const catalogRequest = useRef(0);
   const settingsRequest = useRef(0);
-  const requestKey = JSON.stringify([shopId, query, page, retryKey]);
   const localizedNumberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
 
-  useEffect(() => {
-    const requestId = ++catalogRequest.current;
-    let active = true;
-    void commands.kizMapping.catalog({ shopId, query, categories: [], page, pageSize: PAGE_SIZE }).then(
-      (response) => {
-        if (!active || requestId !== catalogRequest.current) return;
-        setCatalog(matchesCatalogResponse(response, shopId, query, [], page, PAGE_SIZE)
-          ? { status: "ready", requestKey, data: response }
-          : { status: "error", requestKey });
-      },
-      () => {
-        if (active && requestId === catalogRequest.current) setCatalog({ status: "error", requestKey });
-      },
-    );
-    return () => { active = false; };
-  }, [page, query, requestKey, shopId]);
+  const loadPage = useCallback(async (page: number) => {
+    const response = await commands.kizMapping.catalog({ shopId, query, categories: [], page, pageSize: PAGE_SIZE });
+    if (!matchesCatalogResponse(response, shopId, query, [], page, PAGE_SIZE)) {
+      throw new Error("Unexpected GTIN catalog response");
+    }
+    return { items: response.items, hasMore: response.hasMore && page < 100_000 };
+  }, [query, shopId]);
+  const pages = useBoundedInfinitePages<GtinItem>({
+    resetKey: JSON.stringify([shopId, query, retryKey]),
+    loadPage,
+    getId: gtinId,
+  });
 
   useEffect(() => {
     const requestId = ++settingsRequest.current;
@@ -68,15 +58,11 @@ export function SupplyGtinInventory({ shopId, licenseAllowed, copy = defaultSupp
     return () => { active = false; };
   }, [settingsRetry, shopId]);
 
-  const visibleCatalog: CatalogState = catalog.requestKey === requestKey
-    ? catalog
-    : { status: "loading", requestKey };
   const canPurchase = licenseAllowed && settings.status === "ready" && settings.data.signatureStatus === "VERIFIED";
 
   const submitSearch = (event: FormEvent) => {
     event.preventDefault();
     const next = draftQuery.trim();
-    setPage(1);
     if (next === query) setRetryKey((value) => value + 1);
     else setQuery(next);
   };
@@ -100,13 +86,13 @@ export function SupplyGtinInventory({ shopId, licenseAllowed, copy = defaultSupp
 
       {notice ? <p className="notice-success mt-4" role="status">{notice}</p> : null}
       {!licenseAllowed ? <p className="mt-4 text-xs text-[var(--warning)]">{copy.inventory.licenseRequired}</p> : settings.status === "error" ? <div className="notice-error mt-4" role="alert"><span>{copy.inventory.settingsError}</span><button type="button" onClick={() => { setSettings({ status: "loading" }); setSettingsRetry((value) => value + 1); }}>{copy.inventory.retry}</button></div> : null}
-      {visibleCatalog.status === "loading" ? <p className="mt-5 text-sm text-[var(--text-muted)]" role="status">{copy.inventory.loading}</p> : null}
-      {visibleCatalog.status === "error" ? <div className="notice-error mt-5" role="alert"><AlertCircle aria-hidden="true" size={16} /><span>{copy.inventory.loadError}</span><button type="button" onClick={() => setRetryKey((value) => value + 1)}>{copy.inventory.retry}</button></div> : null}
-      {visibleCatalog.status === "ready" && visibleCatalog.data.items.length === 0 ? <p className="mt-5 rounded-xl border border-dashed border-[var(--border-subtle)] p-5 text-center text-sm text-[var(--text-muted)]">{copy.inventory.empty}</p> : null}
-      {visibleCatalog.status === "ready" && visibleCatalog.data.items.length > 0 ? (
+      {pages.status === "loading" && pages.items.length === 0 ? <p className="mt-5 text-sm text-[var(--text-muted)]" role="status">{copy.inventory.loading}</p> : null}
+      {pages.status === "error" && pages.items.length === 0 ? <div className="notice-error mt-5" role="alert"><AlertCircle aria-hidden="true" size={16} /><span>{copy.inventory.loadError}</span><button type="button" onClick={pages.retry}>{copy.inventory.retry}</button></div> : null}
+      {pages.status === "ready" && pages.items.length === 0 ? <p className="mt-5 rounded-xl border border-dashed border-[var(--border-subtle)] p-5 text-center text-sm text-[var(--text-muted)]">{copy.inventory.empty}</p> : null}
+      {pages.items.length > 0 ? (
         <>
           <ul className="mt-5 divide-y divide-[var(--border-subtle)] overflow-hidden rounded-xl border border-[var(--border-subtle)]">
-            {visibleCatalog.data.items.map((item) => (
+            {pages.items.map((item) => (
               <li className="grid gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center" key={item.gtin}>
                 <div className="min-w-0"><code className="text-xs font-semibold">{item.gtin}</code><p className="mt-1 truncate text-sm font-semibold">{item.productName || copy.inventory.unnamed}</p><p className="mt-1 text-xs text-[var(--text-muted)]">{item.category || copy.inventory.uncategorized} · {interpolate(copy.inventory.rules, { count: localizedNumberFormat.format(item.mappingRuleCount) })}</p></div>
                 <span className="inline-flex w-fit items-center gap-2 rounded-full bg-[var(--accent-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--accent-strong)]"><PackageCheck aria-hidden="true" size={14} />{interpolate(copy.inventory.available, { count: localizedNumberFormat.format(item.available) })}</span>
@@ -114,11 +100,14 @@ export function SupplyGtinInventory({ shopId, licenseAllowed, copy = defaultSupp
               </li>
             ))}
           </ul>
-          <div className="mt-4 flex items-center justify-between gap-3">
-            <button className="secondary-button" type="button" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} aria-label={copy.inventory.previousPage}><ChevronLeft aria-hidden="true" size={16} />{copy.inventory.back}</button>
-            <span className="text-sm text-[var(--text-secondary)]">{interpolate(copy.inventory.page, { page })}</span>
-            <button className="secondary-button" type="button" disabled={!visibleCatalog.data.hasMore || page >= 100_000} onClick={() => setPage((value) => Math.min(100_000, value + 1))} aria-label={copy.inventory.nextPage}>{copy.inventory.next}<ChevronRight aria-hidden="true" size={16} /></button>
-          </div>
+          <InfiniteLoadTrigger
+            status={pages.status}
+            hasMore={pages.hasMore}
+            copy={{ loading: copy.inventory.loadingMore, loadMore: copy.inventory.loadMore, loadError: copy.inventory.loadMoreError, retry: copy.inventory.retry, end: copy.inventory.allLoaded }}
+            announcement={pages.addedCount > 0 ? interpolate(copy.inventory.added, { count: localizedNumberFormat.format(pages.addedCount) }) : ""}
+            onLoadMore={pages.loadMore}
+            onRetry={pages.retry}
+          />
         </>
       ) : null}
 
@@ -139,6 +128,10 @@ export function SupplyGtinInventory({ shopId, licenseAllowed, copy = defaultSupp
       ) : null}
     </section>
   );
+}
+
+function gtinId(item: GtinItem) {
+  return item.gtin;
 }
 
 function validSettings(response: SettingsResponse, shopId: number) {
