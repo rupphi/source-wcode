@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { JDeskError } from "jdesk-client";
+import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppCopy } from "../../i18n";
 import { commands } from "../../generated/commands";
@@ -78,6 +79,45 @@ describe("ShopManagementDialog", () => {
     remove.mockReset();
   });
 
+  it("contains keyboard focus and returns it after closing the shop manager", async () => {
+    const user = userEvent.setup();
+
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>Open shops</button>
+          {open ? (
+            <ShopManagementDialog
+              shops={shops}
+              selectedId={7}
+              onClose={() => setOpen(false)}
+              onState={vi.fn()}
+              copy={copy}
+            />
+          ) : null}
+        </>
+      );
+    }
+
+    render(<Harness />);
+    const trigger = screen.getByRole("button", { name: "Open shops" });
+    await user.click(trigger);
+    const close = screen.getByRole("button", { name: "Close shop management" });
+    expect(close).toHaveFocus();
+
+    const deleteButtons = screen.getAllByRole("button", { name: "Delete" });
+    const lastDelete = deleteButtons.at(-1);
+    if (lastDelete === undefined) throw new Error("Missing delete action");
+    lastDelete.focus();
+    await user.tab();
+    expect(close).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Shop management" })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
   it("sends a create token once and unmounts it after a validated success", async () => {
     const onClose = vi.fn();
     const onState = vi.fn();
@@ -109,6 +149,21 @@ describe("ShopManagementDialog", () => {
     expect(document.body.textContent).not.toContain(secret);
     await user.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(update).toHaveBeenCalledWith({ shopId: 7, name: "Main", apiKey: "" }));
+  });
+
+  it("uses Escape to leave the token form without closing the shop manager", async () => {
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<ShopManagementDialog shops={shops} selectedId={7} onClose={onClose} onState={vi.fn()} copy={copy} />);
+
+    await user.click(screen.getByRole("button", { name: "Add shop" }));
+    await user.type(screen.getByLabelText("Wildberries API token"), secret);
+    await user.keyboard("{Escape}");
+
+    expect(screen.getByRole("dialog", { name: "Shop management" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Add shop" })).toBeVisible();
+    expect(screen.queryByDisplayValue(secret)).not.toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("requires a second destructive confirmation before delete", async () => {

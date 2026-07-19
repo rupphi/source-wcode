@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle2, KeyRound, Pencil, Plus, Store, Trash2, X } from "lucide-react";
 import { JDeskError } from "jdesk-client";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import { useModalFocus } from "../../components/useModalFocus";
 import { commands } from "../../generated/commands";
 import type { ManagedShopSummary, ShopState } from "../../generated/types";
 import { interpolate } from "../../i18n";
@@ -57,34 +58,22 @@ export function ShopManagementDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [dismissed, setDismissed] = useState(false);
-  const closeButton = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    closeButton.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || busy) return;
-      if (mode.kind === "list") {
-        setApiKey("");
-        setDismissed(true);
-        onClose();
-      } else {
-        setApiKey("");
-        setError("");
-        setMode({ kind: "list" });
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [busy, mode.kind, onClose]);
 
   const close = () => {
     setApiKey("");
     setDismissed(true);
     onClose();
   };
+  const escape = () => {
+    if (mode.kind === "list") {
+      close();
+    } else {
+      setApiKey("");
+      setError("");
+      setMode({ kind: "list" });
+    }
+  };
+  const { dialogRef, initialFocusRef } = useModalFocus<HTMLDivElement>(busy, escape);
 
   const beginCreate = () => {
     setName("");
@@ -159,6 +148,7 @@ export function ShopManagementDialog({
 
   return (
     <div
+      ref={dialogRef}
       className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4"
       role="dialog"
       aria-modal="true"
@@ -171,7 +161,7 @@ export function ShopManagementDialog({
             <h2 id="shop-dialog-title" className="mt-1 text-xl font-semibold">{copy.dialogTitle}</h2>
             <p className="mt-1 text-sm text-[var(--text-muted)]">{copy.dialogDescription}</p>
           </div>
-          <button ref={closeButton} className="icon-button shrink-0" type="button" aria-label={copy.close} disabled={busy} onClick={close}>
+          <button ref={initialFocusRef} className="icon-button shrink-0" type="button" aria-label={copy.close} disabled={busy} onClick={close}>
             <X aria-hidden="true" size={19} />
           </button>
         </header>
