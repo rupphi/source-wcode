@@ -1,9 +1,11 @@
-import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Clock3, RefreshCw, RotateCcw, ScrollText, ShoppingCart, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, CheckCircle2, Clock3, RefreshCw, RotateCcw, ScrollText, ShoppingCart, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { InfiniteLoadTrigger } from "../../components/InfiniteLoadTrigger";
+import { useBoundedInfinitePages, type InfinitePagesStatus } from "../../components/useBoundedInfinitePages";
 import { commands } from "../../generated/commands";
 import type { LogItem, LogsResponse, PurchaseItem, PurchasesResponse } from "../../generated/types";
 import { interpolate } from "../../i18n";
-import type { ZnackCopy } from "./znackI18n";
+import { getZnackLoadCopy, type ZnackCopy } from "./znackI18n";
 
 type OperationsCopy = ZnackCopy["operations"];
 
@@ -27,13 +29,6 @@ const LOG_MESSAGES = new Set([
   "rate_limited", "timeout", "upstream_error",
 ]);
 const HTTP_CLASSES = new Set(["", "1xx", "2xx", "3xx", "4xx", "5xx"]);
-
-type PurchaseState =
-  | { status: "loading" | "error" }
-  | { status: "ready"; data: PurchasesResponse };
-type LogState =
-  | { status: "loading" | "error" }
-  | { status: "ready"; data: LogsResponse };
 
 function validPurchase(item: PurchaseItem) {
   return item !== null
@@ -109,37 +104,30 @@ export function ZnackPurchasesPanel({
   canMutate: boolean;
   refreshToken: number;
 }) {
-  const [page, setPage] = useState(1);
-  const [state, setState] = useState<PurchaseState>({ status: "loading" });
   const [retrying, setRetrying] = useState<PurchaseItem | null>(null);
   const [submittingRetry, setSubmittingRetry] = useState(false);
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
-  const requestRef = useRef(0);
+  const [purchaseUpdates, setPurchaseUpdates] = useState<{ resetKey: string | number; items: Map<string, PurchaseItem> }>(() => ({ resetKey: "", items: new Map() }));
   const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   const dateFormat = useMemo(() => new Intl.DateTimeFormat(locale, { dateStyle: "short", timeStyle: "short" }), [locale]);
 
-  useEffect(() => {
-    const request = ++requestRef.current;
-    let active = true;
-    void commands.znack.purchases({ shopId, page, pageSize: PAGE_SIZE }).then(
-      (response) => {
-        if (!active || request !== requestRef.current) return;
-        setState(validPurchases(response, shopId, page) ? { status: "ready", data: response } : { status: "error" });
-      },
-      () => {
-        if (active && request === requestRef.current) setState({ status: "error" });
-      },
-    );
-    return () => {
-      active = false;
-      requestRef.current += 1;
-    };
-  }, [page, refreshToken, reload, shopId]);
+  const loadPage = useCallback(async (page: number) => {
+    const response = await commands.znack.purchases({ shopId, page, pageSize: PAGE_SIZE });
+    if (!validPurchases(response, shopId, page)) throw new Error("Unexpected Znack purchases response");
+    return { items: response.items, hasMore: response.hasMore, summary: response };
+  }, [shopId]);
+  const pages = useBoundedInfinitePages<PurchaseItem, PurchasesResponse>({
+    resetKey: JSON.stringify([shopId, refreshToken, reload]),
+    loadPage,
+    getId: (item) => item.purchaseId,
+  });
+  const visibleUpdates = Object.is(purchaseUpdates.resetKey, pages.resetKey)
+    ? purchaseUpdates.items
+    : new Map<string, PurchaseItem>();
+  const items = pages.items.map((item) => visibleUpdates.get(item.purchaseId) ?? item);
 
-  const activeIds = useMemo(() => state.status === "ready"
-    ? state.data.items.filter((item) => item.state === "running").map((item) => item.purchaseId).join(",")
-    : "", [state]);
+  const activeIds = items.filter((item) => item.state === "running").map((item) => item.purchaseId).join(",");
 
   useEffect(() => {
     if (!activeIds) return;
@@ -152,9 +140,10 @@ export function ZnackPurchasesPanel({
           (items) => {
             if (!active || items.some((item) => !validPurchase(item))) return;
             const byId = new Map(items.map((item) => [item.purchaseId, item]));
-            setState((current) => current.status !== "ready" ? current : {
-              status: "ready",
-              data: { ...current.data, items: current.data.items.map((item) => byId.get(item.purchaseId) ?? item) },
+            setPurchaseUpdates((current) => {
+              const next = Object.is(current.resetKey, pages.resetKey) ? new Map(current.items) : new Map<string, PurchaseItem>();
+              for (const [purchaseId, item] of byId) next.set(purchaseId, item);
+              return { resetKey: pages.resetKey, items: next };
             });
             if (items.some((item) => item.state === "running")) poll();
           },
@@ -169,7 +158,7 @@ export function ZnackPurchasesPanel({
       active = false;
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [activeIds, copy, shopId]);
+  }, [activeIds, copy, pages.resetKey, shopId]);
 
   const confirmRetry = async () => {
     if (!retrying || !canMutate || submittingRetry) return;
@@ -183,9 +172,10 @@ export function ZnackPurchasesPanel({
         confirmed: true,
       });
       if (!validPurchase(updated) || updated.purchaseId !== retrying.purchaseId) throw new Error("Unexpected retry response");
-      setState((current) => current.status !== "ready" ? current : {
-        status: "ready",
-        data: { ...current.data, items: current.data.items.map((item) => item.purchaseId === updated.purchaseId ? updated : item) },
+      setPurchaseUpdates((current) => {
+        const next = Object.is(current.resetKey, pages.resetKey) ? new Map(current.items) : new Map<string, PurchaseItem>();
+        next.set(updated.purchaseId, updated);
+        return { resetKey: pages.resetKey, items: next };
       });
       setRetrying(null);
     } catch {
@@ -195,16 +185,8 @@ export function ZnackPurchasesPanel({
     }
   };
 
-  const data = state.status === "ready" && state.data.shopId === shopId && state.data.page === page
-    ? state.data : null;
-  const changePage = (next: number) => {
-    setError("");
-    setState({ status: "loading" });
-    setPage(next);
-  };
   const reloadPage = () => {
     setError("");
-    setState({ status: "loading" });
     setReload((value) => value + 1);
   };
   return (
@@ -219,20 +201,20 @@ export function ZnackPurchasesPanel({
         </button>
       </div>
       {error ? <div className="notice-error" role="alert"><span>{error}</span><button type="button" onClick={reloadPage}>{copy.common.retry}</button></div> : null}
-      {state.status === "loading" || (state.status === "ready" && data === null) ? <PanelState copy={copy} loading label={copy.purchases.loading} /> : null}
-      {state.status === "error" ? <PanelState copy={copy} label={copy.purchases.loadError} onRetry={reloadPage} /> : null}
-      {data?.items.length === 0 ? (
+      {pages.status === "loading" && items.length === 0 ? <PanelState copy={copy} loading label={copy.purchases.loading} /> : null}
+      {pages.status === "error" && items.length === 0 ? <PanelState copy={copy} label={copy.purchases.loadError} onRetry={pages.retry} /> : null}
+      {pages.status === "ready" && items.length === 0 ? (
         <div className="grid min-h-64 place-items-center rounded-xl border border-dashed border-[var(--border-subtle)] bg-[var(--surface-muted)] p-8 text-center">
           <div><ShoppingCart aria-hidden="true" className="mx-auto text-[var(--text-muted)]" size={28} /><h5 className="mt-3 font-semibold">{copy.purchases.empty}</h5><p className="mt-1 text-sm text-[var(--text-muted)]">{copy.purchases.emptyHint}</p></div>
         </div>
       ) : null}
-      {data && data.items.length > 0 ? (
+      {items.length > 0 ? (
         <ul className="space-y-3">
-          {data.items.map((item) => {
+          {items.map((item) => {
             const status = statusCopy(copy, item);
             const detail = errorCopy(copy, item.errorKind);
             return (
-              <li key={item.purchaseId} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4">
+              <li key={item.purchaseId} className="rounded-xl [content-visibility:auto] [contain-intrinsic-size:auto_11rem] border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-3">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -261,7 +243,7 @@ export function ZnackPurchasesPanel({
           })}
         </ul>
       ) : null}
-      {data ? <Pagination copy={copy} page={page} hasMore={data.hasMore} numberFormat={numberFormat} onPage={changePage} section={copy.common.purchasesSection} /> : null}
+      {items.length > 0 ? <OperationLoadTrigger copy={copy} locale={locale} status={pages.status} hasMore={pages.hasMore} addedCount={pages.addedCount} numberFormat={numberFormat} onLoadMore={pages.loadMore} onRetry={pages.retry} /> : null}
       {retrying ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-labelledby="retry-introduction-title">
           <div className="w-full max-w-lg rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-5 shadow-2xl">
@@ -289,29 +271,20 @@ function validLogs(response: LogsResponse, shopId: number, page: number) {
 }
 
 export function ZnackLogsPanel({ copy, locale, shopId }: { copy: OperationsCopy; locale: string; shopId: number }) {
-  const [page, setPage] = useState(1);
   const [reload, setReload] = useState(0);
-  const [state, setState] = useState<LogState>({ status: "loading" });
   const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   const dateFormat = useMemo(() => new Intl.DateTimeFormat(locale, { dateStyle: "short", timeStyle: "short" }), [locale]);
-  useEffect(() => {
-    let active = true;
-    void commands.znack.operationLogs({ shopId, page, pageSize: PAGE_SIZE }).then(
-      (response) => {
-        if (active) setState(validLogs(response, shopId, page) ? { status: "ready", data: response } : { status: "error" });
-      },
-      () => { if (active) setState({ status: "error" }); },
-    );
-    return () => { active = false; };
-  }, [page, reload, shopId]);
-  const data = state.status === "ready" && state.data.shopId === shopId && state.data.page === page
-    ? state.data : null;
-  const changePage = (next: number) => {
-    setState({ status: "loading" });
-    setPage(next);
-  };
+  const loadPage = useCallback(async (page: number) => {
+    const response = await commands.znack.operationLogs({ shopId, page, pageSize: PAGE_SIZE });
+    if (!validLogs(response, shopId, page)) throw new Error("Unexpected Znack logs response");
+    return { items: response.items, hasMore: response.hasMore, summary: response };
+  }, [shopId]);
+  const pages = useBoundedInfinitePages<LogItem, LogsResponse>({
+    resetKey: JSON.stringify([shopId, reload]),
+    loadPage,
+    getId: logItemId,
+  });
   const reloadPage = () => {
-    setState({ status: "loading" });
     setReload((value) => value + 1);
   };
   return (
@@ -325,17 +298,22 @@ export function ZnackLogsPanel({ copy, locale, shopId }: { copy: OperationsCopy;
           <RefreshCw aria-hidden="true" size={16} />{copy.logs.refresh}
         </button>
       </div>
-      {state.status === "loading" || (state.status === "ready" && data === null) ? <PanelState copy={copy} loading label={copy.logs.loading} /> : null}
-      {state.status === "error" ? <PanelState copy={copy} label={copy.logs.loadError} onRetry={reloadPage} /> : null}
-      {data?.items.length === 0 ? <div className="grid min-h-64 place-items-center rounded-xl border border-dashed border-[var(--border-subtle)] bg-[var(--surface-muted)] text-center"><div><ScrollText aria-hidden="true" className="mx-auto text-[var(--text-muted)]" size={28} /><h5 className="mt-3 font-semibold">{copy.logs.empty}</h5></div></div> : null}
-      {data && data.items.length > 0 ? <ul className="divide-y divide-[var(--border-subtle)] overflow-hidden rounded-xl border border-[var(--border-subtle)]">{data.items.map((item: LogItem, index) => <li key={`${item.createdAt}-${index}`} className="grid gap-3 bg-[var(--surface-elevated)] px-4 py-4 md:grid-cols-[minmax(10rem,.7fr)_minmax(12rem,1fr)_auto] md:items-center"><div><p className="text-sm font-semibold">{copy.logs.actions[item.action as keyof OperationsCopy["logs"]["actions"]] ?? copy.logs.fallbackAction}</p><p className="mt-1 text-xs text-[var(--text-muted)]">{item.entityGtin || copy.logs.system}</p></div><div><p className="text-sm text-[var(--text-secondary)]">{copy.logs.messages[item.messageKind as keyof OperationsCopy["logs"]["messages"]] ?? copy.logs.fallbackMessage}</p><p className="mt-1 text-xs text-[var(--text-muted)]">{dateFormat.format(new Date(item.createdAt))}</p></div><div className="flex items-center gap-2"><span className={`status-pill ${item.severity === "error" ? "status-danger" : item.severity === "warning" ? "status-warning" : "status-success"}`}>{item.severity === "error" ? copy.logs.severityError : item.severity === "warning" ? copy.logs.severityWarning : copy.logs.severityInfo}</span>{item.httpClass ? <span className="text-xs font-semibold text-[var(--text-muted)]">HTTP {item.httpClass}</span> : null}</div></li>)}</ul> : null}
-      {data ? <Pagination copy={copy} page={page} hasMore={data.hasMore} numberFormat={numberFormat} onPage={changePage} section={copy.common.logsSection} /> : null}
+      {pages.status === "loading" && pages.items.length === 0 ? <PanelState copy={copy} loading label={copy.logs.loading} /> : null}
+      {pages.status === "error" && pages.items.length === 0 ? <PanelState copy={copy} label={copy.logs.loadError} onRetry={pages.retry} /> : null}
+      {pages.status === "ready" && pages.items.length === 0 ? <div className="grid min-h-64 place-items-center rounded-xl border border-dashed border-[var(--border-subtle)] bg-[var(--surface-muted)] text-center"><div><ScrollText aria-hidden="true" className="mx-auto text-[var(--text-muted)]" size={28} /><h5 className="mt-3 font-semibold">{copy.logs.empty}</h5></div></div> : null}
+      {pages.items.length > 0 ? <ul className="divide-y divide-[var(--border-subtle)] overflow-hidden rounded-xl border border-[var(--border-subtle)]">{pages.items.map((item: LogItem) => <li key={logItemId(item)} className="grid [content-visibility:auto] [contain-intrinsic-size:auto_6rem] gap-3 bg-[var(--surface-elevated)] px-3 py-3 md:grid-cols-[minmax(10rem,.7fr)_minmax(12rem,1fr)_auto] md:items-center"><div><p className="text-sm font-semibold">{copy.logs.actions[item.action as keyof OperationsCopy["logs"]["actions"]] ?? copy.logs.fallbackAction}</p><p className="mt-1 text-xs text-[var(--text-muted)]">{item.entityGtin || copy.logs.system}</p></div><div><p className="text-sm text-[var(--text-secondary)]">{copy.logs.messages[item.messageKind as keyof OperationsCopy["logs"]["messages"]] ?? copy.logs.fallbackMessage}</p><p className="mt-1 text-xs text-[var(--text-muted)]">{dateFormat.format(new Date(item.createdAt))}</p></div><div className="flex items-center gap-2"><span className={`status-pill ${item.severity === "error" ? "status-danger" : item.severity === "warning" ? "status-warning" : "status-success"}`}>{item.severity === "error" ? copy.logs.severityError : item.severity === "warning" ? copy.logs.severityWarning : copy.logs.severityInfo}</span></div></li>)}</ul> : null}
+      {pages.items.length > 0 ? <OperationLoadTrigger copy={copy} locale={locale} status={pages.status} hasMore={pages.hasMore} addedCount={pages.addedCount} numberFormat={numberFormat} onLoadMore={pages.loadMore} onRetry={pages.retry} /> : null}
     </div>
   );
 }
 
-function Pagination({ copy, page, hasMore, numberFormat, onPage, section }: { copy: OperationsCopy; page: number; hasMore: boolean; numberFormat: Intl.NumberFormat; onPage: (page: number) => void; section: string }) {
-  return <div className="flex items-center justify-between gap-3"><button className="secondary-button" type="button" disabled={page <= 1} onClick={() => onPage(page - 1)} aria-label={interpolate(copy.common.previousAria, { section })}><ChevronLeft aria-hidden="true" size={16} />{copy.common.previous}</button><span className="text-sm font-medium text-[var(--text-secondary)]">{interpolate(copy.common.page, { page: numberFormat.format(page) })}</span><button className="secondary-button" type="button" disabled={!hasMore} onClick={() => onPage(page + 1)} aria-label={interpolate(copy.common.nextAria, { section })}>{copy.common.next}<ChevronRight aria-hidden="true" size={16} /></button></div>;
+function OperationLoadTrigger({ copy, locale, status, hasMore, addedCount, numberFormat, onLoadMore, onRetry }: { copy: OperationsCopy; locale: string; status: InfinitePagesStatus; hasMore: boolean; addedCount: number; numberFormat: Intl.NumberFormat; onLoadMore: () => void; onRetry: () => void }) {
+  const labels = getZnackLoadCopy(locale);
+  return <InfiniteLoadTrigger status={status} hasMore={hasMore} copy={{ ...labels, retry: copy.common.retry }} announcement={addedCount > 0 ? interpolate(labels.added, { count: numberFormat.format(addedCount) }) : ""} onLoadMore={onLoadMore} onRetry={onRetry} />;
+}
+
+function logItemId(item: LogItem) {
+  return [item.createdAt, item.action, item.entityGtin, item.severity, item.messageKind, item.httpClass].join(":");
 }
 
 function PanelState({ copy, loading = false, label, onRetry }: { copy: OperationsCopy; loading?: boolean; label: string; onRetry?: () => void }) {

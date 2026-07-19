@@ -450,25 +450,45 @@ describe("ZnackView", () => {
 
   it("shows bounded purchase recovery and sanitized operation journal", async () => {
     const user = userEvent.setup();
-    loadPurchases.mockResolvedValueOnce({
+    loadPurchases.mockImplementation(async (request) => ({
       shopId: 7,
-      page: 1,
+      page: request.page,
       pageSize: 50,
-      hasMore: false,
-      items: [{
-        ...purchase("introduction_failed", "attention"),
-        downloadedCodes: 2,
-        progress: 100,
-        errorKind: "introduction_failed",
-        retryable: true,
-        canRetryIntroduction: true,
+      hasMore: request.page === 1,
+      items: request.page === 1 ? [{
+        ...purchase("introduction_failed", "attention"), downloadedCodes: 2, progress: 100,
+        errorKind: "introduction_failed", retryable: true, canRetryIntroduction: true,
+      }] : [{
+        ...purchase("completed", "completed"),
+        purchaseId: "55555555-5555-4555-8555-555555555555",
+        gtin: secondGtin,
+        productName: "Кеды North",
       }],
-    });
+    }));
+    operationLogs.mockImplementation(async (request) => ({
+      shopId: 7,
+      page: request.page,
+      pageSize: 50,
+      hasMore: request.page === 1,
+      items: [{
+        action: "purchase_pipeline",
+        entityGtin: request.page === 1 ? gtin : secondGtin,
+        severity: request.page === 1 ? "error" : "info",
+        messageKind: request.page === 1 ? "upstream_error" : "completed",
+        httpClass: request.page === 1 ? "5xx" : "2xx",
+        createdAt: request.page === 1 ? "2026-07-18T00:02:00Z" : "2026-07-18T00:03:00Z",
+      }],
+    }));
     render(<ZnackView shopId={7} />);
     await screen.findByDisplayValue("OMS-7");
     await user.click(screen.getByRole("tab", { name: "Покупки" }));
 
     expect(await screen.findByText("Ввод в оборот требует внимания")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Следующая страница покупок Znack" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Показать ещё" }));
+    expect(await screen.findByText("Кеды North")).toBeVisible();
+    expect(screen.getByText("Ввод в оборот требует внимания")).toBeVisible();
+    expect(loadPurchases).toHaveBeenLastCalledWith({ shopId: 7, page: 2, pageSize: 50 });
     await user.click(screen.getByRole("button", { name: `Повторить ввод в оборот для ${gtin}` }));
     expect(await screen.findByText("Коды уже куплены и не будут заказаны повторно.")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Подтвердить повтор ввода в оборот" }));
@@ -481,8 +501,12 @@ describe("ZnackView", () => {
 
     await user.click(screen.getByRole("tab", { name: "Журнал" }));
     expect(await screen.findByText("Ошибка внешнего сервиса")).toBeVisible();
-    expect(screen.getByText("HTTP 5xx")).toBeVisible();
-    expect(operationLogs).toHaveBeenCalledWith({ shopId: 7, page: 1, pageSize: 50 });
+    expect(screen.queryByText("HTTP 5xx")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Следующая страница журнала Znack" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Показать ещё" }));
+    expect(await screen.findByText("Операция выполнена")).toBeVisible();
+    expect(screen.getByText("Ошибка внешнего сервиса")).toBeVisible();
+    expect(operationLogs).toHaveBeenLastCalledWith({ shopId: 7, page: 2, pageSize: 50 });
     expect(document.body).not.toHaveTextContent(secret);
   });
 
