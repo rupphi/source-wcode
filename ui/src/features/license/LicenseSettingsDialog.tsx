@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCircle2, KeyRound, Languages, Monitor, Moon, RefreshCw, ShieldCheck, Sun, Unplug, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useModalFocus } from "../../components/useModalFocus";
 import { commands } from "../../generated/commands";
 import type { ActionResponse, StatusResponse } from "../../generated/types";
 import { getCopy, interpolate, isLanguage, isTheme } from "../../i18n";
@@ -107,6 +108,12 @@ export function LicenseSettingsDialog({
   const [preferenceError, setPreferenceError] = useState("");
   const [updateBusy, setUpdateBusy] = useState(false);
   const requestRef = useRef(0);
+  const modalBusy = busy || preferenceBusy || updateBusy;
+  const { dialogRef, initialFocusRef } = useModalFocus<HTMLDivElement>(modalBusy, onClose, open && !confirmDeactivate);
+  const {
+    dialogRef: confirmationDialogRef,
+    initialFocusRef: confirmationInitialFocusRef,
+  } = useModalFocus<HTMLDivElement>(busy, () => setConfirmDeactivate(false), confirmDeactivate);
 
   const loadStatus = useCallback(async () => {
     const request = ++requestRef.current;
@@ -135,20 +142,6 @@ export function LicenseSettingsDialog({
       requestRef.current += 1;
     };
   }, [loadStatus, open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || busy || preferenceBusy || updateBusy) return;
-      if (confirmDeactivate) {
-        setConfirmDeactivate(false);
-      } else {
-        onClose();
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [busy, confirmDeactivate, onClose, open, preferenceBusy, updateBusy]);
 
   if (!open) return null;
   const data = state.status === "ready" ? state.data : null;
@@ -247,6 +240,7 @@ export function LicenseSettingsDialog({
   return (
     <>
       <div
+        ref={dialogRef}
         className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4"
         role="dialog"
         aria-modal="true"
@@ -261,6 +255,7 @@ export function LicenseSettingsDialog({
             <h2 id="settings-dialog-title" className="mt-0.5 text-xl font-semibold">{copy.settings.title}</h2>
           </div>
           <button
+            ref={initialFocusRef}
             className="icon-button"
             type="button"
             aria-label={copy.settings.close}
@@ -383,7 +378,6 @@ export function LicenseSettingsDialog({
                       spellCheck={false}
                       placeholder="WC-XXXXX-XXXXX-XXXXX-XXXXX"
                       disabled={busy}
-                      autoFocus
                       onChange={(event) => {
                         setKey(event.target.value.toUpperCase());
                         setError("");
@@ -441,6 +435,7 @@ export function LicenseSettingsDialog({
       </div>
       {confirmDeactivate ? (
         <div
+          ref={confirmationDialogRef}
           className="fixed inset-0 z-[60] grid place-items-center bg-black/50 p-4"
           role="dialog"
           aria-modal="true"
@@ -455,10 +450,10 @@ export function LicenseSettingsDialog({
             </p>
             <div className="mt-5 flex justify-end gap-2">
               <button
+                ref={confirmationInitialFocusRef}
                 className="secondary-button"
                 type="button"
                 disabled={busy}
-                autoFocus
                 onClick={() => setConfirmDeactivate(false)}
               >
                 {copy.common.cancel}

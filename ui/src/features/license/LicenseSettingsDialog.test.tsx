@@ -62,14 +62,25 @@ describe("LicenseSettingsDialog", () => {
   });
 
   it("renders a bounded active summary without exposing the stored key", async () => {
-    render(<LicenseSettingsDialog open onClose={() => undefined} />);
+    const onClose = vi.fn();
+    const { rerender } = render(<LicenseSettingsDialog open onClose={onClose} />);
 
     expect(await screen.findByText("Лицензия активна")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Закрыть настройки" })).toHaveFocus();
+    expect(document.body.style.overflow).toBe("hidden");
     expect(screen.getByText("Действует до 18.08.2026")).toBeVisible();
     expect(screen.getByText("30 дней осталось")).toBeVisible();
     expect(screen.getByText("STANDARD")).toBeVisible();
     expect(status).toHaveBeenCalledWith({});
     expect(document.body).not.toHaveTextContent(secret);
+
+    const user = userEvent.setup();
+    await user.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(screen.getByRole("button", { name: "Отвязать это устройство" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledOnce();
+    rerender(<LicenseSettingsDialog open={false} onClose={onClose} />);
+    expect(document.body.style.overflow).toBe("");
   });
 
   it("activates from an explicit key form then clears the key from the DOM", async () => {
@@ -120,6 +131,8 @@ describe("LicenseSettingsDialog", () => {
     expect(deactivate).not.toHaveBeenCalled();
     await user.keyboard("{Escape}");
     expect(screen.queryByText("Отвязать лицензию от этого устройства?")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Закрыть настройки" })).toHaveFocus();
+    expect(document.body.style.overflow).toBe("hidden");
     expect(deactivate).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Отвязать это устройство" }));
     await user.click(screen.getByRole("button", { name: "Подтвердить отвязку устройства" }));
