@@ -22,6 +22,7 @@ import type {
 import { Pagination } from "../supplies/SupplyTable";
 import { SupplyDetailView } from "../supplies/SupplyDetailView";
 import { PackingMutationDialog, type MutationDialog } from "./PackingMutationDialog";
+import { isValidMutationPreview, isValidMutationReceipt } from "./packingMutationContract";
 
 type PackingTab = "new" | "preparation" | "dispatch";
 type PackingState =
@@ -172,7 +173,7 @@ export function PackingView({ shopId }: { shopId: number }) {
 
   const prepareCreate = async () => {
     if (shipmentName.trim().length === 0 || selectedOrderIds.length === 0) return;
-    await prepareMutation(() => commands.packing.prepareCreate({
+    await prepareMutation("create", undefined, () => commands.packing.prepareCreate({
       shopId,
       name: shipmentName.trim(),
       orderIds: selectedOrderIds,
@@ -181,7 +182,7 @@ export function PackingView({ shopId }: { shopId: number }) {
 
   const prepareAdd = async () => {
     if (!selectedTargetSupply || selectedOrderIds.length === 0) return;
-    await prepareMutation(() => commands.packing.prepareAdd({
+    await prepareMutation("add", selectedTargetSupply, () => commands.packing.prepareAdd({
       shopId,
       supplyId: selectedTargetSupply,
       orderIds: selectedOrderIds,
@@ -189,15 +190,21 @@ export function PackingView({ shopId }: { shopId: number }) {
   };
 
   const prepareDeliver = async (supply: PackingSupplyItem) => {
-    await prepareMutation(() => commands.packing.prepareDeliver({ shopId, supplyId: supply.id }));
+    await prepareMutation("deliver", supply.id, () => commands.packing.prepareDeliver({ shopId, supplyId: supply.id }));
   };
 
-  const prepareMutation = async (operation: () => Promise<MutationPreview>) => {
+  const prepareMutation = async (
+    expectedAction: string,
+    expectedSupplyId: string | undefined,
+    operation: () => Promise<MutationPreview>,
+  ) => {
     setMutationBusy(true);
     setMutationError(false);
     try {
       const preview = await operation();
-      if (!isValidMutationPreview(preview, shopId)) throw new Error("invalid preview");
+      if (!isValidMutationPreview(preview, shopId, expectedAction, expectedSupplyId)) {
+        throw new Error("invalid preview");
+      }
       setMutationDialog({ kind: "preview", preview });
     } catch {
       setMutationError(true);
@@ -215,7 +222,7 @@ export function PackingView({ shopId }: { shopId: number }) {
         previewId: preview.previewId,
         confirmed: true,
       });
-      if (!receipt.accepted || receipt.action !== preview.action || !receipt.supplyId) throw new Error("invalid receipt");
+      if (!isValidMutationReceipt(receipt, preview)) throw new Error("invalid receipt");
       setMutationNotice(receipt.action === "create"
         ? `Поставка ${receipt.supplyId} создана`
         : receipt.action === "add"
@@ -570,33 +577,6 @@ function matchesRequest(
     && response.pageSize === pageSize
     && response.categories.length === categories.length
     && response.categories.every((value, index) => value === categories[index]);
-}
-
-function isValidMutationPreview(preview: MutationPreview, shopId: number): boolean {
-  const actions = new Set(["create", "add", "deliver"]);
-  const blockerKinds = new Set(["supply_not_ready", "labels_missing", "kiz_missing"]);
-  const warningKinds = new Set(["kiz_required"]);
-  return preview.shopId === shopId
-    && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(preview.previewId)
-    && actions.has(preview.action)
-    && typeof preview.supplyId === "string"
-    && preview.supplyId.length <= 128
-    && typeof preview.supplyName === "string"
-    && preview.supplyName.length <= 160
-    && Number.isSafeInteger(preview.itemCount)
-    && preview.itemCount >= 0
-    && preview.itemCount <= 1_000_000
-    && Number.isSafeInteger(preview.kizCount)
-    && preview.kizCount >= 0
-    && preview.kizCount <= preview.itemCount
-    && preview.blockers.length <= blockerKinds.size
-    && new Set(preview.blockers).size === preview.blockers.length
-    && preview.blockers.every((kind) => blockerKinds.has(kind))
-    && preview.warnings.length <= warningKinds.size
-    && new Set(preview.warnings).size === preview.warnings.length
-    && preview.warnings.every((kind) => warningKinds.has(kind))
-    && preview.ready === (preview.blockers.length === 0)
-    && !Number.isNaN(Date.parse(preview.expiresAt));
 }
 
 function formatCreatedAt(value: string): string {

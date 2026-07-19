@@ -295,7 +295,8 @@ recover from rate limit/offline/error without JavaFX.
       search/category pagination and opaque cached product images.
 - [x] Port confirmed create/add/deliver packing mutations with exact string order IDs, one-use
       previews and operator-facing print/KIZ preflight states; cover Java/React and isolated native
-      behavior without issuing a seller-state call.
+      behavior without issuing a seller-state call. Reuse the guarded delivery preview/confirmation
+      from supply detail, hide it for closed supplies and fail closed on mismatched preview/receipt.
 - [ ] Rehearse create/add/deliver against an explicitly approved disposable shop/supply/order set.
 - [x] Port bounded print history/search/status pagination and native history reprint/save/open with
       opaque, expiring file sessions.

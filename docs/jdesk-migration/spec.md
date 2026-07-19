@@ -177,6 +177,10 @@ luồng hiện tại trong UI mới, nhanh, rõ trạng thái, dùng được b�
 - Delivery preview cho biết label đã in và mọi KIZ bắt buộc cục bộ đã attach hay chưa. Preview bị
   block không được execute. Legacy Java workflow vẫn recheck print history, KIZ state và metadata
   IMEI/UIN/SGTIN/GTIN hiện tại từ WB ngay trước API deliver.
+- Supply detail chỉ render action cho supply `open`, gọi preview với đúng `(shopId, supplyId)` đang
+  hiển thị và dùng chung allowlisted response validator/dialog với packing board. Preview sai shop,
+  action hoặc supply fail closed trước confirmation; receipt phải khớp action/supply/item count rồi
+  mới publish success và reload local detail/list.
 - Mutation dùng capability riêng `packing:write`, giữ shared shop-activity lease, serialize packing
   writes, trả structured retryable error kind không chứa token/path/exception rồi reload board.
   Automated test chỉ inject runner; create/add/deliver thật là opt-in và cần shop/supply/order dùng

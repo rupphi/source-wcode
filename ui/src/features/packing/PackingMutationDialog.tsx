@@ -40,6 +40,7 @@ export function PackingMutationDialog({
   onExecute: (preview: MutationPreview) => Promise<void>;
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
+  const dialogSection = useRef<HTMLElement>(null);
   const behavior = useRef({ busy, onClose });
   useEffect(() => {
     behavior.current = { busy, onClose };
@@ -49,6 +50,7 @@ export function PackingMutationDialog({
     closeButton.current?.focus();
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !behavior.current.busy) behavior.current.onClose();
+      if (event.key === "Tab") trapDialogFocus(event, dialogSection.current);
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => {
@@ -62,7 +64,7 @@ export function PackingMutationDialog({
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="w-full max-w-lg rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-5 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="packing-mutation-title">
+      <section ref={dialogSection} className="w-full max-w-lg rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-5 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="packing-mutation-title">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold" id="packing-mutation-title">{title}</h2>
@@ -90,6 +92,66 @@ export function PackingMutationDialog({
         </div>
       </section>
     </div>
+  );
+}
+
+function trapDialogFocus(event: KeyboardEvent, dialog: HTMLElement | null) {
+  if (dialog === null) return;
+  const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+    'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+  ));
+  if (focusable.length === 0) return;
+  const first = focusable.at(0);
+  const last = focusable.at(-1);
+  if (first === undefined) return;
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last?.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  } else if (!dialog.contains(document.activeElement)) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+function ignore() {}
+
+function ignoreValue() {}
+
+async function ignoreAsync() {}
+
+export function PackingPreviewDialog({
+  preview,
+  busy,
+  error,
+  onClose,
+  onExecute,
+}: {
+  preview: MutationPreview;
+  busy: boolean;
+  error: boolean;
+  onClose: () => void;
+  onExecute: (preview: MutationPreview) => Promise<void>;
+}) {
+  return (
+    <PackingMutationDialog
+      dialog={{ kind: "preview", preview }}
+      shipmentName=""
+      selectedTargetSupply=""
+      targetSupplyQuery=""
+      busy={busy}
+      error={error}
+      onShipmentName={ignoreValue}
+      onTargetSupply={ignoreValue}
+      onTargetSupplyQuery={ignoreValue}
+      onSearchSupplies={ignore}
+      onClose={onClose}
+      onPrepareCreate={ignoreAsync}
+      onPrepareAdd={ignoreAsync}
+      onExecute={onExecute}
+    />
   );
 }
 

@@ -1,7 +1,9 @@
-import { AlertCircle, ArrowLeft, Check, PackageOpen, RefreshCw, Search, SlidersHorizontal } from "lucide-react";
+import { AlertCircle, ArrowLeft, Check, PackageOpen, RefreshCw, Search, SlidersHorizontal, Truck } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { commands } from "../../generated/commands";
-import type { OrderSortRequest, SupplyDetailResponse, SupplyItem } from "../../generated/types";
+import type { MutationPreview, OrderSortRequest, SupplyDetailResponse, SupplyItem } from "../../generated/types";
+import { PackingPreviewDialog } from "../packing/PackingMutationDialog";
+import { isValidMutationPreview, isValidMutationReceipt } from "../packing/packingMutationContract";
 import { PrintSetupDialog } from "../printing/PrintSetupDialog";
 import { OrderTable, OrderTableLoading } from "./OrderTable";
 import { ExcelImportPanel } from "./ExcelImportPanel";
@@ -39,6 +41,10 @@ export function SupplyDetailView({
   const [retryKey, setRetryKey] = useState(0);
   const [showImportedOrders, setShowImportedOrders] = useState(false);
   const [state, setState] = useState<DetailState>({ status: "loading", requestKey: "" });
+  const [deliveryPreview, setDeliveryPreview] = useState<MutationPreview | null>(null);
+  const [deliveryBusy, setDeliveryBusy] = useState(false);
+  const [deliveryError, setDeliveryError] = useState(false);
+  const [deliveryNotice, setDeliveryNotice] = useState("");
   const requestSequence = useRef(0);
   const requestKey = JSON.stringify([shopId, summary.id, query, page, sort, retryKey]);
   const reloadLocal = useCallback(async () => {
@@ -103,6 +109,48 @@ export function SupplyDetailView({
     setPage(1);
   };
 
+  const prepareDelivery = async () => {
+    if (supply.status !== "open" || deliveryBusy) return;
+    setDeliveryBusy(true);
+    setDeliveryError(false);
+    setDeliveryNotice("");
+    try {
+      const preview = await commands.packing.prepareDeliver({ shopId, supplyId: supply.id });
+      if (!isValidMutationPreview(preview, shopId, "deliver", supply.id)) {
+        throw new Error("invalid preview");
+      }
+      setDeliveryPreview(preview);
+    } catch {
+      setDeliveryPreview(null);
+      setDeliveryError(true);
+    } finally {
+      setDeliveryBusy(false);
+    }
+  };
+
+  const executeDelivery = async (preview: MutationPreview) => {
+    if (!preview.ready || deliveryBusy) return;
+    setDeliveryBusy(true);
+    setDeliveryError(false);
+    try {
+      const receipt = await commands.packing.execute({
+        shopId,
+        previewId: preview.previewId,
+        confirmed: true,
+      });
+      if (!isValidMutationReceipt(receipt, preview)) throw new Error("invalid receipt");
+      setDeliveryPreview(null);
+      setDeliveryNotice(`Поставка ${receipt.supplyId} передана в доставку`);
+      await reloadLocal();
+    } catch {
+      setDeliveryError(true);
+    } finally {
+      setDeliveryBusy(false);
+    }
+  };
+
+  const refreshBusy = ["starting", "running", "cancelling"].includes(refresh.state.status);
+
   return (
     <div className="grid gap-5">
       <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-5 shadow-[var(--shadow-panel)] md:p-6">
@@ -154,11 +202,34 @@ export function SupplyDetailView({
               sort={sort}
               orderCount={printableOrderCount}
             />}
+            {supply.status === "open" && !showImportedOrders && (
+              <button
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-red-700 px-4 text-sm font-semibold text-white transition hover:bg-red-800 disabled:cursor-wait disabled:opacity-55"
+                disabled={deliveryBusy || refreshBusy}
+                onClick={() => void prepareDelivery()}
+                type="button"
+                aria-label={`Проверить передачу ${supply.name}`}
+              >
+                <Truck aria-hidden="true" size={16} />
+                {deliveryBusy && deliveryPreview === null ? "Проверка…" : "Передать в доставку"}
+              </button>
+            )}
           </div>
         </div>
       </section>
 
       <RefreshNotice state={refresh.state} />
+
+      {deliveryNotice && (
+        <section className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900" role="status">
+          {deliveryNotice}
+        </section>
+      )}
+      {deliveryError && deliveryPreview === null && (
+        <section className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900" role="alert">
+          Операция не выполнена. Обновите данные и повторите проверку.
+        </section>
+      )}
 
       <ExcelImportPanel key={shopId} shopId={shopId} onActiveChange={setShowImportedOrders} />
 
@@ -213,6 +284,16 @@ export function SupplyDetailView({
           ariaLabel="Пагинация заказов"
           previousLabel="Предыдущая страница заказов"
           nextLabel="Следующая страница заказов"
+        />
+      )}
+
+      {deliveryPreview && (
+        <PackingPreviewDialog
+          preview={deliveryPreview}
+          busy={deliveryBusy}
+          error={deliveryError}
+          onClose={() => !deliveryBusy && setDeliveryPreview(null)}
+          onExecute={executeDelivery}
         />
       )}
     </div>
