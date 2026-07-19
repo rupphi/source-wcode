@@ -41,7 +41,12 @@ public final class ShopCommandService {
         if (request == null) {
             throw invalid("Shop list request is required.", "invalid_request");
         }
-        return SafeCommandExecutor.execute(() -> requireState(store.list()));
+        return SafeCommandExecutor.execute(() -> {
+            synchronized (mutationLock) {
+                store.reconcile(credentialMirror(context));
+                return requireState(store.list());
+            }
+        });
     }
 
     @DesktopCommand("shops.create")
@@ -104,7 +109,9 @@ public final class ShopCommandService {
             synchronized (mutationLock) {
                 requireNotCancelled(context);
                 try {
-                    return requireState(mutation.run());
+                    ShopState state = requireState(mutation.run());
+                    store.reconcile(credentialMirror(context));
+                    return state;
                 } catch (ShopStoreException exception) {
                     throw switch (exception.kind()) {
                         case "shop_busy" -> invalid(
@@ -181,6 +188,13 @@ public final class ShopCommandService {
         }
     }
 
+    private static ShopCredentialMirror credentialMirror(InvocationContext context) {
+        if (context == null || context.application() == null || context.application().secrets() == null) {
+            return null;
+        }
+        return ShopCredentialMirror.from(context.application().secrets());
+    }
+
     private static JDeskException invalid(String message, String kind) {
         return new JDeskException(
                 ErrorCode.INVALID_REQUEST, message, new ShopError(kind), null);
@@ -202,6 +216,9 @@ public final class ShopCommandService {
         ShopState select(int shopId);
 
         ShopState delete(int shopId);
+
+        default void reconcile(ShopCredentialMirror mirror) {
+        }
     }
 
     static final class ShopStoreException extends RuntimeException {

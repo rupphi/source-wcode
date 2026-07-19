@@ -250,9 +250,16 @@ Tests bắt buộc cover crash/failure sau từng write và chứng minh JavaFX 
   generated-key correctness, explicit cascade confirmation and Java-side async-job deletion guard.
 - [x] Land the accessible React manager; edit token starts blank, successful/cancelled forms clear
   token state, and malformed bridge responses never reach the DOM.
-- [ ] Add monotonic credential version/fingerprint and OS-store write-through/read-back verification
-  with reconciliation tests for every partial-failure point. Until then the row remains explicitly
-  `Foundation (legacy credential source)` rather than credential parity.
+- [x] Add monotonic credential version/fingerprint and OS-store write-through/read-back verification
+  with reconciliation tests for every partial-failure point. The row remains dual-write foundation,
+  not credential parity, until Windows credential-store evidence and plaintext retirement after the
+  rollback window.
+
+Implementation contract for this increment: additive mirror metadata plus token-free delete
+tombstones are created only after the jDesk snapshot gate; create/update/delete commit the rollback
+source first, then reconcile `put/get` or `delete/get` idempotently. Tests inject failure before and
+after each OS-store operation and before SQLite acknowledgement, including a stale reconcile racing
+with mutation (the shared mutation lock must prevent it).
 
 ### Checkpoint B: Shop/WB
 

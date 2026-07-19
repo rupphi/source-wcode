@@ -42,10 +42,23 @@ luồng hiện tại trong UI mới, nhanh, rõ trạng thái, dùng được b�
   shop ngay trước transaction và từ chối nếu bất kỳ WB/supply/Znack async job đã biết nào còn chạy
   cho shop. React dùng dialog xác nhận riêng nêu rõ dữ liệu cục bộ liên quan sẽ bị xóa; live/native
   delete chỉ chạy trên app-data cô lập nếu chưa có approval cụ thể.
-- Trong increment CRUD đầu, SQLite `shops.api_key` tiếp tục là source-of-truth để JavaFX rollback
-  đọc được token mới. Đây chưa phải credential-storage parity. Increment kế tiếp phải thêm monotonic
-  version/fingerprint, OS credential-store write-through + read-back verification và fault-injection
-  recovery theo ADR; chỉ sau rollback window mới được retire plaintext column.
+- Trong rollback window, SQLite `shops.api_key` tiếp tục là source-of-truth để JavaFX luôn đọc token
+  mới nhất. Mỗi token có metadata additive `{version, fingerprint, mirroredVersion,
+  mirroredFingerprint}`; version tăng đơn điệu khi và chỉ khi token thay đổi, fingerprint là
+  SHA-256 lowercase và không bao giờ đi qua bridge/log.
+- SecretStore dùng một key ổn định, bounded theo shop và một envelope versioned chứa credential
+  version, fingerprint và token. Save commit SQLite trước, sau đó `put` vào OS store, `get` đọc lại
+  và chỉ ack mirrored metadata khi envelope khớp hoàn toàn. Lỗi/crash sau bất kỳ bước nào vẫn để
+  legacy token dùng được và một pending state idempotent cho lần reconcile sau; command không được
+  báo thất bại theo cách khiến người dùng retry tạo shop trùng.
+- Reconcile được serialize cùng shop mutation. Missing/corrupt/stale OS entry luôn bị sửa từ nguồn
+  legacy authoritative; một lỗi OS-store không được chặn list/read local hay làm thay đổi version.
+  Xóa shop ghi tombstone không chứa token trong cùng SQLite transaction trước khi cascade, rồi xóa
+  OS entry và chỉ dọn tombstone sau khi đọc lại xác nhận entry đã biến mất.
+- Schema credential mirror chỉ được tạo sau pre-migration snapshot của jDesk, là additive để bản
+  JavaFX rollback bỏ qua an toàn. Đây vẫn là dual-write foundation, chưa phải secret-at-rest parity:
+  không xóa/blank plaintext column trước khi rollback window đóng và Windows credential-store
+  cutover đã được rehearsal.
 
 ### Template designer contract
 

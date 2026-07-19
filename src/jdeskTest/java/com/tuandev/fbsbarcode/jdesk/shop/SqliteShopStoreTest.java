@@ -2,7 +2,9 @@ package com.tuandev.fbsbarcode.jdesk.shop;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -32,8 +34,9 @@ class SqliteShopStoreTest {
             statement.execute("INSERT INTO shops(id,name,api_key) VALUES(41,'Existing','existing-secret')");
             statement.execute("INSERT INTO local_rows(id,shop_id) VALUES(1,41)");
             statement.execute("INSERT INTO app_config(key,value) VALUES('last_selected_shop_id','41')");
+            ShopCredentialSchema.initialize(connection);
         }
-        store = new SqliteShopStore(this::connection);
+        store = new SqliteShopStore(this::connection, () -> "shop-api-key-v1-fixture");
     }
 
     @Test
@@ -114,6 +117,157 @@ class SqliteShopStoreTest {
         assertEquals("41", configValue());
     }
 
+    @Test
+    void createAndTokenReplacementAdvanceVersionWhileRetainDoesNot() throws Exception {
+        ShopCredentialMirrorTest.FakeVault vault = new ShopCredentialMirrorTest.FakeVault();
+        ShopCredentialMirror mirror = new ShopCredentialMirror(vault);
+
+        ShopCommandService.ShopState created = store.create("Created", "first-secret");
+        int shopId = created.selectedShopId();
+        store.reconcile(mirror);
+        CredentialState first = credentialState(shopId);
+        assertEquals(1, first.version());
+        assertEquals(1, first.mirroredVersion());
+        assertEquals(ShopCredentialMirror.fingerprint("first-secret"), first.fingerprint());
+
+        store.update(shopId, "Renamed", null);
+        store.reconcile(mirror);
+        assertEquals(first, credentialState(shopId));
+
+        store.update(shopId, "Renamed", "first-secret");
+        store.reconcile(mirror);
+        assertEquals(first, credentialState(shopId));
+
+        store.update(shopId, "Renamed", "second-secret");
+        assertEquals("second-secret", token(shopId));
+        CredentialState pending = credentialState(shopId);
+        assertEquals(2, pending.version());
+        assertEquals(1, pending.mirroredVersion());
+        store.reconcile(mirror);
+        assertEquals(2, credentialState(shopId).mirroredVersion());
+    }
+
+    @Test
+    void discoversOutOfBandJavaFxTokenChangeAndReconcilesFromLegacyAuthority() throws Exception {
+        ShopCredentialMirrorTest.FakeVault vault = new ShopCredentialMirrorTest.FakeVault();
+        ShopCredentialMirror mirror = new ShopCredentialMirror(vault);
+        store.reconcile(mirror);
+        CredentialState original = credentialState(41);
+
+        try (Connection connection = connection(); PreparedStatement statement = connection.prepareStatement(
+                "UPDATE shops SET api_key=? WHERE id=41")) {
+            statement.setString(1, "javafx-newest-secret");
+            statement.executeUpdate();
+        }
+        store.reconcile(mirror);
+
+        CredentialState reconciled = credentialState(41);
+        assertEquals(original.version() + 1, reconciled.version());
+        assertEquals(reconciled.version(), reconciled.mirroredVersion());
+        assertEquals(ShopCredentialMirror.fingerprint("javafx-newest-secret"), reconciled.fingerprint());
+        assertEquals("javafx-newest-secret", token(41));
+    }
+
+    @Test
+    void repairsOsEntryDeletedOrCorruptedAfterItWasAcknowledged() throws Exception {
+        ShopCredentialMirrorTest.FakeVault vault = new ShopCredentialMirrorTest.FakeVault();
+        ShopCredentialMirror mirror = new ShopCredentialMirror(vault);
+        store.reconcile(mirror);
+        CredentialState state = credentialState(41);
+
+        vault.values.remove(state.secretKey());
+        store.reconcile(mirror);
+        assertTrue(vault.values.containsKey(state.secretKey()));
+
+        vault.values.put(state.secretKey(), "corrupt");
+        store.reconcile(mirror);
+        assertFalse("corrupt".equals(vault.values.get(state.secretKey())));
+        assertEquals(state.version(), credentialState(41).mirroredVersion());
+    }
+
+    @Test
+    void vaultPutGetAndSqliteAckFailuresStayPendingAndRetryWithoutChangingLegacyToken() throws Exception {
+        ShopCredentialMirrorTest.FakeVault vault = new ShopCredentialMirrorTest.FakeVault();
+        ShopCredentialMirror mirror = new ShopCredentialMirror(vault);
+        store.update(41, "Existing", "newest-secret");
+
+        vault.failPutBeforeMutation = true;
+        store.reconcile(mirror);
+        assertNull(credentialState(41).mirroredVersion());
+        assertEquals("newest-secret", token(41));
+
+        vault.failPutBeforeMutation = false;
+        vault.failGet = true;
+        store.reconcile(mirror);
+        assertNull(credentialState(41).mirroredVersion());
+
+        vault.failGet = false;
+        try (Connection connection = connection(); Statement statement = connection.createStatement()) {
+            statement.execute("CREATE TRIGGER reject_mirror_ack BEFORE UPDATE OF mirrored_version "
+                    + "ON shop_credential_mirrors BEGIN SELECT RAISE(ABORT,'ack rejected'); END");
+        }
+        store.reconcile(mirror);
+        assertNull(credentialState(41).mirroredVersion());
+        try (Connection connection = connection(); Statement statement = connection.createStatement()) {
+            statement.execute("DROP TRIGGER reject_mirror_ack");
+        }
+
+        store.reconcile(mirror);
+        assertEquals(1, credentialState(41).mirroredVersion());
+        assertEquals("newest-secret", token(41));
+    }
+
+    @Test
+    void deleteCommitsTokenFreeTombstoneAndRetriesVaultCleanup() throws Exception {
+        ShopCredentialMirrorTest.FakeVault vault = new ShopCredentialMirrorTest.FakeVault();
+        ShopCredentialMirror mirror = new ShopCredentialMirror(vault);
+        store.reconcile(mirror);
+        String key = credentialState(41).secretKey();
+        assertTrue(vault.values.containsKey(key));
+
+        vault.failDeleteBeforeMutation = true;
+        store.delete(41);
+        store.reconcile(mirror);
+        assertEquals(1, count("SELECT COUNT(*) FROM shop_credential_tombstones"));
+        assertTrue(vault.values.containsKey(key));
+        assertEquals(0, count("SELECT COUNT(*) FROM shops WHERE id=41"));
+        assertFalse(tombstoneText().contains("existing-secret"));
+
+        vault.failDeleteBeforeMutation = false;
+        store.reconcile(mirror);
+        assertFalse(vault.values.containsKey(key));
+        assertEquals(0, count("SELECT COUNT(*) FROM shop_credential_tombstones"));
+    }
+
+    @Test
+    void deleteAfterMutationAndTombstoneAckFailuresRemainIdempotentlyRetryable() throws Exception {
+        ShopCredentialMirrorTest.FakeVault vault = new ShopCredentialMirrorTest.FakeVault();
+        ShopCredentialMirror mirror = new ShopCredentialMirror(vault);
+        store.reconcile(mirror);
+        String key = credentialState(41).secretKey();
+
+        vault.failDeleteAfterMutation = true;
+        store.delete(41);
+        store.reconcile(mirror);
+        assertFalse(vault.values.containsKey(key));
+        assertEquals(1, count("SELECT COUNT(*) FROM shop_credential_tombstones"));
+
+        vault.failDeleteAfterMutation = false;
+        try (Connection connection = connection(); Statement statement = connection.createStatement()) {
+            statement.execute("CREATE TRIGGER reject_tombstone_ack BEFORE DELETE "
+                    + "ON shop_credential_tombstones BEGIN SELECT RAISE(ABORT,'ack rejected'); END");
+        }
+        store.reconcile(mirror);
+        assertEquals(1, count("SELECT COUNT(*) FROM shop_credential_tombstones"));
+        try (Connection connection = connection(); Statement statement = connection.createStatement()) {
+            statement.execute("DROP TRIGGER reject_tombstone_ack");
+        }
+
+        store.reconcile(mirror);
+        assertEquals(0, count("SELECT COUNT(*) FROM shop_credential_tombstones"));
+        assertEquals(0, count("SELECT COUNT(*) FROM shops"));
+    }
+
     private Connection connection() throws SQLException {
         Connection connection = DriverManager.getConnection(url);
         try (Statement statement = connection.createStatement()) {
@@ -141,5 +295,51 @@ class SqliteShopStoreTest {
                 return result.next() ? result.getString(1) : null;
             }
         }
+    }
+
+    private CredentialState credentialState(int shopId) throws Exception {
+        try (Connection connection = connection(); PreparedStatement statement = connection.prepareStatement(
+                "SELECT secret_key,credential_version,credential_fingerprint,mirrored_version,mirrored_fingerprint "
+                        + "FROM shop_credential_mirrors WHERE shop_id=?")) {
+            statement.setInt(1, shopId);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) {
+                    return null;
+                }
+                Long mirroredVersion = result.getObject("mirrored_version") == null
+                        ? null : result.getLong("mirrored_version");
+                return new CredentialState(
+                        result.getString("secret_key"),
+                        result.getLong("credential_version"),
+                        result.getString("credential_fingerprint"),
+                        mirroredVersion,
+                        result.getString("mirrored_fingerprint"));
+            }
+        }
+    }
+
+    private int count(String sql) throws Exception {
+        try (Connection connection = connection(); Statement statement = connection.createStatement();
+                ResultSet result = statement.executeQuery(sql)) {
+            return result.next() ? result.getInt(1) : 0;
+        }
+    }
+
+    private String tombstoneText() throws Exception {
+        try (Connection connection = connection(); Statement statement = connection.createStatement();
+                ResultSet result = statement.executeQuery("SELECT * FROM shop_credential_tombstones")) {
+            return result.next()
+                    ? result.getString("secret_key") + result.getLong("credential_version")
+                            + result.getString("credential_fingerprint")
+                    : "";
+        }
+    }
+
+    private record CredentialState(
+            String secretKey,
+            long version,
+            String fingerprint,
+            Long mirroredVersion,
+            String mirroredFingerprint) {
     }
 }

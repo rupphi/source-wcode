@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
@@ -130,6 +131,48 @@ class ShopCommandServiceTest {
         create.join();
         select.join();
         assertEquals(1, maximum.get());
+    }
+
+    @Test
+    void reconciliationAndMutationShareTheSameSerializationBoundary() throws Exception {
+        CountDownLatch reconcileEntered = new CountDownLatch(1);
+        CountDownLatch updateEntered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicBoolean firstReconcile = new AtomicBoolean(true);
+        FakeStore store = new FakeStore(state(7, "Main", true)) {
+            @Override
+            public void reconcile(ShopCredentialMirror mirror) {
+                if (firstReconcile.compareAndSet(true, false)) {
+                    reconcileEntered.countDown();
+                    try {
+                        assertTrue(release.await(2, TimeUnit.SECONDS));
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        throw new AssertionError(exception);
+                    }
+                }
+            }
+
+            @Override
+            public ShopCommandService.ShopState update(int shopId, String name, String apiKey) {
+                updateEntered.countDown();
+                return super.update(shopId, name, apiKey);
+            }
+        };
+        ShopCommandService service = service(store);
+
+        CompletableFuture<?> list = CompletableFuture.supplyAsync(() -> service.list(
+                new ShopCommandService.ShopListRequest(), null).toCompletableFuture().join());
+        assertTrue(reconcileEntered.await(1, TimeUnit.SECONDS));
+        CompletableFuture<?> update = CompletableFuture.supplyAsync(() -> service.update(
+                new ShopCommandService.UpdateShopRequest(7, "Main", ""), null)
+                .toCompletableFuture().join());
+        assertFalse(updateEntered.await(100, TimeUnit.MILLISECONDS));
+        release.countDown();
+
+        list.join();
+        update.join();
+        assertEquals(0, updateEntered.getCount());
     }
 
     @Test

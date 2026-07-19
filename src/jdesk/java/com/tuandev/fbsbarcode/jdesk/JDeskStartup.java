@@ -1,6 +1,7 @@
 package com.tuandev.fbsbarcode.jdesk;
 
 import com.tuandev.fbsbarcode.config.Database;
+import com.tuandev.fbsbarcode.jdesk.shop.ShopCredentialSchema;
 import com.tuandev.fbsbarcode.shared.AppDataLock;
 import com.tuandev.fbsbarcode.shared.AppDataRecoveryService;
 import com.tuandev.fbsbarcode.shared.AppPaths;
@@ -18,6 +19,7 @@ import java.util.regex.Pattern;
 /** Performs fail-closed data ownership, recovery, snapshot and database initialization. */
 public final class JDeskStartup {
     private static final Pattern VERSION_PATTERN = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,31}");
+    private static final String DATA_MIGRATION = "shop-credential-mirror-v1";
 
     private JDeskStartup() {
     }
@@ -39,6 +41,7 @@ public final class JDeskStartup {
             Path marker = normalizedDir.resolve("writer-state").resolve("jdesk-" + appVersion + ".ready");
             if (isReady(marker, appVersion)) {
                 Database.initDatabase();
+                initializeCredentialSchema();
                 return new Session(ownership);
             }
 
@@ -52,6 +55,7 @@ public final class JDeskStartup {
             }
 
             Database.initDatabase();
+            initializeCredentialSchema();
             writeReadyMarker(marker, appVersion, snapshotChecksum);
             return new Session(ownership);
         } catch (Exception exception) {
@@ -75,6 +79,7 @@ public final class JDeskStartup {
             }
             String content = Files.readString(marker, StandardCharsets.UTF_8);
             return content.contains("writerVersion=" + appVersion + System.lineSeparator())
+                    && content.contains("dataMigration=" + DATA_MIGRATION + System.lineSeparator())
                     && content.matches("(?s).*snapshotSha256=(none|[0-9a-f]{64})\\R.*");
         } catch (IOException exception) {
             return false;
@@ -86,6 +91,7 @@ public final class JDeskStartup {
         Files.createDirectories(marker.getParent());
         Path temporary = marker.resolveSibling(marker.getFileName() + ".tmp");
         String content = "writerVersion=" + appVersion + System.lineSeparator()
+                + "dataMigration=" + DATA_MIGRATION + System.lineSeparator()
                 + "snapshotSha256=" + snapshotChecksum + System.lineSeparator();
         Files.writeString(temporary, content, StandardCharsets.UTF_8);
         try {
@@ -96,6 +102,12 @@ public final class JDeskStartup {
                     StandardCopyOption.REPLACE_EXISTING);
         } catch (java.nio.file.AtomicMoveNotSupportedException exception) {
             Files.move(temporary, marker, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private static void initializeCredentialSchema() throws Exception {
+        try (var connection = Database.getConnection()) {
+            ShopCredentialSchema.initialize(connection);
         }
     }
 

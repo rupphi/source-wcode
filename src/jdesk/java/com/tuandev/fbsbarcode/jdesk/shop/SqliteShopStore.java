@@ -7,6 +7,9 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
+import java.util.function.Supplier;
 
 /** SQLite implementation that keeps each shop mutation and selection change in one transaction. */
 final class SqliteShopStore implements ShopCommandService.ShopStore {
@@ -22,9 +25,15 @@ final class SqliteShopStore implements ShopCommandService.ShopStore {
     };
 
     private final ConnectionFactory connections;
+    private final SqliteShopCredentialStore credentials;
 
     SqliteShopStore(ConnectionFactory connections) {
-        this.connections = connections;
+        this(connections, () -> UUID.randomUUID().toString());
+    }
+
+    SqliteShopStore(ConnectionFactory connections, Supplier<String> secretKeyIds) {
+        this.connections = Objects.requireNonNull(connections, "connections");
+        this.credentials = new SqliteShopCredentialStore(connections::open, secretKeyIds);
     }
 
     @Override
@@ -60,6 +69,7 @@ final class SqliteShopStore implements ShopCommandService.ShopStore {
             if (shopId <= 0) {
                 throw new SQLException("Shop insert returned an invalid id");
             }
+            credentials.insert(connection, shopId, apiKey);
             writeSelection(connection, shopId);
             return readState(connection);
         });
@@ -68,6 +78,10 @@ final class SqliteShopStore implements ShopCommandService.ShopStore {
     @Override
     public ShopCommandService.ShopState update(int shopId, String name, String apiKey) {
         return transaction(connection -> {
+            requireShop(connection, shopId);
+            if (apiKey == null) {
+                credentials.retain(connection, shopId);
+            }
             String sql = apiKey == null
                     ? "UPDATE shops SET name=? WHERE id=?"
                     : "UPDATE shops SET name=?,api_key=? WHERE id=?";
@@ -82,6 +96,9 @@ final class SqliteShopStore implements ShopCommandService.ShopStore {
                 if (statement.executeUpdate() != 1) {
                     throw new ShopCommandService.ShopStoreException("shop_not_found");
                 }
+            }
+            if (apiKey != null) {
+                credentials.replace(connection, shopId, apiKey);
             }
             return readState(connection);
         });
@@ -103,6 +120,7 @@ final class SqliteShopStore implements ShopCommandService.ShopStore {
             if (hasActivePurchasePipeline(connection, shopId)) {
                 throw new ShopCommandService.ShopStoreException("shop_busy");
             }
+            credentials.tombstone(connection, shopId);
             try (PreparedStatement statement = connection.prepareStatement("DELETE FROM shops WHERE id=?")) {
                 statement.setInt(1, shopId);
                 if (statement.executeUpdate() != 1) {
@@ -114,6 +132,11 @@ final class SqliteShopStore implements ShopCommandService.ShopStore {
             writeSelection(connection, selected == 0 ? null : selected);
             return readState(connection);
         });
+    }
+
+    @Override
+    public void reconcile(ShopCredentialMirror mirror) {
+        credentials.reconcile(mirror);
     }
 
     private ShopCommandService.ShopState readState(Connection connection) throws SQLException {
@@ -249,4 +272,5 @@ final class SqliteShopStore implements ShopCommandService.ShopStore {
     private interface SqlOperation {
         ShopCommandService.ShopState run(Connection connection) throws SQLException;
     }
+
 }

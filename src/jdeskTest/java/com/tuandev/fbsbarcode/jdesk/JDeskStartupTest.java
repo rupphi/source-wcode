@@ -31,6 +31,8 @@ class JDeskStartupTest {
         try {
             try (JDeskStartup.Session ignored = JDeskStartup.prepare(appData, "1.1.7")) {
                 assertTrue(hasTable(database, "shops"));
+                assertTrue(hasTable(database, "shop_credential_mirrors"));
+                assertTrue(hasTable(database, "shop_credential_tombstones"));
                 assertTrue(Files.exists(appData.resolve("writer-state/jdesk-1.1.7.ready")));
                 assertEquals(1, snapshotCount(appData));
             }
@@ -38,6 +40,35 @@ class JDeskStartupTest {
             try (JDeskStartup.Session ignored = JDeskStartup.prepare(appData, "1.1.7")) {
                 assertEquals(1, snapshotCount(appData));
             }
+        } finally {
+            if (previousAppData == null) {
+                System.clearProperty("wcode.appdata.dir");
+            } else {
+                System.setProperty("wcode.appdata.dir", previousAppData);
+            }
+        }
+    }
+
+    @Test
+    void anOlderReadyMarkerCannotBypassTheCredentialSchemaSnapshotGate() throws Exception {
+        Path appData = tempDir.resolve("old-marker-app-data");
+        Files.createDirectories(appData.resolve("writer-state"));
+        Path database = appData.resolve("database.db");
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database);
+                Statement statement = connection.createStatement()) {
+            statement.execute("CREATE TABLE legacy_marker(value TEXT NOT NULL)");
+        }
+        Files.writeString(
+                appData.resolve("writer-state/jdesk-1.1.7.ready"),
+                "writerVersion=1.1.7\nsnapshotSha256=none\n");
+
+        String previousAppData = System.getProperty("wcode.appdata.dir");
+        System.setProperty("wcode.appdata.dir", appData.toString());
+        try (JDeskStartup.Session ignored = JDeskStartup.prepare(appData, "1.1.7")) {
+            assertEquals(1, snapshotCount(appData));
+            assertTrue(hasTable(database, "shop_credential_mirrors"));
+            assertTrue(Files.readString(appData.resolve("writer-state/jdesk-1.1.7.ready"))
+                    .contains("dataMigration=shop-credential-mirror-v1\n"));
         } finally {
             if (previousAppData == null) {
                 System.clearProperty("wcode.appdata.dir");
