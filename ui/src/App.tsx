@@ -14,6 +14,7 @@ import { getSupplyCopy, getSupplyLocale } from "./features/supplies/supplyI18n";
 import { PackingView } from "./features/packing/PackingView";
 import { getPackingCopy } from "./features/packing/packingI18n";
 import { FboPackingView } from "./features/fbo/FboPackingView";
+import { getFboCopy } from "./features/fbo/fboI18n";
 import { KizMappingView } from "./features/kizmapping/KizMappingView";
 import { ZnackView } from "./features/znack/ZnackView";
 import { PrintHistoryView } from "./features/history/PrintHistoryView";
@@ -298,7 +299,12 @@ export function App() {
               locale={getSupplyLocale(preferences.language)}
             />
           ) : activeView === "fbo" ? (
-            <FboPackingView key={selectedShop.id} shopId={selectedShop.id} />
+            <FboPackingView
+              key={selectedShop.id}
+              shopId={selectedShop.id}
+              copy={getFboCopy(preferences.language)}
+              locale={getSupplyLocale(preferences.language)}
+            />
           ) : activeView === "kizMapping" ? (
             <KizMappingView key={selectedShop.id} shopId={selectedShop.id} />
           ) : activeView === "znack" ? (

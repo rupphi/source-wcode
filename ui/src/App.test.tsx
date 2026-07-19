@@ -861,6 +861,43 @@ describe("App", () => {
     expect(document.body).not.toHaveTextContent(secret);
   });
 
+  it("switches the active FBO label catalog from English to Vietnamese and Chinese", async () => {
+    const user = userEvent.setup();
+    loadPreferences.mockResolvedValue({ language: "en", theme: "dark" });
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Main shop", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard.mockResolvedValue({ shopId: 7, productCount: 0, newOrderCount: 0, openSupplyCount: 0 });
+    loadFboCatalog.mockImplementation(async (request) => ({
+      ...request,
+      hasMore: false,
+      availableSubjects: [],
+      items: [],
+    }));
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "FBO supplies" }));
+
+    expect(await screen.findByRole("heading", { name: "FBO product labels" })).toBeVisible();
+    expect(screen.getByText("The FBO catalog is empty")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Language" }), "vi");
+    await user.click(await screen.findByRole("button", { name: "Đóng cài đặt" }));
+    expect(await screen.findByRole("heading", { name: "Nhãn sản phẩm FBO" })).toBeVisible();
+    expect(screen.getByText("Danh mục FBO đang trống")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Cài đặt" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Ngôn ngữ" }), "zh");
+    await user.click(await screen.findByRole("button", { name: "关闭设置" }));
+    expect(await screen.findByRole("heading", { name: "FBO 商品标签" })).toBeVisible();
+    expect(screen.getByText("FBO 目录为空")).toBeVisible();
+    expect(loadFboCatalog).toHaveBeenCalledTimes(1);
+  });
+
   it("opens the bounded local GTIN mapping catalog from primary navigation", async () => {
     const user = userEvent.setup();
     bootstrap.mockResolvedValue({

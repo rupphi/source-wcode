@@ -373,6 +373,8 @@ artifact. Recovery/idempotency tests precede implementation changes.
       GTIN inventory, print setup and guarded delivery/purchase dialogs with locale formatting.
 - [x] Translate the complete FBS packing board in RU/EN/VI/ZH and share its guarded
       create/add/deliver dialog copy with the supplies journey.
+- [x] Translate the complete FBO label-printing journey in RU/EN/VI/ZH, including locale-aware
+      pair plurals, catalog/filter states and explicit quick/batch PDF export feedback.
 - [ ] Migrate every remaining feature surface before marking language parity complete.
 - [x] Port signed update check/download/install, shared optional-version skip, bounded streamed
       checksum validation, Authenticode/snapshot gates and fail-closed signed release automation.

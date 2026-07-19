@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands } from "../../generated/commands";
 import { exportFboPdf } from "../printing/nativePrintCommands";
 import { FboPackingView } from "./FboPackingView";
+import { getFboCopy } from "./fboI18n";
 
 vi.mock("../../generated/commands", () => ({
   commands: {
@@ -189,5 +190,34 @@ describe("FboPackingView", () => {
     await user.click(screen.getByRole("button", { name: "Повторить" }));
     expect(await screen.findByText("Каталог FBO пока пуст")).toBeVisible();
     expect(loadCatalog).toHaveBeenCalledTimes(2);
+  });
+
+  it("formats the English selection and keeps export behind an explicit action", async () => {
+    const user = userEvent.setup();
+    exportPdf.mockResolvedValue({
+      cancelled: true,
+      exportId: "",
+      fileName: "",
+      pairCount: 0,
+      pageCount: 0,
+      kizCount: 0,
+    });
+    render(<FboPackingView shopId={7} copy={getFboCopy("en")} locale="en-US" />);
+
+    await screen.findByText("Кроссовки");
+    const quantity = screen.getByRole("spinbutton", { name: "Quantity for Кроссовки, SKU SKU-1" });
+    await user.clear(quantity);
+    await user.type(quantity, "1");
+    expect(screen.getByText("1 pair · 1 SKU")).toBeVisible();
+    expect(exportPdf).not.toHaveBeenCalled();
+
+    await user.clear(quantity);
+    await user.type(quantity, "2");
+    expect(screen.getByText("2 pairs · 1 SKU")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Create a PDF for 2 pairs" }));
+    await waitFor(() => expect(exportPdf).toHaveBeenCalledWith({
+      shopId: 7,
+      items: [{ sku: "SKU-1", quantity: 2 }],
+    }));
   });
 });

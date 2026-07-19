@@ -20,7 +20,9 @@ import {
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { commands } from "../../generated/commands";
 import type { FboCatalogResponse, FboExportResponse, FboProductItem } from "../../generated/types";
+import { interpolate } from "../../i18n";
 import { exportFboPdf } from "../printing/nativePrintCommands";
+import { defaultFboCopy, formatFboPairs, type FboCopy } from "./fboI18n";
 
 type CatalogState =
   | { status: "loading"; requestKey: string }
@@ -45,9 +47,8 @@ const PAGE_SIZE = 50;
 const MAX_QUANTITY = 10_000;
 const MAX_SELECTED_SKUS = 500;
 const MAX_TOTAL_PAIRS = 10_000;
-const numberFormat = new Intl.NumberFormat("ru-RU");
 
-export function FboPackingView({ shopId }: { shopId: number }) {
+export function FboPackingView({ shopId, copy = defaultFboCopy, locale = "ru-RU" }: { shopId: number; copy?: FboCopy; locale?: string }) {
   const [draftQuery, setDraftQuery] = useState("");
   const [query, setQuery] = useState("");
   const [subjects, setSubjects] = useState<string[]>([]);
@@ -58,6 +59,8 @@ export function FboPackingView({ shopId }: { shopId: number }) {
   const [exportState, setExportState] = useState<ExportState>({ status: "idle" });
   const requestSequence = useRef(0);
   const requestKey = JSON.stringify([shopId, query, subjects, retryKey]);
+  const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
+  const pairLabel = (value: number) => formatFboPairs(copy, locale, value);
 
   useEffect(() => {
     const requestId = ++requestSequence.current;
@@ -230,15 +233,15 @@ export function FboPackingView({ shopId }: { shopId: number }) {
               <Boxes aria-hidden="true" size={20} />
             </span>
             <div>
-              <h3 className="font-semibold tracking-[-0.01em]">Товарные этикетки FBO</h3>
+              <h3 className="font-semibold tracking-[-0.01em]">{copy.header.title}</h3>
               <p className="mt-1 max-w-2xl text-sm leading-5 text-[var(--text-secondary)]">
-                Выберите количество пар этикеток для SKU. Карточки и изображения берутся только из локального кэша WCode.
+                {copy.header.description}
               </p>
             </div>
           </div>
           <span className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
             <ShieldCheck aria-hidden="true" size={15} />
-            KIZ списываются только при публикации PDF
+            {copy.header.guarded}
           </span>
         </div>
       </section>
@@ -246,14 +249,14 @@ export function FboPackingView({ shopId }: { shopId: number }) {
       <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)] md:p-5">
         <form className="flex flex-col gap-3 lg:flex-row" onSubmit={submitSearch} role="search">
           <label className="relative min-w-0 flex-1">
-            <span className="sr-only">Поиск товаров FBO</span>
+            <span className="sr-only">{copy.search.label}</span>
             <Search className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden="true" size={18} />
             <input
-              aria-label="Поиск товаров FBO"
+              aria-label={copy.search.label}
               className="h-11 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] pr-4 pl-10 text-sm shadow-[var(--shadow-control)] outline-none transition placeholder:text-[var(--text-muted)] hover:border-[var(--accent)] focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]"
               maxLength={120}
               onChange={(event) => setDraftQuery(event.target.value)}
-              placeholder="nmID, артикул продавца или SKU"
+              placeholder={copy.search.placeholder}
               type="search"
               value={draftQuery}
             />
@@ -261,18 +264,18 @@ export function FboPackingView({ shopId }: { shopId: number }) {
           <div className="relative">
             <button
               aria-expanded={subjectsOpen}
-              aria-label="Категории"
+              aria-label={copy.search.subjects}
               className="inline-flex h-11 w-full items-center justify-between gap-3 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-4 text-sm font-semibold shadow-[var(--shadow-control)] transition hover:border-[var(--accent)] lg:w-52"
               onClick={() => setSubjectsOpen((value) => !value)}
               type="button"
             >
-              <span>Категории{subjects.length > 0 ? ` · ${subjects.length}` : ""}</span>
+              <span>{subjects.length > 0 ? interpolate(copy.search.subjectCount, { count: numberFormat.format(subjects.length) }) : copy.search.subjects}</span>
               <ChevronDown aria-hidden="true" size={16} />
             </button>
             {subjectsOpen && visibleState.status !== "loading" && visibleState.status !== "error" && (
               <div className="absolute top-12 right-0 z-20 max-h-72 w-full min-w-64 overflow-y-auto rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-2 shadow-xl lg:right-auto lg:left-0">
                 {visibleState.availableSubjects.length === 0 ? (
-                  <p className="px-3 py-2 text-sm text-[var(--text-muted)]">Категорий пока нет</p>
+                  <p className="px-3 py-2 text-sm text-[var(--text-muted)]">{copy.search.noSubjects}</p>
                 ) : visibleState.availableSubjects.map((subject) => (
                   <label className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-[var(--surface-muted)]" key={subject}>
                     <input
@@ -289,7 +292,7 @@ export function FboPackingView({ shopId }: { shopId: number }) {
           </div>
           <button className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--sidebar)] px-5 text-sm font-semibold text-white transition hover:bg-[#1c3329]" type="submit">
             <Search aria-hidden="true" size={16} />
-            Найти
+            {copy.search.submit}
           </button>
         </form>
 
@@ -300,41 +303,41 @@ export function FboPackingView({ shopId }: { shopId: number }) {
                 {subject}<X aria-hidden="true" size={13} />
               </button>
             ))}
-            <button className="px-2 py-1.5 text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)]" onClick={clearFilters} type="button">Сбросить фильтры</button>
+            <button className="px-2 py-1.5 text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)]" onClick={clearFilters} type="button">{copy.search.clear}</button>
           </div>
         )}
       </section>
 
       {selectedSkuCount > 0 && (
-        <section className="flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950 shadow-[var(--shadow-panel)] sm:flex-row sm:items-center sm:justify-between" aria-label="Выбор для печати FBO">
+        <section className="flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950 shadow-[var(--shadow-panel)] sm:flex-row sm:items-center sm:justify-between" aria-label={copy.selection.label}>
           <div className="flex items-center gap-3">
             <span className="grid size-10 place-items-center rounded-xl bg-emerald-700 text-white"><Layers3 aria-hidden="true" size={19} /></span>
             <div>
-              <p className="font-semibold">{pairLabel(pairCount)} · {selectedSkuCount} SKU</p>
-              <p className="mt-0.5 text-xs text-emerald-800">После успешной пакетной печати выбор будет очищен.</p>
+              <p className="font-semibold">{interpolate(copy.selection.summary, { pairs: pairLabel(pairCount), skus: numberFormat.format(selectedSkuCount) })}</p>
+              <p className="mt-0.5 text-xs text-emerald-800">{copy.selection.clearedAfterSuccess}</p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button className="rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)]" onClick={() => setQuantities(new Map())} type="button">Очистить</button>
+            <button className="rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)]" onClick={() => setQuantities(new Map())} type="button">{copy.selection.clear}</button>
             <button
-              aria-label={`Создать PDF для ${pairLabel(pairCount)}`}
+              aria-label={interpolate(copy.selection.createAria, { pairs: pairLabel(pairCount) })}
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!selectionValid || busy}
               onClick={exportBatch}
               type="button"
             >
               {busy ? <LoaderCircle className="animate-spin" aria-hidden="true" size={16} /> : <Printer aria-hidden="true" size={16} />}
-              {busy ? "Создаём PDF…" : "Создать PDF"}
+              {busy ? copy.selection.creating : copy.selection.create}
             </button>
           </div>
-          {!selectionValid && <p className="text-xs font-semibold text-red-800">Не более 500 SKU и 10 000 пар за одно задание.</p>}
+          {!selectionValid && <p className="text-xs font-semibold text-red-800">{copy.selection.limit}</p>}
         </section>
       )}
 
       {exportState.status === "error" && (
         <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900" role="alert">
           <AlertCircle className="mt-0.5 shrink-0 text-red-600" aria-hidden="true" size={18} />
-          <p><strong>Не удалось создать PDF FBO.</strong> Выбор сохранён. Проверьте локальные KIZ и повторите действие.</p>
+          <p><strong>{copy.export.errorTitle}</strong> {copy.export.errorDescription}</p>
         </div>
       )}
       {exportState.status === "success" && (
@@ -342,27 +345,27 @@ export function FboPackingView({ shopId }: { shopId: number }) {
           <div className="flex items-start gap-3">
             <CheckCircle2 className="mt-0.5 shrink-0 text-emerald-700" aria-hidden="true" size={20} />
             <div>
-              <p className="font-semibold">PDF FBO создан</p>
-              <p className="mt-0.5 text-sm"><span className="font-medium">{exportState.data.fileName}</span> · {pairLabel(exportState.data.pairCount)} · {numberFormat.format(exportState.data.pageCount)} стр.</p>
-              {exportState.openError && <p className="mt-1 text-xs font-semibold text-red-800">Не удалось открыть файл. Он остаётся в выбранной папке.</p>}
+              <p className="font-semibold">{copy.export.success}</p>
+              <p className="mt-0.5 text-sm"><span className="font-medium">{exportState.data.fileName}</span> · {pairLabel(exportState.data.pairCount)} · {interpolate(copy.export.pages, { count: numberFormat.format(exportState.data.pageCount) })}</p>
+              {exportState.openError && <p className="mt-1 text-xs font-semibold text-red-800">{copy.export.openError}</p>}
             </div>
           </div>
-          <button aria-label="Открыть PDF FBO" className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-4 text-sm font-semibold shadow-[var(--shadow-control)] disabled:cursor-wait disabled:opacity-60" disabled={exportState.opening} onClick={() => void openPdf()} type="button">
+          <button aria-label={copy.export.openAria} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-4 text-sm font-semibold shadow-[var(--shadow-control)] disabled:cursor-wait disabled:opacity-60" disabled={exportState.opening} onClick={() => void openPdf()} type="button">
             {exportState.opening ? <LoaderCircle className="animate-spin" aria-hidden="true" size={16} /> : <FileText aria-hidden="true" size={16} />}
-            {exportState.opening ? "Открываем…" : "Открыть PDF"}
+            {exportState.opening ? copy.export.opening : copy.export.open}
           </button>
         </section>
       )}
 
       {visibleState.status === "loading" ? (
-        <CatalogLoading />
+        <CatalogLoading copy={copy} />
       ) : visibleState.status === "error" ? (
-        <CatalogError onRetry={() => setRetryKey((value) => value + 1)} />
+        <CatalogError copy={copy} onRetry={() => setRetryKey((value) => value + 1)} />
       ) : visibleState.items.length === 0 ? (
-        <CatalogEmpty filtered={Boolean(query || subjects.length > 0)} />
+        <CatalogEmpty copy={copy} filtered={Boolean(query || subjects.length > 0)} />
       ) : (
         <>
-          <section className="grid gap-3 xl:grid-cols-2" aria-label="Товары FBO">
+          <section className="grid gap-3 xl:grid-cols-2" aria-label={copy.catalog.label}>
             {visibleState.items.map((item) => (
               <ProductCard
                 busy={busy}
@@ -371,17 +374,18 @@ export function FboPackingView({ shopId }: { shopId: number }) {
                 onQuantity={(quantity) => setQuantity(item.sku, quantity)}
                 onQuickPrint={() => void runExport([{ sku: item.sku, quantity: 1 }], false)}
                 quantity={quantities.get(item.sku) ?? 0}
+                copy={copy}
               />
             ))}
           </section>
           {visibleState.loadMoreError && (
-            <p className="text-center text-sm font-medium text-red-700" role="alert">Страницу загрузить не удалось. Уже выбранные количества сохранены.</p>
+            <p className="text-center text-sm font-medium text-red-700" role="alert">{copy.catalog.loadMoreError}</p>
           )}
           {(visibleState.page > 1 || visibleState.hasMore) && (
-            <nav className="flex items-center justify-between gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-3 shadow-[var(--shadow-panel)]" aria-label="Пагинация FBO">
-              <button aria-label="Предыдущая страница FBO" className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--border-strong)] px-4 text-sm font-semibold transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45" disabled={visibleState.page <= 1 || visibleState.status === "loadingMore"} onClick={() => void loadPage(visibleState.page - 1)} type="button"><ChevronLeft aria-hidden="true" size={16} /><span className="hidden sm:inline">Назад</span></button>
-              <p className="text-sm font-semibold tabular-nums text-[var(--text-secondary)]">{visibleState.status === "loadingMore" ? "Загружаем…" : `Страница ${numberFormat.format(visibleState.page)}`}</p>
-              <button aria-label="Следующая страница FBO" className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--border-strong)] px-4 text-sm font-semibold transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45" disabled={!visibleState.hasMore || visibleState.status === "loadingMore"} onClick={() => void loadPage(visibleState.page + 1)} type="button"><span className="hidden sm:inline">Далее</span><ChevronRight aria-hidden="true" size={16} /></button>
+            <nav className="flex items-center justify-between gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-3 shadow-[var(--shadow-panel)]" aria-label={copy.pagination.label}>
+              <button aria-label={copy.pagination.previousAria} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--border-strong)] px-4 text-sm font-semibold transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45" disabled={visibleState.page <= 1 || visibleState.status === "loadingMore"} onClick={() => void loadPage(visibleState.page - 1)} type="button"><ChevronLeft aria-hidden="true" size={16} /><span className="hidden sm:inline">{copy.pagination.previous}</span></button>
+              <p className="text-sm font-semibold tabular-nums text-[var(--text-secondary)]">{visibleState.status === "loadingMore" ? copy.pagination.loading : interpolate(copy.pagination.page, { page: numberFormat.format(visibleState.page) })}</p>
+              <button aria-label={copy.pagination.nextAria} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--border-strong)] px-4 text-sm font-semibold transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45" disabled={!visibleState.hasMore || visibleState.status === "loadingMore"} onClick={() => void loadPage(visibleState.page + 1)} type="button"><span className="hidden sm:inline">{copy.pagination.next}</span><ChevronRight aria-hidden="true" size={16} /></button>
             </nav>
           )}
         </>
@@ -390,18 +394,20 @@ export function FboPackingView({ shopId }: { shopId: number }) {
   );
 }
 
-function ProductCard({ item, quantity, busy, onQuantity, onQuickPrint }: {
+function ProductCard({ item, quantity, busy, onQuantity, onQuickPrint, copy }: {
   item: FboProductItem;
   quantity: number;
   busy: boolean;
   onQuantity: (quantity: number) => void;
   onQuickPrint: () => void;
+  copy: FboCopy;
 }) {
+  const name = item.title || copy.product.unnamed;
   return (
     <article className="flex min-w-0 flex-col gap-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)] sm:flex-row">
       <div className="grid h-32 w-full shrink-0 place-items-center overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-muted)] sm:h-32 sm:w-24">
         {item.imagePath ? (
-          <img alt={`Фото товара ${item.title}`} className="size-full object-cover" src={item.imagePath} />
+          <img alt={interpolate(copy.product.photo, { name })} className="size-full object-cover" src={item.imagePath} />
         ) : (
           <ImageIcon aria-hidden="true" className="text-[var(--text-muted)]" size={24} />
         )}
@@ -409,22 +415,22 @@ function ProductCard({ item, quantity, busy, onQuantity, onQuickPrint }: {
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
-            <h3 className="truncate text-sm font-semibold">{item.title || "Без названия"}</h3>
-            <p className="mt-1 truncate text-xs text-[var(--text-secondary)]">{[item.brand, item.subject].filter(Boolean).join(" · ") || "Без категории"}</p>
+            <h3 className="truncate text-sm font-semibold">{name}</h3>
+            <p className="mt-1 truncate text-xs text-[var(--text-secondary)]">{[item.brand, item.subject].filter(Boolean).join(" · ") || copy.product.uncategorized}</p>
           </div>
-          {item.requiresKiz && <span className="shrink-0 rounded-full bg-violet-50 px-2.5 py-1 text-[0.68rem] font-semibold text-violet-800">Требуется KIZ</span>}
+          {item.requiresKiz && <span className="shrink-0 rounded-full bg-violet-50 px-2.5 py-1 text-[0.68rem] font-semibold text-violet-800">{copy.product.requiresKiz}</span>}
         </div>
         <div className="mt-3 grid gap-x-4 gap-y-1 text-xs text-[var(--text-secondary)] sm:grid-cols-2">
           <p><span className="text-[var(--text-muted)]">nmID</span> <span className="font-mono text-[var(--text-primary)]">{item.nmId}</span></p>
-          <p><span className="text-[var(--text-muted)]">Артикул</span> <span className="font-medium text-[var(--text-primary)]">{item.vendorCode || "—"}</span></p>
+          <p><span className="text-[var(--text-muted)]">{copy.product.article}</span> <span className="font-medium text-[var(--text-primary)]">{item.vendorCode || "—"}</span></p>
           <p><span className="text-[var(--text-muted)]">SKU</span> <span className="font-mono text-[var(--text-primary)]">{item.sku}</span></p>
-          <p><span className="text-[var(--text-muted)]">Размер</span> <span className="font-medium text-[var(--text-primary)]">{item.russianSize || item.size || "—"}</span>{item.color ? ` · ${item.color}` : ""}</p>
+          <p><span className="text-[var(--text-muted)]">{copy.product.size}</span> <span className="font-medium text-[var(--text-primary)]">{item.russianSize || item.size || "—"}</span>{item.color ? ` · ${item.color}` : ""}</p>
         </div>
         <div className="mt-4 flex flex-col gap-2 border-t border-[var(--border-subtle)] pt-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="inline-flex h-10 w-fit items-center overflow-hidden rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] shadow-[var(--shadow-control)]">
-            <button aria-label={`Уменьшить количество ${item.title}`} className="grid size-10 place-items-center text-[var(--text-secondary)] hover:bg-[var(--surface-muted)] disabled:opacity-40" disabled={busy || quantity === 0} onClick={() => onQuantity(quantity - 1)} type="button"><Minus aria-hidden="true" size={15} /></button>
+            <button aria-label={interpolate(copy.product.decrease, { name })} className="grid size-10 place-items-center text-[var(--text-secondary)] hover:bg-[var(--surface-muted)] disabled:opacity-40" disabled={busy || quantity === 0} onClick={() => onQuantity(quantity - 1)} type="button"><Minus aria-hidden="true" size={15} /></button>
             <input
-              aria-label={`Количество для ${item.title}, SKU ${item.sku}`}
+              aria-label={interpolate(copy.product.quantity, { name, sku: item.sku })}
               className="h-full w-16 border-x border-[var(--border-subtle)] text-center text-sm font-semibold tabular-nums outline-none"
               disabled={busy}
               max={MAX_QUANTITY}
@@ -433,31 +439,31 @@ function ProductCard({ item, quantity, busy, onQuantity, onQuickPrint }: {
               type="number"
               value={quantity}
             />
-            <button aria-label={`Увеличить количество ${item.title}`} className="grid size-10 place-items-center text-[var(--text-secondary)] hover:bg-[var(--surface-muted)] disabled:opacity-40" disabled={busy || quantity >= MAX_QUANTITY} onClick={() => onQuantity(quantity + 1)} type="button"><Plus aria-hidden="true" size={15} /></button>
+            <button aria-label={interpolate(copy.product.increase, { name })} className="grid size-10 place-items-center text-[var(--text-secondary)] hover:bg-[var(--surface-muted)] disabled:opacity-40" disabled={busy || quantity >= MAX_QUANTITY} onClick={() => onQuantity(quantity + 1)} type="button"><Plus aria-hidden="true" size={15} /></button>
           </div>
-          <button aria-label={`Быстрая печать ${item.title}`} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--sidebar)] px-4 text-xs font-semibold text-white transition hover:bg-[#1c3329] disabled:cursor-wait disabled:opacity-55" disabled={busy} onClick={onQuickPrint} type="button"><Printer aria-hidden="true" size={15} />Быстрая печать</button>
+          <button aria-label={interpolate(copy.product.quickPrintAria, { name })} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--sidebar)] px-4 text-xs font-semibold text-white transition hover:bg-[#1c3329] disabled:cursor-wait disabled:opacity-55" disabled={busy} onClick={onQuickPrint} type="button"><Printer aria-hidden="true" size={15} />{copy.product.quickPrint}</button>
         </div>
       </div>
     </article>
   );
 }
 
-function CatalogLoading() {
-  return <section aria-label="Загрузка товаров FBO" className="grid gap-3 xl:grid-cols-2">{[0, 1, 2, 3].map((item) => <span className="h-48 animate-pulse rounded-2xl bg-[var(--surface-muted)]" key={item} />)}</section>;
+function CatalogLoading({ copy }: { copy: FboCopy }) {
+  return <section aria-label={copy.loading} className="grid gap-3 xl:grid-cols-2">{[0, 1, 2, 3].map((item) => <span className="h-48 animate-pulse rounded-2xl bg-[var(--surface-muted)]" key={item} />)}</section>;
 }
 
-function CatalogError({ onRetry }: { onRetry: () => void }) {
+function CatalogError({ copy, onRetry }: { copy: FboCopy; onRetry: () => void }) {
   return (
     <section className="grid min-h-64 place-items-center rounded-2xl border border-red-200 bg-red-50 p-8 text-center" role="alert">
-      <div><AlertCircle className="mx-auto mb-3 text-red-600" aria-hidden="true" size={26} /><h3 className="font-semibold text-red-950">Не удалось загрузить товары FBO</h3><p className="mt-2 text-sm text-red-800">Локальные данные не изменены. Повторите запрос.</p><button className="mt-4 rounded-xl bg-red-700 px-4 py-2.5 text-sm font-semibold text-white" onClick={onRetry} type="button">Повторить</button></div>
+      <div><AlertCircle className="mx-auto mb-3 text-red-600" aria-hidden="true" size={26} /><h3 className="font-semibold text-red-950">{copy.error.title}</h3><p className="mt-2 text-sm text-red-800">{copy.error.description}</p><button className="mt-4 rounded-xl bg-red-700 px-4 py-2.5 text-sm font-semibold text-white" onClick={onRetry} type="button">{copy.error.retry}</button></div>
     </section>
   );
 }
 
-function CatalogEmpty({ filtered }: { filtered: boolean }) {
+function CatalogEmpty({ copy, filtered }: { copy: FboCopy; filtered: boolean }) {
   return (
     <section className="grid min-h-64 place-items-center rounded-2xl border border-dashed border-[var(--border-strong)] bg-[var(--surface-elevated)] p-8 text-center">
-      <div><PackageOpen className="mx-auto mb-3 text-[var(--text-muted)]" aria-hidden="true" size={26} /><h3 className="font-semibold">{filtered ? "Товары не найдены" : "Каталог FBO пока пуст"}</h3><p className="mt-2 text-sm text-[var(--text-secondary)]">{filtered ? "Измените запрос или категории." : "Синхронизируйте каталог Wildberries на главной странице."}</p></div>
+      <div><PackageOpen className="mx-auto mb-3 text-[var(--text-muted)]" aria-hidden="true" size={26} /><h3 className="font-semibold">{filtered ? copy.empty.filteredTitle : copy.empty.title}</h3><p className="mt-2 text-sm text-[var(--text-secondary)]">{filtered ? copy.empty.filteredDescription : copy.empty.description}</p></div>
     </section>
   );
 }
@@ -469,13 +475,4 @@ function matchesCatalog(response: FboCatalogResponse, shopId: number, query: str
     && response.pageSize === PAGE_SIZE
     && response.subjects.length === subjects.length
     && response.subjects.every((value, index) => value === subjects[index]);
-}
-
-function pairLabel(value: number): string {
-  const mod100 = value % 100;
-  const mod10 = value % 10;
-  const noun = mod100 >= 11 && mod100 <= 14
-    ? "пар"
-    : mod10 === 1 ? "пара" : mod10 >= 2 && mod10 <= 4 ? "пары" : "пар";
-  return `${numberFormat.format(value)} ${noun}`;
 }
