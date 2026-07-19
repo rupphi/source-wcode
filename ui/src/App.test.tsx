@@ -1173,14 +1173,14 @@ describe("App", () => {
     });
     loadPrintHistory.mockImplementation(async (request) => ({
       ...request,
-      totalItems: 1,
-      totalPages: 1,
+      totalItems: 2,
+      totalPages: 2,
       successfulItems: 4,
       failedItems: 1,
       items: [{
-        jobId: "9007199254741001",
-        supplyId: "WB-GI-1",
-        supplyName: "Поставка Москва",
+        jobId: request.page === 1 ? "9007199254741001" : "9007199254741002",
+        supplyId: request.page === 1 ? "WB-GI-1" : "WB-GI-2",
+        supplyName: request.page === 1 ? "Поставка Москва" : "Поставка Казань",
         printedAt: "2026-07-18T10:00:00Z",
         itemCount: 5,
         templateName: "58 × 40",
@@ -1204,6 +1204,11 @@ describe("App", () => {
     expect(screen.getByText("Поставка Москва")).toBeVisible();
     expect(screen.getByText("WB-GI-1")).toBeVisible();
     expect(screen.getByText("58 × 40")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Следующая страница истории" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Показать ещё" }));
+    expect(await screen.findByText("Поставка Казань")).toBeVisible();
+    expect(screen.getByText("Поставка Москва")).toBeVisible();
+    expect(loadPrintHistory).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, pageSize: 25 }));
 
     reprintHistory.mockResolvedValue({
       cancelled: false,
