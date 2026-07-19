@@ -1,5 +1,5 @@
 import type { Language } from "../../i18n";
-import { defaultPackingMutationCopy } from "../packing/PackingMutationCopy";
+import { defaultPackingMutationCopy, getPackingMutationCopy } from "../packing/PackingMutationCopy";
 import { defaultPrintSetupCopy } from "../printing/PrintSetupCopy";
 import { defaultPurchaseDialogCopy } from "../znack/ZnackPurchaseCopy";
 
@@ -152,15 +152,7 @@ const en: SupplyCopy = {
     fallbackOrder: "Order {id}", received: "Received", notFound: "Not found",
     errors: { rateLimited: "Wildberries limited sticker requests. Wait and import again.", tokenInvalid: "The selected shop token cannot access Wildberries stickers.", invalidFile: "The file is not a supported Wildberries XLSX export.", unavailable: "Could not import the file. Check the connection and try again." },
   },
-  mutation: {
-    changedAfterConfirmation: "Wildberries changes only after final confirmation.", close: "Close", supplyName: "Supply name",
-    operationError: "The operation failed. Refresh the data and check again.", cancel: "Cancel", checking: "Checking…", check: "Check", executing: "Working…",
-    searchSupply: "Search supplies", searchPlaceholder: "ID or name", search: "Search", loadingOpenSupplies: "Loading open supplies…",
-    loadOpenSuppliesError: "Could not load open supplies.", noOpenSupplies: "No open supplies.", orderCount: "Orders: {count}", kizOrderCount: "{count} orders require KIZ",
-    labelsMissing: "Print the supply labels first", kizMissing: "Some required KIZ codes are not attached", supplyNotReady: "The supply is empty, closed, or already delivered",
-    titles: { create: "New supply", add: "Choose a supply", blocked: "Supply is not ready for delivery", confirmCreate: "Confirm supply creation", confirmAdd: "Confirm adding orders", confirmDeliver: "Confirm supply delivery" },
-    actions: { create: "Create in Wildberries", add: "Add orders", deliver: "Deliver supply" },
-  },
+  mutation: getPackingMutationCopy("en"),
   purchase: {
     invalidQuantity: "Enter a whole quantity from 1 to 10,000.", prepareError: "Could not prepare the purchase. Refresh the data and try again.", startError: "The purchase did not start. Check the order state before retrying.",
     confirmTitle: "Confirm KIZ purchase", prepareTitle: "Prepare KIZ purchase", unnamedProduct: "Unnamed product", close: "Close KIZ purchase", quantity: "Quantity",
@@ -237,15 +229,7 @@ const vi: SupplyCopy = {
     fallbackOrder: "Đơn {id}", received: "Đã nhận", notFound: "Không tìm thấy",
     errors: { rateLimited: "Wildberries đang giới hạn yêu cầu sticker. Hãy chờ rồi nhập lại.", tokenInvalid: "Token của cửa hàng đã chọn không có quyền truy cập sticker Wildberries.", invalidFile: "Tệp không phải bản xuất Wildberries XLSX được hỗ trợ.", unavailable: "Không thể nhập tệp. Hãy kiểm tra kết nối và thử lại." },
   },
-  mutation: {
-    changedAfterConfirmation: "Wildberries chỉ thay đổi sau lần xác nhận cuối.", close: "Đóng", supplyName: "Tên lô giao hàng",
-    operationError: "Thao tác không thành công. Hãy cập nhật dữ liệu và kiểm tra lại.", cancel: "Hủy", checking: "Đang kiểm tra…", check: "Kiểm tra", executing: "Đang thực hiện…",
-    searchSupply: "Tìm lô giao hàng", searchPlaceholder: "ID hoặc tên", search: "Tìm", loadingOpenSupplies: "Đang tải các lô đang mở…",
-    loadOpenSuppliesError: "Không thể tải các lô đang mở.", noOpenSupplies: "Không có lô đang mở.", orderCount: "Đơn hàng: {count}", kizOrderCount: "{count} đơn cần KIZ",
-    labelsMissing: "Hãy in nhãn của lô trước", kizMissing: "Một số KIZ bắt buộc chưa được đính kèm", supplyNotReady: "Lô trống, đã đóng hoặc đã giao",
-    titles: { create: "Lô giao hàng mới", add: "Chọn lô giao hàng", blocked: "Lô chưa sẵn sàng để giao", confirmCreate: "Xác nhận tạo lô", confirmAdd: "Xác nhận thêm đơn", confirmDeliver: "Xác nhận giao lô" },
-    actions: { create: "Tạo trên Wildberries", add: "Thêm đơn hàng", deliver: "Giao lô hàng" },
-  },
+  mutation: getPackingMutationCopy("vi"),
   purchase: {
     invalidQuantity: "Nhập số nguyên từ 1 đến 10.000.", prepareError: "Không thể chuẩn bị giao dịch. Hãy cập nhật dữ liệu và thử lại.", startError: "Giao dịch chưa bắt đầu. Hãy kiểm tra trạng thái đơn trước khi thử lại.",
     confirmTitle: "Xác nhận mua KIZ", prepareTitle: "Chuẩn bị mua KIZ", unnamedProduct: "Sản phẩm chưa có tên", close: "Đóng giao dịch KIZ", quantity: "Số lượng",
@@ -322,15 +306,7 @@ const zh: SupplyCopy = {
     fallbackOrder: "订单 {id}", received: "已获取", notFound: "未找到",
     errors: { rateLimited: "Wildberries 限制了贴纸请求，请稍后重新导入。", tokenInvalid: "所选店铺令牌无权访问 Wildberries 贴纸。", invalidFile: "该文件不是受支持的 Wildberries XLSX 导出。", unavailable: "无法导入文件。请检查连接后重试。" },
   },
-  mutation: {
-    changedAfterConfirmation: "只有最终确认后才会更改 Wildberries。", close: "关闭", supplyName: "供货名称",
-    operationError: "操作失败。请刷新数据后重新检查。", cancel: "取消", checking: "正在检查…", check: "检查", executing: "正在执行…",
-    searchSupply: "搜索供货", searchPlaceholder: "ID 或名称", search: "搜索", loadingOpenSupplies: "正在加载进行中的供货…",
-    loadOpenSuppliesError: "无法加载进行中的供货。", noOpenSupplies: "没有进行中的供货。", orderCount: "订单：{count}", kizOrderCount: "{count} 个订单需要 KIZ",
-    labelsMissing: "请先打印供货标签", kizMissing: "部分必需的 KIZ 尚未附加", supplyNotReady: "供货为空、已关闭或已经交付",
-    titles: { create: "新建供货", add: "选择供货", blocked: "供货尚未准备好交付", confirmCreate: "确认创建供货", confirmAdd: "确认添加订单", confirmDeliver: "确认交付供货" },
-    actions: { create: "在 Wildberries 创建", add: "添加订单", deliver: "交付供货" },
-  },
+  mutation: getPackingMutationCopy("zh"),
   purchase: {
     invalidQuantity: "请输入 1 到 10,000 之间的整数。", prepareError: "无法准备购买。请刷新数据后重试。", startError: "购买未启动。重试前请检查订单状态。",
     confirmTitle: "确认购买 KIZ", prepareTitle: "准备购买 KIZ", unnamedProduct: "未命名商品", close: "关闭 KIZ 购买", quantity: "数量",

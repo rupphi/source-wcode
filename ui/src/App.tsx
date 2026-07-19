@@ -12,6 +12,7 @@ import { useWildberriesSync } from "./features/wildberries/useWildberriesSync";
 import { SupplyListView } from "./features/supplies/SupplyListView";
 import { getSupplyCopy, getSupplyLocale } from "./features/supplies/supplyI18n";
 import { PackingView } from "./features/packing/PackingView";
+import { getPackingCopy } from "./features/packing/packingI18n";
 import { FboPackingView } from "./features/fbo/FboPackingView";
 import { KizMappingView } from "./features/kizmapping/KizMappingView";
 import { ZnackView } from "./features/znack/ZnackView";
@@ -289,7 +290,13 @@ export function App() {
               locale={getSupplyLocale(preferences.language)}
             />
           ) : activeView === "packing" ? (
-            <PackingView key={selectedShop.id} shopId={selectedShop.id} licenseAllowed={licenseAllowed} />
+            <PackingView
+              key={selectedShop.id}
+              shopId={selectedShop.id}
+              licenseAllowed={licenseAllowed}
+              copy={getPackingCopy(preferences.language)}
+              locale={getSupplyLocale(preferences.language)}
+            />
           ) : activeView === "fbo" ? (
             <FboPackingView key={selectedShop.id} shopId={selectedShop.id} />
           ) : activeView === "kizMapping" ? (

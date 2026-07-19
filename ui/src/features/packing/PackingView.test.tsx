@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands } from "../../generated/commands";
 import type { MutationPreview, PackingBoardRequest, PackingBoardResponse } from "../../generated/types";
 import { PackingView } from "./PackingView";
+import { getPackingCopy } from "./packingI18n";
 
 vi.mock("../../generated/commands", () => ({
   commands: {
@@ -122,6 +123,30 @@ describe("PackingView mutations", () => {
     expect(within(blocked).getByText("Сначала распечатайте этикетки поставки")).toBeVisible();
     expect(within(blocked).getByText("Не все обязательные KIZ прикреплены")).toBeVisible();
     expect(within(blocked).queryByRole("button", { name: "Передать в доставку" })).not.toBeInTheDocument();
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("keeps the English packing journey guarded until explicit confirmation", async () => {
+    const user = userEvent.setup();
+    prepareCreate.mockResolvedValue(preview({
+      action: "create",
+      supplyName: "Shipment 19.07",
+      itemCount: 1,
+      kizCount: 1,
+      warnings: ["kiz_required"],
+    }));
+    render(<PackingView shopId={7} copy={getPackingCopy("en")} locale="en-US" />);
+
+    await user.click(await screen.findByRole("checkbox", { name: "Select order #102" }));
+    await user.click(screen.getByRole("button", { name: "Create supply" }));
+    const form = await screen.findByRole("dialog", { name: "New supply" });
+    await user.clear(within(form).getByRole("textbox", { name: "Supply name" }));
+    await user.type(within(form).getByRole("textbox", { name: "Supply name" }), "Shipment 19.07");
+    await user.click(within(form).getByRole("button", { name: "Check" }));
+
+    const confirmation = await screen.findByRole("dialog", { name: "Confirm supply creation" });
+    expect(within(confirmation).getByText("Orders requiring KIZ: 1")).toBeVisible();
+    expect(within(confirmation).getByRole("button", { name: "Create in Wildberries" })).toBeVisible();
     expect(execute).not.toHaveBeenCalled();
   });
 });

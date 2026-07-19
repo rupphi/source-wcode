@@ -371,6 +371,8 @@ artifact. Recovery/idempotency tests precede implementation changes.
 - [x] Translate the shared shell and settings/license surface in RU/EN/VI/ZH.
 - [x] Translate the complete FBS supplies journey in RU/EN/VI/ZH: list/detail/orders, Excel import,
       GTIN inventory, print setup and guarded delivery/purchase dialogs with locale formatting.
+- [x] Translate the complete FBS packing board in RU/EN/VI/ZH and share its guarded
+      create/add/deliver dialog copy with the supplies journey.
 - [ ] Migrate every remaining feature surface before marking language parity complete.
 - [x] Port signed update check/download/install, shared optional-version skip, bounded streamed
       checksum validation, Authenticode/snapshot gates and fail-closed signed release automation.

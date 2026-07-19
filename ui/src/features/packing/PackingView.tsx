@@ -10,7 +10,7 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { commands } from "../../generated/commands";
 import type {
   MutationPreview,
@@ -19,9 +19,11 @@ import type {
   PackingSupplyItem,
   SupplyItem,
 } from "../../generated/types";
+import { interpolate } from "../../i18n";
 import { Pagination } from "../supplies/SupplyTable";
 import { SupplyDetailView } from "../supplies/SupplyDetailView";
 import { PackingMutationDialog, type MutationDialog } from "./PackingMutationDialog";
+import { defaultPackingCopy, type PackingCopy } from "./packingI18n";
 import { isValidMutationPreview, isValidMutationReceipt } from "./packingMutationContract";
 
 type PackingTab = "new" | "preparation" | "dispatch";
@@ -29,20 +31,21 @@ type PackingState =
   | { status: "loading"; requestKey: string }
   | { status: "error"; requestKey: string }
   | { status: "ready"; requestKey: string; data: PackingBoardResponse };
+type MutationNotice = { action: "create" | "add" | "deliver"; supplyId: string };
 
 const PAGE_SIZE = 20;
-const numberFormat = new Intl.NumberFormat("ru-RU");
-const moneyFormat = new Intl.NumberFormat("ru-RU", {
-  style: "currency",
-  currency: "RUB",
-  maximumFractionDigits: 2,
-});
-const dateTimeFormat = new Intl.DateTimeFormat("ru-RU", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
 
-export function PackingView({ shopId, licenseAllowed = false }: { shopId: number; licenseAllowed?: boolean }) {
+export function PackingView({
+  shopId,
+  licenseAllowed = false,
+  copy = defaultPackingCopy,
+  locale = "ru-RU",
+}: {
+  shopId: number;
+  licenseAllowed?: boolean;
+  copy?: PackingCopy;
+  locale?: string;
+}) {
   const [tab, setTab] = useState<PackingTab>("new");
   const [draftQuery, setDraftQuery] = useState("");
   const [query, setQuery] = useState("");
@@ -58,10 +61,13 @@ export function PackingView({ shopId, licenseAllowed = false }: { shopId: number
   const [targetSupplyQuery, setTargetSupplyQuery] = useState("");
   const [mutationBusy, setMutationBusy] = useState(false);
   const [mutationError, setMutationError] = useState(false);
-  const [mutationNotice, setMutationNotice] = useState("");
+  const [mutationNotice, setMutationNotice] = useState<MutationNotice | null>(null);
   const requestSequence = useRef(0);
   const targetRequestSequence = useRef(0);
   const requestKey = JSON.stringify([shopId, tab, query, categories, page, retryKey]);
+  const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
+  const moneyFormat = useMemo(() => new Intl.NumberFormat(locale, { style: "currency", currency: "RUB", maximumFractionDigits: 2 }), [locale]);
+  const dateTimeFormat = useMemo(() => new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }), [locale]);
 
   useEffect(() => {
     const requestId = ++requestSequence.current;
@@ -131,7 +137,7 @@ export function PackingView({ shopId, licenseAllowed = false }: { shopId: number
 
   const openCreate = () => {
     const now = new Date();
-    setShipmentName(`Shipment ${String(now.getDate()).padStart(2, "0")}.${String(now.getMonth() + 1).padStart(2, "0")}.${now.getFullYear()}`);
+    setShipmentName(`${copy.shipmentPrefix} ${String(now.getDate()).padStart(2, "0")}.${String(now.getMonth() + 1).padStart(2, "0")}.${now.getFullYear()}`);
     setMutationError(false);
     setMutationDialog({ kind: "create" });
   };
@@ -223,11 +229,10 @@ export function PackingView({ shopId, licenseAllowed = false }: { shopId: number
         confirmed: true,
       });
       if (!isValidMutationReceipt(receipt, preview)) throw new Error("invalid receipt");
-      setMutationNotice(receipt.action === "create"
-        ? `Поставка ${receipt.supplyId} создана`
-        : receipt.action === "add"
-          ? `Заказы добавлены в поставку ${receipt.supplyId}`
-          : `Поставка ${receipt.supplyId} передана в доставку`);
+      if (receipt.action !== "create" && receipt.action !== "add" && receipt.action !== "deliver") {
+        throw new Error("invalid receipt action");
+      }
+      setMutationNotice({ action: receipt.action, supplyId: receipt.supplyId });
       setSelectedOrderIds([]);
       setMutationDialog(null);
       setRetryKey((value) => value + 1);
@@ -246,6 +251,8 @@ export function PackingView({ shopId, licenseAllowed = false }: { shopId: number
         onBack={() => setSelectedSupply(null)}
         onSupplyRefreshed={() => setRetryKey((value) => value + 1)}
         licenseAllowed={licenseAllowed}
+        copy={copy.supply}
+        locale={locale}
       />
     );
   }
@@ -259,60 +266,67 @@ export function PackingView({ shopId, licenseAllowed = false }: { shopId: number
               <Boxes aria-hidden="true" size={20} />
             </span>
             <div>
-              <h3 className="font-semibold tracking-[-0.01em]">Очередь комплектации</h3>
+              <h3 className="font-semibold tracking-[-0.01em]">{copy.header.title}</h3>
               <p className="mt-1 max-w-2xl text-sm leading-5 text-[var(--text-secondary)]">
-                Создание, наполнение и передача поставки выполняются только после отдельной проверки и подтверждения.
+                {copy.header.description}
               </p>
             </div>
           </div>
           <span className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
             <ShieldCheck aria-hidden="true" size={15} />
-            Подтверждение перед записью
+            {copy.header.guarded}
           </span>
         </div>
 
-        <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-3" role="tablist" aria-label="Этапы упаковки FBS">
+        <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-3" role="tablist" aria-label={copy.tabs.label}>
           <TabButton
             active={tab === "new"}
             icon={Sparkles}
-            label="Новые заказы"
+            label={copy.tabs.new}
             count={data?.newOrderCount}
             onClick={() => selectTab("new")}
+            numberFormat={numberFormat}
           />
           <TabButton
             active={tab === "preparation"}
             icon={CircleDotDashed}
-            label="На сборке"
+            label={copy.tabs.preparation}
             count={data?.preparationCount}
             onClick={() => selectTab("preparation")}
+            numberFormat={numberFormat}
           />
           <TabButton
             active={tab === "dispatch"}
             icon={CheckCircle2}
-            label="К отгрузке"
+            label={copy.tabs.dispatch}
             count={data?.dispatchCount}
             onClick={() => selectTab("dispatch")}
+            numberFormat={numberFormat}
           />
         </div>
       </section>
 
       {mutationNotice && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900" role="status">
-          {mutationNotice}
+          {interpolate(mutationNotice.action === "create"
+            ? copy.notices.created
+            : mutationNotice.action === "add"
+              ? copy.notices.added
+              : copy.notices.delivered, { id: mutationNotice.supplyId })}
         </div>
       )}
 
       {tab === "new" && data && (
-        <section className="flex flex-col gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)] sm:flex-row sm:items-center sm:justify-between" aria-label="Действия с выбранными заказами">
+        <section className="flex flex-col gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)] sm:flex-row sm:items-center sm:justify-between" aria-label={copy.selection.label}>
           <p className="text-sm text-[var(--text-secondary)]">
-            Выбрано: <strong className="text-[var(--text-primary)]">{numberFormat.format(selectedOrderIds.length)}</strong>
+            {copy.selection.selected} <strong className="text-[var(--text-primary)]">{numberFormat.format(selectedOrderIds.length)}</strong>
           </p>
           <div className="flex flex-col gap-2 sm:flex-row">
             <button className="rounded-xl border border-[var(--border-strong)] px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45" type="button" disabled={selectedOrderIds.length === 0} onClick={openAdd}>
-              Добавить в поставку
+              {copy.selection.add}
             </button>
             <button className="rounded-xl bg-[var(--button-primary)] px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45" type="button" disabled={selectedOrderIds.length === 0} onClick={openCreate}>
-              Создать поставку
+              {copy.selection.create}
             </button>
           </div>
         </section>
@@ -321,7 +335,7 @@ export function PackingView({ shopId, licenseAllowed = false }: { shopId: number
       <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)] md:p-5">
         <form className="flex flex-col gap-3 sm:flex-row" onSubmit={submitSearch} role="search">
           <label className="relative min-w-0 flex-1">
-            <span className="sr-only">Поиск в очереди упаковки</span>
+            <span className="sr-only">{copy.search.label}</span>
             <Search className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden="true" size={18} />
             <input
               className="h-11 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] pr-4 pl-10 text-sm shadow-[var(--shadow-control)] outline-none transition placeholder:text-[var(--text-muted)] hover:border-[var(--accent)] focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]"
@@ -329,19 +343,19 @@ export function PackingView({ shopId, licenseAllowed = false }: { shopId: number
               value={draftQuery}
               maxLength={120}
               onChange={(event) => setDraftQuery(event.target.value)}
-              placeholder={tab === "new" ? "Заказ, товар, артикул или штрихкод" : "ID или название поставки"}
-              aria-label="Поиск в очереди упаковки"
+              placeholder={tab === "new" ? copy.search.orderPlaceholder : copy.search.supplyPlaceholder}
+              aria-label={copy.search.label}
             />
           </label>
           <button className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--sidebar)] px-5 text-sm font-semibold text-white transition hover:bg-[#1c3329]" type="submit">
             <Search aria-hidden="true" size={16} />
-            Найти
+            {copy.search.submit}
           </button>
         </form>
 
         {tab === "new" && (data?.availableCategories.length ?? 0) > 0 && (
-          <div className="mt-4 flex flex-wrap items-center gap-2" aria-label="Категории новых заказов">
-            <span className="mr-1 text-xs font-semibold tracking-[0.04em] text-[var(--text-muted)] uppercase">Категории</span>
+          <div className="mt-4 flex flex-wrap items-center gap-2" aria-label={copy.search.categoriesLabel}>
+            <span className="mr-1 text-xs font-semibold tracking-[0.04em] text-[var(--text-muted)] uppercase">{copy.search.categories}</span>
             {data?.availableCategories.map((category) => {
               const active = categories.includes(category);
               return (
@@ -361,18 +375,21 @@ export function PackingView({ shopId, licenseAllowed = false }: { shopId: number
       </section>
 
       {visibleState.status === "loading" ? (
-        <PackingLoading />
+        <PackingLoading copy={copy} />
       ) : visibleState.status === "error" ? (
-        <PackingError onRetry={() => setRetryKey((value) => value + 1)} />
+        <PackingError copy={copy} onRetry={() => setRetryKey((value) => value + 1)} />
       ) : visibleState.data.totalItems === 0 ? (
-        <PackingEmpty tab={tab} filtered={query.length > 0 || categories.length > 0} />
+        <PackingEmpty tab={tab} filtered={query.length > 0 || categories.length > 0} copy={copy} />
       ) : tab === "new" ? (
-        <OrderGrid items={visibleState.data.orders} selected={selectedOrderIds} onToggle={toggleOrder} />
+        <OrderGrid items={visibleState.data.orders} selected={selectedOrderIds} onToggle={toggleOrder} copy={copy} moneyFormat={moneyFormat} />
       ) : (
         <PackingSupplyTable
           items={visibleState.data.supplies}
           onOpen={(item) => setSelectedSupply(item)}
           onDeliver={prepareDeliver}
+          copy={copy}
+          numberFormat={numberFormat}
+          dateTimeFormat={dateTimeFormat}
         />
       )}
 
@@ -382,9 +399,11 @@ export function PackingView({ shopId, licenseAllowed = false }: { shopId: number
           totalPages={visibleState.data.totalPages}
           totalItems={visibleState.data.totalItems}
           onPage={setPage}
-          ariaLabel="Пагинация очереди упаковки"
-          previousLabel="Предыдущая страница очереди"
-          nextLabel="Следующая страница очереди"
+          ariaLabel={copy.pagination.label}
+          previousLabel={copy.pagination.previous}
+          nextLabel={copy.pagination.next}
+          copy={copy.supply}
+          locale={locale}
         />
       )}
 
@@ -404,18 +423,21 @@ export function PackingView({ shopId, licenseAllowed = false }: { shopId: number
           onPrepareCreate={prepareCreate}
           onPrepareAdd={prepareAdd}
           onExecute={executeMutation}
+          copy={copy.mutation}
+          locale={locale}
         />
       )}
     </div>
   );
 }
 
-function TabButton({ active, icon: Icon, label, count, onClick }: {
+function TabButton({ active, icon: Icon, label, count, onClick, numberFormat }: {
   active: boolean;
   icon: typeof Sparkles;
   label: string;
   count: number | undefined;
   onClick: () => void;
+  numberFormat: Intl.NumberFormat;
 }) {
   return (
     <button
@@ -432,19 +454,21 @@ function TabButton({ active, icon: Icon, label, count, onClick }: {
   );
 }
 
-function OrderGrid({ items, selected, onToggle }: {
+function OrderGrid({ items, selected, onToggle, copy, moneyFormat }: {
   items: PackingOrderItem[];
   selected: string[];
   onToggle: (orderId: string) => void;
+  copy: PackingCopy;
+  moneyFormat: Intl.NumberFormat;
 }) {
   return (
-    <section className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3" aria-label="Новые заказы">
+    <section className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3" aria-label={copy.orders.label}>
       {items.map((item) => (
         <article className="relative flex min-w-0 gap-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)]" key={item.orderId}>
           <input
             className="absolute top-3 right-3 size-4 accent-[var(--button-primary)]"
             type="checkbox"
-            aria-label={`Выбрать заказ #${item.orderId}`}
+            aria-label={interpolate(copy.orders.select, { id: item.orderId })}
             checked={selected.includes(item.orderId)}
             onChange={() => onToggle(item.orderId)}
           />
@@ -459,18 +483,18 @@ function OrderGrid({ items, selected, onToggle }: {
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold">{item.name}</p>
-                <p className="mt-1 truncate text-xs text-[var(--text-secondary)]">{[item.brand, item.subject].filter(Boolean).join(" · ") || "Без категории"}</p>
+                <p className="mt-1 truncate text-xs text-[var(--text-secondary)]">{[item.brand, item.subject].filter(Boolean).join(" · ") || copy.orders.uncategorized}</p>
               </div>
               <p className="shrink-0 text-sm font-bold tabular-nums">{moneyFormat.format(item.priceKopecks / 100)}</p>
             </div>
             <div className="mt-3 flex flex-wrap gap-1.5 text-[0.7rem] font-medium text-[var(--text-secondary)]">
               {item.article && <span className="rounded-md bg-[var(--surface-muted)] px-2 py-1">{item.article}</span>}
-              {(item.russianSize || item.size) && <span className="rounded-md bg-[var(--surface-muted)] px-2 py-1">Размер {item.russianSize || item.size}</span>}
+              {(item.russianSize || item.size) && <span className="rounded-md bg-[var(--surface-muted)] px-2 py-1">{interpolate(copy.orders.size, { value: item.russianSize || item.size })}</span>}
               {item.color && <span className="rounded-md bg-[var(--surface-muted)] px-2 py-1">{item.color}</span>}
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border-subtle)] pt-3">
               <span className="font-mono text-[0.7rem] text-[var(--text-muted)]">#{item.orderId}</span>
-              {item.requiresKiz && <span className="rounded-full bg-violet-50 px-2 py-1 text-[0.68rem] font-semibold text-violet-800">Требуется KIZ</span>}
+              {item.requiresKiz && <span className="rounded-full bg-violet-50 px-2 py-1 text-[0.68rem] font-semibold text-violet-800">{copy.orders.requiresKiz}</span>}
             </div>
           </div>
         </article>
@@ -479,10 +503,13 @@ function OrderGrid({ items, selected, onToggle }: {
   );
 }
 
-function PackingSupplyTable({ items, onOpen, onDeliver }: {
+function PackingSupplyTable({ items, onOpen, onDeliver, copy, numberFormat, dateTimeFormat }: {
   items: PackingSupplyItem[];
   onOpen: (item: PackingSupplyItem) => void;
   onDeliver: (item: PackingSupplyItem) => void;
+  copy: PackingCopy;
+  numberFormat: Intl.NumberFormat;
+  dateTimeFormat: Intl.DateTimeFormat;
 }) {
   return (
     <section className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
@@ -490,11 +517,11 @@ function PackingSupplyTable({ items, onOpen, onDeliver }: {
         <table className="w-full min-w-[46rem] border-collapse text-left">
           <thead className="border-b border-[var(--border-subtle)] bg-[var(--surface-muted)]/70">
             <tr className="text-xs font-semibold tracking-[0.04em] text-[var(--text-secondary)] uppercase">
-              <th className="px-5 py-3.5" scope="col">Поставка</th>
-              <th className="px-4 py-3.5" scope="col">Схема</th>
-              <th className="px-4 py-3.5" scope="col">Создана</th>
-              <th className="px-4 py-3.5 text-right" scope="col">Заказов</th>
-              <th className="px-5 py-3.5 text-right" scope="col">Действие</th>
+              <th className="px-5 py-3.5" scope="col">{copy.supplies.columns.supply}</th>
+              <th className="px-4 py-3.5" scope="col">{copy.supplies.columns.mode}</th>
+              <th className="px-4 py-3.5" scope="col">{copy.supplies.columns.created}</th>
+              <th className="px-4 py-3.5 text-right" scope="col">{copy.supplies.columns.orders}</th>
+              <th className="px-5 py-3.5 text-right" scope="col">{copy.supplies.columns.action}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border-subtle)]">
@@ -504,18 +531,18 @@ function PackingSupplyTable({ items, onOpen, onDeliver }: {
                   <p className="max-w-md truncate text-sm font-semibold">{item.name}</p>
                   <p className="mt-1 font-mono text-xs text-[var(--text-muted)]">{item.id}</p>
                 </td>
-                <td className="px-4 py-4 text-sm text-[var(--text-secondary)]">{item.mode === "b2b" ? "B2B" : item.mode === "consumer" ? "B2C" : "Не указана"}</td>
+                <td className="px-4 py-4 text-sm text-[var(--text-secondary)]">{item.mode === "b2b" ? "B2B" : item.mode === "consumer" ? "B2C" : copy.supplies.modeUnknown}</td>
                 <td className="px-4 py-4 text-sm text-[var(--text-secondary)]">
-                  <span className="inline-flex items-center gap-2 whitespace-nowrap"><CalendarDays aria-hidden="true" size={15} />{formatCreatedAt(item.createdAt)}</span>
+                  <span className="inline-flex items-center gap-2 whitespace-nowrap"><CalendarDays aria-hidden="true" size={15} />{formatCreatedAt(item.createdAt, dateTimeFormat)}</span>
                 </td>
                 <td className="px-4 py-4 text-right text-sm font-semibold tabular-nums">{numberFormat.format(item.itemCount)}</td>
                 <td className="px-5 py-4 text-right">
                   <div className="flex justify-end gap-2">
-                    <button className="rounded-lg border border-[var(--border-strong)] px-3 py-2 text-xs font-semibold" type="button" aria-label={`Проверить передачу ${item.name}`} onClick={() => onDeliver(item)}>
-                      Передать
+                    <button className="rounded-lg border border-[var(--border-strong)] px-3 py-2 text-xs font-semibold" type="button" aria-label={interpolate(copy.supplies.prepareDelivery, { name: item.name })} onClick={() => onDeliver(item)}>
+                      {copy.supplies.deliver}
                     </button>
                     <button className="rounded-lg bg-[var(--accent-soft)] px-3 py-2 text-xs font-semibold text-[var(--accent-strong)]" type="button" onClick={() => onOpen(item)}>
-                      Открыть
+                      {copy.supplies.open}
                     </button>
                   </div>
                 </td>
@@ -528,35 +555,35 @@ function PackingSupplyTable({ items, onOpen, onDeliver }: {
   );
 }
 
-function PackingLoading() {
+function PackingLoading({ copy }: { copy: PackingCopy }) {
   return (
-    <section className="grid gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-5 shadow-[var(--shadow-panel)]" aria-label="Загрузка очереди упаковки">
+    <section className="grid gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-5 shadow-[var(--shadow-panel)]" aria-label={copy.loading}>
       {[0, 1, 2, 3].map((row) => <span className="h-20 animate-pulse rounded-xl bg-[var(--surface-muted)]" key={row} />)}
     </section>
   );
 }
 
-function PackingError({ onRetry }: { onRetry: () => void }) {
+function PackingError({ copy, onRetry }: { copy: PackingCopy; onRetry: () => void }) {
   return (
     <section className="grid min-h-64 place-items-center rounded-2xl border border-red-200 bg-red-50 p-8 text-center" role="alert">
       <div>
         <AlertCircle className="mx-auto mb-3 text-red-600" aria-hidden="true" size={26} />
-        <h3 className="font-semibold text-red-950">Не удалось открыть очередь упаковки</h3>
-        <p className="mt-2 text-sm text-red-800">Локальные данные не изменены. Повторите запрос.</p>
-        <button className="mt-4 rounded-xl bg-red-700 px-4 py-2.5 text-sm font-semibold text-white" type="button" onClick={onRetry}>Повторить</button>
+        <h3 className="font-semibold text-red-950">{copy.error.title}</h3>
+        <p className="mt-2 text-sm text-red-800">{copy.error.description}</p>
+        <button className="mt-4 rounded-xl bg-red-700 px-4 py-2.5 text-sm font-semibold text-white" type="button" onClick={onRetry}>{copy.error.retry}</button>
       </div>
     </section>
   );
 }
 
-function PackingEmpty({ tab, filtered }: { tab: PackingTab; filtered: boolean }) {
-  const emptyCopy = tab === "new" ? "Новых заказов пока нет" : tab === "preparation" ? "Поставок на сборке пока нет" : "Готовых отгрузок пока нет";
+function PackingEmpty({ tab, filtered, copy }: { tab: PackingTab; filtered: boolean; copy: PackingCopy }) {
+  const emptyCopy = tab === "new" ? copy.empty.new : tab === "preparation" ? copy.empty.preparation : copy.empty.dispatch;
   return (
     <section className="grid min-h-64 place-items-center rounded-2xl border border-dashed border-[var(--border-strong)] bg-[var(--surface-elevated)] p-8 text-center">
       <div>
         <PackageOpen className="mx-auto mb-3 text-[var(--text-muted)]" aria-hidden="true" size={26} />
-        <h3 className="font-semibold">{filtered ? "Ничего не найдено" : emptyCopy}</h3>
-        <p className="mt-2 text-sm text-[var(--text-secondary)]">{filtered ? "Измените запрос или категории." : "Обновите данные Wildberries на главной странице."}</p>
+        <h3 className="font-semibold">{filtered ? copy.empty.filtered : emptyCopy}</h3>
+        <p className="mt-2 text-sm text-[var(--text-secondary)]">{filtered ? copy.empty.filteredDescription : copy.empty.description}</p>
       </div>
     </section>
   );
@@ -580,7 +607,7 @@ function matchesRequest(
     && response.categories.every((value, index) => value === categories[index]);
 }
 
-function formatCreatedAt(value: string): string {
+function formatCreatedAt(value: string, dateTimeFormat: Intl.DateTimeFormat): string {
   if (!value) return "—";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "—" : dateTimeFormat.format(date);
