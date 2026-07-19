@@ -3,8 +3,6 @@ import {
   Boxes,
   CheckCircle2,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   FileText,
   ImageIcon,
   Layers3,
@@ -17,25 +15,14 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useMemo, useState, type FormEvent } from "react";
+import { InfiniteLoadTrigger } from "../../components/InfiniteLoadTrigger";
+import { useBoundedInfinitePages } from "../../components/useBoundedInfinitePages";
 import { commands } from "../../generated/commands";
 import type { FboCatalogResponse, FboExportResponse, FboProductItem } from "../../generated/types";
 import { interpolate } from "../../i18n";
 import { exportFboPdf } from "../printing/nativePrintCommands";
 import { defaultFboCopy, formatFboPairs, type FboCopy } from "./fboI18n";
-
-type CatalogState =
-  | { status: "loading"; requestKey: string }
-  | { status: "error"; requestKey: string }
-  | {
-      status: "ready" | "loadingMore";
-      requestKey: string;
-      items: FboProductItem[];
-      availableSubjects: string[];
-      page: number;
-      hasMore: boolean;
-      loadMoreError: boolean;
-    };
 
 type ExportState =
   | { status: "idle" }
@@ -54,48 +41,24 @@ export function FboPackingView({ shopId, copy = defaultFboCopy, locale = "ru-RU"
   const [subjects, setSubjects] = useState<string[]>([]);
   const [subjectsOpen, setSubjectsOpen] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
-  const [state, setState] = useState<CatalogState>({ status: "loading", requestKey: "" });
   const [quantities, setQuantities] = useState<Map<string, number>>(() => new Map());
   const [exportState, setExportState] = useState<ExportState>({ status: "idle" });
-  const requestSequence = useRef(0);
-  const requestKey = JSON.stringify([shopId, query, subjects, retryKey]);
   const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   const pairLabel = (value: number) => formatFboPairs(copy, locale, value);
 
-  useEffect(() => {
-    const requestId = ++requestSequence.current;
-    let active = true;
-    void commands.fbo.catalog({ shopId, query, subjects, page: 1, pageSize: PAGE_SIZE }).then(
-      (response) => {
-        if (!active || requestSequence.current !== requestId) return;
-        if (!matchesCatalog(response, shopId, query, subjects, 1)) {
-          setState({ status: "error", requestKey });
-          return;
-        }
-        setState({
-          status: "ready",
-          requestKey,
-          items: response.items,
-          availableSubjects: response.availableSubjects,
-          page: 1,
-          hasMore: response.hasMore,
-          loadMoreError: false,
-        });
-      },
-      () => {
-        if (active && requestSequence.current === requestId) {
-          setState({ status: "error", requestKey });
-        }
-      },
-    );
-    return () => {
-      active = false;
-    };
-  }, [query, requestKey, shopId, subjects]);
-
-  const visibleState: CatalogState = state.requestKey === requestKey
-    ? state
-    : { status: "loading", requestKey };
+  const loadPage = useCallback(async (page: number) => {
+    const response = await commands.fbo.catalog({ shopId, query, subjects, page, pageSize: PAGE_SIZE });
+    if (!matchesCatalog(response, shopId, query, subjects, page)) {
+      throw new Error("Unexpected FBO catalog response");
+    }
+    return { items: response.items, hasMore: response.hasMore, summary: response };
+  }, [query, shopId, subjects]);
+  const pages = useBoundedInfinitePages<FboProductItem, FboCatalogResponse>({
+    resetKey: JSON.stringify([shopId, query, subjects, retryKey]),
+    loadPage,
+    getId: (item) => item.sku,
+  });
+  const availableSubjects = pages.summary?.availableSubjects ?? [];
   const selectedSkuCount = quantities.size;
   const pairCount = useMemo(
     () => [...quantities.values()].reduce((total, quantity) => total + quantity, 0),
@@ -144,42 +107,6 @@ export function FboPackingView({ shopId, copy = defaultFboCopy, locale = "ru-RU"
     });
   };
 
-  const loadPage = async (nextPage: number) => {
-    if (visibleState.status !== "ready"
-      || nextPage < 1
-      || (nextPage > visibleState.page && !visibleState.hasMore)) return;
-    const current = visibleState;
-    const requestId = requestSequence.current;
-    setState({ ...current, status: "loadingMore", loadMoreError: false });
-    try {
-      const response = await commands.fbo.catalog({
-        shopId,
-        query,
-        subjects,
-        page: nextPage,
-        pageSize: PAGE_SIZE,
-      });
-      if (requestSequence.current !== requestId || requestKey !== current.requestKey) return;
-      if (!matchesCatalog(response, shopId, query, subjects, nextPage)) {
-        setState({ ...current, status: "ready", loadMoreError: true });
-        return;
-      }
-      setState({
-        status: "ready",
-        requestKey,
-        items: response.items,
-        availableSubjects: response.availableSubjects,
-        page: nextPage,
-        hasMore: response.hasMore,
-        loadMoreError: false,
-      });
-    } catch {
-      if (requestSequence.current === requestId) {
-        setState({ ...current, status: "ready", loadMoreError: true });
-      }
-    }
-  };
-
   const runExport = async (items: { sku: string; quantity: number }[], clearBatch: boolean) => {
     if (busy || items.length === 0) return;
     setExportState({ status: "running" });
@@ -225,16 +152,16 @@ export function FboPackingView({ shopId, copy = defaultFboCopy, locale = "ru-RU"
   };
 
   return (
-    <div className="grid gap-5">
-      <section className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
-        <div className="flex flex-col gap-4 bg-[linear-gradient(120deg,var(--surface-elevated),var(--accent-soft))] p-5 lg:flex-row lg:items-center lg:justify-between">
+    <div className="grid gap-3">
+      <section className="overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
+        <div className="flex flex-col gap-3 bg-[var(--accent-soft)] p-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-start gap-3">
             <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[var(--sidebar)] text-white">
               <Boxes aria-hidden="true" size={20} />
             </span>
             <div>
               <h3 className="font-semibold tracking-[-0.01em]">{copy.header.title}</h3>
-              <p className="mt-1 max-w-2xl text-sm leading-5 text-[var(--text-secondary)]">
+              <p className="mt-1 max-w-2xl text-xs leading-5 text-[var(--text-secondary)]">
                 {copy.header.description}
               </p>
             </div>
@@ -246,14 +173,14 @@ export function FboPackingView({ shopId, copy = defaultFboCopy, locale = "ru-RU"
         </div>
       </section>
 
-      <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)] md:p-5">
-        <form className="flex flex-col gap-3 lg:flex-row" onSubmit={submitSearch} role="search">
+      <section className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-3 shadow-[var(--shadow-panel)] md:p-4">
+        <form className="flex flex-col gap-2 lg:flex-row" onSubmit={submitSearch} role="search">
           <label className="relative min-w-0 flex-1">
             <span className="sr-only">{copy.search.label}</span>
             <Search className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden="true" size={18} />
             <input
               aria-label={copy.search.label}
-              className="h-11 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] pr-4 pl-10 text-sm shadow-[var(--shadow-control)] outline-none transition placeholder:text-[var(--text-muted)] hover:border-[var(--accent)] focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]"
+              className="h-9 w-full rounded-lg border border-[var(--border-strong)] bg-[var(--surface-elevated)] pr-3 pl-10 text-xs shadow-[var(--shadow-control)] outline-none transition placeholder:text-[var(--text-muted)] hover:border-[var(--accent)] focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]"
               maxLength={120}
               onChange={(event) => setDraftQuery(event.target.value)}
               placeholder={copy.search.placeholder}
@@ -265,18 +192,18 @@ export function FboPackingView({ shopId, copy = defaultFboCopy, locale = "ru-RU"
             <button
               aria-expanded={subjectsOpen}
               aria-label={copy.search.subjects}
-              className="inline-flex h-11 w-full items-center justify-between gap-3 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-4 text-sm font-semibold shadow-[var(--shadow-control)] transition hover:border-[var(--accent)] lg:w-52"
+              className="inline-flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-3 text-xs font-semibold shadow-[var(--shadow-control)] transition hover:border-[var(--accent)] lg:w-48"
               onClick={() => setSubjectsOpen((value) => !value)}
               type="button"
             >
               <span>{subjects.length > 0 ? interpolate(copy.search.subjectCount, { count: numberFormat.format(subjects.length) }) : copy.search.subjects}</span>
               <ChevronDown aria-hidden="true" size={16} />
             </button>
-            {subjectsOpen && visibleState.status !== "loading" && visibleState.status !== "error" && (
+            {subjectsOpen && pages.status !== "loading" && pages.status !== "error" && (
               <div className="absolute top-12 right-0 z-20 max-h-72 w-full min-w-64 overflow-y-auto rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-2 shadow-xl lg:right-auto lg:left-0">
-                {visibleState.availableSubjects.length === 0 ? (
+                {availableSubjects.length === 0 ? (
                   <p className="px-3 py-2 text-sm text-[var(--text-muted)]">{copy.search.noSubjects}</p>
-                ) : visibleState.availableSubjects.map((subject) => (
+                ) : availableSubjects.map((subject) => (
                   <label className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-[var(--surface-muted)]" key={subject}>
                     <input
                       checked={subjects.includes(subject)}
@@ -290,7 +217,7 @@ export function FboPackingView({ shopId, copy = defaultFboCopy, locale = "ru-RU"
               </div>
             )}
           </div>
-          <button className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--sidebar)] px-5 text-sm font-semibold text-white transition hover:bg-[#1c3329]" type="submit">
+          <button className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-[var(--button-primary)] px-4 text-xs font-semibold text-white transition hover:brightness-110" type="submit">
             <Search aria-hidden="true" size={16} />
             {copy.search.submit}
           </button>
@@ -357,16 +284,16 @@ export function FboPackingView({ shopId, copy = defaultFboCopy, locale = "ru-RU"
         </section>
       )}
 
-      {visibleState.status === "loading" ? (
+      {pages.status === "loading" && pages.items.length === 0 ? (
         <CatalogLoading copy={copy} />
-      ) : visibleState.status === "error" ? (
-        <CatalogError copy={copy} onRetry={() => setRetryKey((value) => value + 1)} />
-      ) : visibleState.items.length === 0 ? (
+      ) : pages.status === "error" && pages.items.length === 0 ? (
+        <CatalogError copy={copy} onRetry={pages.retry} />
+      ) : pages.items.length === 0 ? (
         <CatalogEmpty copy={copy} filtered={Boolean(query || subjects.length > 0)} />
       ) : (
         <>
           <section className="grid gap-3 xl:grid-cols-2" aria-label={copy.catalog.label}>
-            {visibleState.items.map((item) => (
+            {pages.items.map((item) => (
               <ProductCard
                 busy={busy}
                 item={item}
@@ -378,16 +305,14 @@ export function FboPackingView({ shopId, copy = defaultFboCopy, locale = "ru-RU"
               />
             ))}
           </section>
-          {visibleState.loadMoreError && (
-            <p className="text-center text-sm font-medium text-red-700" role="alert">{copy.catalog.loadMoreError}</p>
-          )}
-          {(visibleState.page > 1 || visibleState.hasMore) && (
-            <nav className="flex items-center justify-between gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-3 shadow-[var(--shadow-panel)]" aria-label={copy.pagination.label}>
-              <button aria-label={copy.pagination.previousAria} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--border-strong)] px-4 text-sm font-semibold transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45" disabled={visibleState.page <= 1 || visibleState.status === "loadingMore"} onClick={() => void loadPage(visibleState.page - 1)} type="button"><ChevronLeft aria-hidden="true" size={16} /><span className="hidden sm:inline">{copy.pagination.previous}</span></button>
-              <p className="text-sm font-semibold tabular-nums text-[var(--text-secondary)]">{visibleState.status === "loadingMore" ? copy.pagination.loading : interpolate(copy.pagination.page, { page: numberFormat.format(visibleState.page) })}</p>
-              <button aria-label={copy.pagination.nextAria} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--border-strong)] px-4 text-sm font-semibold transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45" disabled={!visibleState.hasMore || visibleState.status === "loadingMore"} onClick={() => void loadPage(visibleState.page + 1)} type="button"><span className="hidden sm:inline">{copy.pagination.next}</span><ChevronRight aria-hidden="true" size={16} /></button>
-            </nav>
-          )}
+          <InfiniteLoadTrigger
+            status={pages.status}
+            hasMore={pages.hasMore}
+            copy={{ loading: copy.pagination.loading, loadMore: copy.pagination.loadMore, loadError: copy.catalog.loadMoreError, retry: copy.error.retry, end: copy.pagination.end }}
+            announcement={pages.addedCount > 0 ? interpolate(copy.pagination.added, { count: numberFormat.format(pages.addedCount) }) : ""}
+            onLoadMore={pages.loadMore}
+            onRetry={pages.retry}
+          />
         </>
       )}
     </div>
@@ -404,8 +329,8 @@ function ProductCard({ item, quantity, busy, onQuantity, onQuickPrint, copy }: {
 }) {
   const name = item.title || copy.product.unnamed;
   return (
-    <article className="flex min-w-0 flex-col gap-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)] sm:flex-row">
-      <div className="grid h-32 w-full shrink-0 place-items-center overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-muted)] sm:h-32 sm:w-24">
+    <article className="flex min-w-0 [content-visibility:auto] [contain-intrinsic-size:auto_10rem] flex-col gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-3 shadow-[var(--shadow-panel)] sm:flex-row">
+      <div className="grid h-28 w-full shrink-0 place-items-center overflow-hidden rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-muted)] sm:h-28 sm:w-20">
         {item.imagePath ? (
           <img alt={interpolate(copy.product.photo, { name })} className="size-full object-cover" src={item.imagePath} />
         ) : (
@@ -426,9 +351,9 @@ function ProductCard({ item, quantity, busy, onQuantity, onQuickPrint, copy }: {
           <p><span className="text-[var(--text-muted)]">SKU</span> <span className="font-mono text-[var(--text-primary)]">{item.sku}</span></p>
           <p><span className="text-[var(--text-muted)]">{copy.product.size}</span> <span className="font-medium text-[var(--text-primary)]">{item.russianSize || item.size || "—"}</span>{item.color ? ` · ${item.color}` : ""}</p>
         </div>
-        <div className="mt-4 flex flex-col gap-2 border-t border-[var(--border-subtle)] pt-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="inline-flex h-10 w-fit items-center overflow-hidden rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] shadow-[var(--shadow-control)]">
-            <button aria-label={interpolate(copy.product.decrease, { name })} className="grid size-10 place-items-center text-[var(--text-secondary)] hover:bg-[var(--surface-muted)] disabled:opacity-40" disabled={busy || quantity === 0} onClick={() => onQuantity(quantity - 1)} type="button"><Minus aria-hidden="true" size={15} /></button>
+        <div className="mt-3 flex flex-col gap-2 border-t border-[var(--border-subtle)] pt-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="inline-flex h-9 w-fit items-center overflow-hidden rounded-lg border border-[var(--border-strong)] bg-[var(--surface-elevated)] shadow-[var(--shadow-control)]">
+            <button aria-label={interpolate(copy.product.decrease, { name })} className="grid size-9 place-items-center text-[var(--text-secondary)] hover:bg-[var(--surface-muted)] disabled:opacity-40" disabled={busy || quantity === 0} onClick={() => onQuantity(quantity - 1)} type="button"><Minus aria-hidden="true" size={15} /></button>
             <input
               aria-label={interpolate(copy.product.quantity, { name, sku: item.sku })}
               className="h-full w-16 border-x border-[var(--border-subtle)] text-center text-sm font-semibold tabular-nums outline-none"
@@ -439,9 +364,9 @@ function ProductCard({ item, quantity, busy, onQuantity, onQuickPrint, copy }: {
               type="number"
               value={quantity}
             />
-            <button aria-label={interpolate(copy.product.increase, { name })} className="grid size-10 place-items-center text-[var(--text-secondary)] hover:bg-[var(--surface-muted)] disabled:opacity-40" disabled={busy || quantity >= MAX_QUANTITY} onClick={() => onQuantity(quantity + 1)} type="button"><Plus aria-hidden="true" size={15} /></button>
+            <button aria-label={interpolate(copy.product.increase, { name })} className="grid size-9 place-items-center text-[var(--text-secondary)] hover:bg-[var(--surface-muted)] disabled:opacity-40" disabled={busy || quantity >= MAX_QUANTITY} onClick={() => onQuantity(quantity + 1)} type="button"><Plus aria-hidden="true" size={15} /></button>
           </div>
-          <button aria-label={interpolate(copy.product.quickPrintAria, { name })} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--sidebar)] px-4 text-xs font-semibold text-white transition hover:bg-[#1c3329] disabled:cursor-wait disabled:opacity-55" disabled={busy} onClick={onQuickPrint} type="button"><Printer aria-hidden="true" size={15} />{copy.product.quickPrint}</button>
+          <button aria-label={interpolate(copy.product.quickPrintAria, { name })} className="icon-button bg-[var(--button-primary)] text-white hover:brightness-110" disabled={busy} onClick={onQuickPrint} title={copy.product.quickPrint} type="button"><Printer aria-hidden="true" size={15} /></button>
         </div>
       </div>
     </article>

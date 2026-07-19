@@ -73,14 +73,11 @@ describe("FboPackingView", () => {
     await user.type(quantity, "2");
     expect(screen.getByText("2 пары · 1 SKU")).toBeVisible();
 
-    await user.click(screen.getByRole("button", { name: "Следующая страница FBO" }));
+    expect(screen.queryByRole("button", { name: "Следующая страница FBO" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Показать ещё" }));
     expect(await screen.findByText("Ботинки")).toBeVisible();
     expect(loadCatalog).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }));
-    expect(screen.queryByText("Кроссовки")).not.toBeInTheDocument();
-    expect(screen.getByText("Страница 2")).toBeVisible();
-
-    await user.click(screen.getByRole("button", { name: "Предыдущая страница FBO" }));
-    expect(await screen.findByText("Кроссовки")).toBeVisible();
+    expect(screen.getByText("Кроссовки")).toBeVisible();
     expect(screen.getByRole("spinbutton", { name: "Количество для Кроссовки, SKU SKU-1" })).toHaveValue(2);
 
     await user.click(screen.getByRole("button", { name: "Категории" }));
