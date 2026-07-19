@@ -146,7 +146,7 @@ export function SupportDialog({ onClose, copy }: { onClose: () => void; copy: Ap
                     {copy.platform}
                   </div>
                   <p className="mt-3 text-lg font-semibold">{osCopy} {data.osVersion} · {data.architecture}</p>
-                  <p className="mt-1 text-xs text-[var(--text-muted)]">WCode {data.appVersion} · jDesk {data.jdeskVersion} · Java {data.javaVersion}</p>
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">WCode {data.appVersion}</p>
                 </div>
                 <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-muted)] p-4">
                   <div className="flex items-center gap-2 text-sm font-semibold">

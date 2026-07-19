@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, ArrowUpRight, CalendarDays } from "lucide-react";
+import { ArrowUpRight, CalendarDays } from "lucide-react";
 import { useMemo } from "react";
 import type { SupplyItem } from "../../generated/types";
 import { interpolate } from "../../i18n";
@@ -69,70 +69,6 @@ function StatusBadge({ status, copy }: { status: string; copy: SupplyCopy }) {
       <span className={`size-1.5 rounded-full ${open ? "bg-amber-500" : "bg-emerald-500"}`} />
       {open ? copy.list.open : copy.list.closed}
     </span>
-  );
-}
-
-export function Pagination({
-  page,
-  totalPages,
-  totalItems,
-  onPage,
-  ariaLabel,
-  previousLabel,
-  nextLabel,
-  foundLabel,
-  pageOfLabel,
-  copy = defaultSupplyCopy,
-  locale = "ru-RU",
-}: {
-  page: number;
-  totalPages: number;
-  totalItems: number;
-  onPage: (page: number) => void;
-  ariaLabel?: string;
-  previousLabel?: string;
-  nextLabel?: string;
-  foundLabel?: string;
-  pageOfLabel?: string;
-  copy?: SupplyCopy;
-  locale?: string;
-}) {
-  const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
-  return (
-    <nav
-      className="flex flex-col items-center justify-between gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-4 py-3 sm:flex-row"
-      aria-label={ariaLabel ?? copy.list.pagination}
-    >
-      <p className="text-sm text-[var(--text-secondary)]">
-        {foundLabel ?? copy.list.found} <span className="font-semibold text-[var(--text-primary)]">{numberFormat.format(totalItems)}</span>
-      </p>
-      <div className="flex items-center gap-3">
-        <button
-          className="icon-button"
-          type="button"
-          aria-label={previousLabel ?? copy.list.previousPage}
-          disabled={page <= 1}
-          onClick={() => onPage(page - 1)}
-        >
-          <ArrowLeft aria-hidden="true" size={17} />
-        </button>
-        <p className="min-w-30 text-center text-sm font-semibold tabular-nums">
-          {interpolate(pageOfLabel ?? copy.list.pageOf, {
-            page: numberFormat.format(page),
-            total: numberFormat.format(Math.max(totalPages, 1)),
-          })}
-        </p>
-        <button
-          className="icon-button"
-          type="button"
-          aria-label={nextLabel ?? copy.list.nextPage}
-          disabled={page >= totalPages}
-          onClick={() => onPage(page + 1)}
-        >
-          <ArrowRight aria-hidden="true" size={17} />
-        </button>
-      </div>
-    </nav>
   );
 }
 

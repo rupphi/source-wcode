@@ -732,10 +732,15 @@ describe("App", () => {
 
     render(<App />);
     await user.click(await screen.findByRole("button", { name: "Дизайн этикеток" }));
-    await user.click(await screen.findByRole("button", { name: "Создать шаблон" }));
+    const createTemplateButton = await screen.findByRole("button", { name: "Создать шаблон" });
+    await user.click(createTemplateButton);
+    expect(screen.getByRole("button", { name: "Закрыть" })).toHaveFocus();
+    expect(document.body.style.overflow).toBe("hidden");
     await user.type(screen.getByRole("textbox", { name: "Название шаблона" }), "Новый макет");
     await user.click(screen.getByRole("button", { name: "Создать" }));
     await waitFor(() => expect(createTemplate).toHaveBeenCalledWith({ mode: "fbs", name: "Новый макет" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Создать шаблон" })).toHaveFocus());
+    expect(document.body.style.overflow).toBe("");
 
     await user.click(screen.getByRole("button", { name: "Переименовать шаблон" }));
     const nameField = screen.getByRole("textbox", { name: "Название шаблона" });
@@ -1340,7 +1345,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("Products in catalog")).toBeVisible();
-    expect(screen.getByText("Token connected")).toBeVisible();
+    expect(screen.getByText("Access connected")).toBeVisible();
     const readsBeforeLanguageChange = loadDashboard.mock.calls.length;
 
     await user.click(screen.getByRole("button", { name: "Settings" }));
@@ -1390,7 +1395,7 @@ describe("App", () => {
     expect(selectShopCommand).toHaveBeenCalledWith({ shopId: 9 });
     await waitFor(() => expect(loadDashboard).toHaveBeenLastCalledWith({ shopId: 9 }));
     expect(await screen.findByText("20")).toBeVisible();
-    expect(screen.getByText("Токен не настроен")).toBeVisible();
+    expect(screen.getByText("Доступ не настроен")).toBeVisible();
   });
 
   it("shows a safe retry state when bootstrap fails", async () => {
@@ -1482,7 +1487,7 @@ describe("App", () => {
     await user.click(await screen.findByRole("button", { name: "Синхронизировать с Wildberries" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Токен Wildberries недействителен или не имеет нужных прав",
+      "Не удалось подключиться к Wildberries. Проверьте ключ доступа",
     );
     expect(document.body).not.toHaveTextContent("401");
   });
@@ -2157,10 +2162,13 @@ describe("App", () => {
     render(<App />);
     await user.click(await screen.findByRole("button", { name: "Поставки FBS" }));
     await user.click(await screen.findByRole("button", { name: "Открыть поставку Поставка Москва" }));
-    await user.click(await screen.findByRole("button", { name: "Настроить печать" }));
+    const printSetupButton = await screen.findByRole("button", { name: "Настроить печать" });
+    await user.click(printSetupButton);
 
     await waitFor(() => expect(loadPrintSetup).toHaveBeenCalledWith({ shopId: 7 }));
     expect(await screen.findByRole("dialog", { name: "Настройка печати" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Закрыть настройку печати" })).toHaveFocus();
+    expect(document.body.style.overflow).toBe("hidden");
     expect(screen.getByText("Основной шаблон")).toBeVisible();
     expect(screen.getByText("58 × 40 мм")).toBeVisible();
     expect(screen.getByText("6 страниц PDF")).toBeVisible();
@@ -2200,6 +2208,10 @@ describe("App", () => {
       fileKind: "details",
     }));
     expect(document.body).not.toHaveTextContent(secret);
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Настройка печати" })).not.toBeInTheDocument();
+    expect(printSetupButton).toHaveFocus();
+    expect(document.body.style.overflow).toBe("");
   });
 
   it("refreshes supply orders in the background without losing detail selection", async () => {

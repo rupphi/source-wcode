@@ -77,6 +77,7 @@ describe("SupportDialog", () => {
     expect(await screen.findByRole("dialog", { name: "Diagnostics and support" })).toBeVisible();
     expect(await screen.findByText("863")).toBeVisible();
     expect(screen.getByText("macOS 26.5.1 · arm64")).toBeVisible();
+    expect(document.body).not.toHaveTextContent(/jDesk|Java/);
     expect(screen.getByText("Healthy")).toBeVisible();
     expect(document.body.textContent).not.toContain(secret);
     await user.keyboard("{Escape}");

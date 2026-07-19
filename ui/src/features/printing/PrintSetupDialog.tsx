@@ -1,6 +1,7 @@
 import { CheckCircle2, FileText, FolderOpen, Layers3, Printer, X } from "lucide-react";
 import { JDeskError } from "jdesk-client";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useModalFocus } from "../../components/useModalFocus";
 import { commands } from "../../generated/commands";
 import type { OrderSortRequest, PrintExportResponse, PrintSetupResponse } from "../../generated/types";
 import { interpolate } from "../../i18n";
@@ -51,20 +52,7 @@ export function PrintSetupDialog({
   const close = () => {
     if (!busy) setState({ status: "closed" });
   };
-
-  useEffect(() => {
-    if (state.status === "closed") return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !busy) setState({ status: "closed" });
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [busy, state.status]);
+  const { dialogRef, initialFocusRef } = useModalFocus<HTMLElement>(busy, close, state.status !== "closed");
 
   const open = async () => {
     setState({ status: "loading" });
@@ -197,14 +185,14 @@ export function PrintSetupDialog({
         <div className="fixed inset-0 z-50 grid place-items-center bg-[#10231b]/45 p-4 backdrop-blur-[2px]" onMouseDown={(event) => {
           if (event.target === event.currentTarget) close();
         }}>
-          <section aria-labelledby="print-setup-title" aria-modal="true" className="max-h-[calc(100vh-2rem)] w-full max-w-2xl overflow-y-auto rounded-3xl border border-white/60 bg-[var(--surface-elevated)] shadow-2xl" role="dialog">
+          <section ref={dialogRef} aria-labelledby="print-setup-title" aria-modal="true" className="max-h-[calc(100vh-2rem)] w-full max-w-2xl overflow-y-auto rounded-3xl border border-white/60 bg-[var(--surface-elevated)] shadow-2xl" role="dialog">
             <header className="flex items-start justify-between border-b border-[var(--border-subtle)] px-6 py-5">
               <div>
                 <p className="mb-1 text-xs font-semibold tracking-[0.12em] text-[var(--accent-strong)] uppercase">{copy.eyebrow}</p>
                 <h3 className="text-xl font-semibold tracking-[-0.025em]" id="print-setup-title">{copy.title}</h3>
                 <p className="mt-1 text-sm text-[var(--text-secondary)]">{copy.description}</p>
               </div>
-              <button autoFocus className="grid size-9 place-items-center rounded-xl text-[var(--text-muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)] disabled:cursor-wait disabled:opacity-50" disabled={busy} onClick={close} type="button" aria-label={copy.close}>
+              <button ref={initialFocusRef} className="grid size-9 place-items-center rounded-xl text-[var(--text-muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)] disabled:cursor-wait disabled:opacity-50" disabled={busy} onClick={close} type="button" aria-label={copy.close}>
                 <X aria-hidden="true" size={19} />
               </button>
             </header>

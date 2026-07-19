@@ -47,6 +47,12 @@ const secondGtin = "04601234567891";
 const secret = "znack-private-selector-must-not-enter-the-dom";
 const purchaseId = "44444444-4444-4444-8444-444444444444";
 
+function stringValues(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (typeof value !== "object" || value === null) return [];
+  return Object.values(value).flatMap(stringValues);
+}
+
 function settings(version = "a".repeat(64)) {
   return {
     shopId: 7,
@@ -199,6 +205,13 @@ describe("ZnackView", () => {
         createdAt: "2026-07-18T00:02:00Z",
       }],
     });
+  });
+
+  it("keeps implementation terminology out of user-facing Znack copy", () => {
+    const forbidden = /jdesk|javafx|webview|java bridge|selector|thumbprint|\bdto\b|capabilit|idempoten|pagination|migration|atomic|pipeline|\buuid\b|\bmetadata\b|token|токен|令牌|sql|stack trace/i;
+    for (const language of ["ru", "en", "vi", "zh"] as const) {
+      expect(stringValues(getZnackCopy(language)).join(" ")).not.toMatch(forbidden);
+    }
   });
 
   it("loads safe settings and saves only editable fields with the opaque version", async () => {
@@ -489,8 +502,16 @@ describe("ZnackView", () => {
     expect(await screen.findByText("Кеды North")).toBeVisible();
     expect(screen.getByText("Ввод в оборот требует внимания")).toBeVisible();
     expect(loadPurchases).toHaveBeenLastCalledWith({ shopId: 7, page: 2, pageSize: 50 });
-    await user.click(screen.getByRole("button", { name: `Повторить ввод в оборот для ${gtin}` }));
+    const retryButton = screen.getByRole("button", { name: `Повторить ввод в оборот для ${gtin}` });
+    await user.click(retryButton);
     expect(await screen.findByText("Коды уже куплены и не будут заказаны повторно.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Закрыть подтверждение ввода" })).toHaveFocus();
+    expect(document.body.style.overflow).toBe("hidden");
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Повторить ввод в оборот?" })).not.toBeInTheDocument();
+    expect(retryButton).toHaveFocus();
+    expect(document.body.style.overflow).toBe("");
+    await user.click(retryButton);
     await user.click(screen.getByRole("button", { name: "Подтвердить повтор ввода в оборот" }));
     expect(retryIntroduction).toHaveBeenCalledWith({
       shopId: 7,

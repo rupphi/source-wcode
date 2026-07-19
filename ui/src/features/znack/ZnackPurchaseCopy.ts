@@ -28,7 +28,7 @@ export const defaultPurchaseDialogCopy: PurchaseDialogCopy = {
   unnamedProduct: "Товар без названия", close: "Закрыть покупку КИЗ", quantity: "Количество",
   autoIntroductionTitle: "Автоматический ввод в оборот включён", autoIntroductionDescription: "После загрузки кодов WCode отправит документ только при готовых данных и документах.",
   localOnly: "Коды будут загружены локально без автоматического ввода в оборот.", quantityLabel: "Количество КИЗ",
-  certificateRequired: "Сохраните настройки и проверьте сертификат CryptoPro.", paidWarning: "Покупка может создать платный заказ Znack. UUID подтверждения сохраняется до первого сетевого вызова и блокирует повторное списание.",
+  certificateRequired: "Сохраните настройки и проверьте сертификат CryptoPro.", paidWarning: "Покупка может создать платный заказ Znack. Подтверждение сохраняется заранее, чтобы исключить повторное списание.",
   cancel: "Отмена", confirmLabel: "Подтвердить покупку КИЗ", starting: "Запуск…", confirm: "Подтвердить покупку КИЗ",
   prepareLabel: "Подготовить покупку", checking: "Проверка…", prepare: "Подготовить покупку",
 };

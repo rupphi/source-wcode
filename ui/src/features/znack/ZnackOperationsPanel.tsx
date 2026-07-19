@@ -2,6 +2,7 @@ import { AlertTriangle, CheckCircle2, Clock3, RefreshCw, RotateCcw, ScrollText, 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { InfiniteLoadTrigger } from "../../components/InfiniteLoadTrigger";
 import { useBoundedInfinitePages, type InfinitePagesStatus } from "../../components/useBoundedInfinitePages";
+import { useModalFocus } from "../../components/useModalFocus";
 import { commands } from "../../generated/commands";
 import type { LogItem, LogsResponse, PurchaseItem, PurchasesResponse } from "../../generated/types";
 import { interpolate } from "../../i18n";
@@ -244,15 +245,20 @@ export function ZnackPurchasesPanel({
         </ul>
       ) : null}
       {items.length > 0 ? <OperationLoadTrigger copy={copy} locale={locale} status={pages.status} hasMore={pages.hasMore} addedCount={pages.addedCount} numberFormat={numberFormat} onLoadMore={pages.loadMore} onRetry={pages.retry} /> : null}
-      {retrying ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-labelledby="retry-introduction-title">
-          <div className="w-full max-w-lg rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-5 shadow-2xl">
-            <div className="flex items-start justify-between gap-4"><div><h4 id="retry-introduction-title" className="text-lg font-semibold">{copy.purchases.confirmTitle}</h4><p className="mt-1 text-sm text-[var(--text-muted)]">GTIN {retrying.gtin}</p></div><button className="icon-button" type="button" aria-label={copy.purchases.closeConfirm} disabled={submittingRetry} onClick={() => setRetrying(null)}><X aria-hidden="true" size={18} /></button></div>
-            <p className="mt-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-muted)] p-3 text-sm leading-6"><strong className="block">{copy.purchases.alreadyBought}</strong><span className="text-[var(--text-secondary)]">{copy.purchases.onlyIntroduction}</span></p>
-            <div className="mt-5 flex justify-end gap-2"><button className="secondary-button" type="button" disabled={submittingRetry} onClick={() => setRetrying(null)}>{copy.purchases.cancel}</button><button className="primary-button" type="button" disabled={!canMutate || submittingRetry} onClick={() => void confirmRetry()}>{submittingRetry ? <RefreshCw aria-hidden="true" className="animate-spin" size={16} /> : <CheckCircle2 aria-hidden="true" size={16} />}{submittingRetry ? copy.purchases.starting : copy.purchases.confirm}</button></div>
-          </div>
-        </div>
-      ) : null}
+      {retrying ? <RetryIntroductionDialog copy={copy} gtin={retrying.gtin} busy={submittingRetry} canConfirm={canMutate} onClose={() => setRetrying(null)} onConfirm={() => void confirmRetry()} /> : null}
+    </div>
+  );
+}
+
+function RetryIntroductionDialog({ copy, gtin, busy, canConfirm, onClose, onConfirm }: { copy: OperationsCopy; gtin: string; busy: boolean; canConfirm: boolean; onClose: () => void; onConfirm: () => void }) {
+  const { dialogRef, initialFocusRef } = useModalFocus<HTMLDivElement>(busy, onClose);
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-labelledby="retry-introduction-title">
+      <div ref={dialogRef} className="w-full max-w-lg rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-5 shadow-2xl">
+        <div className="flex items-start justify-between gap-4"><div><h4 id="retry-introduction-title" className="text-lg font-semibold">{copy.purchases.confirmTitle}</h4><p className="mt-1 text-sm text-[var(--text-muted)]">GTIN {gtin}</p></div><button ref={initialFocusRef} className="icon-button" type="button" aria-label={copy.purchases.closeConfirm} disabled={busy} onClick={onClose}><X aria-hidden="true" size={18} /></button></div>
+        <p className="mt-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-muted)] p-3 text-sm leading-6"><strong className="block">{copy.purchases.alreadyBought}</strong><span className="text-[var(--text-secondary)]">{copy.purchases.onlyIntroduction}</span></p>
+        <div className="mt-5 flex justify-end gap-2"><button className="secondary-button" type="button" disabled={busy} onClick={onClose}>{copy.purchases.cancel}</button><button className="primary-button" type="button" disabled={!canConfirm || busy} onClick={onConfirm}>{busy ? <RefreshCw aria-hidden="true" className="animate-spin" size={16} /> : <CheckCircle2 aria-hidden="true" size={16} />}{busy ? copy.purchases.starting : copy.purchases.confirm}</button></div>
+      </div>
     </div>
   );
 }

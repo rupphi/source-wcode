@@ -16,6 +16,7 @@ import {
   Type,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useModalFocus } from "../../components/useModalFocus";
 import { commands } from "../../generated/commands";
 import type {
   TemplateDesignerResponse,
@@ -625,9 +626,9 @@ function NameDialog({ copy, action, initialName, busy, onClose, onSubmit }: { co
   const [name, setName] = useState(initialName);
   const labels = action === "create" ? { title: copy.dialogs.createTitle, submit: copy.dialogs.createSubmit } : action === "duplicate" ? { title: copy.dialogs.duplicateTitle, submit: copy.dialogs.duplicateSubmit } : { title: copy.dialogs.renameTitle, submit: copy.dialogs.renameSubmit };
   return (
-    <Modal title={labels.title} closeLabel={copy.dialogs.close} onClose={onClose}>
+    <Modal title={labels.title} closeLabel={copy.dialogs.close} busy={busy} onClose={onClose}>
       <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); const trimmed = name.trim(); if (trimmed) onSubmit(trimmed); }}>
-        <label className="block text-sm font-medium">{copy.dialogs.name}<input autoFocus className="mt-2 w-full rounded-xl border border-[var(--border-strong)] px-3 py-2.5" aria-label={copy.dialogs.name} value={name} maxLength={120} disabled={busy} onChange={(event) => setName(event.target.value)} /></label>
+        <label className="block text-sm font-medium">{copy.dialogs.name}<input className="mt-2 w-full rounded-xl border border-[var(--border-strong)] px-3 py-2.5" aria-label={copy.dialogs.name} value={name} maxLength={120} disabled={busy} onChange={(event) => setName(event.target.value)} /></label>
         <div className="flex justify-end gap-2"><DialogCancel label={copy.dialogs.cancel} onClick={onClose} /><button className="rounded-lg bg-[var(--button-primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-45" type="submit" disabled={busy || !name.trim()}>{labels.submit}</button></div>
       </form>
     </Modal>
@@ -637,18 +638,19 @@ function NameDialog({ copy, action, initialName, busy, onClose, onSubmit }: { co
 function ConfirmDialog({ copy, action, templateName, busy, onClose, onConfirm }: { copy: TemplateDesignerCopy; action: ConfirmAction; templateName: string; busy: boolean; onClose: () => void; onConfirm: () => void }) {
   const reset = action === "reset";
   return (
-    <Modal title={reset ? copy.dialogs.resetTitle : copy.dialogs.deleteTitle} closeLabel={copy.dialogs.close} onClose={onClose}>
+    <Modal title={reset ? copy.dialogs.resetTitle : copy.dialogs.deleteTitle} closeLabel={copy.dialogs.close} busy={busy} onClose={onClose}>
       <p className="text-sm leading-6 text-[var(--text-secondary)]">{formatCopy(reset ? copy.dialogs.resetDetail : copy.dialogs.deleteDetail, { name: templateName })}</p>
       <div className="mt-5 flex justify-end gap-2"><DialogCancel label={copy.dialogs.cancel} onClick={onClose} /><button className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-45 ${reset ? "bg-[var(--button-primary)]" : "bg-red-700"}`} type="button" disabled={busy} onClick={onConfirm}>{reset ? copy.dialogs.reset : copy.dialogs.delete}</button></div>
     </Modal>
   );
 }
 
-function Modal({ title, closeLabel, children, onClose }: { title: string; closeLabel: string; children: React.ReactNode; onClose: () => void }) {
+function Modal({ title, closeLabel, children, busy, onClose }: { title: string; closeLabel: string; children: React.ReactNode; busy: boolean; onClose: () => void }) {
+  const { dialogRef, initialFocusRef } = useModalFocus<HTMLElement>(busy, onClose);
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="w-full max-w-md rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-5 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="template-dialog-title">
-        <div className="mb-4 flex items-start justify-between gap-3"><h2 className="text-lg font-semibold" id="template-dialog-title">{title}</h2><button className="rounded-lg px-2 py-1 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-muted)]" type="button" aria-label={closeLabel} onClick={onClose}>×</button></div>
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4" onMouseDown={(event) => { if (!busy && event.target === event.currentTarget) onClose(); }}>
+      <section ref={dialogRef} className="w-full max-w-md rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-5 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="template-dialog-title">
+        <div className="mb-4 flex items-start justify-between gap-3"><h2 className="text-lg font-semibold" id="template-dialog-title">{title}</h2><button ref={initialFocusRef} className="rounded-lg px-2 py-1 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-muted)]" type="button" aria-label={closeLabel} disabled={busy} onClick={onClose}>×</button></div>
         {children}
       </section>
     </div>

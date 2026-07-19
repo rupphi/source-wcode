@@ -222,8 +222,11 @@ describe("KizMappingView", () => {
     expect(screen.getByText("Completed")).toBeVisible();
     expect(screen.getByText(/^Updated:/)).toBeVisible();
 
-    await user.click(screen.getByRole("button", { name: `Configure mapping for ${gtin}` }));
+    const editButton = screen.getByRole("button", { name: `Configure mapping for ${gtin}` });
+    await user.click(editButton);
     const dialog = await screen.findByRole("dialog", { name: `GTIN mapping ${gtin}` });
+    expect(within(dialog).getByRole("button", { name: "Close editor" })).toHaveFocus();
+    expect(document.body.style.overflow).toBe("hidden");
     expect(within(dialog).getByText("Mapping editor")).toBeVisible();
     expect(within(dialog).getByRole("checkbox", { name: "All gender values" })).toBeChecked();
     expect(within(dialog).getByRole("button", { name: "Save mapping" })).toBeVisible();
@@ -231,6 +234,8 @@ describe("KizMappingView", () => {
 
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() => expect(editButton).toHaveFocus());
+    expect(document.body.style.overflow).toBe("");
     expect(saveMapping).not.toHaveBeenCalled();
   });
 });

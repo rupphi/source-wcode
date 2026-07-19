@@ -2,7 +2,6 @@ import {
   AlertCircle,
   Boxes,
   Check,
-  CheckCircle2,
   ChevronDown,
   CircleDot,
   Layers3,
@@ -14,7 +13,9 @@ import {
   Tags,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useMemo, useRef, useState, type FormEvent } from "react";
+import { useModalFocus } from "../../components/useModalFocus";
+import { Toast } from "../../components/Toast";
 import { InfiniteLoadTrigger } from "../../components/InfiniteLoadTrigger";
 import { useBoundedInfinitePages } from "../../components/useBoundedInfinitePages";
 import { commands } from "../../generated/commands";
@@ -65,6 +66,7 @@ export function KizMappingView({ shopId, copy = defaultKizMappingCopy, locale = 
   const [editor, setEditor] = useState<EditorState>({ status: "closed" });
   const [savedNotice, setSavedNotice] = useState(false);
   const editorSequence = useRef(0);
+  const editorTrigger = useRef<HTMLElement | null>(null);
   const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   const dateFormat = useMemo(() => new Intl.DateTimeFormat(locale, { dateStyle: "short", timeStyle: "short" }), [locale]);
 
@@ -119,6 +121,9 @@ export function KizMappingView({ shopId, copy = defaultKizMappingCopy, locale = 
   };
 
   const openEditor = (gtin: string) => {
+    if (editor.status === "closed" && document.activeElement instanceof HTMLElement) {
+      editorTrigger.current = document.activeElement;
+    }
     const requestId = ++editorSequence.current;
     setSavedNotice(false);
     setEditor({ status: "loading", gtin });
@@ -149,6 +154,7 @@ export function KizMappingView({ shopId, copy = defaultKizMappingCopy, locale = 
   const closeEditor = () => {
     editorSequence.current += 1;
     setEditor({ status: "closed" });
+    setTimeout(() => editorTrigger.current?.focus(), 0);
   };
 
   const saveEditor = async () => {
@@ -165,6 +171,7 @@ export function KizMappingView({ shopId, copy = defaultKizMappingCopy, locale = 
       setEditor({ status: "closed" });
       setSavedNotice(true);
       setRetryKey((value) => value + 1);
+      setTimeout(() => editorTrigger.current?.focus(), 0);
     } catch {
       setEditor((value) => value.status === "ready" && value.data.gtin === current.data.gtin
         ? { ...value, saving: false, saveError: true }
@@ -194,17 +201,7 @@ export function KizMappingView({ shopId, copy = defaultKizMappingCopy, locale = 
         </div>
       </section>
 
-      {savedNotice ? (
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" role="status">
-          <span className="flex items-center gap-2 font-medium">
-            <CheckCircle2 aria-hidden="true" size={18} />
-            {copy.notice.saved}
-          </span>
-          <button className="rounded-lg p-1 text-emerald-800 hover:bg-emerald-100" type="button" aria-label={copy.notice.close} onClick={() => setSavedNotice(false)}>
-            <X aria-hidden="true" size={17} />
-          </button>
-        </div>
-      ) : null}
+      {savedNotice ? <Toast message={copy.notice.saved} closeLabel={copy.notice.close} onDismiss={() => setSavedNotice(false)} /> : null}
 
       <section className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-3 shadow-[var(--shadow-panel)] md:p-4">
         <form className="flex flex-col gap-2 lg:flex-row" role="search" onSubmit={submitSearch}>
@@ -449,10 +446,11 @@ function InventoryMetric({ value, label, numberFormat, tone, primary = false }: 
 }
 
 function EditorLoading({ copy, gtin, onClose }: { copy: KizMappingCopy; gtin: string; onClose: () => void }) {
+  const { dialogRef, initialFocusRef } = useModalFocus<HTMLElement>(false, onClose);
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-[#0b1712]/55 p-4 backdrop-blur-[2px]">
-      <section className="relative grid min-h-56 w-full max-w-xl place-items-center rounded-2xl bg-[var(--surface-elevated)] p-8 shadow-2xl" role="dialog" aria-label={interpolate(copy.editor.dialogAria, { gtin })} aria-modal="true">
-        <button className="absolute top-4 right-4 rounded-lg p-2 text-[var(--text-muted)] hover:bg-[var(--surface-muted)]" onClick={onClose} type="button" aria-label={copy.editor.close}><X aria-hidden="true" size={18} /></button>
+      <section ref={dialogRef} className="relative grid min-h-56 w-full max-w-xl place-items-center rounded-2xl bg-[var(--surface-elevated)] p-8 shadow-2xl" role="dialog" aria-label={interpolate(copy.editor.dialogAria, { gtin })} aria-modal="true">
+        <button ref={initialFocusRef} className="absolute top-4 right-4 rounded-lg p-2 text-[var(--text-muted)] hover:bg-[var(--surface-muted)]" onClick={onClose} type="button" aria-label={copy.editor.close}><X aria-hidden="true" size={18} /></button>
         <div className="grid justify-items-center gap-3 text-sm text-[var(--text-secondary)]">
           <LoaderCircle className="animate-spin text-[var(--accent-strong)]" aria-hidden="true" size={30} />
           {copy.editor.loading}
@@ -479,19 +477,9 @@ function MappingEditor({
   onClose: () => void;
   onSave: () => void;
 }) {
-  const dialogRef = useRef<HTMLElement>(null);
+  const { dialogRef, initialFocusRef } = useModalFocus<HTMLElement>(state.saving, onClose);
   const active = state.data.subjects.find((subject) => subject.subjectName === state.activeSubject) ?? null;
   const selectedCount = state.draft.size;
-  useEffect(() => {
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const bodyOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    dialogRef.current?.focus();
-    return () => {
-      document.body.style.overflow = bodyOverflow;
-      previous?.focus();
-    };
-  }, []);
   const updateDraft = (draft: Map<string, RuleDraft>, activeSubject = state.activeSubject) => {
     onChange({ ...state, draft, activeSubject, saveError: false });
   };
@@ -560,7 +548,7 @@ function MappingEditor({
             </div>
             <p className="mt-1 text-sm text-[var(--text-secondary)]">{copy.editor.description}</p>
           </div>
-          <button className="shrink-0 rounded-xl p-2 text-[var(--text-muted)] hover:bg-[var(--surface-muted)]" disabled={state.saving} onClick={onClose} type="button" aria-label={copy.editor.close}><X aria-hidden="true" size={20} /></button>
+          <button ref={initialFocusRef} className="shrink-0 rounded-xl p-2 text-[var(--text-muted)] hover:bg-[var(--surface-muted)]" disabled={state.saving} onClick={onClose} type="button" aria-label={copy.editor.close}><X aria-hidden="true" size={20} /></button>
         </header>
 
         <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(14rem,.8fr)_minmax(16rem,1fr)_minmax(16rem,1fr)]">
