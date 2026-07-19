@@ -116,7 +116,7 @@ describe("PackingView mutations", () => {
 
     await user.click(await screen.findByRole("checkbox", { name: "Выбрать заказ #101" }));
     expect(screen.queryByRole("button", { name: "Следующая страница очереди" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Показать ещё", exact: true }));
+    await user.click(screen.getByRole("button", { name: "Показать ещё" }));
 
     expect(await screen.findByRole("checkbox", { name: "Выбрать заказ #201" })).toBeVisible();
     expect(screen.getByRole("checkbox", { name: "Выбрать заказ #101" })).toBeChecked();
