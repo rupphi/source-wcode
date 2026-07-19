@@ -1,5 +1,6 @@
 import { Activity, Database, Download, RefreshCw, ShieldCheck, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useModalFocus } from "../../components/useModalFocus";
 import { commands } from "../../generated/commands";
 import type { DiagnosticsSummary, ExportResponse } from "../../generated/types";
 import type { AppCopy } from "../../i18n";
@@ -51,7 +52,7 @@ export function SupportDialog({ onClose, copy }: { onClose: () => void; copy: Ap
   const [state, setState] = useState<State>({ status: "loading" });
   const [exportState, setExportState] = useState<ExportState>("idle");
   const request = useRef(0);
-  const closeButton = useRef<HTMLButtonElement>(null);
+  const { dialogRef, initialFocusRef } = useModalFocus<HTMLDivElement>(exportState === "busy", onClose);
 
   const load = useCallback(async () => {
     const current = ++request.current;
@@ -67,18 +68,9 @@ export function SupportDialog({ onClose, copy }: { onClose: () => void; copy: Ap
   }, []);
 
   useEffect(() => {
-    closeButton.current?.focus();
     void Promise.resolve().then(load);
     return () => { request.current += 1; };
   }, [load]);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && exportState !== "busy") onClose();
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [exportState, onClose]);
 
   const exportBundle = async () => {
     if (state.status !== "ready" || exportState === "busy") return;
@@ -110,6 +102,7 @@ export function SupportDialog({ onClose, copy }: { onClose: () => void; copy: Ap
 
   return (
     <div
+      ref={dialogRef}
       className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4"
       role="dialog"
       aria-modal="true"
@@ -122,7 +115,7 @@ export function SupportDialog({ onClose, copy }: { onClose: () => void; copy: Ap
             <h2 id="support-dialog-title" className="mt-1 text-xl font-semibold">{copy.title}</h2>
             <p className="mt-1 max-w-xl text-sm leading-5 text-[var(--text-muted)]">{copy.description}</p>
           </div>
-          <button ref={closeButton} className="icon-button shrink-0" type="button" aria-label={copy.close} disabled={exportState === "busy"} onClick={onClose}>
+          <button ref={initialFocusRef} className="icon-button shrink-0" type="button" aria-label={copy.close} disabled={exportState === "busy"} onClick={onClose}>
             <X aria-hidden="true" size={19} />
           </button>
         </header>

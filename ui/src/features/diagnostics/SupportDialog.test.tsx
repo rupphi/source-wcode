@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands } from "../../generated/commands";
 import { getCopy } from "../../i18n";
@@ -35,6 +36,37 @@ describe("SupportDialog", () => {
     summaryCommand.mockReset();
     exportCommand.mockReset();
     summaryCommand.mockResolvedValue(summary);
+  });
+
+  it("traps keyboard focus and returns it to the button that opened the dialog", async () => {
+    const user = userEvent.setup();
+
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>Open support</button>
+          {open ? <SupportDialog onClose={() => setOpen(false)} copy={getCopy("en").support} /> : null}
+        </>
+      );
+    }
+
+    render(<Harness />);
+    const trigger = screen.getByRole("button", { name: "Open support" });
+    await user.click(trigger);
+    const close = await screen.findByRole("button", { name: "Close diagnostics" });
+    expect(close).toHaveFocus();
+
+    const exportButton = await screen.findByRole("button", { name: "Export support bundle" });
+    exportButton.focus();
+    await user.tab();
+    expect(close).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(exportButton).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Diagnostics and support" })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
   });
 
   it("renders only a validated aggregate summary and closes with Escape", async () => {
