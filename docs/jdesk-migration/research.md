@@ -26,6 +26,17 @@ uses its own thin package task over the jDesk runtime/package input to add a con
 https://docs.oracle.com/en/java/javase/20/docs/specs/man/jdeps.html,
 https://docs.oracle.com/en/java/javase/25/docs/specs/man/jpackage.html.
 
+Navigation-security checkpoint (2026-07-19): tài liệu chính thức jDesk 0.1.3 đặt Java-side
+capability check làm trust boundary, chỉ cho production main-frame ở `jdesk://app`, chặn popup mặc
+định, inject bridge top-frame trên WKWebView và vô hiệu navigation nonce khi document thay đổi.
+Bytecode artifact Maven Central khớp contract đó: production allowlist chỉ có `jdesk://app`; dev
+origin là bổ sung riêng. WCode vì vậy cố định bundled entry, pin production marker trong launcher,
+loại dev/asset override trước runtime bootstrap và chỉ chuyển dev URL đã canonicalize đúng HTTP
+loopback có explicit port ở build phát triển; URL remote/mơ hồ fail closed. Sources:
+https://github.com/tuanworlddev/jdesk/blob/main/docs/concepts/security-model.md,
+https://github.com/tuanworlddev/jdesk/blob/main/docs/security/threat-model.md,
+https://github.com/tuanworlddev/jdesk/blob/main/docs/guides/automation-and-e2e.md.
+
 ## Kết luận
 
 jDesk phù hợp để thay lớp JavaFX của WCode vì framework giữ Java 25 làm lõi ứng dụng,

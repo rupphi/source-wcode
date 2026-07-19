@@ -63,6 +63,7 @@ import dev.jdesk.api.WindowConfig;
 import dev.jdesk.runtime.config.Capabilities;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.Properties;
 import java.util.concurrent.atomic.AtomicReference;
 
 public final class WCodeDesktop {
@@ -71,6 +72,10 @@ public final class WCodeDesktop {
 
     public static void main(String[] args) {
         int exitCode = 1;
+        Properties runtimeProperties = System.getProperties();
+        boolean packagedProduction =
+                Boolean.parseBoolean(runtimeProperties.getProperty("wcode.production", "false"));
+        FrontendContentPolicy.enforceProductionRuntime(packagedProduction, runtimeProperties);
         try (JDeskStartup.Session session =
                 JDeskStartup.prepare(AppPaths.appDataDir(), BuildConfig.getAppVersion())) {
             boolean smokeTest = Arrays.asList(args).contains("--jdesk-smoke");
@@ -186,7 +191,7 @@ public final class WCodeDesktop {
                             .size(1440, 900)
                             .minSize(960, 640)
                             .rememberBounds(true)
-                            .entry("jdesk://app/index.html")
+                            .entry(FrontendContentPolicy.BUNDLED_ENTRY)
                             .build())
                     .lifecycle(new LifecycleListener() {
                         @Override
@@ -198,10 +203,11 @@ public final class WCodeDesktop {
                         }
                     });
 
-            String devUrl = System.getProperty("jdesk.devUrl");
-            if (Boolean.getBoolean("jdesk.dev") && devUrl != null) {
-                application.devServerUrl(devUrl);
-            }
+            FrontendContentPolicy.developmentOrigin(
+                            packagedProduction,
+                            Boolean.parseBoolean(runtimeProperties.getProperty("jdesk.dev", "false")),
+                            runtimeProperties.getProperty("jdesk.devUrl"))
+                    .ifPresent(application::devServerUrl);
             exitCode = application.run(args);
         } catch (AppDataLock.AlreadyRunningException exception) {
             System.err.println("WCode is already running for this app-data directory.");

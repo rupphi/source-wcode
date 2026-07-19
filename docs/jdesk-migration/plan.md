@@ -150,7 +150,7 @@ Feature parity + early Windows native gates
 - [x] React 19, Vite 7, Tailwind 4 and jdesk-client are lockfile-pinned.
 - [x] strict typecheck, lint, Vitest and production build scripts exist.
 - [x] CSP-compatible build contains no inline/eval requirement.
-- [ ] Production window loads bundled content only; external navigation is blocked or handed to the
+- [x] Production window loads bundled content only; external navigation is blocked or handed to the
   system browser without bridge capabilities.
 
 **Verification:** `npm ci --prefix ui`; lint, typecheck, test, build; `npm audit`.
@@ -207,7 +207,7 @@ Feature parity + early Windows native gates
 - [x] No secret is returned by Java, rendered in DOM after submit or written to console/logs.
 - [x] Shared live database cannot be opened by both entry points concurrently.
 - [x] Verified SQLite/WAL snapshot exists for the current writer/schema version.
-- [ ] Fault-injection and external-navigation tests prove exception/capability containment.
+- [x] Fault-injection and external-navigation tests prove exception/capability containment.
 
 ## Phase 2: Wildberries read synchronization
 

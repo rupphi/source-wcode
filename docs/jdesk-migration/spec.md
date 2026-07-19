@@ -23,6 +23,20 @@ luồng hiện tại trong UI mới, nhanh, rõ trạng thái, dùng được b�
 7. Quản lý license, ngôn ngữ, theme, update và diagnostics.
 8. Đóng gói Windows EXE/MSI/portable; giữ dữ liệu của bản JavaFX khi nâng cấp.
 
+### Frontend content and navigation boundary
+
+- Production entry cố định `jdesk://app/index.html`; launcher pin `wcode.production=true`, xóa dev/
+  directory/module asset override trước jDesk bootstrap và ép classpath `web`. Không có runtime
+  Node/localhost fallback hay shell/browser capability. Main-frame URL khác app origin cùng popup/
+  new-window đều bị chặn, nên nội dung ngoài không kế thừa bridge/capability của cửa sổ `main`.
+- Development server chỉ được bật khi có flag dev explicit và URL đúng một origin
+  `http://127.0.0.1:<port>` hoặc `http://localhost:<port>`. HTTPS, remote host, implicit port,
+  credential, path, query, fragment, IPv6 và URI mơ hồ đều làm startup fail closed; khi dev flag
+  tắt, URL property không thể thay production bundle.
+- Regression test pin policy của đúng jDesk version đang dùng cho `https`, loopback `http`,
+  `file`, `data` và `javascript` main-frame. Native test phải thử redirect cùng popup trên WebView
+  thật và chứng minh location/React root còn ở app origin, console sạch và log policy ghi `BLOCK`.
+
 ### Shop management and token boundary
 
 - `shops.list`, `shops.select`, `shops.create`, `shops.update` và `shops.delete` chỉ trả một
@@ -303,7 +317,7 @@ npm --prefix ui run build
 ./gradlew jdeskDoctor
 ./gradlew jdeskDev
 ./gradlew jdeskNativeSmokeTest
-./gradlew jdeskPackage
+./gradlew wcodePackage
 ```
 
 Live WB test chỉ đọc dữ liệu seller từ WB và ghi cache/local DB. Không tạo supply, deliver,

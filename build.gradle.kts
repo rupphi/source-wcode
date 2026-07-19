@@ -54,6 +54,7 @@ dependencies {
     implementation("org.apache.logging.log4j:log4j-core:2.24.3")
 
     testImplementation("org.junit.jupiter:junit-jupiter-api:$junitVersion")
+    testImplementation("dev.jdesk:jdesk-webview-spi:$jdeskVersion")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:$junitVersion")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.12.1")
 }
@@ -167,6 +168,9 @@ tasks.named<dev.jdesk.gradle.tasks.JDeskRuntimeImageTask>("jdeskRuntimeImage") {
 
 tasks.named<dev.jdesk.gradle.tasks.JDeskPackageTask>("jdeskPackage") {
     appVersion.set(project.version.toString())
+    description = "Compatibility entry point for the authoritative WCode package task."
+    dependsOn("wcodePackage")
+    enabled = false
 }
 
 val wcodePackageInput = tasks.register<Sync>("wcodePackageInput") {
@@ -205,6 +209,7 @@ val wcodePackageImage = tasks.register<Exec>("wcodePackageImage") {
             "--dest", packageRoot.get().asFile.absolutePath,
             "--app-version", project.version.toString(),
             "--java-options", "--enable-native-access=ALL-UNNAMED",
+            "--java-options", "-Dwcode.production=true",
             "--java-options", "-Djdesk.assets.classpath=web",
             "--java-options", "-Djdesk.applicationName=WCode",
             "--add-launcher", "WCode-Recovery=${recoveryLauncher.asFile.absolutePath}",
@@ -281,6 +286,15 @@ val wcodePackageVerify = tasks.register("wcodePackageVerify") {
         val recovery = root.resolve(recoveryRelative)
         if (Files.isSymbolicLink(recovery) || !Files.isRegularFile(recovery)) {
             throw GradleException("The packaged offline recovery launcher is missing or unsafe.")
+        }
+        val launcherConfigs = Files.walk(root).use { files ->
+            files.filter { it.fileName.toString() == "WCode.cfg" }
+                .filter { !Files.isSymbolicLink(it) && Files.isRegularFile(it) }
+                .toList()
+        }
+        val launcherConfig = launcherConfigs.singleOrNull()?.let(Files::readString)
+        if (launcherConfig?.contains("java-options=-Dwcode.production=true") != true) {
+            throw GradleException("The main launcher does not enforce bundled production content.")
         }
         for (evidence in listOf("checksums.sha256", "sbom.cyclonedx.json", "sbom.spdx.json")) {
             val evidenceFile = root.resolve(evidence)
