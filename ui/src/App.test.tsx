@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { commands } from "./generated/commands";
 import { exportFboPdf, exportSupplyPdf, reprintHistoryPdf } from "./features/printing/nativePrintCommands";
+import { getCopy, type Language } from "./i18n";
 
 vi.mock("./generated/commands", () => ({
   commands: {
@@ -309,6 +310,42 @@ describe("App", () => {
       certificateValidTo: "",
       version: "a".repeat(64),
     }));
+  });
+
+  it("keeps implementation terminology out of everyday interface copy", () => {
+    const forbidden = /jdesk|javafx|webview|java bridge|selector|thumbprint|dto|capability|idempotent|идемпотент|幂等|pagination|phân trang/i;
+
+    for (const language of ["ru", "en", "vi", "zh"] satisfies Language[]) {
+      const copy = getCopy(language);
+      const everydayCopy = JSON.stringify({
+        shell: copy.shell,
+        interfaceDescription: copy.settings.interfaceDescription,
+        licenseKeyHint: copy.settings.license.keyHint,
+      });
+      expect(everydayCopy).not.toMatch(forbidden);
+    }
+  });
+
+  it("opens and closes compact navigation from an accessible mobile menu button", async () => {
+    const user = userEvent.setup();
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [],
+      hasSelectedShop: false,
+      selectedShopId: 0,
+    });
+    render(<App />);
+
+    const openMenu = await screen.findByRole("button", { name: "Открыть меню" });
+    expect(openMenu).toHaveAttribute("aria-expanded", "false");
+    await user.click(openMenu);
+
+    const closeMenu = screen.getByRole("button", { name: "Закрыть меню" });
+    expect(closeMenu).toHaveAttribute("aria-expanded", "true");
+    await user.click(screen.getByRole("button", { name: "Главная" }));
+    const reopenedMenu = screen.getByRole("button", { name: "Открыть меню" });
+    expect(reopenedMenu).toHaveAttribute("aria-expanded", "false");
+    await waitFor(() => expect(reopenedMenu).toHaveFocus());
   });
 
   it("opens and closes the application license settings from the header", async () => {

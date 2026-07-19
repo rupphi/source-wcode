@@ -211,7 +211,7 @@ export function App() {
   return (
     <>
       <div
-        className="min-h-screen bg-[var(--surface-canvas)] text-[var(--text-primary)] md:grid md:grid-cols-[15.5rem_1fr]"
+        className="min-h-screen bg-[var(--surface-canvas)] text-[var(--text-primary)] md:grid md:grid-cols-[13.5rem_1fr]"
         aria-hidden={settingsOpen || shopManagerOpen || supportOpen || undefined}
         inert={settingsOpen || shopManagerOpen || supportOpen || undefined}
       >
@@ -222,12 +222,12 @@ export function App() {
         copy={copy.shell}
       />
       <div className="min-w-0">
-        <header className="sticky top-0 z-20 flex min-h-18 items-center justify-between gap-4 border-b border-[var(--border-subtle)] bg-[color:var(--surface-elevated)] px-4 md:px-7">
+        <header className="sticky top-0 z-20 flex min-h-14 items-center justify-between gap-3 border-b border-[var(--border-subtle)] bg-[color:var(--surface-elevated)] px-3 md:px-5">
           <div className="min-w-0">
-            <p className="text-xs font-semibold tracking-[0.12em] text-[var(--text-muted)] uppercase">
+            <p className="text-[0.65rem] font-semibold tracking-[0.1em] text-[var(--text-muted)] uppercase">
               {copy.shell.workspaceEyebrow}
             </p>
-            <h1 className="truncate text-lg font-semibold tracking-[-0.02em]">{copy.shell.workspaceTitle}</h1>
+            <h1 className="truncate text-base font-semibold tracking-[-0.02em]">{copy.shell.workspaceTitle}</h1>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -253,20 +253,20 @@ export function App() {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[96rem] p-4 md:p-7 lg:p-9">
-          <section className="mb-7 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+        <main className="mx-auto w-full max-w-[96rem] p-3 md:p-5 lg:p-6">
+          <section className="mb-4 flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
             <div>
-              <p className="mb-2 inline-flex items-center gap-2 text-sm font-medium text-[var(--accent-strong)]">
-                <span className="h-2 w-2 rounded-full bg-[var(--accent)]" aria-hidden="true" />
+              <p className="mb-1 inline-flex items-center gap-1.5 text-xs font-medium text-[var(--accent-strong)]">
+                <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" aria-hidden="true" />
                 {copy.shell.localData}
               </p>
-              <h2 className="text-3xl font-semibold tracking-[-0.035em]">{pageCopy.title}</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-secondary)]">
+              <h2 className="text-2xl font-semibold tracking-[-0.035em]">{pageCopy.title}</h2>
+              <p className="mt-1 max-w-2xl text-[0.8rem] leading-5 text-[var(--text-secondary)]">
                 {pageCopy.description}
               </p>
             </div>
             {activeView === "templates" ? (
-              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-4 py-3 shadow-[var(--shadow-control)]">
+              <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-3 py-2 shadow-[var(--shadow-control)]">
                 <p className="text-xs font-semibold text-[var(--text-primary)]">{copy.shell.localLibrary}</p>
                 <p className="mt-0.5 text-xs text-[var(--text-muted)]">{copy.shell.shopIndependent}</p>
               </div>
