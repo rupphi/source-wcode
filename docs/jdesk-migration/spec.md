@@ -2,6 +2,7 @@
 
 Trạng thái: Accepted from user objective; living specification
 Ngày: 2026-07-18
+Sửa đổi UX được người dùng phê duyệt: 2026-07-19
 
 ## Objective
 
@@ -317,6 +318,40 @@ luồng hiện tại trong UI mới, nhanh, rõ trạng thái, dùng được b�
   an explicit copy contract so the invoking journey changes language without weakening preview,
   confirmation, receipt validation or capability gates; Russian remains the rollback/default copy.
 
+### User-centred desktop UX completion contract
+
+- Visual language dùng bảng màu tím riêng của WCode, mật độ cao và nhịp phân cấp gần trải nghiệm
+  marketplace Wildberries; không sao chép logo, hình ảnh hay trade dress. Shell desktop có sidebar
+  gọn, content padding 12–20 px theo viewport, card gap 8–12 px, body text 12–14 px và heading không
+  lấn át dữ liệu nghiệp vụ. Light/dark/system đều giữ contrast AA, focus rõ và reduced motion.
+- Icon-only button chỉ dùng cho hành động quen thuộc như đóng, tải lại, chỉnh sửa hoặc menu; bắt buộc
+  có accessible name, tooltip không thay thế accessible name, vùng bấm tối thiểu 32×32 px và trạng
+  thái focus/disabled rõ. Hành động nguy hiểm, trả phí, đưa hàng vào lưu thông hoặc khó đảo ngược vẫn
+  dùng nhãn chữ rõ ràng và dialog xác nhận; không đổi logic preview/confirmation/idempotency hiện có.
+- Màn hình không hiển thị thuật ngữ triển khai như jDesk, JavaFX, WebView, Java bridge, selector,
+  thumbprint, DTO, capability hay giới hạn nội bộ. Nội dung chính chỉ nói người dùng cần biết để hoàn
+  tất công việc hoặc tự khắc phục. Thông tin phiên bản kỹ thuật chỉ được nằm trong vùng hỗ trợ chi
+  tiết theo hành động chủ động, không xuất hiện ở shell, empty state, toast hay hướng dẫn thường ngày.
+- Dùng một bộ primitive chung cho modal, toast, loading, empty và error state. Modal giữ focus,
+  đóng bằng Escape khi an toàn và trả focus về trigger; toast dùng live region phù hợp, tự hết hạn
+  chỉ với thông báo không cần hành động và không chứa raw exception. Loading không làm nội dung cũ
+  biến mất nếu người dùng vẫn có thể đọc/làm việc; mọi async action chống click lặp và giữ state rõ.
+- Danh sách dài tải tiếp khi sentinel đi vào viewport bằng `IntersectionObserver`, trong khi Java
+  vẫn là authority cho `page`, `pageSize`, `hasMore`/`totalPages` bounded. React chỉ nối các trang
+  liên tiếp, deduplicate theo stable ID, chỉ cho một request tải tiếp tại một thời điểm và bỏ response
+  lỗi thời sau khi shop/query/filter thay đổi. Cuộn không bao giờ gọi command mutation.
+- Mỗi infinite list có nút “Tải thêm” dự phòng dùng được bằng bàn phím/trình đọc màn hình và live
+  announcement cho số mục mới. Table vẫn dùng semantic table; card feed chỉ dùng ARIA feed/article
+  khi có lợi và đã kiểm chứng trên WebView2. Kết thúc danh sách, lỗi tải trang sau và retry đều được
+  thông báo mà không xóa các mục đã tải. Vị trí cuộn và lựa chọn theo SKU/order được giữ khi append.
+- Responsive được kiểm chứng ở 320, 768, 1024 và 1440 px: không có horizontal overflow ngoài vùng
+  dữ liệu chủ ý, sidebar chuyển sang drawer/compact navigation, action bar wrap có kiểm soát và mọi
+  chức năng vẫn truy cập được bằng bàn phím. Không dùng chuỗi nút nhiều chữ làm vỡ layout.
+- Ngân sách ban đầu: JS entry gzip không vượt 220 KiB, CSS gzip không vượt 30 KiB, không thêm runtime
+  dependency nếu platform/stack hiện có giải quyết được, không có long task >50 ms trong thao tác
+  tải thêm mẫu và không render trước dữ liệu chưa được yêu cầu. Nếu danh sách thực tế vượt ngưỡng
+  mượt, phải đo trước rồi mới thêm windowing; không làm đổi contract phân trang Java.
+
 ## Tech Stack
 
 - Java 25, jDesk `0.1.3`, Gradle wrapper `9.6.1`.
@@ -421,6 +456,8 @@ Quy ước:
 - Command adapter test input validation, DTO sanitization và delegation bằng fake/real repository
   trên SQLite temp.
 - React component/hook test loading, success, empty, error và keyboard behavior.
+- Infinite-scroll test phải cover observer/fallback, append tuần tự, request trùng, response lỗi thời,
+  filter reset, lỗi trang sau và end-of-list; test không được khẳng định chi tiết triển khai observer.
 
 ### Medium tests
 
@@ -435,6 +472,8 @@ Quy ước:
   console sạch và snapshot.
 - Kiểm thử native Windows là release gate cho print/dialog/CryptoPro/update.
 - Breakpoint UI: 320, 768, 1024, 1440 px; WCAG 2.1 AA, tab order và visible focus.
+- Browser evidence cho UI mới gồm before/after screenshot, console sạch, accessible names, không
+  horizontal overflow và trace tải thêm có zero long task >50 ms trên fixture đại diện.
 
 Không snapshot toàn trang để thay thế behavior assertion. Test bug phải fail trước khi fix.
 
@@ -503,6 +542,12 @@ Không snapshot toàn trang để thay thế behavior assertion. Test bug phải
   máy Windows, zero critical/high hoặc data/credential/secret incident; rollback window chỉ đóng
   sau 30 ngày ổn định ở 100% và rehearsal cuối.
 - [ ] UI không có console error, dùng bàn phím được, responsive và đạt WCAG 2.1 AA.
+- [ ] Mọi danh sách dài dùng bounded infinite scroll + fallback, không còn chuyển trang thay thế
+  nội dung; append giữ selection/scroll và không kích hoạt mutation.
+- [ ] Shell/màn hình nghiệp vụ dùng compact purple tokens và primitive modal/toast/loading/empty
+  thống nhất; shell và copy thường ngày không lộ thuật ngữ triển khai.
+- [ ] JS/CSS budget và trace tải thêm đạt ngưỡng trong UX contract ở cả light/dark; không có overflow
+  ngoài vùng dữ liệu chủ ý tại 320/768/1024/1440 px.
 - [ ] Không critical/high vulnerability reachable; lockfile/SBOM/checksums được tạo.
 - [ ] README, migration guide, ADR, parity matrix, operations/runbook và release notes đầy đủ.
 

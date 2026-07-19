@@ -406,6 +406,78 @@ exit, and the release uses a stable jpackage upgrade UUID. CI must fail closed u
 manifest key and Windows code-signing identity are provisioned; unsigned/manual trust fallback is
 not accepted as parity.
 
+## Phase 8.5: User-centred desktop UX completion
+
+### Task 8.5.1: Pin compact visual contract and baseline
+
+**Acceptance criteria:** spec/ADR record compact purple tokens, icon-action rules, semantic copy,
+responsive targets, bounded infinite scroll, accessibility and bundle/runtime budgets; before
+screenshots and current gzip sizes are recorded.
+**Verification:** docs review; browser screenshots at 320/768/1024/1440; production bundle report.
+**Files:** migration spec, plan, ADR, evidence note (max 4).
+**Dependencies:** existing React journey foundation.
+**Scope:** M.
+
+### Task 8.5.2: Restyle shell without changing business behavior
+
+**Acceptance criteria:** light/dark/system use compact WCode purple tokens; shell navigation is
+responsive and icon actions have accessible names; shell contains no implementation terminology.
+**Verification:** RED component assertions, focused Vitest, lint/typecheck/build, before/after browser
+screenshots with no overflow or console warning.
+**Files:** shell test, shell components, styles, shell i18n (max 5).
+**Dependencies:** Task 8.5.1.
+**Scope:** M.
+
+### Task 8.5.3: Add shared feedback primitives
+
+**Acceptance criteria:** modal focus/return/Escape behavior, toast live-region behavior, non-jumping
+loading and consistent empty/error states are reusable; no raw error or technical copy is rendered.
+**Verification:** failing behavior tests first, then focused Vitest + accessibility/browser check.
+**Files:** primitives and colocated tests, shared styles/copy (split so each increment is max 5).
+**Dependencies:** Task 8.5.2.
+**Scope:** M per primitive increment.
+
+### Task 8.5.4: Build bounded infinite-list foundation
+
+**Acceptance criteria:** observer plus fallback appends sequential pages, prevents duplicate requests,
+deduplicates stable IDs, ignores stale responses and preserves loaded content on next-page failure;
+observer never invokes mutation commands.
+**Verification:** RED hook/component tests for observer unavailable, repeat intersection, filter reset,
+stale response, retry and end-of-list; browser trace has no long task >50 ms on fixture.
+**Files:** hook/component, test, minimal style/copy contract (max 5).
+**Dependencies:** Task 8.5.3.
+**Scope:** M.
+
+### Task 8.5.5: Convert list journeys in vertical increments
+
+**Acceptance criteria:** supplies, supply detail/orders, packing, Excel import, print history, GTIN
+inventory/mapping, FBO catalog and Znack products/purchases/logs no longer replace content through
+previous/next page controls; selection/quantity state survives append and filter reset is correct.
+**Verification:** each journey lands as a separate RED→GREEN increment with focused tests and build;
+checkpoint after every 2–3 journeys runs the full frontend suite.
+**Files:** one journey component + its tests + shared copy if needed (max 5 per increment).
+**Dependencies:** Task 8.5.4.
+**Scope:** M per journey.
+
+### Task 8.5.6: Remove technical copy and consolidate action density
+
+**Acceptance criteria:** RU/EN/VI/ZH reachable copy contains no implementation terminology outside
+explicit advanced support details; familiar row actions use accessible icons and protected actions
+retain explicit text/confirmation; no layout overflow at target widths.
+**Verification:** translation completeness/forbidden-copy tests, full frontend gates and browser
+keyboard/accessibility pass in all four locales.
+**Files:** one feature dictionary/view/test at a time (max 5 per increment).
+**Dependencies:** Tasks 8.5.2–8.5.5.
+**Scope:** M per feature.
+
+### Checkpoint UX
+
+- [ ] All long-list journeys use bounded infinite scroll with keyboard fallback.
+- [ ] Modal/toast/loading/empty/error behavior is consistent and accessible.
+- [ ] Purple compact UI passes screenshots and keyboard checks at all target widths/themes/locales.
+- [ ] No implementation terminology appears in normal user journeys.
+- [ ] JS/CSS/runtime budgets pass; frontend lint/typecheck/test/build and audit are green.
+
 ## Phase 9: Production hardening and cutover
 
 1. Full parity audit against every JavaFX controller/FXML action.
