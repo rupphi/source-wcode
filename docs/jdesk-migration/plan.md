@@ -102,7 +102,7 @@ Feature parity + early Windows native gates
 
 - [x] Snapshot dùng SQLite backup API dưới shared lock, bao gồm committed WAL state, rồi verify
   checksum trước khi migration/writer version tiếp tục.
-- [ ] Snapshot được tạo trước first launch, mỗi schema-changing migration và mỗi canary writer
+- [x] Snapshot được tạo trước first launch, mỗi schema-changing migration và mỗi canary writer
   version; retention giữ rollback points còn hiệu lực.
 - [x] Restore cần xác nhận và tạo snapshot/export của database mới hơn trước khi thay thế.
 - [x] Transaction/version marker fail-closed; packaged recovery CLI ngoài normal DB bootstrap có thể

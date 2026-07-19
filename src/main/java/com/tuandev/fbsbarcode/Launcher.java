@@ -1,8 +1,8 @@
 package com.tuandev.fbsbarcode;
 
 import com.tuandev.fbsbarcode.shared.AppPaths;
-import com.tuandev.fbsbarcode.shared.AppDataRecoveryService;
 import com.tuandev.fbsbarcode.shared.AppDataLock;
+import com.tuandev.fbsbarcode.shared.LocalDataMigrationGate;
 import javafx.application.Application;
 
 import java.io.PrintWriter;
@@ -14,8 +14,8 @@ import java.time.LocalDateTime;
 public class Launcher {
     public static void main(String[] args) {
         configureStartupEnvironment();
-        try (AppDataLock ignored = AppDataLock.acquire(AppPaths.appDataDir(), "javafx")) {
-            AppDataRecoveryService.recoverIfNeededOnStartup();
+        try (LocalDataMigrationGate.Session ignored = LocalDataMigrationGate.prepare(
+                AppPaths.appDataDir(), BuildConfig.getAppVersion(), "javafx")) {
             Application.launch(MainApplication.class, args);
         } catch (AppDataLock.AlreadyRunningException exception) {
             System.err.println("WCode is already running for this app-data directory.");

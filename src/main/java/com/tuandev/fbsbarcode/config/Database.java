@@ -20,6 +20,11 @@ import com.tuandev.fbsbarcode.integration.znack.ZnackSchemaSupport;
 public class Database {
     private static final Logger LOGGER = LoggerFactory.getLogger(Database.class);
     private static final String DB_NAME = "database.db";
+    private static final int CURRENT_SCHEMA_VERSION = 1;
+
+    public static int currentSchemaVersion() {
+        return CURRENT_SCHEMA_VERSION;
+    }
 
     public static Connection getConnection() {
         try {
@@ -51,6 +56,10 @@ public class Database {
     public static void initDatabase() {
         try (Connection conn = getConnection();
              Statement st = conn.createStatement()) {
+            int existingSchemaVersion = readSchemaVersion(conn);
+            if (existingSchemaVersion > CURRENT_SCHEMA_VERSION) {
+                throw new SQLException("Database schema is newer than this WCode binary");
+            }
             st.execute("""
                 CREATE TABLE IF NOT EXISTS shops(
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -162,8 +171,17 @@ public class Database {
             WbSchemaSupport.initialize(conn);
             ZnackSchemaSupport.initialize(conn);
             dropLegacyKizTables(conn);
+            ShopCredentialSchema.initialize(conn);
+            st.execute("PRAGMA user_version = " + CURRENT_SCHEMA_VERSION);
         } catch (SQLException e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    private static int readSchemaVersion(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement();
+                ResultSet result = statement.executeQuery("PRAGMA user_version")) {
+            return result.next() ? result.getInt(1) : 0;
         }
     }
 

@@ -21,7 +21,7 @@ Baseline: WCode `1.1.7`, branch point `61e8117`, 2026-07-18.
 
 | Area | Legacy source/oracle | Required jDesk evidence | Status |
 | --- | --- | --- | --- |
-| App lifecycle/close guard | `MainApplication`, `Launcher` | smoke start/stop, busy-work close veto, recovery | Foundation |
+| App lifecycle/close guard | `MainApplication`, `Launcher` | shared JavaFX/jDesk writer gate, explicit schema revision, verified first-launch/pre-writer rollback points, smoke start/stop, busy-work close veto and recovery pass; Windows lifecycle evidence remains pending | Foundation |
 | Workspace shell/navigation | `HomeController`, `home-view.fxml` | all destinations, responsive/keyboard and persisted selection pass; production entry is bundle-only, dev URL is strict loopback and real WKWebView blocks remote main-frame/popup without losing the React root | Foundation |
 | Shop sidebar/header | `ShopSidebarController`, `WorkspaceHeaderController` | bounded list, persisted selection and accessible create/edit/confirmed-delete manager pass Java/React plus isolated native lifecycle; no secret is returned through the bridge | Foundation |
 | Dashboard | `DashboardController`, `DashboardRepository` | local KPIs + live refresh + all async states | Foundation |

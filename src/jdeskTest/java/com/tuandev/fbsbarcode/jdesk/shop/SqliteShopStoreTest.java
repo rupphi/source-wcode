@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.tuandev.fbsbarcode.config.ShopCredentialSchema;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;

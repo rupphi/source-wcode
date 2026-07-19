@@ -1,4 +1,4 @@
-package com.tuandev.fbsbarcode.jdesk.shop;
+package com.tuandev.fbsbarcode.config;
 
 import java.sql.Connection;
 import java.sql.SQLException;

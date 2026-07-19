@@ -48,15 +48,18 @@ không bao giờ ngầm cấp quyền mutation.
   thông báo và thoát. Test dùng `wcode.appdata.dir` riêng nên không tranh live database.
 - Trong dual-build/canary window, schema migration chỉ được additive và backward-compatible với
   release JavaFX rollback. Không drop/rename column hoặc đổi meaning tại chỗ.
-- Trước first jDesk launch, mỗi schema-changing migration và mỗi canary version có local-data
-  writer mới, giữ shared app-data lock rồi tạo snapshot nhất quán bằng SQLite backup API (bao gồm
-  trạng thái WAL), checksum và metadata schema/app version. Chỉ tiếp tục migrate sau khi snapshot
-  được verify; giữ ít nhất bản pre-cutover và các bản pre-migration còn trong rollback window.
+- `LocalDataMigrationGate` dùng chung cho JavaFX và jDesk trước bootstrap. Trước first launch (kể
+  cả database rỗng), mỗi schema-changing migration và mỗi canary writer/app version mới, gate giữ
+  shared app-data lock rồi tạo snapshot nhất quán bằng SQLite backup API (bao gồm trạng thái WAL),
+  checksum và metadata schema/app version. Chỉ tiếp tục migrate sau khi snapshot được verify; giữ
+  ít nhất bản pre-cutover và các bản pre-migration còn trong rollback window.
   Restore luôn là thao tác có xác nhận, chọn snapshot tương thích mới nhất và không tự ghi đè
   database mới hơn. Dữ liệu mới hơn phải được export/snapshot lại trước restore để tránh silent
   data loss.
-- Schema migration chạy trong transaction khi SQLite cho phép; schema-version marker chỉ commit
-  cùng migration. Nếu migration fail, tiến trình không mở app ở chế độ thường. Một recovery entry
+- `PRAGMA user_version` là schema authority và chỉ publish sau toàn bộ idempotent DDL/data migration.
+  Ready marker riêng của mỗi writer pin writer version, migration id, schema revision và verified
+  snapshot SHA; revision cao hơn binary fail closed trước DDL/snapshot/marker. Schema migration chạy
+  trong transaction khi SQLite cho phép. Nếu migration fail, tiến trình không mở app ở chế độ thường. Một recovery entry
   point `--restore-snapshot` nằm ngoài composition/database bootstrap thường phải list/verify và
   restore snapshot sau xác nhận, kể cả khi cả JavaFX và jDesk không khởi động được; nó snapshot
   lại file hỏng trước khi thay thế.

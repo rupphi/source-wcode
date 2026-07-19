@@ -441,6 +441,11 @@ Không snapshot toàn trang để thay thế behavior assertion. Test bug phải
   raw throwable, SQL, upstream body hoặc stack trace.
 - Snapshot SQLite/WAL nhất quán, checksum và verify trước mỗi schema-changing migration/canary
   writer version; không chỉ backup một lần ở first launch.
+- `PRAGMA user_version` là schema revision authority và chỉ được publish sau khi toàn bộ idempotent
+  DDL/data migration hoàn tất. Ready marker phải pin cả writer version, data-migration id, schema
+  revision và verified snapshot SHA; marker cũ hoặc database revision thấp hơn luôn tạo rollback
+  snapshot mới trước bootstrap. Database revision cao hơn binary phải fail closed mà không chạy DDL,
+  tạo snapshot mới hoặc sửa marker; mọi schema change tương lai bắt buộc tăng revision.
 - Migration fail phải fail-closed và restore được bằng recovery CLI ngoài normal app bootstrap;
   installed image phải có secondary `WCode-Recovery` launcher. Ready marker có SHA chỉ hợp lệ nếu
   còn ít nhất một snapshot cùng SHA verify được. Retention giữ toàn bộ cửa sổ rollback 30 ngày,

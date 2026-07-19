@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.tuandev.fbsbarcode.config.Database;
-import com.tuandev.fbsbarcode.jdesk.shop.ShopCredentialSchema;
+import com.tuandev.fbsbarcode.config.ShopCredentialSchema;
 import dev.jdesk.api.PlatformInfo;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
