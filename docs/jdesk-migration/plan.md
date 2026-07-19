@@ -461,8 +461,10 @@ checkpoint after every 2–3 journeys runs the full frontend suite.
 
 - [x] Supply list: observer/fallback appends bounded pages, keeps earlier rows on retry, resets
       immediately for shop/query/status and collapses secondary columns without horizontal overflow.
-- [ ] Supply detail/orders, packing, Excel import, print history, GTIN inventory/mapping, FBO catalog
-      and Znack products/purchases/logs.
+- [x] Supply detail/orders and its local GTIN inventory: append/reset/refresh are bounded and paid KIZ
+      purchase remains an explicit confirmed action outside scroll behavior.
+- [ ] Packing, Excel import, print history, GTIN mapping workspace, FBO catalog and Znack
+      products/purchases/logs.
 
 ### Task 8.5.6: Remove technical copy and consolidate action density
 
