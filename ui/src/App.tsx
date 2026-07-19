@@ -21,6 +21,7 @@ import { getKizMappingCopy } from "./features/kizmapping/kizMappingI18n";
 import { ZnackView } from "./features/znack/ZnackView";
 import { getZnackCopy } from "./features/znack/znackI18n";
 import { PrintHistoryView } from "./features/history/PrintHistoryView";
+import { getHistoryCopy } from "./features/history/historyI18n";
 import { TemplateDesignerView } from "./features/templates/TemplateDesignerView";
 import { LicenseSettingsDialog } from "./features/license/LicenseSettingsDialog";
 import { ShopManagementDialog } from "./features/shops/ShopManagementDialog";
@@ -324,7 +325,12 @@ export function App() {
               locale={getSupplyLocale(preferences.language)}
             />
           ) : activeView === "history" ? (
-            <PrintHistoryView key={selectedShop.id} shopId={selectedShop.id} />
+            <PrintHistoryView
+              key={selectedShop.id}
+              copy={getHistoryCopy(preferences.language)}
+              locale={getSupplyLocale(preferences.language)}
+              shopId={selectedShop.id}
+            />
           ) : (
             <DashboardView
               copy={getDashboardCopy(preferences.language)}

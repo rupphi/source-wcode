@@ -371,6 +371,8 @@ artifact. Recovery/idempotency tests precede implementation changes.
 - [x] Translate the shared shell and settings/license surface in RU/EN/VI/ZH.
 - [x] Translate the complete dashboard and read-only WB overview-sync states in RU/EN/VI/ZH,
       including locale KPI formatting and runtime language changes without a new read or sync.
+- [x] Translate print history, filters, statuses, pagination and explicit reprint/open feedback in
+      RU/EN/VI/ZH with locale date/count formatting and a no-file browser rehearsal.
 - [x] Translate the complete FBS supplies journey in RU/EN/VI/ZH: list/detail/orders, Excel import,
       GTIN inventory, print setup and guarded delivery/purchase dialogs with locale formatting.
 - [x] Translate the complete FBS packing board in RU/EN/VI/ZH and share its guarded

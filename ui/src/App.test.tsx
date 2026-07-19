@@ -1164,6 +1164,47 @@ describe("App", () => {
     expect(document.body).not.toHaveTextContent(secret);
   });
 
+  it("localizes print history at runtime without reloading or creating files", async () => {
+    const user = userEvent.setup();
+    loadPreferences.mockResolvedValue({ language: "en", theme: "dark" });
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Main shop", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard.mockResolvedValue({ shopId: 7, productCount: 0, newOrderCount: 0, openSupplyCount: 0 });
+    loadPrintHistory.mockResolvedValue({
+      shopId: 7, query: "", status: "all", page: 1, pageSize: 25,
+      totalItems: 1, totalPages: 1, successfulItems: 1, failedItems: 0,
+      items: [{
+        jobId: "9007199254741001", supplyId: "WB-1", supplyName: "Moscow supply",
+        printedAt: "2026-07-18T10:00:00Z", itemCount: 5, templateName: "58 × 40",
+        status: "success", canReprint: true,
+      }],
+    });
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Print history" }));
+
+    expect(await screen.findByText("Total jobs")).toBeVisible();
+    expect(screen.getByRole("searchbox", { name: "Search print history" })).toBeVisible();
+    const readsBeforeLanguageChange = loadPrintHistory.mock.calls.length;
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Language" }), "vi");
+    await user.click(await screen.findByRole("button", { name: "Đóng cài đặt" }));
+    expect(await screen.findByText("Tổng tác vụ")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Cài đặt" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Ngôn ngữ" }), "zh");
+    await user.click(await screen.findByRole("button", { name: "关闭设置" }));
+    expect(await screen.findByText("任务总数")).toBeVisible();
+    expect(loadPrintHistory).toHaveBeenCalledTimes(readsBeforeLanguageChange);
+    expect(reprintHistory).not.toHaveBeenCalled();
+    expect(openHistoryReprint).not.toHaveBeenCalled();
+  });
+
   it("loads sanitized shops and the selected shop dashboard", async () => {
     bootstrap.mockResolvedValue({
       app: { name: "WCode", version: "1.1.7" },

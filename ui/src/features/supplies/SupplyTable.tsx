@@ -80,6 +80,8 @@ export function Pagination({
   ariaLabel,
   previousLabel,
   nextLabel,
+  foundLabel,
+  pageOfLabel,
   copy = defaultSupplyCopy,
   locale = "ru-RU",
 }: {
@@ -90,6 +92,8 @@ export function Pagination({
   ariaLabel?: string;
   previousLabel?: string;
   nextLabel?: string;
+  foundLabel?: string;
+  pageOfLabel?: string;
   copy?: SupplyCopy;
   locale?: string;
 }) {
@@ -100,7 +104,7 @@ export function Pagination({
       aria-label={ariaLabel ?? copy.list.pagination}
     >
       <p className="text-sm text-[var(--text-secondary)]">
-        {copy.list.found} <span className="font-semibold text-[var(--text-primary)]">{numberFormat.format(totalItems)}</span>
+        {foundLabel ?? copy.list.found} <span className="font-semibold text-[var(--text-primary)]">{numberFormat.format(totalItems)}</span>
       </p>
       <div className="flex items-center gap-3">
         <button
@@ -113,7 +117,10 @@ export function Pagination({
           <ArrowLeft aria-hidden="true" size={17} />
         </button>
         <p className="min-w-30 text-center text-sm font-semibold tabular-nums">
-          {interpolate(copy.list.pageOf, { page, total: Math.max(totalPages, 1) })}
+          {interpolate(pageOfLabel ?? copy.list.pageOf, {
+            page: numberFormat.format(page),
+            total: numberFormat.format(Math.max(totalPages, 1)),
+          })}
         </p>
         <button
           className="icon-button"
