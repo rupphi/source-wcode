@@ -10,6 +10,7 @@ vi.mock("./generated/commands", () => ({
   commands: {
     workspace: { bootstrap: vi.fn() },
     dashboard: { load: vi.fn() },
+    diagnostics: { summary: vi.fn(), export: vi.fn() },
     fbo: {
       catalog: vi.fn(),
       export: vi.fn(),
@@ -94,6 +95,7 @@ vi.mock("./features/printing/nativePrintCommands", () => ({
 
 const bootstrap = vi.mocked(commands.workspace.bootstrap);
 const loadDashboard = vi.mocked(commands.dashboard.load);
+const loadDiagnostics = vi.mocked(commands.diagnostics.summary);
 const loadFboCatalog = vi.mocked(commands.fbo.catalog);
 const exportFbo = vi.mocked(exportFboPdf);
 const openFboExport = vi.mocked(commands.fbo.openExport);
@@ -225,6 +227,7 @@ describe("App", () => {
     document.documentElement.dataset.theme = "dark";
     bootstrap.mockReset();
     loadDashboard.mockReset();
+    loadDiagnostics.mockReset();
     loadFboCatalog.mockReset();
     exportFbo.mockReset();
     openFboExport.mockReset();
@@ -310,6 +313,31 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Закрыть настройки" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Настройки приложения" })).not.toBeInTheDocument());
     await waitFor(() => expect(screen.getByRole("button", { name: "Настройки" })).toHaveFocus());
+  });
+
+  it("opens local diagnostics from Help and restores focus after closing", async () => {
+    const user = userEvent.setup();
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [],
+      hasSelectedShop: false,
+      selectedShopId: 0,
+    });
+    loadDiagnostics.mockResolvedValue({
+      appVersion: "1.1.7", jdeskVersion: "0.1.3", javaVersion: "25",
+      osFamily: "macos", osVersion: "26.5.1", architecture: "arm64",
+      databaseStatus: "healthy", shopCount: 0, supplyCount: 0, printJobCount: 0,
+      pendingCredentialCount: 0, pendingTombstoneCount: 0,
+    });
+    render(<App />);
+
+    const help = await screen.findByRole("button", { name: "Помощь" });
+    expect(loadDiagnostics).not.toHaveBeenCalled();
+    await user.click(help);
+    expect(await screen.findByRole("dialog", { name: "Диагностика и поддержка" })).toBeVisible();
+    expect(loadDiagnostics).toHaveBeenCalledWith({});
+    await user.click(screen.getByRole("button", { name: "Закрыть диагностику" }));
+    await waitFor(() => expect(help).toHaveFocus());
   });
 
   it("applies persisted language and theme then saves system mode from translated settings", async () => {

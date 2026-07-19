@@ -366,7 +366,12 @@ artifact. Recovery/idempotency tests precede implementation changes.
 - [x] Translate the shared shell and settings/license surface in RU/EN/VI/ZH.
 - [ ] Migrate every remaining feature surface before marking language parity complete.
 - [ ] Port signed update check/download/install with checksum validation and rollback evidence.
-- [ ] Port redacted diagnostics/support bundle.
+- [x] Port redacted diagnostics/support bundle.
+
+Diagnostics slice contract: replace the legacy auto-upload payload (license/device/shop/raw-derived
+message) with an explicit local-only summary and native ZIP export. The manifest is allowlisted and
+bounded, the write is atomic/non-symlink, cancellation writes nothing, and bridge/errors expose only
+safe enums and booleans without any selected path or filename.
 
 ## Phase 9: Production hardening and cutover
 

@@ -13,6 +13,8 @@
     { "capability": "kiz-mapping:write", "windows": ["main"] },
     { "capability": "license:read", "windows": ["main"] },
     { "capability": "license:manage", "windows": ["main"] },
+    { "capability": "diagnostics:read", "windows": ["main"] },
+    { "capability": "diagnostics:export", "windows": ["main"] },
     { "capability": "preferences:read", "windows": ["main"] },
     { "capability": "preferences:write", "windows": ["main"] },
     { "capability": "znack:read", "windows": ["main"] },

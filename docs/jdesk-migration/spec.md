@@ -60,6 +60,23 @@ luồng hiện tại trong UI mới, nhanh, rõ trạng thái, dùng được b�
   không xóa/blank plaintext column trước khi rollback window đóng và Windows credential-store
   cutover đã được rehearsal.
 
+### Diagnostics and support boundary
+
+- Help mở một diagnostics dialog local. `diagnostics.summary` chỉ trả app/jDesk/Java version đã
+  sanitize, platform family/version/architecture allowlist, SQLite health enum và bounded aggregate
+  counts. Không trả absolute path, hostname/user, shop ID/name, API/license key, device fingerprint,
+  credential fingerprint/version, raw log, SQL, exception hoặc stack trace.
+- `diagnostics.export` luôn mở native save dialog sau hành động rõ ràng của người dùng. Cancel là
+  success không ghi file; target phải là regular non-symlink trong writable directory. Bundle ZIP
+  được ghi qua temporary sibling + atomic replace, có giới hạn kích thước/entry và chỉ chứa manifest
+  redacted cùng hướng dẫn; bridge chỉ nhận `{exported, cancelled}` và không nhận cả basename.
+- jDesk không kế thừa hành vi legacy tự upload report chứa license/device/shop. Network support upload
+  chỉ được thêm sau khi có contract server mới, consent riêng và payload allowlist được test; export
+  local là authority trong migration hiện tại.
+- Collector/database/save/ZIP lỗi chỉ trả error kind allowlist; React không render public message
+  tùy ý. Test phải dùng canary secret/path/shop name trong SQLite/system properties và chứng minh
+  chúng không xuất hiện trong DTO, ZIP manifest, DOM, console hoặc error.
+
 ### Template designer contract
 
 - Designer phục vụ hai kho template tách biệt `fbs` và `fbo`, cùng khổ cố định 58×40 mm.

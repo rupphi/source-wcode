@@ -18,6 +18,7 @@ import { PrintHistoryView } from "./features/history/PrintHistoryView";
 import { TemplateDesignerView } from "./features/templates/TemplateDesignerView";
 import { LicenseSettingsDialog } from "./features/license/LicenseSettingsDialog";
 import { ShopManagementDialog } from "./features/shops/ShopManagementDialog";
+import { SupportDialog } from "./features/diagnostics/SupportDialog";
 import { validShopState } from "./features/shops/shopState";
 import { commands } from "./generated/commands";
 import type { BootstrapResponse, ShopState } from "./generated/types";
@@ -36,6 +37,7 @@ export function App() {
   const [activeView, setActiveView] = useState<WorkspaceView>("dashboard");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shopManagerOpen, setShopManagerOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
   const [shopSelectionBusy, setShopSelectionBusy] = useState(false);
   const [shopError, setShopError] = useState("");
   const [licenseAllowed, setLicenseAllowed] = useState(false);
@@ -46,6 +48,7 @@ export function App() {
   const dashboardRequest = useRef(0);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const shopManagerButtonRef = useRef<HTMLButtonElement>(null);
+  const helpButtonRef = useRef<HTMLButtonElement>(null);
 
   const loadDashboard = useCallback(async (shopId: number) => {
     const requestId = ++dashboardRequest.current;
@@ -179,6 +182,11 @@ export function App() {
     requestAnimationFrame(() => shopManagerButtonRef.current?.focus());
   };
 
+  const closeSupport = () => {
+    setSupportOpen(false);
+    requestAnimationFrame(() => helpButtonRef.current?.focus());
+  };
+
   const copy = getCopy(preferences.language);
 
   if (workspace.status === "loading") {
@@ -196,8 +204,8 @@ export function App() {
     <>
       <div
         className="min-h-screen bg-[var(--surface-canvas)] text-[var(--text-primary)] md:grid md:grid-cols-[15.5rem_1fr]"
-        aria-hidden={settingsOpen || shopManagerOpen || undefined}
-        inert={settingsOpen || shopManagerOpen || undefined}
+        aria-hidden={settingsOpen || shopManagerOpen || supportOpen || undefined}
+        inert={settingsOpen || shopManagerOpen || supportOpen || undefined}
       >
       <Sidebar
         version={workspace.data.app.version}
@@ -214,7 +222,14 @@ export function App() {
             <h1 className="truncate text-lg font-semibold tracking-[-0.02em]">{copy.shell.workspaceTitle}</h1>
           </div>
           <div className="flex items-center gap-2">
-            <button className="icon-button" type="button" aria-label={copy.shell.help}>
+            <button
+              ref={helpButtonRef}
+              className="icon-button"
+              type="button"
+              aria-label={copy.shell.help}
+              aria-expanded={supportOpen}
+              onClick={() => setSupportOpen(true)}
+            >
               <CircleHelp aria-hidden="true" size={18} />
             </button>
             <button
@@ -303,6 +318,7 @@ export function App() {
           copy={copy.shop}
         />
       ) : null}
+      {supportOpen ? <SupportDialog onClose={closeSupport} copy={copy.support} /> : null}
     </>
   );
 }

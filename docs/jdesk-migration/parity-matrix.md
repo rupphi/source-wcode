@@ -43,7 +43,7 @@ Baseline: WCode `1.1.7`, branch point `61e8117`, 2026-07-18.
 | License | `LicenseDialogService`, `LicenseService` | existing Ed25519 state oracle, eight bounded states, activation/refresh, explicit best-effort deactivation and paid-KIZ gate are covered by Java/React tests plus isolated native not-activated evidence; real activation/deactivation remains approval-only | Foundation |
 | Update | `UpdateDialogService`, `UpdateInstallerService` | signed download/install/rollback on Windows | Legacy |
 | Language/theme | `I18nService`, `ThemeService` | bounded shared `app_language`/`app_theme` persistence, RU/EN/VI/ZH shell/settings/license copy and dark/light/system runtime behavior are covered by Java/React tests plus browser/native restart evidence; feature-specific Russian copy remains pending | Foundation (shared surfaces) |
-| Error report/diagnostics | `ErrorReportDialog`, `ReportApiClient` | redacted support flow, no secret/stack leak | Legacy |
+| Error report/diagnostics | `ErrorReportDialog`, `ReportApiClient` | legacy auto-upload is replaced by explicit local summary/native ZIP export; allowlisted read-only SQLite aggregate, atomic non-symlink writer, cancellation, bridge/DOM redaction and isolated macOS native save evidence pass with no path, identity, token, license, log or stack crossing the bridge | Parity |
 | Packaging | Maven `release.yml`, jpackage | jDesk EXE/MSI/portable, checksum/SBOM/sign/upgrade | Foundation |
 
 ## Direct JavaFX dependency inventory

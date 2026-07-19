@@ -2,6 +2,8 @@ package com.tuandev.fbsbarcode.jdesk;
 
 import com.tuandev.fbsbarcode.BuildConfig;
 import com.tuandev.fbsbarcode.features.print.KizAttachmentCoordinator;
+import com.tuandev.fbsbarcode.jdesk.diagnostics.DiagnosticsCommandService;
+import com.tuandev.fbsbarcode.jdesk.diagnostics.DiagnosticsCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.fbo.FboCatalogCommandService;
 import com.tuandev.fbsbarcode.jdesk.fbo.FboCatalogCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.fbo.FboPrintCommandService;
@@ -78,6 +80,7 @@ public final class WCodeDesktop {
             FboPrintCommandService fboPrinting = new FboPrintCommandService();
             KizMappingCommandService kizMappings = new KizMappingCommandService();
             LicenseCommandService license = new LicenseCommandService();
+            DiagnosticsCommandService diagnostics = new DiagnosticsCommandService();
             PreferencesCommandService preferences = new PreferencesCommandService();
             ZnackCommandService znack = new ZnackCommandService();
             ZnackAutomationCommandService znackAutomation = new ZnackAutomationCommandService(shopActivity);
@@ -136,6 +139,7 @@ public final class WCodeDesktop {
                             fboPrintCommands,
                             KizMappingCommandServiceCommands.create(kizMappings),
                             LicenseCommandServiceCommands.create(license),
+                            DiagnosticsCommandServiceCommands.create(diagnostics),
                             PreferencesCommandServiceCommands.create(preferences),
                             ZnackCommandServiceCommands.create(znack),
                             znackAutomationCommands,
