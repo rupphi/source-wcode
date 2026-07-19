@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
 import type { MutationPreview, PackingSupplyItem } from "../../generated/types";
+import { useModalFocus } from "../../components/useModalFocus";
 
 export type MutationDialog =
   | { kind: "create" }
@@ -39,38 +39,20 @@ export function PackingMutationDialog({
   onPrepareAdd: () => Promise<void>;
   onExecute: (preview: MutationPreview) => Promise<void>;
 }) {
-  const closeButton = useRef<HTMLButtonElement>(null);
-  const dialogSection = useRef<HTMLElement>(null);
-  const behavior = useRef({ busy, onClose });
-  useEffect(() => {
-    behavior.current = { busy, onClose };
-  }, [busy, onClose]);
-  useEffect(() => {
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    closeButton.current?.focus();
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !behavior.current.busy) behavior.current.onClose();
-      if (event.key === "Tab") trapDialogFocus(event, dialogSection.current);
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      previous?.focus();
-    };
-  }, []);
+  const { dialogRef, initialFocusRef } = useModalFocus<HTMLElement>(busy, onClose);
 
   const preview = dialog.kind === "preview" ? dialog.preview : null;
   const title = dialogTitle(dialog, preview);
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section ref={dialogSection} className="w-full max-w-lg rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-5 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="packing-mutation-title">
+      <section ref={dialogRef} className="w-full max-w-lg rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-5 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="packing-mutation-title">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold" id="packing-mutation-title">{title}</h2>
             <p className="mt-1 text-sm text-[var(--text-secondary)]">Wildberries изменится только после финального подтверждения.</p>
           </div>
-          <button ref={closeButton} className="rounded-lg px-2 py-1 text-sm text-[var(--text-muted)]" type="button" onClick={onClose} disabled={busy} aria-label="Закрыть">×</button>
+          <button ref={initialFocusRef} className="rounded-lg px-2 py-1 text-sm text-[var(--text-muted)]" type="button" onClick={onClose} disabled={busy} aria-label="Закрыть">×</button>
         </div>
 
         {dialog.kind === "create" && (
@@ -93,27 +75,6 @@ export function PackingMutationDialog({
       </section>
     </div>
   );
-}
-
-function trapDialogFocus(event: KeyboardEvent, dialog: HTMLElement | null) {
-  if (dialog === null) return;
-  const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
-    'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
-  ));
-  if (focusable.length === 0) return;
-  const first = focusable.at(0);
-  const last = focusable.at(-1);
-  if (first === undefined) return;
-  if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault();
-    last?.focus();
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault();
-    first.focus();
-  } else if (!dialog.contains(document.activeElement)) {
-    event.preventDefault();
-    first.focus();
-  }
 }
 
 function ignore() {}
