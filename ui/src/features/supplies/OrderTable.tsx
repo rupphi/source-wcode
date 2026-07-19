@@ -10,58 +10,57 @@ export function OrderTable({ items, copy = defaultSupplyCopy, locale = "ru-RU" }
   const priceFormat = useMemo(() => new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }), [locale]);
   const dateTimeFormat = useMemo(() => new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }), [locale]);
   return (
-    <section className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
+    <section className="overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[66rem] border-collapse text-left">
+        <table className="w-full table-fixed border-collapse text-left">
           <thead className="border-b border-[var(--border-subtle)] bg-[var(--surface-muted)]/70">
             <tr className="text-xs font-semibold tracking-[0.04em] text-[var(--text-secondary)] uppercase">
-              <th className="px-5 py-3.5" scope="col">{copy.orders.columns.order}</th>
-              <th className="px-4 py-3.5" scope="col">{copy.orders.columns.product}</th>
-              <th className="px-4 py-3.5" scope="col">{copy.orders.columns.articleBarcode}</th>
-              <th className="px-4 py-3.5" scope="col">{copy.orders.columns.variant}</th>
-              <th className="px-4 py-3.5" scope="col">{copy.orders.columns.status}</th>
-              <th className="px-5 py-3.5 text-right" scope="col">{copy.orders.columns.price}</th>
+              <th className="w-36 px-3 py-2.5" scope="col">{copy.orders.columns.order}</th>
+              <th className="px-3 py-2.5" scope="col">{copy.orders.columns.product}</th>
+              <th className="hidden w-40 px-3 py-2.5 xl:table-cell" scope="col">{copy.orders.columns.articleBarcode}</th>
+              <th className="hidden w-32 px-3 py-2.5 2xl:table-cell" scope="col">{copy.orders.columns.variant}</th>
+              <th className="hidden w-24 px-3 py-2.5 text-right sm:table-cell" scope="col">{copy.orders.columns.price}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border-subtle)]">
             {items.map((item) => (
               <tr className="transition hover:bg-[var(--surface-muted)]/55" key={item.orderId}>
-                <td className="px-5 py-4 align-top">
-                  <p className="font-mono text-xs font-semibold text-[var(--text-primary)]">{item.orderId}</p>
-                  <p className="mt-2 inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-[var(--text-muted)]">
+                <td className="px-3 py-3 align-top">
+                  <p className="truncate font-mono text-xs font-semibold text-[var(--text-primary)]">{item.orderId}</p>
+                  <p className="mt-1.5 inline-flex items-center gap-1 whitespace-nowrap text-[0.68rem] text-[var(--text-muted)]">
                     <CalendarDays aria-hidden="true" size={13} />
                     {formatCreatedAt(item.createdAt, dateTimeFormat)}
                   </p>
                 </td>
-                <td className="px-4 py-4 align-top">
-                  <div className="flex min-w-0 items-start gap-3">
+                <td className="min-w-0 px-3 py-3 align-top">
+                  <div className="flex min-w-0 items-start gap-2">
                     <OrderThumbnail name={item.name} path={item.imagePath} copy={copy} />
                     <div className="min-w-0">
                       <p className="max-w-64 truncate text-sm font-semibold">{item.name}</p>
                       <p className="mt-1 max-w-64 truncate text-xs text-[var(--text-secondary)]">{[item.brand, item.subject].filter(Boolean).join(" · ") || "—"}</p>
                       {item.nmId && <p className="mt-1 text-xs text-[var(--text-muted)]">nmID {item.nmId}</p>}
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <OrderStatus status={item.supplierStatus} copy={copy} />
+                        <span className="text-[0.68rem] text-[var(--text-muted)]">WB: {item.wbStatus || "—"}</span>
+                        {item.requiresKiz && (
+                          <span className="inline-flex items-center gap-1 text-[0.68rem] font-semibold text-violet-700">
+                            <KeyRound aria-hidden="true" size={12} />
+                            {copy.orders.requiresKiz}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </td>
-                <td className="px-4 py-4 align-top text-sm">
+                <td className="hidden px-3 py-3 align-top text-xs xl:table-cell">
                   <p className="font-medium">{item.article || "—"}</p>
                   <p className="mt-1 font-mono text-xs text-[var(--text-muted)]">{item.barcode || "—"}</p>
                 </td>
-                <td className="px-4 py-4 align-top text-sm text-[var(--text-secondary)]">
+                <td className="hidden px-3 py-3 align-top text-xs text-[var(--text-secondary)] 2xl:table-cell">
                   <p>{[item.color, item.size].filter(Boolean).join(" · ") || "—"}</p>
                   {item.russianSize && <p className="mt-1 text-xs text-[var(--text-muted)]">RU {item.russianSize}</p>}
                 </td>
-                <td className="px-4 py-4 align-top">
-                  <OrderStatus status={item.supplierStatus} copy={copy} />
-                  <p className="mt-2 text-xs text-[var(--text-muted)]">WB: {item.wbStatus || "—"}</p>
-                  {item.requiresKiz && (
-                    <p className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-violet-700">
-                      <KeyRound aria-hidden="true" size={13} />
-                      {copy.orders.requiresKiz}
-                    </p>
-                  )}
-                </td>
-                <td className="px-5 py-4 text-right align-top text-sm font-semibold whitespace-nowrap tabular-nums">
+                <td className="hidden px-3 py-3 text-right align-top text-xs font-semibold whitespace-nowrap tabular-nums sm:table-cell">
                   {priceFormat.format(item.priceKopecks / 100)} ₽
                 </td>
               </tr>

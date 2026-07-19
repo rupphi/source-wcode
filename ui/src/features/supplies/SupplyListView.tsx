@@ -114,7 +114,7 @@ export function SupplyListView({
             />
           </label>
           <button
-            className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-[var(--accent-strong)] px-4 text-xs font-semibold text-white transition hover:bg-[var(--accent)]"
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-[var(--button-primary)] px-4 text-xs font-semibold text-white transition hover:brightness-110"
             type="submit"
           >
             <Search aria-hidden="true" size={16} />

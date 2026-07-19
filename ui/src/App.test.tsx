@@ -1816,7 +1816,7 @@ describe("App", () => {
     expect(await screen.findByText("Поставка Москва")).toBeVisible();
   });
 
-  it("searches, sorts, and paginates supply orders through the typed detail command", async () => {
+  it("searches, sorts, and appends supply orders through the typed detail command", async () => {
     const user = userEvent.setup();
     bootstrap.mockResolvedValue({
       app: { name: "WCode", version: "1.1.7" },
@@ -1892,11 +1892,13 @@ describe("App", () => {
       expect(loadSupplyDetail).toHaveBeenLastCalledWith(expect.objectContaining({ query: "SKU-1", page: 1 })),
     );
 
-    await user.click(await screen.findByRole("button", { name: "Следующая страница заказов" }));
+    expect(screen.queryByRole("button", { name: "Следующая страница заказов" })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Показать ещё заказов" }));
     await waitFor(() =>
       expect(loadSupplyDetail).toHaveBeenLastCalledWith(expect.objectContaining({ query: "SKU-1", page: 2 })),
     );
     expect(await screen.findByText("ORDER-2")).toBeVisible();
+    expect(screen.getByText("ORDER-1")).toBeVisible();
   });
 
   it("imports an Excel workbook through a native dialog and keeps its path out of the UI", async () => {
@@ -2279,7 +2281,7 @@ describe("App", () => {
     await user.click(await screen.findByRole("checkbox", { name: "Размер" }));
     await user.type(screen.getByRole("searchbox", { name: "Поиск заказов" }), "SKU-1");
     await user.click(screen.getByRole("button", { name: "Найти заказ" }));
-    await user.click(await screen.findByRole("button", { name: "Следующая страница заказов" }));
+    await user.click(await screen.findByRole("button", { name: "Показать ещё заказов" }));
     await screen.findByText("ORDER-2");
 
     await user.click(screen.getByRole("button", { name: "Обновить из Wildberries" }));
@@ -2299,7 +2301,7 @@ describe("App", () => {
       shopId: 7,
       supplyId: "WB-GI-1",
       query: "SKU-1",
-      page: 2,
+      page: 1,
       sort: { bySubject: true, byArticle: true, byColor: true, bySize: false },
     })));
     await waitFor(() => expect(listSupplies).toHaveBeenCalledTimes(3));

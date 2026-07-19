@@ -1,22 +1,23 @@
 import { AlertCircle, ArrowLeft, Check, PackageOpen, RefreshCw, Search, SlidersHorizontal, Truck } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useMemo, useState, type FormEvent } from "react";
+import { InfiniteLoadTrigger } from "../../components/InfiniteLoadTrigger";
+import { useBoundedInfinitePages } from "../../components/useBoundedInfinitePages";
 import { commands } from "../../generated/commands";
-import type { MutationPreview, OrderSortRequest, SupplyDetailResponse, SupplyItem } from "../../generated/types";
+import type { MutationPreview, OrderItem, OrderSortRequest, SupplyDetailResponse, SupplyItem } from "../../generated/types";
 import { interpolate } from "../../i18n";
 import { PackingPreviewDialog } from "../packing/PackingMutationDialog";
 import { isValidMutationPreview, isValidMutationReceipt } from "../packing/packingMutationContract";
 import { PrintSetupDialog } from "../printing/PrintSetupDialog";
 import { OrderTable, OrderTableLoading } from "./OrderTable";
 import { ExcelImportPanel } from "./ExcelImportPanel";
-import { Pagination } from "./SupplyTable";
 import { SupplyGtinInventory } from "./SupplyGtinInventory";
 import { defaultSupplyCopy, type SupplyCopy } from "./supplyI18n";
 import { useSupplyRefresh, type SupplyRefreshState } from "./useSupplyRefresh";
 
-type DetailState =
-  | { status: "loading"; requestKey: string }
-  | { status: "error"; requestKey: string }
-  | { status: "ready"; requestKey: string; data: SupplyDetailResponse };
+type SupplyOrderSummary = {
+  supply: SupplyItem;
+  totalItems: number;
+};
 
 const PAGE_SIZE = 25;
 const DEFAULT_SORT: OrderSortRequest = {
@@ -45,77 +46,57 @@ export function SupplyDetailView({
 }) {
   const [draftQuery, setDraftQuery] = useState("");
   const [query, setQuery] = useState("");
-  const [page, setPage] = useState(1);
   const [sort, setSort] = useState<OrderSortRequest>(DEFAULT_SORT);
   const [retryKey, setRetryKey] = useState(0);
   const [showImportedOrders, setShowImportedOrders] = useState(false);
-  const [state, setState] = useState<DetailState>({ status: "loading", requestKey: "" });
   const [deliveryPreview, setDeliveryPreview] = useState<MutationPreview | null>(null);
   const [deliveryBusy, setDeliveryBusy] = useState(false);
   const [deliveryError, setDeliveryError] = useState(false);
   const [deliveryNotice, setDeliveryNotice] = useState("");
-  const requestSequence = useRef(0);
-  const requestKey = JSON.stringify([shopId, summary.id, query, page, sort, retryKey]);
+  const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   const reloadLocal = useCallback(async () => {
     setRetryKey((key) => key + 1);
     onSupplyRefreshed();
   }, [onSupplyRefreshed]);
   const refresh = useSupplyRefresh(shopId, summary.id, reloadLocal);
 
-  useEffect(() => {
-    const requestId = ++requestSequence.current;
-    let active = true;
-    void commands.supplies.detail({
+  const loadPage = useCallback(async (page: number) => {
+    const response = await commands.supplies.detail({
       shopId,
       supplyId: summary.id,
       query,
       page,
       pageSize: PAGE_SIZE,
       sort,
-    }).then(
-      (response) => {
-        if (!active || requestSequence.current !== requestId) return;
-        if (!matchesRequest(response, summary.id, query, page, sort)) {
-          setState({ status: "error", requestKey });
-          return;
-        }
-        const lastPage = Math.max(1, response.totalPages);
-        if (page > lastPage) {
-          setPage(lastPage);
-          return;
-        }
-        setState({ status: "ready", requestKey, data: response });
-      },
-      () => {
-        if (active && requestSequence.current === requestId) {
-          setState({ status: "error", requestKey });
-        }
-      },
-    );
-    return () => {
-      active = false;
+    });
+    if (!matchesRequest(response, summary.id, query, page, sort)) {
+      throw new Error("Unexpected supply detail response");
+    }
+    return {
+      items: response.items,
+      hasMore: page < response.totalPages,
+      summary: { supply: response.supply, totalItems: response.totalItems },
     };
-  }, [page, query, requestKey, shopId, sort, summary.id]);
-
-  const visibleState: DetailState = state.requestKey === requestKey
-    ? state
-    : { status: "loading", requestKey };
-  const supply = visibleState.status === "ready" ? visibleState.data.supply : summary;
-  const printableOrderCount = visibleState.status === "ready" ? visibleState.data.totalItems : supply.itemCount;
+  }, [query, shopId, sort, summary.id]);
+  const pages = useBoundedInfinitePages<OrderItem, SupplyOrderSummary>({
+    resetKey: JSON.stringify([shopId, summary.id, query, sort, retryKey]),
+    loadPage,
+    getId: orderId,
+  });
+  const supply = pages.summary?.supply ?? summary;
+  const printableOrderCount = pages.summary?.totalItems ?? supply.itemCount;
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const normalizedQuery = draftQuery.trim();
-    if (normalizedQuery === query && page === 1) {
+    if (normalizedQuery === query) {
       setRetryKey((key) => key + 1);
     }
     setQuery(normalizedQuery);
-    setPage(1);
   };
 
   const toggleSort = (field: keyof OrderSortRequest) => {
     setSort((current) => ({ ...current, [field]: !current[field] }));
-    setPage(1);
   };
 
   const prepareDelivery = async () => {
@@ -161,10 +142,10 @@ export function SupplyDetailView({
   const refreshBusy = ["starting", "running", "cancelling"].includes(refresh.state.status);
 
   return (
-    <div className="grid gap-5">
-      <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-5 shadow-[var(--shadow-panel)] md:p-6">
+    <div className="grid gap-3">
+      <section className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)]">
         <button
-          className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-[var(--text-secondary)] transition hover:text-[var(--accent-strong)]"
+          className="mb-3 inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--text-secondary)] transition hover:text-[var(--accent-strong)]"
           type="button"
           onClick={onBack}
         >
@@ -179,16 +160,16 @@ export function SupplyDetailView({
                 {supply.mode === "b2b" ? "B2B" : supply.mode === "consumer" ? "B2C" : copy.detail.modeUnknown}
               </span>
             </div>
-            <h3 className="truncate text-2xl font-semibold tracking-[-0.03em]">{supply.name}</h3>
+            <h3 className="truncate text-xl font-semibold tracking-[-0.03em]">{supply.name}</h3>
             <p className="mt-1 font-mono text-xs text-[var(--text-muted)]">{supply.id}</p>
           </div>
           <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
-            <div className="rounded-xl bg-[var(--surface-muted)] px-4 py-3 text-right">
+            <div className="rounded-lg bg-[var(--surface-muted)] px-3 py-2 text-right">
               <p className="text-xs font-semibold text-[var(--text-secondary)]">{copy.detail.orderCount}</p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums">{supply.itemCount}</p>
+              <p className="mt-0.5 text-xl font-semibold tabular-nums">{supply.itemCount}</p>
             </div>
             <button
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-4 text-sm font-semibold shadow-[var(--shadow-control)] transition hover:border-[var(--accent)] hover:text-[var(--accent-strong)] disabled:cursor-wait disabled:opacity-55"
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-3 text-xs font-semibold shadow-[var(--shadow-control)] transition hover:border-[var(--accent)] hover:text-[var(--accent-strong)] disabled:cursor-wait disabled:opacity-55"
               disabled={refresh.state.status === "cancelling"}
               onClick={() => void (["starting", "running"].includes(refresh.state.status) ? refresh.cancel() : refresh.start())}
               type="button"
@@ -215,7 +196,7 @@ export function SupplyDetailView({
             />}
             {supply.status === "open" && !showImportedOrders && (
               <button
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-red-700 px-4 text-sm font-semibold text-white transition hover:bg-red-800 disabled:cursor-wait disabled:opacity-55"
+                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-red-700 px-3 text-xs font-semibold text-white transition hover:bg-red-800 disabled:cursor-wait disabled:opacity-55"
                 disabled={deliveryBusy || refreshBusy}
                 onClick={() => void prepareDelivery()}
                 type="button"
@@ -246,13 +227,13 @@ export function SupplyDetailView({
 
       <SupplyGtinInventory shopId={shopId} licenseAllowed={licenseAllowed} copy={copy} locale={locale} />
 
-      {!showImportedOrders && <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)] md:p-5">
-        <form className="flex flex-col gap-3 sm:flex-row" onSubmit={submitSearch} role="search">
+      {!showImportedOrders && <section className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-3 shadow-[var(--shadow-panel)] md:p-4">
+        <form className="flex flex-col gap-2 sm:flex-row" onSubmit={submitSearch} role="search">
           <label className="relative min-w-0 flex-1">
             <span className="sr-only">{copy.detail.searchLabel}</span>
             <Search className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden="true" size={18} />
             <input
-              className="h-11 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] pr-4 pl-10 text-sm shadow-[var(--shadow-control)] outline-none transition placeholder:text-[var(--text-muted)] hover:border-[var(--accent)] focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]"
+              className="h-9 w-full rounded-lg border border-[var(--border-strong)] bg-[var(--surface-elevated)] pr-3 pl-10 text-xs shadow-[var(--shadow-control)] outline-none transition placeholder:text-[var(--text-muted)] hover:border-[var(--accent)] focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]"
               type="search"
               value={draftQuery}
               maxLength={120}
@@ -261,12 +242,12 @@ export function SupplyDetailView({
               aria-label={copy.detail.searchLabel}
             />
           </label>
-          <button className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--sidebar)] px-5 text-sm font-semibold text-white transition hover:bg-[#1c3329]" type="submit">
+          <button className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-[var(--button-primary)] px-4 text-xs font-semibold text-white transition hover:brightness-110" type="submit">
             <Search aria-hidden="true" size={16} />
             {copy.detail.search}
           </button>
         </form>
-        <div className="mt-4 flex flex-wrap items-center gap-2" aria-label={copy.detail.sortLabel}>
+        <div className="mt-3 flex flex-wrap items-center gap-1.5" aria-label={copy.detail.sortLabel}>
           <span className="mr-1 inline-flex items-center gap-2 text-xs font-semibold text-[var(--text-secondary)]">
             <SlidersHorizontal aria-hidden="true" size={15} />
             {copy.detail.sortBy}
@@ -278,27 +259,32 @@ export function SupplyDetailView({
         </div>
       </section>}
 
-      {!showImportedOrders && (visibleState.status === "loading" ? (
+      {!showImportedOrders && (pages.status === "loading" && pages.items.length === 0 ? (
         <OrderTableLoading copy={copy} />
-      ) : visibleState.status === "error" ? (
-        <DetailError copy={copy} onRetry={() => setRetryKey((key) => key + 1)} />
-      ) : visibleState.data.items.length === 0 ? (
+      ) : pages.status === "error" && pages.items.length === 0 ? (
+        <DetailError copy={copy} onRetry={pages.retry} />
+      ) : pages.items.length === 0 ? (
         <DetailEmpty copy={copy} hasQuery={query.length > 0} />
       ) : (
-        <OrderTable items={visibleState.data.items} copy={copy} locale={locale} />
+        <OrderTable items={[...pages.items]} copy={copy} locale={locale} />
       ))}
 
-      {!showImportedOrders && visibleState.status === "ready" && visibleState.data.items.length > 0 && (
-        <Pagination
-          page={visibleState.data.page}
-          totalPages={visibleState.data.totalPages}
-          totalItems={visibleState.data.totalItems}
-          onPage={setPage}
-          ariaLabel={copy.detail.pagination}
-          previousLabel={copy.detail.previousPage}
-          nextLabel={copy.detail.nextPage}
-          copy={copy}
-          locale={locale}
+      {!showImportedOrders && pages.items.length > 0 && (
+        <InfiniteLoadTrigger
+          status={pages.status}
+          hasMore={pages.hasMore}
+          copy={{
+            loading: copy.detail.loadingMore,
+            loadMore: copy.detail.loadMore,
+            loadError: copy.detail.loadMoreError,
+            retry: copy.detail.retry,
+            end: copy.detail.allLoaded,
+          }}
+          announcement={pages.addedCount > 0
+            ? interpolate(copy.detail.added, { count: numberFormat.format(pages.addedCount) })
+            : ""}
+          onLoadMore={pages.loadMore}
+          onRetry={pages.retry}
         />
       )}
 
@@ -315,6 +301,10 @@ export function SupplyDetailView({
       )}
     </div>
   );
+}
+
+function orderId(item: OrderItem) {
+  return item.orderId;
 }
 
 function RefreshNotice({ state, copy }: { state: SupplyRefreshState; copy: SupplyCopy }) {
