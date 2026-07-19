@@ -536,6 +536,8 @@ export function ZnackView({ shopId, licenseAllowed = true, copy = defaultZnackCo
         ) : tab === "purchases" ? (
           <div id="znack-panel-purchases" role="tabpanel" aria-label={copy.tabs.purchases} className="p-4 lg:p-5">
             <ZnackPurchasesPanel
+              copy={copy.operations}
+              locale={locale}
               shopId={shopId}
               settingsVersion={settingsState.status === "ready" ? settingsState.data.version : ""}
               canMutate={settingsState.status === "ready"
@@ -545,7 +547,7 @@ export function ZnackView({ shopId, licenseAllowed = true, copy = defaultZnackCo
           </div>
         ) : (
           <div id="znack-panel-logs" role="tabpanel" aria-label={copy.tabs.logs} className="p-4 lg:p-5">
-            <ZnackLogsPanel shopId={shopId} />
+            <ZnackLogsPanel copy={copy.operations} locale={locale} shopId={shopId} />
           </div>
         )}
       </div>

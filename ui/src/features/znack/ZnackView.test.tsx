@@ -537,4 +537,21 @@ describe("ZnackView", () => {
     expect(startProductSync).not.toHaveBeenCalled();
     expect(discoverCertificates).not.toHaveBeenCalled();
   });
+
+  it("localizes the English persisted purchases and sanitized operation log", async () => {
+    const user = userEvent.setup();
+    render(<ZnackView copy={getZnackCopy("en")} locale="en-US" shopId={7} />);
+    await screen.findByRole("heading", { name: "Secure Znack workspace" });
+
+    await user.click(screen.getByRole("tab", { name: "Purchases" }));
+    expect(await screen.findByRole("heading", { name: "KIZ purchases and introduction" })).toBeVisible();
+    expect(screen.getByText("Waiting for codes · Ordered: 2")).toBeVisible();
+
+    await user.click(screen.getByRole("tab", { name: "Log" }));
+    expect(await screen.findByRole("heading", { name: "Znack operation log" })).toBeVisible();
+    expect(screen.getByText("External service error")).toBeVisible();
+    expect(retryIntroduction).not.toHaveBeenCalled();
+    expect(preparePurchase).not.toHaveBeenCalled();
+    expect(startPurchase).not.toHaveBeenCalled();
+  });
 });
