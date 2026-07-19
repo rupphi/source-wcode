@@ -1,5 +1,5 @@
-import { CircleHelp, Settings } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { CircleHelp, LoaderCircle, Settings } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { CenteredState } from "./components/CenteredState";
 import { ShopPicker } from "./components/ShopPicker";
 import { Sidebar, type WorkspaceView } from "./components/Sidebar";
@@ -10,19 +10,12 @@ import {
 } from "./features/dashboard/DashboardView";
 import { getDashboardCopy } from "./features/dashboard/dashboardI18n";
 import { useWildberriesSync } from "./features/wildberries/useWildberriesSync";
-import { SupplyListView } from "./features/supplies/SupplyListView";
 import { getSupplyCopy, getSupplyLocale } from "./features/supplies/supplyI18n";
-import { PackingView } from "./features/packing/PackingView";
 import { getPackingCopy } from "./features/packing/packingI18n";
-import { FboPackingView } from "./features/fbo/FboPackingView";
 import { getFboCopy } from "./features/fbo/fboI18n";
-import { KizMappingView } from "./features/kizmapping/KizMappingView";
 import { getKizMappingCopy } from "./features/kizmapping/kizMappingI18n";
-import { ZnackView } from "./features/znack/ZnackView";
 import { getZnackCopy } from "./features/znack/znackI18n";
-import { PrintHistoryView } from "./features/history/PrintHistoryView";
 import { getHistoryCopy } from "./features/history/historyI18n";
-import { TemplateDesignerView } from "./features/templates/TemplateDesignerView";
 import { getTemplateDesignerCopy } from "./features/templates/templateDesignerI18n";
 import { LicenseSettingsDialog } from "./features/license/LicenseSettingsDialog";
 import { ShopManagementDialog } from "./features/shops/ShopManagementDialog";
@@ -37,6 +30,14 @@ type WorkspaceState =
   | { status: "loading" }
   | { status: "error" }
   | { status: "ready"; data: BootstrapResponse };
+
+const SupplyListView = lazy(async () => ({ default: (await import("./features/supplies/SupplyListView")).SupplyListView }));
+const PackingView = lazy(async () => ({ default: (await import("./features/packing/PackingView")).PackingView }));
+const FboPackingView = lazy(async () => ({ default: (await import("./features/fbo/FboPackingView")).FboPackingView }));
+const KizMappingView = lazy(async () => ({ default: (await import("./features/kizmapping/KizMappingView")).KizMappingView }));
+const ZnackView = lazy(async () => ({ default: (await import("./features/znack/ZnackView")).ZnackView }));
+const PrintHistoryView = lazy(async () => ({ default: (await import("./features/history/PrintHistoryView")).PrintHistoryView }));
+const TemplateDesignerView = lazy(async () => ({ default: (await import("./features/templates/TemplateDesignerView")).TemplateDesignerView }));
 
 export function App() {
   const [workspace, setWorkspace] = useState<WorkspaceState>({ status: "loading" });
@@ -284,6 +285,7 @@ export function App() {
             )}
           </section>
 
+          <Suspense fallback={<WorkspaceViewLoading label={pageCopy.title} />}>
           {activeView === "templates" ? (
             <TemplateDesignerView
               copy={getTemplateDesignerCopy(preferences.language)}
@@ -344,6 +346,7 @@ export function App() {
               sync={wildberriesSync}
             />
           )}
+          </Suspense>
         </main>
       </div>
       </div>
@@ -369,5 +372,13 @@ export function App() {
       ) : null}
       {supportOpen ? <SupportDialog onClose={closeSupport} copy={copy.support} /> : null}
     </>
+  );
+}
+
+function WorkspaceViewLoading({ label }: { label: string }) {
+  return (
+    <div className="grid min-h-64 place-items-center" role="status" aria-label={label}>
+      <LoaderCircle aria-hidden="true" className="animate-spin text-[var(--accent-strong)]" size={26} />
+    </div>
   );
 }
