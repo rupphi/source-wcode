@@ -37,6 +37,19 @@ https://github.com/tuanworlddev/jdesk/blob/main/docs/concepts/security-model.md,
 https://github.com/tuanworlddev/jdesk/blob/main/docs/security/threat-model.md,
 https://github.com/tuanworlddev/jdesk/blob/main/docs/guides/automation-and-e2e.md.
 
+JPMS/native-access checkpoint (2026-07-19): artifact WCode được chuyển từ automatic module sang
+explicit open module `wcode.desktop`. `jdeps --generate-open-module` tìm 16 direct edges; smoke
+deny-mode phát hiện thêm hai edge ẩn do OkHttp automatic module không encode dependency
+(`kotlin.stdlib`, `okio`). Source tag jDesk `v0.1.3` xác nhận platform modules có tên
+`dev.jdesk.platform.<os>` và production cấm `ALL-UNNAMED`. Main launcher vì vậy chỉ grant platform
+module + `org.xerial.sqlitejdbc`; recovery chỉ grant SQLite, cả hai dùng
+`--illegal-native-access=deny`. Trimmed-runtime dry-run còn tìm hai JDK edges chỉ có trong dependency
+module descriptors (`java.sql.rowset`, `jdk.xml.dom`) mà classes-only jdeps compatibility analysis
+không thấy. Sources: https://github.com/tuanworlddev/jdesk/tree/v0.1.3,
+https://github.com/tuanworlddev/jdesk/blob/v0.1.3/docs/concepts/native-memory-and-ffm.md,
+https://docs.oracle.com/en/java/javase/25/docs/specs/man/java.html,
+https://docs.oracle.com/en/java/javase/25/docs/specs/man/jpackage.html.
+
 ## Kết luận
 
 jDesk phù hợp để thay lớp JavaFX của WCode vì framework giữ Java 25 làm lõi ứng dụng,
@@ -127,9 +140,8 @@ hoặc tài liệu.
    parity test thật trên Windows.
 4. **Secret migration.** jDesk có OS credential store nhưng không có plaintext fallback. Phải
    migrate có rollback, xác minh đọc lại rồi mới xóa `shops.api_key`.
-5. **Classpath native access.** Template đơn module dùng `ALL-UNNAMED`. Giai đoạn đầu chấp nhận
-   để giảm churn; trước production cutover phải đánh giá chuyển composition root sang JPMS để
-   thu hẹp native access.
+5. **Native access.** Đã chuyển sang explicit `wcode.desktop` composition root; package/dev runner
+   dùng module path, deny-mode và platform+SQLite allowlist. Verifier cấm `ALL-UNNAMED` quay lại.
 6. **Payload bridge 1 MiB.** Dashboard/list dùng DTO phân trang; PDF/image/file dùng binary stream
    hoặc app assets, không nhét base64 vào command response.
 
@@ -153,7 +165,7 @@ Fresh-context review ngày 2026-07-18 được reconcile như sau:
 | Không có rollback sau cutover | Valid + actionable | Thêm JavaFX first-cutover rollback, jDesk N-1 và schema compatibility window |
 | Token form mâu thuẫn “secret không qua WebView” | Contract misread do câu chữ quá tuyệt đối | Cho phép write-only React → Java; cấm Java → React/log/DOM retention |
 | Hai entry point cùng ghi SQLite | Valid + actionable | Shared single-instance/app-data lock trước DB init |
-| `ALL-UNNAMED` quá rộng | Valid trade-off tạm thời | Chỉ preview/read-only; JPMS hard gate trước mutation/beta/release |
+| `ALL-UNNAMED` quá rộng | Valid + resolved | Explicit `wcode.desktop`; platform+SQLite deny-mode launcher và package verifier |
 | Không phải runtime Strangler | Valid + actionable | Đổi thành parallel replacement + installer-cohort canary |
 | Typed DTO thiếu runtime validation | Valid + actionable | Semantic Java validation + untrusted WB response policy |
 | Execution/cancellation/recovery chưa rõ | Valid + actionable | Virtual-thread, bounded event, timeout/idempotency/recovery contract |

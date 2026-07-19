@@ -33,13 +33,13 @@ production-migrated chỉ vì preview pass. Chỉ sau canary, native Windows gat
 mới chuyển jDesk thành entry point mặc định. JavaFX/FXML/Maven chỉ được xóa sau rollback window
 của release jDesk đầu tiên.
 
-Foundation dùng classpath template chính thức để tránh di chuyển 150 file ngay lập tức. API jDesk
-chỉ xuất hiện trong `src/jdesk`; domain/integration không phụ thuộc framework. `ALL-UNNAMED` là
-trade-off tạm thời chỉ được dùng cho preview/read-only live WB. Trước external beta hoặc
-production package, một JPMS/native-access gate bắt buộc phải pass hoặc phải có risk acceptance
-riêng được người dùng phê duyệt. Seller-state mutation có **hai điều kiện độc lập**: gate kỹ thuật
-đã pass/được chấp nhận rủi ro, và người dùng phê duyệt rõ một test case cụ thể; điều kiện kỹ thuật
-không bao giờ ngầm cấp quyền mutation.
+Foundation ban đầu dùng classpath template để tránh di chuyển 150 file. API jDesk chỉ xuất hiện
+trong `src/jdesk`; domain/integration không phụ thuộc framework. Trước mutation, WCode đã chuyển
+sang explicit open module `wcode.desktop`: package/dev runner dùng module path,
+`--illegal-native-access=deny`, grant platform module + SQLite cho main và chỉ SQLite cho recovery;
+verifier cấm `ALL-UNNAMED`. Seller-state mutation vẫn có **hai điều kiện độc lập**: gate kỹ thuật
+đã pass, và người dùng phê duyệt rõ một test case cụ thể; điều kiện kỹ thuật không bao giờ ngầm cấp
+quyền mutation.
 
 ## Data ownership and rollback
 
@@ -145,12 +145,13 @@ rồi mới được xóa legacy credential bằng migration có phê duyệt.
   jDesk không còn là Java core tại chỗ.
 - Rejected: là thay đổi sản phẩm lớn hơn yêu cầu và phá khả năng offline.
 
-### Multi-module JPMS ngay từ foundation
+### Full multi-module JPMS ngay từ foundation
 
 - Ưu: boundary rõ, native access tối thiểu.
 - Nhược: churn lớn với dependency hiện có và làm chậm vertical proof đầu tiên.
-- Deferred only for the read-only foundation preview. It becomes a hard gate before mutation,
-  external beta or production packaging.
+- Deferred as a full domain/application/infrastructure split. A single explicit `wcode.desktop`
+  composition root is now adopted as the production native-access boundary; further module splits
+  remain optional refactoring after cutover.
 
 ## Consequences
 

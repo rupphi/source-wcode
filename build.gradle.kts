@@ -1,3 +1,4 @@
+import java.lang.module.ModuleFinder
 import java.nio.file.Files
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -24,6 +25,8 @@ val platform = when {
     System.getProperty("os.name").startsWith("Windows", ignoreCase = true) -> "windows"
     else -> "linux"
 }
+val platformModule = "dev.jdesk.platform.$platform"
+val nativeAccessModules = "$platformModule,org.xerial.sqlitejdbc"
 
 dependencies {
     implementation("dev.jdesk:jdesk-api:$jdeskVersion")
@@ -110,6 +113,7 @@ sourceSets {
 jdesk {
     applicationId.set("com.tuandev.wcode")
     applicationName.set("WCode")
+    mainModule.set("wcode.desktop")
     mainClass.set("com.tuandev.fbsbarcode.jdesk.WCodeDesktop")
     frontend {
         directory.set(layout.projectDirectory.dir("ui"))
@@ -121,6 +125,7 @@ jdesk {
 }
 
 application {
+    mainModule.set("wcode.desktop")
     mainClass.set("com.tuandev.fbsbarcode.jdesk.WCodeDesktop")
 }
 
@@ -137,6 +142,13 @@ tasks.processResources {
                 .replace("\${app.update.public-key}", updateManifestPublicKey.get())
                 .replace("\${app.update.publisher}", updateSigningPublisher.get())
         }
+    }
+}
+
+tasks.named<JavaCompile>("compileJava") {
+    doFirst {
+        options.compilerArgs.addAll(listOf("--module-path", classpath.asPath))
+        classpath = files()
     }
 }
 
@@ -164,6 +176,9 @@ val jdeskJdepsAnalysisJar = tasks.register<Jar>("jdeskJdepsAnalysisJar") {
 
 tasks.named<dev.jdesk.gradle.tasks.JDeskRuntimeImageTask>("jdeskRuntimeImage") {
     appClasspath.setFrom(jdeskJdepsAnalysisJar.flatMap { it.archiveFile })
+    // These edges exist only in third-party module descriptors, so the classes-only jdeps
+    // compatibility analysis cannot discover them. jlink resolves their transitive JDK closure.
+    additionalModules.addAll("java.sql.rowset", "jdk.xml.dom")
 }
 
 tasks.named<dev.jdesk.gradle.tasks.JDeskPackageTask>("jdeskPackage") {
@@ -180,10 +195,62 @@ val wcodePackageInput = tasks.register<Sync>("wcodePackageInput") {
     into(layout.buildDirectory.dir("jdesk/package-input"))
 }
 
+val wcodeModuleVerify = tasks.register("wcodeModuleVerify") {
+    group = "verification"
+    description = "Verifies the explicit WCode JPMS composition root."
+    dependsOn(tasks.named("jar"))
+    doLast {
+        val applicationJar = tasks.named<Jar>("jar").get().archiveFile.get().asFile.toPath()
+        val descriptor = ModuleFinder.of(applicationJar)
+            .find("wcode.desktop")
+            .orElseThrow { GradleException("The WCode module descriptor is missing.") }
+            .descriptor()
+        if (descriptor.isAutomatic || !descriptor.isOpen) {
+            throw GradleException("WCode must be an explicit open JPMS composition root.")
+        }
+        val required = descriptor.requires().map { it.name() }.toSet()
+        val missing = setOf(
+            "dev.jdesk.api",
+            "dev.jdesk.runtime",
+            "kotlin.stdlib",
+            "okhttp3",
+            "okio",
+            "org.xerial.sqlitejdbc",
+        ) - required
+        if (missing.isNotEmpty()) {
+            throw GradleException("The WCode module descriptor misses runtime edges: $missing")
+        }
+    }
+}
+
+val wcodeRuntimeModuleVerify = tasks.register<Exec>("wcodeRuntimeModuleVerify") {
+    group = "verification"
+    description = "Dry-runs the explicit module graph on the trimmed runtime image."
+    dependsOn(wcodePackageInput, tasks.named("jdeskRuntimeImage"), wcodeModuleVerify)
+    val packageInput = layout.buildDirectory.dir("jdesk/package-input")
+    val runtimeImage = layout.buildDirectory.dir("jdesk/runtime-image")
+    inputs.dir(packageInput)
+    inputs.dir(runtimeImage)
+    doNotTrackState("executes the freshly linked runtime for module resolution")
+    doFirst {
+        val executable = runtimeImage.get().file(
+            "bin/java" + if (platform == "windows") ".exe" else "",
+        ).asFile.absolutePath
+        commandLine(
+            executable,
+            "--dry-run",
+            "--module-path", packageInput.get().asFile.absolutePath,
+            "--enable-native-access=$nativeAccessModules",
+            "--illegal-native-access=deny",
+            "-m", "wcode.desktop/com.tuandev.fbsbarcode.jdesk.WCodeDesktop",
+        )
+    }
+}
+
 val wcodePackageImage = tasks.register<Exec>("wcodePackageImage") {
     group = "jdesk"
     description = "Builds the WCode app-image with the offline recovery launcher."
-    dependsOn(wcodePackageInput, tasks.named("jdeskRuntimeImage"))
+    dependsOn(wcodeRuntimeModuleVerify)
     val packageRoot = layout.buildDirectory.dir("jdesk/package")
     val packageInput = layout.buildDirectory.dir("jdesk/package-input")
     val runtimeImage = layout.buildDirectory.dir("jdesk/runtime-image")
@@ -204,13 +271,13 @@ val wcodePackageImage = tasks.register<Exec>("wcodePackageImage") {
             executable,
             "--type", "app-image",
             "--name", "WCode",
-            "--input", packageInput.get().asFile.absolutePath,
-            "--main-jar", tasks.named<Jar>("jar").get().archiveFileName.get(),
-            "--main-class", "com.tuandev.fbsbarcode.jdesk.WCodeDesktop",
+            "--module-path", packageInput.get().asFile.absolutePath,
+            "--module", "wcode.desktop/com.tuandev.fbsbarcode.jdesk.WCodeDesktop",
             "--runtime-image", runtimeImage.get().asFile.absolutePath,
             "--dest", packageRoot.get().asFile.absolutePath,
             "--app-version", project.version.toString(),
-            "--java-options", "--enable-native-access=ALL-UNNAMED",
+            "--java-options", "--enable-native-access=$nativeAccessModules",
+            "--java-options", "--illegal-native-access=deny",
             "--java-options", "-Dwcode.production=true",
             "--java-options", "-Djdesk.assets.classpath=web",
             "--java-options", "-Djdesk.applicationName=WCode",
@@ -275,7 +342,7 @@ val wcodePackageEvidence = tasks.register("wcodePackageEvidence") {
 }
 
 val wcodePackageVerify = tasks.register("wcodePackageVerify") {
-    dependsOn(wcodePackageEvidence)
+    dependsOn(wcodePackageEvidence, wcodeModuleVerify)
     val packageRoot = layout.buildDirectory.dir("jdesk/package")
     inputs.dir(packageRoot)
     doLast {
@@ -305,8 +372,30 @@ val wcodePackageVerify = tasks.register("wcodePackageVerify") {
                 .toList()
         }
         val launcherConfig = launcherConfigs.singleOrNull()?.let(Files::readString)
-        if (launcherConfig?.contains("java-options=-Dwcode.production=true") != true) {
+        if (launcherConfig?.contains(
+                "app.mainmodule=wcode.desktop/com.tuandev.fbsbarcode.jdesk.WCodeDesktop",
+            ) != true
+            || !launcherConfig.contains("java-options=--enable-native-access=$nativeAccessModules")
+            || !launcherConfig.contains("java-options=--illegal-native-access=deny")
+            || !launcherConfig.contains("java-options=-Dwcode.production=true")
+            || launcherConfig.contains("ALL-UNNAMED")) {
             throw GradleException("The main launcher does not enforce bundled production content.")
+        }
+        val recoveryConfigs = Files.walk(root).use { files ->
+            files.filter { it.fileName.toString() == "WCode-Recovery.cfg" }
+                .filter { !Files.isSymbolicLink(it) && Files.isRegularFile(it) }
+                .toList()
+        }
+        val recoveryConfig = recoveryConfigs.singleOrNull()?.let(Files::readString)
+        if (recoveryConfig?.contains(
+                "app.mainmodule=wcode.desktop/com.tuandev.fbsbarcode.jdesk.recovery.WCodeRecoveryCli",
+            ) != true
+            || !recoveryConfig.contains(
+                "java-options=--enable-native-access=org.xerial.sqlitejdbc",
+            )
+            || !recoveryConfig.contains("java-options=--illegal-native-access=deny")
+            || recoveryConfig.contains("ALL-UNNAMED")) {
+            throw GradleException("The recovery launcher is not a least-privilege JPMS launcher.")
         }
         for (evidence in listOf("checksums.sha256", "sbom.cyclonedx.json", "sbom.spdx.json")) {
             val evidenceFile = root.resolve(evidence)
@@ -328,7 +417,10 @@ tasks.named<JavaExec>("run") {
     dependsOn("jdeskFrontendBuild")
     classpath += jdeskAutomationRuntime
     doNotTrackState("launches a desktop application")
-    jvmArgs("--enable-native-access=ALL-UNNAMED")
+    jvmArgs(
+        "--enable-native-access=$nativeAccessModules",
+        "--illegal-native-access=deny",
+    )
     if (System.getProperty("os.name").startsWith("Mac", ignoreCase = true)) {
         jvmArgs("-XstartOnFirstThread")
     }
@@ -345,16 +437,28 @@ tasks.named<JavaExec>("run") {
     System.getProperty("jdesk.automation.dir")?.let { automationDir ->
         systemProperty("jdesk.automation.dir", automationDir)
     }
+    doFirst {
+        jvmArgs("--module-path", classpath.asPath)
+        classpath = files()
+    }
 }
 
 tasks.register<JavaExec>("wcodeRecovery") {
     group = "application"
     description = "Runs the offline recovery CLI; pass --args='list|verify <id>|restore <id> --confirm'."
+    mainModule.set("wcode.desktop")
     mainClass.set("com.tuandev.fbsbarcode.jdesk.recovery.WCodeRecoveryCli")
     classpath = sourceSets["main"].runtimeClasspath
-    jvmArgs("--enable-native-access=ALL-UNNAMED")
+    jvmArgs(
+        "--enable-native-access=org.xerial.sqlitejdbc",
+        "--illegal-native-access=deny",
+    )
     System.getProperty("wcode.appdata.dir")?.let { appDataDir ->
         systemProperty("wcode.appdata.dir", appDataDir)
+    }
+    doFirst {
+        jvmArgs("--module-path", classpath.asPath)
+        classpath = files()
     }
 }
 

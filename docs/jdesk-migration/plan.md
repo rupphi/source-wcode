@@ -191,7 +191,7 @@ Feature parity + early Windows native gates
 
 - [ ] WebView2 app starts and automation console/snapshot work on Windows x64.
 - [ ] File open/save dialog, existing PDF open/print path and CryptoPro discovery are probed.
-- [ ] JPMS/native-access spike either produces a modular composition root or an explicit blocked
+- [x] JPMS/native-access spike either produces a modular composition root or an explicit blocked
   report before any mutation/external beta work.
 
 **Verification:** Windows CI artifacts plus real-machine evidence for interactive/physical paths.
@@ -389,7 +389,7 @@ not accepted as parity.
 
 1. Full parity audit against every JavaFX controller/FXML action.
 2. WCAG/accessibility, WebView cross-platform, performance and dependency audits.
-3. Confirm the early JPMS/native-access decision and framework 0.1.3 upgrade/freeze review.
+3. Re-verify the completed JPMS/native-access decision and perform framework 0.1.3 upgrade/freeze review.
 4. Windows/macOS/Linux native app/installer CI, signing and clean upgrade tests.
 5. Verified per-migration SQLite/WAL snapshots, single-writer ownership and both rollback-path
    rehearsals.
