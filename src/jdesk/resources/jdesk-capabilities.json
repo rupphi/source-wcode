@@ -7,6 +7,7 @@
     { "capability": "dashboard:read", "windows": ["main"] },
     { "capability": "supplies:read", "windows": ["main"] },
     { "capability": "packing:read", "windows": ["main"] },
+    { "capability": "packing:write", "windows": ["main"] },
     { "capability": "fbo:read", "windows": ["main"] },
     { "capability": "fbo:print", "windows": ["main"] },
     { "capability": "kiz-mapping:read", "windows": ["main"] },

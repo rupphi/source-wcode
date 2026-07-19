@@ -13,6 +13,7 @@ import {
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { commands } from "../../generated/commands";
 import type {
+  MutationPreview,
   PackingBoardResponse,
   PackingOrderItem,
   PackingSupplyItem,
@@ -20,6 +21,7 @@ import type {
 } from "../../generated/types";
 import { Pagination } from "../supplies/SupplyTable";
 import { SupplyDetailView } from "../supplies/SupplyDetailView";
+import { PackingMutationDialog, type MutationDialog } from "./PackingMutationDialog";
 
 type PackingTab = "new" | "preparation" | "dispatch";
 type PackingState =
@@ -48,7 +50,16 @@ export function PackingView({ shopId }: { shopId: number }) {
   const [retryKey, setRetryKey] = useState(0);
   const [state, setState] = useState<PackingState>({ status: "loading", requestKey: "" });
   const [selectedSupply, setSelectedSupply] = useState<SupplyItem | null>(null);
+  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+  const [mutationDialog, setMutationDialog] = useState<MutationDialog | null>(null);
+  const [shipmentName, setShipmentName] = useState("");
+  const [selectedTargetSupply, setSelectedTargetSupply] = useState("");
+  const [targetSupplyQuery, setTargetSupplyQuery] = useState("");
+  const [mutationBusy, setMutationBusy] = useState(false);
+  const [mutationError, setMutationError] = useState(false);
+  const [mutationNotice, setMutationNotice] = useState("");
   const requestSequence = useRef(0);
+  const targetRequestSequence = useRef(0);
   const requestKey = JSON.stringify([shopId, tab, query, categories, page, retryKey]);
 
   useEffect(() => {
@@ -91,6 +102,7 @@ export function PackingView({ shopId }: { shopId: number }) {
     setTab(nextTab);
     setCategories([]);
     setPage(1);
+    if (nextTab !== "new") setSelectedOrderIds([]);
   };
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
@@ -108,6 +120,115 @@ export function PackingView({ shopId }: { shopId: number }) {
       ? current.filter((value) => value !== category)
       : [...current, category]);
     setPage(1);
+  };
+
+  const toggleOrder = (orderId: string) => {
+    setSelectedOrderIds((current) => current.includes(orderId)
+      ? current.filter((value) => value !== orderId)
+      : current.length >= 1_000 ? current : [...current, orderId]);
+  };
+
+  const openCreate = () => {
+    const now = new Date();
+    setShipmentName(`Shipment ${String(now.getDate()).padStart(2, "0")}.${String(now.getMonth() + 1).padStart(2, "0")}.${now.getFullYear()}`);
+    setMutationError(false);
+    setMutationDialog({ kind: "create" });
+  };
+
+  const openAdd = () => {
+    setSelectedTargetSupply("");
+    setTargetSupplyQuery("");
+    setMutationError(false);
+    setMutationDialog({ kind: "add", status: "loading", supplies: [] });
+    loadAddSupplies("");
+  };
+
+  const loadAddSupplies = (candidate: string) => {
+    const normalized = candidate.trim();
+    const requestId = ++targetRequestSequence.current;
+    setMutationDialog({ kind: "add", status: "loading", supplies: [] });
+    void commands.packing.board({
+      shopId,
+      tab: "preparation",
+      query: normalized,
+      categories: [],
+      page: 1,
+      pageSize: 100,
+    }).then((response) => {
+      if (targetRequestSequence.current !== requestId) return;
+      if (!matchesRequest(response, shopId, "preparation", normalized, [], 1, 100)) {
+        throw new Error("invalid supply response");
+      }
+      setMutationDialog((current) => current?.kind === "add"
+        ? { kind: "add", status: "ready", supplies: response.supplies }
+        : current);
+    }).catch(() => {
+      if (targetRequestSequence.current !== requestId) return;
+      setMutationDialog((current) => current?.kind === "add"
+        ? { kind: "add", status: "error", supplies: [] }
+        : current);
+    });
+  };
+
+  const prepareCreate = async () => {
+    if (shipmentName.trim().length === 0 || selectedOrderIds.length === 0) return;
+    await prepareMutation(() => commands.packing.prepareCreate({
+      shopId,
+      name: shipmentName.trim(),
+      orderIds: selectedOrderIds,
+    }));
+  };
+
+  const prepareAdd = async () => {
+    if (!selectedTargetSupply || selectedOrderIds.length === 0) return;
+    await prepareMutation(() => commands.packing.prepareAdd({
+      shopId,
+      supplyId: selectedTargetSupply,
+      orderIds: selectedOrderIds,
+    }));
+  };
+
+  const prepareDeliver = async (supply: PackingSupplyItem) => {
+    await prepareMutation(() => commands.packing.prepareDeliver({ shopId, supplyId: supply.id }));
+  };
+
+  const prepareMutation = async (operation: () => Promise<MutationPreview>) => {
+    setMutationBusy(true);
+    setMutationError(false);
+    try {
+      const preview = await operation();
+      if (!isValidMutationPreview(preview, shopId)) throw new Error("invalid preview");
+      setMutationDialog({ kind: "preview", preview });
+    } catch {
+      setMutationError(true);
+    } finally {
+      setMutationBusy(false);
+    }
+  };
+
+  const executeMutation = async (preview: MutationPreview) => {
+    setMutationBusy(true);
+    setMutationError(false);
+    try {
+      const receipt = await commands.packing.execute({
+        shopId,
+        previewId: preview.previewId,
+        confirmed: true,
+      });
+      if (!receipt.accepted || receipt.action !== preview.action || !receipt.supplyId) throw new Error("invalid receipt");
+      setMutationNotice(receipt.action === "create"
+        ? `Поставка ${receipt.supplyId} создана`
+        : receipt.action === "add"
+          ? `Заказы добавлены в поставку ${receipt.supplyId}`
+          : `Поставка ${receipt.supplyId} передана в доставку`);
+      setSelectedOrderIds([]);
+      setMutationDialog(null);
+      setRetryKey((value) => value + 1);
+    } catch {
+      setMutationError(true);
+    } finally {
+      setMutationBusy(false);
+    }
   };
 
   if (selectedSupply !== null) {
@@ -132,13 +253,13 @@ export function PackingView({ shopId }: { shopId: number }) {
             <div>
               <h3 className="font-semibold tracking-[-0.01em]">Очередь комплектации</h3>
               <p className="mt-1 max-w-2xl text-sm leading-5 text-[var(--text-secondary)]">
-                Данные читаются из локальной базы. Операции создания, наполнения и передачи поставки будут доступны только как подтверждаемые действия.
+                Создание, наполнение и передача поставки выполняются только после отдельной проверки и подтверждения.
               </p>
             </div>
           </div>
           <span className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
             <ShieldCheck aria-hidden="true" size={15} />
-            Без изменений в WB
+            Подтверждение перед записью
           </span>
         </div>
 
@@ -166,6 +287,28 @@ export function PackingView({ shopId }: { shopId: number }) {
           />
         </div>
       </section>
+
+      {mutationNotice && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900" role="status">
+          {mutationNotice}
+        </div>
+      )}
+
+      {tab === "new" && data && (
+        <section className="flex flex-col gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)] sm:flex-row sm:items-center sm:justify-between" aria-label="Действия с выбранными заказами">
+          <p className="text-sm text-[var(--text-secondary)]">
+            Выбрано: <strong className="text-[var(--text-primary)]">{numberFormat.format(selectedOrderIds.length)}</strong>
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button className="rounded-xl border border-[var(--border-strong)] px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45" type="button" disabled={selectedOrderIds.length === 0} onClick={openAdd}>
+              Добавить в поставку
+            </button>
+            <button className="rounded-xl bg-[var(--button-primary)] px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45" type="button" disabled={selectedOrderIds.length === 0} onClick={openCreate}>
+              Создать поставку
+            </button>
+          </div>
+        </section>
+      )}
 
       <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)] md:p-5">
         <form className="flex flex-col gap-3 sm:flex-row" onSubmit={submitSearch} role="search">
@@ -216,11 +359,12 @@ export function PackingView({ shopId }: { shopId: number }) {
       ) : visibleState.data.totalItems === 0 ? (
         <PackingEmpty tab={tab} filtered={query.length > 0 || categories.length > 0} />
       ) : tab === "new" ? (
-        <OrderGrid items={visibleState.data.orders} />
+        <OrderGrid items={visibleState.data.orders} selected={selectedOrderIds} onToggle={toggleOrder} />
       ) : (
         <PackingSupplyTable
           items={visibleState.data.supplies}
           onOpen={(item) => setSelectedSupply(item)}
+          onDeliver={prepareDeliver}
         />
       )}
 
@@ -233,6 +377,25 @@ export function PackingView({ shopId }: { shopId: number }) {
           ariaLabel="Пагинация очереди упаковки"
           previousLabel="Предыдущая страница очереди"
           nextLabel="Следующая страница очереди"
+        />
+      )}
+
+      {mutationDialog && (
+        <PackingMutationDialog
+          dialog={mutationDialog}
+          shipmentName={shipmentName}
+          selectedTargetSupply={selectedTargetSupply}
+          targetSupplyQuery={targetSupplyQuery}
+          busy={mutationBusy}
+          error={mutationError}
+          onShipmentName={setShipmentName}
+          onTargetSupply={setSelectedTargetSupply}
+          onTargetSupplyQuery={setTargetSupplyQuery}
+          onSearchSupplies={() => loadAddSupplies(targetSupplyQuery)}
+          onClose={() => !mutationBusy && setMutationDialog(null)}
+          onPrepareCreate={prepareCreate}
+          onPrepareAdd={prepareAdd}
+          onExecute={executeMutation}
         />
       )}
     </div>
@@ -261,11 +424,22 @@ function TabButton({ active, icon: Icon, label, count, onClick }: {
   );
 }
 
-function OrderGrid({ items }: { items: PackingOrderItem[] }) {
+function OrderGrid({ items, selected, onToggle }: {
+  items: PackingOrderItem[];
+  selected: string[];
+  onToggle: (orderId: string) => void;
+}) {
   return (
     <section className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3" aria-label="Новые заказы">
       {items.map((item) => (
-        <article className="flex min-w-0 gap-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)]" key={item.orderId}>
+        <article className="relative flex min-w-0 gap-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)]" key={item.orderId}>
+          <input
+            className="absolute top-3 right-3 size-4 accent-[var(--button-primary)]"
+            type="checkbox"
+            aria-label={`Выбрать заказ #${item.orderId}`}
+            checked={selected.includes(item.orderId)}
+            onChange={() => onToggle(item.orderId)}
+          />
           <div className="grid size-20 shrink-0 place-items-center overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-muted)]">
             {item.imagePath ? (
               <img className="size-full object-cover" src={item.imagePath} alt="" />
@@ -297,7 +471,11 @@ function OrderGrid({ items }: { items: PackingOrderItem[] }) {
   );
 }
 
-function PackingSupplyTable({ items, onOpen }: { items: PackingSupplyItem[]; onOpen: (item: PackingSupplyItem) => void }) {
+function PackingSupplyTable({ items, onOpen, onDeliver }: {
+  items: PackingSupplyItem[];
+  onOpen: (item: PackingSupplyItem) => void;
+  onDeliver: (item: PackingSupplyItem) => void;
+}) {
   return (
     <section className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
       <div className="overflow-x-auto">
@@ -324,9 +502,14 @@ function PackingSupplyTable({ items, onOpen }: { items: PackingSupplyItem[]; onO
                 </td>
                 <td className="px-4 py-4 text-right text-sm font-semibold tabular-nums">{numberFormat.format(item.itemCount)}</td>
                 <td className="px-5 py-4 text-right">
-                  <button className="rounded-lg bg-[var(--accent-soft)] px-3 py-2 text-xs font-semibold text-[var(--accent-strong)]" type="button" onClick={() => onOpen(item)}>
-                    Открыть
-                  </button>
+                  <div className="flex justify-end gap-2">
+                    <button className="rounded-lg border border-[var(--border-strong)] px-3 py-2 text-xs font-semibold" type="button" aria-label={`Проверить передачу ${item.name}`} onClick={() => onDeliver(item)}>
+                      Передать
+                    </button>
+                    <button className="rounded-lg bg-[var(--accent-soft)] px-3 py-2 text-xs font-semibold text-[var(--accent-strong)]" type="button" onClick={() => onOpen(item)}>
+                      Открыть
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -378,14 +561,42 @@ function matchesRequest(
   query: string,
   categories: string[],
   page: number,
+  pageSize = PAGE_SIZE,
 ): boolean {
   return response.shopId === shopId
     && response.tab === tab
     && response.query === query
     && response.page === page
-    && response.pageSize === PAGE_SIZE
+    && response.pageSize === pageSize
     && response.categories.length === categories.length
     && response.categories.every((value, index) => value === categories[index]);
+}
+
+function isValidMutationPreview(preview: MutationPreview, shopId: number): boolean {
+  const actions = new Set(["create", "add", "deliver"]);
+  const blockerKinds = new Set(["supply_not_ready", "labels_missing", "kiz_missing"]);
+  const warningKinds = new Set(["kiz_required"]);
+  return preview.shopId === shopId
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(preview.previewId)
+    && actions.has(preview.action)
+    && typeof preview.supplyId === "string"
+    && preview.supplyId.length <= 128
+    && typeof preview.supplyName === "string"
+    && preview.supplyName.length <= 160
+    && Number.isSafeInteger(preview.itemCount)
+    && preview.itemCount >= 0
+    && preview.itemCount <= 1_000_000
+    && Number.isSafeInteger(preview.kizCount)
+    && preview.kizCount >= 0
+    && preview.kizCount <= preview.itemCount
+    && preview.blockers.length <= blockerKinds.size
+    && new Set(preview.blockers).size === preview.blockers.length
+    && preview.blockers.every((kind) => blockerKinds.has(kind))
+    && preview.warnings.length <= warningKinds.size
+    && new Set(preview.warnings).size === preview.warnings.length
+    && preview.warnings.every((kind) => warningKinds.has(kind))
+    && preview.ready === (preview.blockers.length === 0)
+    && !Number.isNaN(Date.parse(preview.expiresAt));
 }
 
 function formatCreatedAt(value: string): string {

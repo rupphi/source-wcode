@@ -293,8 +293,10 @@ recover from rate limit/offline/error without JavaFX.
       safe background-attachment handoff.
 - [x] Port the read-only packing board with new/preparation/dispatch tabs, bounded local
       search/category pagination and opaque cached product images.
-- [ ] Port confirmed create/add/deliver packing mutations and their operator-facing KIZ
-      availability/preflight states on an explicitly approved shop.
+- [x] Port confirmed create/add/deliver packing mutations with exact string order IDs, one-use
+      previews and operator-facing print/KIZ preflight states; cover Java/React and isolated native
+      behavior without issuing a seller-state call.
+- [ ] Rehearse create/add/deliver against an explicitly approved disposable shop/supply/order set.
 - [x] Port bounded print history/search/status pagination and native history reprint/save/open with
       opaque, expiring file sessions.
 - [x] Port bounded FBS/FBO template catalogs through typed DTOs with point→mm conversion,

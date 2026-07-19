@@ -163,6 +163,25 @@ luồng hiện tại trong UI mới, nhanh, rõ trạng thái, dùng được b�
   smoke chỉ chạy trên isolated app-data hoặc artifact không cần KIZ; không consume live KIZ nếu chưa
   có approval riêng của người dùng.
 
+### FBS packing mutation contract
+
+- `packing.prepareCreate`, `packing.prepareAdd` và `packing.prepareDeliver` re-resolve shop thuộc
+  workspace cùng local board hiện tại trong Java. Order ID qua bridge dưới dạng decimal string để
+  không mất chính xác ngoài safe-integer JavaScript, phải unique, tối đa 1.000 và vẫn thuộc tập new
+  order. Tên shipment/supply ID là printable bounded value; add/deliver chỉ nhận open preparation
+  supply hiện tại.
+- Prepare thành công trả random one-use preview, expiry, action, item/KIZ count và chỉ warning/
+  blocker kind trong allowlist. Preview sống tối đa mười phút, bind với shop + request đã normalize
+  và bị consume trước execute. `packing.execute` còn bắt buộc `confirmed=true`, đọc lại state và
+  fail closed nếu selection/supply đổi; replay, cross-shop, expiry và cancellation không gọi WB.
+- Delivery preview cho biết label đã in và mọi KIZ bắt buộc cục bộ đã attach hay chưa. Preview bị
+  block không được execute. Legacy Java workflow vẫn recheck print history, KIZ state và metadata
+  IMEI/UIN/SGTIN/GTIN hiện tại từ WB ngay trước API deliver.
+- Mutation dùng capability riêng `packing:write`, giữ shared shop-activity lease, serialize packing
+  writes, trả structured retryable error kind không chứa token/path/exception rồi reload board.
+  Automated test chỉ inject runner; create/add/deliver thật là opt-in và cần shop/supply/order dùng
+  thử đã được người dùng phê duyệt rõ ràng.
+
 ### GTIN mapping contract
 
 - `kizMapping.catalog` chỉ đọc local SQLite và yêu cầu shop hiện hữu, query tối đa 120 ký tự,

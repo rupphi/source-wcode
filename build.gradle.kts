@@ -188,6 +188,8 @@ val wcodePackageImage = tasks.register<Exec>("wcodePackageImage") {
     val packageInput = layout.buildDirectory.dir("jdesk/package-input")
     val runtimeImage = layout.buildDirectory.dir("jdesk/runtime-image")
     val recoveryLauncher = layout.projectDirectory.file("packaging/WCode-Recovery.properties")
+    inputs.dir(packageInput).withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.dir(runtimeImage).withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.file(recoveryLauncher)
     outputs.dir(packageRoot)
     doFirst {
@@ -286,6 +288,16 @@ val wcodePackageVerify = tasks.register("wcodePackageVerify") {
         val recovery = root.resolve(recoveryRelative)
         if (Files.isSymbolicLink(recovery) || !Files.isRegularFile(recovery)) {
             throw GradleException("The packaged offline recovery launcher is missing or unsafe.")
+        }
+        val sourceJar = tasks.named<Jar>("jar").get().archiveFile.get().asFile.toPath()
+        val packagedMainJars = Files.walk(root).use { files ->
+            files.filter { it.fileName.toString() == sourceJar.fileName.toString() }
+                .filter { !Files.isSymbolicLink(it) && Files.isRegularFile(it) }
+                .toList()
+        }
+        val packagedMainJar = packagedMainJars.singleOrNull()
+        if (packagedMainJar == null || Files.mismatch(sourceJar, packagedMainJar) != -1L) {
+            throw GradleException("The packaged main JAR is stale or missing.")
         }
         val launcherConfigs = Files.walk(root).use { files ->
             files.filter { it.fileName.toString() == "WCode.cfg" }

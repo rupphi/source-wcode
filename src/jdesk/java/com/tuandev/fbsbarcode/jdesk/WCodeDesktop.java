@@ -16,6 +16,8 @@ import com.tuandev.fbsbarcode.jdesk.order.ExcelOrderImportCommandService;
 import com.tuandev.fbsbarcode.jdesk.order.ExcelOrderImportCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.packing.PackingCommandService;
 import com.tuandev.fbsbarcode.jdesk.packing.PackingCommandServiceCommands;
+import com.tuandev.fbsbarcode.jdesk.packing.PackingMutationCommandService;
+import com.tuandev.fbsbarcode.jdesk.packing.PackingMutationCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.preferences.PreferencesCommandService;
 import com.tuandev.fbsbarcode.jdesk.preferences.PreferencesCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.print.PrintCommandService;
@@ -110,6 +112,8 @@ public final class WCodeDesktop {
                     shopActivity,
                     shopId -> KizAttachmentCoordinator.getInstance().hasActiveJobForShop(shopId));
             PackingCommandService packing = new PackingCommandService(orderImages);
+            PackingMutationCommandService packingMutations =
+                    new PackingMutationCommandService(shopActivity);
             ExcelOrderImportCommandService excelOrders = new ExcelOrderImportCommandService(orderImages);
             PrintCommandService printing = new PrintCommandService();
             PrintHistoryCommandService printHistory = new PrintHistoryCommandService();
@@ -154,6 +158,10 @@ public final class WCodeDesktop {
                     updateCommands,
                     "updates.install",
                     Duration.ofMinutes(2));
+            var packingMutationCommands = CommandTimeoutOverrides.withTimeout(
+                    PackingMutationCommandServiceCommands.create(packingMutations),
+                    "packing.execute",
+                    Duration.ofMinutes(2));
             SupplyDetailCommandService supplyDetails = new SupplyDetailCommandService(orderImages);
             JDeskApplication.Builder application = JDeskApplication.builder()
                     .id("com.tuandev.wcode")
@@ -163,6 +171,7 @@ public final class WCodeDesktop {
                             WildberriesCommandServiceCommands.create(wildberries),
                             SupplyCommandServiceCommands.create(supplies),
                             PackingCommandServiceCommands.create(packing),
+                            packingMutationCommands,
                             FboCatalogCommandServiceCommands.create(fboCatalog),
                             fboPrintCommands,
                             KizMappingCommandServiceCommands.create(kizMappings),

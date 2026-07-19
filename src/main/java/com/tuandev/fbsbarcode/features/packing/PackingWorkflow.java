@@ -121,10 +121,11 @@ public class PackingWorkflow {
     }
 
     public void deliverSupply(Shop shop, WbSupplySummary supply) throws IOException {
-        if (!printHistoryService.hasSuccessfulJobForSupply(shop.getId(), supply.getSupplyId())) {
+        DeliveryPreflight preflight = inspectDelivery(shop.getId(), supply);
+        if (!preflight.labelsPrinted()) {
             throw new IllegalStateException("Сначала распечатайте этикетки для поставки.");
         }
-        if (orderRepository.hasRequiredMetaWithoutPrintedKiz(shop.getId(), supply.getSupplyId())) {
+        if (!preflight.kizComplete()) {
             throw new IllegalStateException("В поставке есть товары с обязательной маркировкой без KIZ.");
         }
         validateMetadataBeforeDelivery(shop, supply.getSupplyId());
@@ -156,10 +157,21 @@ public class PackingWorkflow {
     }
 
     public boolean canDeliver(int shopId, WbSupplySummary supply) {
-        return supply != null
-                && !supply.isDone()
-                && supply.getItemCount() > 0
+        return inspectDelivery(shopId, supply).ready();
+    }
+
+    public DeliveryPreflight inspectDelivery(int shopId, WbSupplySummary supply) {
+        boolean supplyReady = supply != null && !supply.isDone() && supply.getItemCount() > 0;
+        boolean labelsPrinted = supplyReady
                 && printHistoryService.hasSuccessfulJobForSupply(shopId, supply.getSupplyId());
+        boolean kizComplete = supplyReady
+                && !orderRepository.hasRequiredMetaWithoutPrintedKiz(shopId, supply.getSupplyId());
+        List<String> blockers = new ArrayList<>();
+        if (!supplyReady) blockers.add("supply_not_ready");
+        if (supplyReady && !labelsPrinted) blockers.add("labels_missing");
+        if (supplyReady && !kizComplete) blockers.add("kiz_missing");
+        return new DeliveryPreflight(
+                blockers.isEmpty(), labelsPrinted, kizComplete, List.copyOf(blockers));
     }
 
     private void syncMissingProductsForNewOrders(Shop shop) throws IOException {
@@ -243,5 +255,12 @@ public class PackingWorkflow {
     }
 
     public record PackingBoard(List<Order> newOrders, List<WbSupplySummary> preparationSupplies, List<WbSupplySummary> dispatchSupplies) {
+    }
+
+    public record DeliveryPreflight(
+            boolean ready, boolean labelsPrinted, boolean kizComplete, List<String> blockers) {
+        public DeliveryPreflight {
+            blockers = List.copyOf(blockers);
+        }
     }
 }
