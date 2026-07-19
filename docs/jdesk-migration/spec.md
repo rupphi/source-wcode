@@ -542,11 +542,11 @@ Không snapshot toàn trang để thay thế behavior assertion. Test bug phải
   máy Windows, zero critical/high hoặc data/credential/secret incident; rollback window chỉ đóng
   sau 30 ngày ổn định ở 100% và rehearsal cuối.
 - [ ] UI không có console error, dùng bàn phím được, responsive và đạt WCAG 2.1 AA.
-- [ ] Mọi danh sách dài dùng bounded infinite scroll + fallback, không còn chuyển trang thay thế
+- [x] Mọi danh sách dài dùng bounded infinite scroll + fallback, không còn chuyển trang thay thế
   nội dung; append giữ selection/scroll và không kích hoạt mutation.
-- [ ] Shell/màn hình nghiệp vụ dùng compact purple tokens và primitive modal/toast/loading/empty
+- [x] Shell/màn hình nghiệp vụ dùng compact purple tokens và primitive modal/toast/loading/empty
   thống nhất; shell và copy thường ngày không lộ thuật ngữ triển khai.
-- [ ] JS/CSS budget và trace tải thêm đạt ngưỡng trong UX contract ở cả light/dark; không có overflow
+- [x] JS/CSS budget và trace tải thêm đạt ngưỡng trong UX contract ở cả light/dark; không có overflow
   ngoài vùng dữ liệu chủ ý tại 320/768/1024/1440 px.
 - [ ] Không critical/high vulnerability reachable; lockfile/SBOM/checksums được tạo.
 - [ ] README, migration guide, ADR, parity matrix, operations/runbook và release notes đầy đủ.

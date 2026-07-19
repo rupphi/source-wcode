@@ -463,8 +463,9 @@ checkpoint after every 2–3 journeys runs the full frontend suite.
       immediately for shop/query/status and collapses secondary columns without horizontal overflow.
 - [x] Supply detail/orders and its local GTIN inventory: append/reset/refresh are bounded and paid KIZ
       purchase remains an explicit confirmed action outside scroll behavior.
-- [ ] Packing, Excel import, print history, GTIN mapping workspace, FBO catalog and Znack
-      products/purchases/logs.
+- [x] Packing, Excel import, print history, GTIN mapping workspace, FBO catalog and Znack
+      products/purchases/logs append bounded batches, preserve selection where applicable and expose
+      the same keyboard fallback without restoring previous/next navigation.
 
 ### Task 8.5.6: Remove technical copy and consolidate action density
 
@@ -479,11 +480,11 @@ keyboard/accessibility pass in all four locales.
 
 ### Checkpoint UX
 
-- [ ] All long-list journeys use bounded infinite scroll with keyboard fallback.
-- [ ] Modal/toast/loading/empty/error behavior is consistent and accessible.
-- [ ] Purple compact UI passes screenshots and keyboard checks at all target widths/themes/locales.
-- [ ] No implementation terminology appears in normal user journeys.
-- [ ] JS/CSS/runtime budgets pass; frontend lint/typecheck/test/build and audit are green.
+- [x] All long-list journeys use bounded infinite scroll with keyboard fallback.
+- [x] Modal/toast/loading/empty/error behavior is consistent and accessible.
+- [x] Purple compact UI passes screenshots and keyboard checks at all target widths/themes/locales.
+- [x] No implementation terminology appears in normal user journeys.
+- [x] JS/CSS/runtime budgets pass; frontend lint/typecheck/test/build and audit are green.
 
 ## Phase 9: Production hardening and cutover
 
