@@ -104,6 +104,26 @@ describe("PackingView mutations", () => {
     await waitFor(() => expect(execute).toHaveBeenCalledWith(expect.objectContaining({ confirmed: true })));
   });
 
+  it("appends packing batches while preserving selected orders", async () => {
+    const user = userEvent.setup();
+    board.mockImplementation(async (request) => ({
+      ...response(request),
+      totalItems: 40,
+      totalPages: 2,
+      orders: request.tab === "new" ? [order(request.page === 1 ? "101" : "201", false)] : [],
+    }));
+    render(<PackingView shopId={7} />);
+
+    await user.click(await screen.findByRole("checkbox", { name: "Выбрать заказ #101" }));
+    expect(screen.queryByRole("button", { name: "Следующая страница очереди" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Показать ещё", exact: true }));
+
+    expect(await screen.findByRole("checkbox", { name: "Выбрать заказ #201" })).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "Выбрать заказ #101" })).toBeChecked();
+    expect(screen.getByText(/Выбрано:/).closest("p")).toHaveTextContent("1");
+    expect(board).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, pageSize: 20 }));
+  });
+
   it("shows print and KIZ blockers without exposing a deliver action", async () => {
     const user = userEvent.setup();
     prepareDeliver.mockResolvedValue(preview({

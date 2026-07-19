@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  ArrowUpRight,
   Boxes,
   CalendarDays,
   CheckCircle2,
@@ -9,8 +10,11 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
+  Truck,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useMemo, useRef, useState, type FormEvent } from "react";
+import { InfiniteLoadTrigger } from "../../components/InfiniteLoadTrigger";
+import { useBoundedInfinitePages } from "../../components/useBoundedInfinitePages";
 import { commands } from "../../generated/commands";
 import type {
   MutationPreview,
@@ -20,17 +24,15 @@ import type {
   SupplyItem,
 } from "../../generated/types";
 import { interpolate } from "../../i18n";
-import { Pagination } from "../supplies/SupplyTable";
 import { SupplyDetailView } from "../supplies/SupplyDetailView";
 import { PackingMutationDialog, type MutationDialog } from "./PackingMutationDialog";
 import { defaultPackingCopy, type PackingCopy } from "./packingI18n";
 import { isValidMutationPreview, isValidMutationReceipt } from "./packingMutationContract";
 
 type PackingTab = "new" | "preparation" | "dispatch";
-type PackingState =
-  | { status: "loading"; requestKey: string }
-  | { status: "error"; requestKey: string }
-  | { status: "ready"; requestKey: string; data: PackingBoardResponse };
+type PackingRow =
+  | { kind: "order"; item: PackingOrderItem }
+  | { kind: "supply"; item: PackingSupplyItem };
 type MutationNotice = { action: "create" | "add" | "deliver"; supplyId: string };
 
 const PAGE_SIZE = 20;
@@ -50,9 +52,7 @@ export function PackingView({
   const [draftQuery, setDraftQuery] = useState("");
   const [query, setQuery] = useState("");
   const [categories, setCategories] = useState<string[]>([]);
-  const [page, setPage] = useState(1);
   const [retryKey, setRetryKey] = useState(0);
-  const [state, setState] = useState<PackingState>({ status: "loading", requestKey: "" });
   const [selectedSupply, setSelectedSupply] = useState<SupplyItem | null>(null);
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [mutationDialog, setMutationDialog] = useState<MutationDialog | null>(null);
@@ -62,71 +62,61 @@ export function PackingView({
   const [mutationBusy, setMutationBusy] = useState(false);
   const [mutationError, setMutationError] = useState(false);
   const [mutationNotice, setMutationNotice] = useState<MutationNotice | null>(null);
-  const requestSequence = useRef(0);
   const targetRequestSequence = useRef(0);
-  const requestKey = JSON.stringify([shopId, tab, query, categories, page, retryKey]);
   const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   const moneyFormat = useMemo(() => new Intl.NumberFormat(locale, { style: "currency", currency: "RUB", maximumFractionDigits: 2 }), [locale]);
   const dateTimeFormat = useMemo(() => new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }), [locale]);
 
-  useEffect(() => {
-    const requestId = ++requestSequence.current;
-    let active = true;
-    void commands.packing.board({
+  const loadPage = useCallback(async (page: number) => {
+    const response = await commands.packing.board({
       shopId,
       tab,
       query,
       categories,
       page,
       pageSize: PAGE_SIZE,
-    }).then(
-      (response) => {
-        if (!active || requestSequence.current !== requestId) return;
-        if (!matchesRequest(response, shopId, tab, query, categories, page)) {
-          setState({ status: "error", requestKey });
-          return;
-        }
-        setState({ status: "ready", requestKey, data: response });
-      },
-      () => {
-        if (active && requestSequence.current === requestId) {
-          setState({ status: "error", requestKey });
-        }
-      },
-    );
-    return () => {
-      active = false;
+    });
+    if (!matchesRequest(response, shopId, tab, query, categories, page)) {
+      throw new Error("Unexpected packing board response");
+    }
+    const items: PackingRow[] = tab === "new"
+      ? response.orders.map((item) => ({ kind: "order", item }))
+      : response.supplies.map((item) => ({ kind: "supply", item }));
+    return {
+      items,
+      hasMore: page < response.totalPages,
+      summary: response,
     };
-  }, [categories, page, query, requestKey, shopId, tab]);
-
-  const visibleState: PackingState = state.requestKey === requestKey
-    ? state
-    : { status: "loading", requestKey };
-  const data = visibleState.status === "ready" ? visibleState.data : null;
+  }, [categories, query, shopId, tab]);
+  const pages = useBoundedInfinitePages<PackingRow, PackingBoardResponse>({
+    resetKey: JSON.stringify([shopId, tab, query, categories, retryKey]),
+    loadPage,
+    getId: packingRowId,
+  });
+  const data = pages.summary ?? null;
+  const orderItems = pages.items.flatMap((row) => row.kind === "order" ? [row.item] : []);
+  const supplyItems = pages.items.flatMap((row) => row.kind === "supply" ? [row.item] : []);
 
   const selectTab = (nextTab: PackingTab) => {
     setSelectedSupply(null);
     setTab(nextTab);
     setCategories([]);
-    setPage(1);
     if (nextTab !== "new") setSelectedOrderIds([]);
   };
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const normalized = draftQuery.trim();
-    if (normalized === query && page === 1) {
+    if (normalized === query) {
       setRetryKey((value) => value + 1);
     }
     setQuery(normalized);
-    setPage(1);
   };
 
   const toggleCategory = (category: string) => {
     setCategories((current) => current.includes(category)
       ? current.filter((value) => value !== category)
       : [...current, category]);
-    setPage(1);
   };
 
   const toggleOrder = (orderId: string) => {
@@ -258,9 +248,9 @@ export function PackingView({
   }
 
   return (
-    <div className="grid gap-5">
-      <section className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
-        <div className="flex flex-col gap-4 border-b border-[var(--border-subtle)] bg-[linear-gradient(120deg,var(--surface-elevated),var(--accent-soft))] p-5 lg:flex-row lg:items-center lg:justify-between">
+    <div className="grid gap-3">
+      <section className="overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
+        <div className="flex flex-col gap-3 border-b border-[var(--border-subtle)] bg-[var(--accent-soft)] p-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-start gap-3">
             <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[var(--sidebar)] text-white">
               <Boxes aria-hidden="true" size={20} />
@@ -332,13 +322,13 @@ export function PackingView({
         </section>
       )}
 
-      <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)] md:p-5">
-        <form className="flex flex-col gap-3 sm:flex-row" onSubmit={submitSearch} role="search">
+      <section className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-3 shadow-[var(--shadow-panel)] md:p-4">
+        <form className="flex flex-col gap-2 sm:flex-row" onSubmit={submitSearch} role="search">
           <label className="relative min-w-0 flex-1">
             <span className="sr-only">{copy.search.label}</span>
             <Search className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden="true" size={18} />
             <input
-              className="h-11 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] pr-4 pl-10 text-sm shadow-[var(--shadow-control)] outline-none transition placeholder:text-[var(--text-muted)] hover:border-[var(--accent)] focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]"
+              className="h-9 w-full rounded-lg border border-[var(--border-strong)] bg-[var(--surface-elevated)] pr-3 pl-10 text-xs shadow-[var(--shadow-control)] outline-none transition placeholder:text-[var(--text-muted)] hover:border-[var(--accent)] focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]"
               type="search"
               value={draftQuery}
               maxLength={120}
@@ -347,7 +337,7 @@ export function PackingView({
               aria-label={copy.search.label}
             />
           </label>
-          <button className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--sidebar)] px-5 text-sm font-semibold text-white transition hover:bg-[#1c3329]" type="submit">
+          <button className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-[var(--button-primary)] px-4 text-xs font-semibold text-white transition hover:brightness-110" type="submit">
             <Search aria-hidden="true" size={16} />
             {copy.search.submit}
           </button>
@@ -374,17 +364,17 @@ export function PackingView({
         )}
       </section>
 
-      {visibleState.status === "loading" ? (
+      {pages.status === "loading" && pages.items.length === 0 ? (
         <PackingLoading copy={copy} />
-      ) : visibleState.status === "error" ? (
-        <PackingError copy={copy} onRetry={() => setRetryKey((value) => value + 1)} />
-      ) : visibleState.data.totalItems === 0 ? (
+      ) : pages.status === "error" && pages.items.length === 0 ? (
+        <PackingError copy={copy} onRetry={pages.retry} />
+      ) : pages.items.length === 0 ? (
         <PackingEmpty tab={tab} filtered={query.length > 0 || categories.length > 0} copy={copy} />
       ) : tab === "new" ? (
-        <OrderGrid items={visibleState.data.orders} selected={selectedOrderIds} onToggle={toggleOrder} copy={copy} moneyFormat={moneyFormat} />
+        <OrderGrid items={orderItems} selected={selectedOrderIds} onToggle={toggleOrder} copy={copy} moneyFormat={moneyFormat} />
       ) : (
         <PackingSupplyTable
-          items={visibleState.data.supplies}
+          items={supplyItems}
           onOpen={(item) => setSelectedSupply(item)}
           onDeliver={prepareDeliver}
           copy={copy}
@@ -393,17 +383,14 @@ export function PackingView({
         />
       )}
 
-      {visibleState.status === "ready" && visibleState.data.totalItems > 0 && (
-        <Pagination
-          page={visibleState.data.page}
-          totalPages={visibleState.data.totalPages}
-          totalItems={visibleState.data.totalItems}
-          onPage={setPage}
-          ariaLabel={copy.pagination.label}
-          previousLabel={copy.pagination.previous}
-          nextLabel={copy.pagination.next}
-          copy={copy.supply}
-          locale={locale}
+      {pages.items.length > 0 && (
+        <InfiniteLoadTrigger
+          status={pages.status}
+          hasMore={pages.hasMore}
+          copy={{ loading: copy.pagination.loading, loadMore: copy.pagination.loadMore, loadError: copy.pagination.loadError, retry: copy.error.retry, end: copy.pagination.end }}
+          announcement={pages.addedCount > 0 ? interpolate(copy.pagination.added, { count: numberFormat.format(pages.addedCount) }) : ""}
+          onLoadMore={pages.loadMore}
+          onRetry={pages.retry}
         />
       )}
 
@@ -429,6 +416,10 @@ export function PackingView({
       )}
     </div>
   );
+}
+
+function packingRowId(row: PackingRow) {
+  return `${row.kind}:${row.kind === "order" ? row.item.orderId : row.item.id}`;
 }
 
 function TabButton({ active, icon: Icon, label, count, onClick, numberFormat }: {
@@ -512,37 +503,37 @@ function PackingSupplyTable({ items, onOpen, onDeliver, copy, numberFormat, date
   dateTimeFormat: Intl.DateTimeFormat;
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
+    <section className="overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[46rem] border-collapse text-left">
+        <table className="w-full table-fixed border-collapse text-left">
           <thead className="border-b border-[var(--border-subtle)] bg-[var(--surface-muted)]/70">
             <tr className="text-xs font-semibold tracking-[0.04em] text-[var(--text-secondary)] uppercase">
-              <th className="px-5 py-3.5" scope="col">{copy.supplies.columns.supply}</th>
-              <th className="px-4 py-3.5" scope="col">{copy.supplies.columns.mode}</th>
-              <th className="px-4 py-3.5" scope="col">{copy.supplies.columns.created}</th>
-              <th className="px-4 py-3.5 text-right" scope="col">{copy.supplies.columns.orders}</th>
-              <th className="px-5 py-3.5 text-right" scope="col">{copy.supplies.columns.action}</th>
+              <th className="px-3 py-2.5" scope="col">{copy.supplies.columns.supply}</th>
+              <th className="hidden w-20 px-3 py-2.5 lg:table-cell" scope="col">{copy.supplies.columns.mode}</th>
+              <th className="hidden w-40 px-3 py-2.5 xl:table-cell" scope="col">{copy.supplies.columns.created}</th>
+              <th className="hidden w-20 px-3 py-2.5 text-right sm:table-cell" scope="col">{copy.supplies.columns.orders}</th>
+              <th className="w-32 px-2 py-2.5 text-right" scope="col">{copy.supplies.columns.action}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border-subtle)]">
             {items.map((item) => (
               <tr className="transition hover:bg-[var(--surface-muted)]/55" key={item.id}>
-                <td className="px-5 py-4">
+                <td className="min-w-0 px-3 py-3">
                   <p className="max-w-md truncate text-sm font-semibold">{item.name}</p>
                   <p className="mt-1 font-mono text-xs text-[var(--text-muted)]">{item.id}</p>
                 </td>
-                <td className="px-4 py-4 text-sm text-[var(--text-secondary)]">{item.mode === "b2b" ? "B2B" : item.mode === "consumer" ? "B2C" : copy.supplies.modeUnknown}</td>
-                <td className="px-4 py-4 text-sm text-[var(--text-secondary)]">
+                <td className="hidden px-3 py-3 text-xs text-[var(--text-secondary)] lg:table-cell">{item.mode === "b2b" ? "B2B" : item.mode === "consumer" ? "B2C" : copy.supplies.modeUnknown}</td>
+                <td className="hidden px-3 py-3 text-xs text-[var(--text-secondary)] xl:table-cell">
                   <span className="inline-flex items-center gap-2 whitespace-nowrap"><CalendarDays aria-hidden="true" size={15} />{formatCreatedAt(item.createdAt, dateTimeFormat)}</span>
                 </td>
-                <td className="px-4 py-4 text-right text-sm font-semibold tabular-nums">{numberFormat.format(item.itemCount)}</td>
-                <td className="px-5 py-4 text-right">
-                  <div className="flex justify-end gap-2">
-                    <button className="rounded-lg border border-[var(--border-strong)] px-3 py-2 text-xs font-semibold" type="button" aria-label={interpolate(copy.supplies.prepareDelivery, { name: item.name })} onClick={() => onDeliver(item)}>
-                      {copy.supplies.deliver}
+                <td className="hidden px-3 py-3 text-right text-xs font-semibold tabular-nums sm:table-cell">{numberFormat.format(item.itemCount)}</td>
+                <td className="px-2 py-3 text-right">
+                  <div className="flex justify-end gap-1.5">
+                    <button className="inline-flex h-9 items-center gap-1 rounded-lg border border-[var(--border-strong)] px-2 text-xs font-semibold" type="button" aria-label={interpolate(copy.supplies.prepareDelivery, { name: item.name })} onClick={() => onDeliver(item)}>
+                      <Truck aria-hidden="true" size={14} />{copy.supplies.deliver}
                     </button>
-                    <button className="rounded-lg bg-[var(--accent-soft)] px-3 py-2 text-xs font-semibold text-[var(--accent-strong)]" type="button" onClick={() => onOpen(item)}>
-                      {copy.supplies.open}
+                    <button className="icon-button" aria-label={interpolate(copy.supplies.openLabel, { name: item.name })} title={copy.supplies.open} type="button" onClick={() => onOpen(item)}>
+                      <ArrowUpRight aria-hidden="true" size={16} />
                     </button>
                   </div>
                 </td>
