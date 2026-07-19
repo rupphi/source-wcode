@@ -40,6 +40,8 @@ import com.tuandev.fbsbarcode.jdesk.template.TemplateDesignerCommandService;
 import com.tuandev.fbsbarcode.jdesk.template.TemplateDesignerCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.template.TemplateDesignerMutationCommandService;
 import com.tuandev.fbsbarcode.jdesk.template.TemplateDesignerMutationCommandServiceCommands;
+import com.tuandev.fbsbarcode.jdesk.update.UpdateCommandService;
+import com.tuandev.fbsbarcode.jdesk.update.UpdateCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.wildberries.WildberriesCommandService;
 import com.tuandev.fbsbarcode.jdesk.wildberries.WildberriesCommandServiceCommands;
 import com.tuandev.fbsbarcode.jdesk.workspace.JDeskCommands;
@@ -61,6 +63,7 @@ import dev.jdesk.api.WindowConfig;
 import dev.jdesk.runtime.config.Capabilities;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicReference;
 
 public final class WCodeDesktop {
     private WCodeDesktop() {
@@ -68,9 +71,10 @@ public final class WCodeDesktop {
 
     public static void main(String[] args) {
         int exitCode = 1;
-        try (JDeskStartup.Session ignored =
+        try (JDeskStartup.Session session =
                 JDeskStartup.prepare(AppPaths.appDataDir(), BuildConfig.getAppVersion())) {
             boolean smokeTest = Arrays.asList(args).contains("--jdesk-smoke");
+            AtomicReference<ApplicationHandle> runningApplication = new AtomicReference<>();
             WorkspaceCommandService workspace = new WorkspaceCommandService();
             ShopActivityGate shopActivity = new ShopActivityGate();
             WildberriesCommandService wildberries = new WildberriesCommandService(shopActivity);
@@ -81,6 +85,17 @@ public final class WCodeDesktop {
             KizMappingCommandService kizMappings = new KizMappingCommandService();
             LicenseCommandService license = new LicenseCommandService();
             DiagnosticsCommandService diagnostics = new DiagnosticsCommandService();
+            UpdateCommandService updates = UpdateCommandService.createProduction(
+                    BuildConfig.getAppVersion(),
+                    AppPaths.appDataDir().resolve("update-staging"),
+                    BuildConfig.getUpdateManifestPublicKey(),
+                    BuildConfig.getUpdateSigningPublisher(),
+                    session::createSignedUpdateSnapshot,
+                    () -> {
+                        ApplicationHandle handle = runningApplication.get();
+                        if (handle == null) throw new IllegalStateException("Application is not ready");
+                        handle.requestStop();
+                    });
             PreferencesCommandService preferences = new PreferencesCommandService();
             ZnackCommandService znack = new ZnackCommandService();
             ZnackAutomationCommandService znackAutomation = new ZnackAutomationCommandService(shopActivity);
@@ -126,6 +141,14 @@ public final class WCodeDesktop {
                     znackPurchaseCommands,
                     "znack.retryIntroduction",
                     Duration.ofMinutes(10));
+            var updateCommands = CommandTimeoutOverrides.withTimeout(
+                    UpdateCommandServiceCommands.create(updates),
+                    "updates.check",
+                    Duration.ofSeconds(45));
+            updateCommands = CommandTimeoutOverrides.withTimeout(
+                    updateCommands,
+                    "updates.install",
+                    Duration.ofMinutes(2));
             SupplyDetailCommandService supplyDetails = new SupplyDetailCommandService(orderImages);
             JDeskApplication.Builder application = JDeskApplication.builder()
                     .id("com.tuandev.wcode")
@@ -140,6 +163,7 @@ public final class WCodeDesktop {
                             KizMappingCommandServiceCommands.create(kizMappings),
                             LicenseCommandServiceCommands.create(license),
                             DiagnosticsCommandServiceCommands.create(diagnostics),
+                            updateCommands,
                             PreferencesCommandServiceCommands.create(preferences),
                             ZnackCommandServiceCommands.create(znack),
                             znackAutomationCommands,
@@ -167,6 +191,7 @@ public final class WCodeDesktop {
                     .lifecycle(new LifecycleListener() {
                         @Override
                         public void onReady(ApplicationHandle handle) {
+                            runningApplication.set(handle);
                             if (smokeTest) {
                                 handle.requestStop();
                             }

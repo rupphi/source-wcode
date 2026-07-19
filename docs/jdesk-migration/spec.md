@@ -77,6 +77,38 @@ luồng hiện tại trong UI mới, nhanh, rõ trạng thái, dùng được b�
   tùy ý. Test phải dùng canary secret/path/shop name trong SQLite/system properties và chứng minh
   chúng không xuất hiện trong DTO, ZIP manifest, DOM, console hoặc error.
 
+### Signed update boundary
+
+- Update trust root là Ed25519 key riêng, nhúng trong app và tách hoàn toàn license key. GitHub
+  `releases/latest` chỉ giúp tìm asset; app chỉ tin `update-manifest.json` có format
+  `wcode-update-envelope-v1` sau khi verify
+  signature trên payload bytes trước khi parse. Payload tối đa 64 KiB, schema/version/publishedAt/
+  notes/asset đều bounded và chỉ nhận HTTPS asset đúng release repo/tag/version.
+- Signed asset descriptor cố định `windows-x64` + MSI, gồm basename, byte size 1–512 MiB, SHA-256
+  lowercase và download URL nội bộ Java. `updates.check/status/startDownload/cancelDownload/install`
+  không trả URL, path, hash, signature, raw manifest/HTTP body hay exception qua bridge; React chỉ
+  render version/date/notes bounded, state/progress và safe error kind allowlist.
+- Download chỉ bắt đầu sau hành động explicit, ghi file owner-only trong app temp qua sibling part,
+  giới hạn Content-Length và streamed bytes theo signed size, verify SHA-256 constant-time rồi mới
+  atomic publish. Cancel/interruption xóa part/artifact và không tạo install-ready session. Một job
+  mỗi process, UUID opaque, progress bounded; renderer phải chờ backend xác nhận terminal cleanup
+  trước khi báo cancel/cho đóng dialog, và job verified không được download lặp để tích tụ MSI.
+  Restart không tự chạy installer còn sót.
+- Install là xác nhận explicit thứ hai và chỉ có trên Windows x64. Java re-resolve session/file,
+  kiểm tra lại size/hash, yêu cầu Authenticode `Valid` với publisher allowlist, tạo fresh verified
+  local-data snapshot, rồi mới launch helper qua argv cố định và request app stop. Helper chờ đúng
+  PID WCode thoát (deadline hữu hạn) trước khi chạy MSI. MSI dùng một
+  `--win-upgrade-uuid` ổn định; installer fail/cancel phải relaunch bản hiện tại, còn startup/data
+  recovery dùng snapshot đã verify. Không shell-concatenate giá trị từ manifest/WebView.
+- Release workflow tạo SHA-256 + canonical manifest, ký bằng dedicated Actions environment secret,
+  Authenticode-sign/time-stamp MSI và verify cả hai chữ ký trước upload. Thiếu Ed25519 secret,
+  code-signing certificate, publisher hoặc stable upgrade UUID làm release fail closed. Key
+  provisioning và Windows install/rollback rehearsal là release gate; không dùng development key
+  hay unsigned fallback.
+- `skipVersion` vẫn dùng shared `ConfigService` để JavaFX rollback hiểu cùng lựa chọn; mandatory
+  update không được skip nhưng cũng không tự download/install. Automatic check có thể chạy sau
+  startup, mọi network/download/install failure đều giữ app và local data đang chạy.
+
 ### Template designer contract
 
 - Designer phục vụ hai kho template tách biệt `fbs` và `fbo`, cùng khổ cố định 58×40 mm.

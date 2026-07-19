@@ -40,6 +40,12 @@ class JDeskStartupTest {
             try (JDeskStartup.Session ignored = JDeskStartup.prepare(appData, "1.1.7")) {
                 assertEquals(1, snapshotCount(appData));
             }
+
+            try (JDeskStartup.Session session = JDeskStartup.prepare(appData, "1.1.7")) {
+                session.createSignedUpdateSnapshot();
+                assertEquals(2, snapshotCount(appData));
+                assertTrue(hasSnapshotReason(appData, "signed-update-install"));
+            }
         } finally {
             if (previousAppData == null) {
                 System.clearProperty("wcode.appdata.dir");
@@ -86,6 +92,17 @@ class JDeskStartupTest {
         try (var entries = Files.list(snapshots)) {
             return entries.filter(Files::isDirectory).count();
         }
+    }
+
+    private static boolean hasSnapshotReason(Path appData, String reason) throws Exception {
+        try (var paths = Files.walk(appData.resolve("snapshots"))) {
+            for (Path path : paths.filter(candidate ->
+                            candidate.getFileName().toString().equals("snapshot.properties"))
+                    .toList()) {
+                if (Files.readString(path).contains("reason=" + reason)) return true;
+            }
+        }
+        return false;
     }
 
     private static boolean hasTable(Path database, String name) throws Exception {

@@ -42,7 +42,7 @@ public final class JDeskStartup {
             if (isReady(marker, appVersion)) {
                 Database.initDatabase();
                 initializeCredentialSchema();
-                return new Session(ownership);
+                return new Session(ownership, appVersion, normalizedDir);
             }
 
             Path database = normalizedDir.resolve("database.db");
@@ -57,7 +57,7 @@ public final class JDeskStartup {
             Database.initDatabase();
             initializeCredentialSchema();
             writeReadyMarker(marker, appVersion, snapshotChecksum);
-            return new Session(ownership);
+            return new Session(ownership, appVersion, normalizedDir);
         } catch (Exception exception) {
             ownership.close();
             throw exception;
@@ -113,9 +113,20 @@ public final class JDeskStartup {
 
     public static final class Session implements AutoCloseable {
         private final AppDataLock ownership;
+        private final String appVersion;
+        private final Path appDataDir;
 
-        private Session(AppDataLock ownership) {
+        private Session(AppDataLock ownership, String appVersion, Path appDataDir) {
             this.ownership = ownership;
+            this.appVersion = appVersion;
+            this.appDataDir = appDataDir;
+        }
+
+        public synchronized void createSignedUpdateSnapshot() throws Exception {
+            Path database = appDataDir.resolve("database.db");
+            int schemaVersion = readSchemaVersion(database);
+            new LocalDataSnapshotService().create(
+                    ownership, appVersion, schemaVersion, "signed-update-install");
         }
 
         @Override

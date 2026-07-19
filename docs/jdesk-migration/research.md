@@ -3,6 +3,18 @@
 Ngày đánh giá: 2026-07-18
 Phiên bản được kiểm chứng: jDesk `0.1.3`, React `19.2.x`, Tailwind CSS `4.x`
 
+Updater source checkpoint (2026-07-19): GitHub's official release response exposes asset size and
+`sha256:` digest, but WCode still uses its own signed manifest as the trust root. GitHub Actions
+secrets are injected explicitly and should use least privilege; missing secrets resolve empty, so
+the release workflow must test and fail rather than silently publish unsigned artifacts. Oracle
+JDK 25 documents `--win-upgrade-uuid` for Windows package upgrades and JCA `Signature` provides
+signature authentication/integrity; Microsoft documents Authenticode verification with the default
+authentication policy. Sources: https://docs.github.com/en/rest/releases/releases,
+https://docs.github.com/en/actions/concepts/security/secrets,
+https://docs.oracle.com/en/java/javase/25/docs/specs/man/jpackage.html,
+https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/security/Signature.html,
+https://learn.microsoft.com/en-us/windows/win32/seccrypto/using-signtool-to-verify-a-file-signature.
+
 ## Kết luận
 
 jDesk phù hợp để thay lớp JavaFX của WCode vì framework giữ Java 25 làm lõi ứng dụng,

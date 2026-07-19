@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "com.tuandev"
-version = "1.1.7"
+version = providers.gradleProperty("appVersion").orElse("1.1.7").get()
 
 java {
     toolchain {
@@ -104,6 +104,7 @@ sourceSets {
 
 jdesk {
     applicationId.set("com.tuandev.wcode")
+    applicationName.set("WCode")
     mainClass.set("com.tuandev.fbsbarcode.jdesk.WCodeDesktop")
     frontend {
         directory.set(layout.projectDirectory.dir("ui"))
@@ -119,8 +120,18 @@ application {
 }
 
 tasks.processResources {
+    val updateManifestPublicKey = providers.gradleProperty("updateManifestPublicKey")
+        .orElse(providers.environmentVariable("UPDATE_MANIFEST_PUBLIC_KEY"))
+        .orElse("")
+    val updateSigningPublisher = providers.gradleProperty("updateSigningPublisher")
+        .orElse(providers.environmentVariable("UPDATE_SIGNING_PUBLISHER"))
+        .orElse("")
     filesMatching("app.properties") {
-        filter { line -> line.replace("\${app.version}", project.version.toString()) }
+        filter { line ->
+            line.replace("\${app.version}", project.version.toString())
+                .replace("\${app.update.public-key}", updateManifestPublicKey.get())
+                .replace("\${app.update.publisher}", updateSigningPublisher.get())
+        }
     }
 }
 

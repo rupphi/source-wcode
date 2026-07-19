@@ -4,6 +4,7 @@ import { commands } from "../../generated/commands";
 import type { ActionResponse, StatusResponse } from "../../generated/types";
 import { getCopy, interpolate, isLanguage, isTheme } from "../../i18n";
 import type { AppCopy, Language, ThemeMode } from "../../i18n";
+import { UpdatePanel } from "../update/UpdatePanel";
 
 const KEY = /^WC-(?:[A-Z0-9]{5}-){3}[A-Z0-9]{5}$/;
 const STATUSES = new Set([
@@ -104,6 +105,7 @@ export function LicenseSettingsDialog({
   const [confirmDeactivate, setConfirmDeactivate] = useState(false);
   const [preferenceBusy, setPreferenceBusy] = useState(false);
   const [preferenceError, setPreferenceError] = useState("");
+  const [updateBusy, setUpdateBusy] = useState(false);
   const requestRef = useRef(0);
 
   const loadStatus = useCallback(async () => {
@@ -137,7 +139,7 @@ export function LicenseSettingsDialog({
   useEffect(() => {
     if (!open) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || busy || preferenceBusy) return;
+      if (event.key !== "Escape" || busy || preferenceBusy || updateBusy) return;
       if (confirmDeactivate) {
         setConfirmDeactivate(false);
       } else {
@@ -146,7 +148,7 @@ export function LicenseSettingsDialog({
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [busy, confirmDeactivate, onClose, open, preferenceBusy]);
+  }, [busy, confirmDeactivate, onClose, open, preferenceBusy, updateBusy]);
 
   if (!open) return null;
   const data = state.status === "ready" ? state.data : null;
@@ -262,7 +264,7 @@ export function LicenseSettingsDialog({
             className="icon-button"
             type="button"
             aria-label={copy.settings.close}
-            disabled={busy || preferenceBusy}
+            disabled={busy || preferenceBusy || updateBusy}
             onClick={onClose}
           >
             <X aria-hidden="true" size={19} />
@@ -321,6 +323,7 @@ export function LicenseSettingsDialog({
             </div>
             {preferenceError ? <p className="notice-error mt-4" role="alert">{preferenceError}</p> : null}
           </section>
+          <UpdatePanel copy={copy.settings.update} onBusyChange={setUpdateBusy} />
           <section aria-labelledby="license-settings-title">
             <div className="flex items-start gap-3">
               <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent-strong)]">

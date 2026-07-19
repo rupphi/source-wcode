@@ -1,145 +1,210 @@
-name: Create Windows Release
+name: Create signed jDesk Windows release
 
 on:
   push:
-    tags: ['v*']
-
-env:
-  JAVA_VERSION: '25'
-  JAVA_DISTRIBUTION: oracle
-  APP_NAME: WCode
-  APP_VENDOR: TuanDev
-  # Mã nguồn ở repo này; bản phát hành (installer) đẩy sang repo release riêng.
-  RELEASE_REPO: rupphi/relatest-wcode
+    tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  JAVA_VERSION: "25"
+  JAVA_DISTRIBUTION: oracle
+  NODE_VERSION: "22"
+  APP_NAME: WCode
+  APP_VENDOR: TuanDev
+  RELEASE_REPO: rupphi/relatest-wcode
+  WINDOWS_UPGRADE_UUID: 23fbb124-e6d5-4f34-92f7-b0329d05f646
+  TIMESTAMP_URL: http://timestamp.digicert.com
 
 jobs:
-  build-windows:
+  build-sign-publish:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
 
-      - name: Set up JDK 25
-        uses: actions/setup-java@v5
+      - uses: actions/setup-java@v5
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: ${{ env.JAVA_DISTRIBUTION }}
 
-      - name: Extract version from tag
-        shell: bash
-        run: |
-          APP_VERSION=${GITHUB_REF#refs/tags/v}
-          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
-          echo "Building version $APP_VERSION"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
 
-      - name: Run tests and build
-        shell: bash
-        run: ./mvnw.cmd -B -Dapp.version="${{ env.APP_VERSION }}" -Dapp.vendor="${{ env.APP_VENDOR }}" clean verify
-
-      - name: Resolve built JAR
-        shell: bash
-        run: |
-          APP_JAR=$(find target -maxdepth 1 -type f -name 'FBSBarcode-*.jar' | head -n 1)
-          if [ -z "$APP_JAR" ]; then
-            echo "No built application JAR found in target/"
-            exit 1
-          fi
-          APP_JAR=$(basename "$APP_JAR")
-          echo "APP_JAR=$APP_JAR" >> "$GITHUB_ENV"
-
-      - name: Prepare jpackage input
-        shell: bash
-        run: |
-          rm -rf target/jpackage-input
-          mkdir -p target/jpackage-input/lib
-          cp "target/${APP_JAR}" "target/jpackage-input/${APP_JAR}"
-          cp -R target/lib/. target/jpackage-input/lib/
-
-      - name: Build EXE installer
-        shell: bash
-        run: |
-          mkdir -p out
-          jpackage --type exe \
-            --name "${{ env.APP_NAME }}" \
-            --input target/jpackage-input \
-            --main-jar "${{ env.APP_JAR }}" \
-            --main-class com.tuandev.fbsbarcode.Launcher \
-            --dest out \
-            --app-version "${{ env.APP_VERSION }}" \
-            --vendor "${{ env.APP_VENDOR }}" \
-            --icon src/main/resources/com/tuandev/fbsbarcode/assets/images/logo.ico \
-            --win-menu \
-            --win-shortcut \
-            --win-per-user-install \
-            --java-options "--enable-native-access=ALL-UNNAMED" \
-            --java-options "-Djavafx.cachedir=C:\\ProgramData\\WCode\\openjfx-cache" \
-            --java-options "-Djava.io.tmpdir=C:\\ProgramData\\WCode\\tmp" \
-            --java-options "-Dorg.sqlite.tmpdir=C:\\ProgramData\\WCode\\tmp" \
-            --jlink-options "--strip-native-commands --strip-debug --no-man-pages --no-header-files --bind-services"
-          mv "$(find out -maxdepth 1 -type f -name 'WCode*.exe' | head -n 1)" out/WCode.exe
-
-      - name: Build MSI installer
-        shell: bash
-        run: |
-          jpackage --type msi \
-            --name "${{ env.APP_NAME }}" \
-            --input target/jpackage-input \
-            --main-jar "${{ env.APP_JAR }}" \
-            --main-class com.tuandev.fbsbarcode.Launcher \
-            --dest out \
-            --app-version "${{ env.APP_VERSION }}" \
-            --vendor "${{ env.APP_VENDOR }}" \
-            --icon src/main/resources/com/tuandev/fbsbarcode/assets/images/logo.ico \
-            --win-menu \
-            --win-shortcut \
-            --win-per-user-install \
-            --java-options "--enable-native-access=ALL-UNNAMED" \
-            --java-options "-Djavafx.cachedir=C:\\ProgramData\\WCode\\openjfx-cache" \
-            --java-options "-Djava.io.tmpdir=C:\\ProgramData\\WCode\\tmp" \
-            --java-options "-Dorg.sqlite.tmpdir=C:\\ProgramData\\WCode\\tmp" \
-            --jlink-options "--strip-native-commands --strip-debug --no-man-pages --no-header-files --bind-services"
-          mv "$(find out -maxdepth 1 -type f -name 'WCode*.msi' | head -n 1)" out/WCode.msi
-
-      - name: Build portable ZIP
-        shell: bash
-        run: |
-          jpackage --type app-image \
-            --name "${{ env.APP_NAME }}" \
-            --input target/jpackage-input \
-            --main-jar "${{ env.APP_JAR }}" \
-            --main-class com.tuandev.fbsbarcode.Launcher \
-            --dest out \
-            --app-version "${{ env.APP_VERSION }}" \
-            --vendor "${{ env.APP_VENDOR }}" \
-            --icon src/main/resources/com/tuandev/fbsbarcode/assets/images/logo.ico \
-            --java-options "--enable-native-access=ALL-UNNAMED" \
-            --java-options "-Djavafx.cachedir=C:\\ProgramData\\WCode\\openjfx-cache" \
-            --java-options "-Djava.io.tmpdir=C:\\ProgramData\\WCode\\tmp" \
-            --java-options "-Dorg.sqlite.tmpdir=C:\\ProgramData\\WCode\\tmp" \
-            --jlink-options "--strip-native-commands --strip-debug --no-man-pages --no-header-files --bind-services"
-          cp check-portable.bat out/WCode/check-portable.bat
-
-      - name: Archive portable app
+      - name: Validate tag and required release trust configuration
         shell: pwsh
-        run: Compress-Archive -Path "out/WCode/*" -DestinationPath "out/WCode-portable.zip"
-
-      - name: Publish GitHub release (to release repo)
-        shell: bash
         env:
-          # PAT có quyền contents:write trên repo release (secret RELEASE_TOKEN).
-          # github.token mặc định chỉ ghi được repo hiện tại, không ghi được repo khác.
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          WINDOWS_SIGNING_CERTIFICATE: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE }}
+          WINDOWS_SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
+          UPDATE_MANIFEST_PRIVATE_KEY: ${{ secrets.UPDATE_MANIFEST_PRIVATE_KEY }}
+          UPDATE_MANIFEST_PUBLIC_KEY: ${{ secrets.UPDATE_MANIFEST_PUBLIC_KEY }}
+          UPDATE_SIGNING_PUBLISHER: ${{ secrets.UPDATE_SIGNING_PUBLISHER }}
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          if ($version -notmatch '^\d{1,5}\.\d{1,5}\.\d{1,5}$') {
+            throw 'Release tags must use vMAJOR.MINOR.PATCH.'
+          }
+          $required = @(
+            'RELEASE_TOKEN',
+            'WINDOWS_SIGNING_CERTIFICATE',
+            'WINDOWS_SIGNING_PASSWORD',
+            'UPDATE_MANIFEST_PRIVATE_KEY',
+            'UPDATE_MANIFEST_PUBLIC_KEY',
+            'UPDATE_SIGNING_PUBLISHER'
+          )
+          foreach ($name in $required) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "Required release configuration is missing: $name"
+            }
+          }
+          if ($env:UPDATE_SIGNING_PUBLISHER -notmatch "^[A-Za-z0-9][A-Za-z0-9 .,&()'=_-]{2,255}$") {
+            throw 'UPDATE_SIGNING_PUBLISHER has an invalid format.'
+          }
+          "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "RELEASE_PUBLISHED_AT=$((Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ'))" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Install frontend dependencies
+        working-directory: ui
+        shell: pwsh
+        run: npm ci
+
+      - name: Run exact frontend quality gates
+        working-directory: ui
+        shell: pwsh
+        run: |
+          npm run lint
+          npm run typecheck
+          npm test
+          npm run build
+          npm audit --audit-level=high
+
+      - name: Run exact backend compatibility gate
+        shell: pwsh
+        run: .\mvnw.cmd -B "-Dapp.version=$env:APP_VERSION" clean verify
+
+      - name: Build verified jDesk app-image
+        shell: pwsh
+        env:
+          UPDATE_MANIFEST_PUBLIC_KEY: ${{ secrets.UPDATE_MANIFEST_PUBLIC_KEY }}
+          UPDATE_SIGNING_PUBLISHER: ${{ secrets.UPDATE_SIGNING_PUBLISHER }}
+        run: |
+          .\gradlew.bat clean test bindings jdeskFrontendBuild jdeskDoctor jdeskPackage "-PappVersion=$env:APP_VERSION"
+          node --test tools/update-manifest.test.mjs
+          $launcher = Join-Path $PWD 'build\jdesk\package\WCode\WCode.exe'
+          if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
+            throw 'The packaged jDesk WCode.exe was not found.'
+          }
+
+      - name: Sign app-image and build stable signed installers
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_CERTIFICATE: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE }}
+          WINDOWS_SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
+          UPDATE_SIGNING_PUBLISHER: ${{ secrets.UPDATE_SIGNING_PUBLISHER }}
+        run: |
+          $certificate = Join-Path $env:RUNNER_TEMP 'wcode-release-signing.pfx'
+          try {
+            [IO.File]::WriteAllBytes(
+              $certificate,
+              [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERTIFICATE)
+            )
+            $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
+              Sort-Object FullName -Descending |
+              Select-Object -First 1 -ExpandProperty FullName
+            if ([string]::IsNullOrWhiteSpace($signTool)) { throw 'SignTool was not found.' }
+
+            function Sign-And-Verify([string] $file) {
+              & $signTool sign /fd SHA256 /td SHA256 /tr $env:TIMESTAMP_URL /f $certificate /p $env:WINDOWS_SIGNING_PASSWORD $file
+              if ($LASTEXITCODE -ne 0) { throw "SignTool failed for $([IO.Path]::GetFileName($file))." }
+              & $signTool verify /pa /v $file
+              if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed for $([IO.Path]::GetFileName($file))." }
+              $signature = Get-AuthenticodeSignature -LiteralPath $file
+              if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate -or
+                  $signature.SignerCertificate.Subject -cne $env:UPDATE_SIGNING_PUBLISHER) {
+                throw "Unexpected Authenticode publisher for $([IO.Path]::GetFileName($file))."
+              }
+            }
+
+            $image = Join-Path $PWD 'build\jdesk\package\WCode'
+            Sign-And-Verify (Join-Path $image 'WCode.exe')
+            New-Item -ItemType Directory -Force -Path release | Out-Null
+            Compress-Archive -Path (Join-Path $image '*') -DestinationPath release\WCode-portable.zip
+
+            jpackage --type msi --name $env:APP_NAME --app-image $image --dest release `
+              --app-version $env:APP_VERSION --vendor $env:APP_VENDOR `
+              --win-upgrade-uuid $env:WINDOWS_UPGRADE_UUID --win-menu --win-shortcut --win-per-user-install
+            if ($LASTEXITCODE -ne 0) { throw 'jpackage MSI creation failed.' }
+            $msi = @(Get-ChildItem release -Filter 'WCode*.msi')
+            if ($msi.Count -ne 1) { throw 'jpackage did not produce exactly one MSI.' }
+            $msiTarget = Join-Path $PWD 'release\WCode.msi'
+            if ($msi[0].FullName -cne $msiTarget) {
+              Move-Item -LiteralPath $msi[0].FullName -Destination $msiTarget
+            }
+
+            jpackage --type exe --name $env:APP_NAME --app-image $image --dest release `
+              --app-version $env:APP_VERSION --vendor $env:APP_VENDOR `
+              --win-upgrade-uuid $env:WINDOWS_UPGRADE_UUID --win-menu --win-shortcut --win-per-user-install
+            if ($LASTEXITCODE -ne 0) { throw 'jpackage EXE creation failed.' }
+            $exe = @(Get-ChildItem release -Filter 'WCode*.exe')
+            if ($exe.Count -ne 1) { throw 'jpackage did not produce exactly one EXE.' }
+            $exeTarget = Join-Path $PWD 'release\WCode.exe'
+            if ($exe[0].FullName -cne $exeTarget) {
+              Move-Item -LiteralPath $exe[0].FullName -Destination $exeTarget
+            }
+
+            Sign-And-Verify (Join-Path $PWD 'release\WCode.msi')
+            Sign-And-Verify (Join-Path $PWD 'release\WCode.exe')
+          } finally {
+            if (Test-Path -LiteralPath $certificate) {
+              Remove-Item -LiteralPath $certificate -Force
+            }
+          }
+
+      - name: Create and independently verify signed update manifest
+        shell: pwsh
+        env:
+          UPDATE_MANIFEST_PRIVATE_KEY: ${{ secrets.UPDATE_MANIFEST_PRIVATE_KEY }}
+          UPDATE_MANIFEST_PUBLIC_KEY: ${{ secrets.UPDATE_MANIFEST_PUBLIC_KEY }}
+        run: |
+          $env:RELEASE_NOTES_JSON = ConvertTo-Json -Compress -InputObject @(
+            "Signed WCode $env:APP_VERSION jDesk release",
+            'Verified local-data snapshot before installation'
+          )
+          node tools/update-manifest.mjs release/WCode.msi release/update-manifest.json $env:APP_VERSION
+          node --test tools/update-manifest.test.mjs
+          $envelope = Get-Content release/update-manifest.json -Raw | ConvertFrom-Json
+          $payload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($envelope.payload)) | ConvertFrom-Json
+          $hash = (Get-FileHash release/WCode.msi -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($payload.version -cne $env:APP_VERSION -or $payload.assets.Count -ne 1 -or
+              $payload.assets[0].sha256 -cne $hash -or
+              $payload.assets[0].size -ne (Get-Item release/WCode.msi).Length) {
+            throw 'The signed update manifest does not match the final MSI.'
+          }
+
+      - name: Preserve signed release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: WCode-${{ github.ref_name }}-signed-release
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish release atomically through a draft
+        shell: pwsh
+        env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
-          NOTES="WCode ${APP_VERSION} — bản phát hành chính thức. Cần license hợp lệ để mua/tự động hóa KIZ (đăng nhập qua wcode.online). In tem hoạt động tự do."
-          if gh release view "$GITHUB_REF_NAME" --repo "$RELEASE_REPO" >/dev/null 2>&1; then
-            gh release edit "$GITHUB_REF_NAME" --repo "$RELEASE_REPO" --title "WCode ${APP_VERSION}" --notes "$NOTES" --latest
-          else
-            gh release create "$GITHUB_REF_NAME" --repo "$RELEASE_REPO" --title "WCode ${APP_VERSION}" --notes "$NOTES" --latest
-          fi
-          gh release upload "$GITHUB_REF_NAME" --repo "$RELEASE_REPO" \
-            out/WCode.exe \
-            out/WCode.msi \
-            out/WCode-portable.zip \
-            --clobber
+          $tag = $env:GITHUB_REF_NAME
+          $notes = "WCode $env:APP_VERSION — signed jDesk release with a verified rollback snapshot before installation."
+          gh release create $tag --repo $env:RELEASE_REPO --title "WCode $env:APP_VERSION" --notes $notes --draft
+          gh release upload $tag --repo $env:RELEASE_REPO `
+            release/WCode.msi `
+            release/WCode.exe `
+            release/WCode-portable.zip `
+            release/update-manifest.json
+          gh release edit $tag --repo $env:RELEASE_REPO --draft=false --latest

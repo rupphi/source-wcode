@@ -365,13 +365,23 @@ artifact. Recovery/idempotency tests precede implementation changes.
       themes plus an emulated system preference without horizontal overflow or contrast regressions.
 - [x] Translate the shared shell and settings/license surface in RU/EN/VI/ZH.
 - [ ] Migrate every remaining feature surface before marking language parity complete.
-- [ ] Port signed update check/download/install with checksum validation and rollback evidence.
+- [x] Port signed update check/download/install, shared optional-version skip, bounded streamed
+      checksum validation, Authenticode/snapshot gates and fail-closed signed release automation.
+- [ ] Rehearse signed N-1 → N install, cancel/failure relaunch and snapshot rollback on clean
+      Windows x64 hardware before claiming updater parity.
 - [x] Port redacted diagnostics/support bundle.
 
 Diagnostics slice contract: replace the legacy auto-upload payload (license/device/shop/raw-derived
 message) with an explicit local-only summary and native ZIP export. The manifest is allowlisted and
 bounded, the write is atomic/non-symlink, cancellation writes nothing, and bridge/errors expose only
 safe enums and booleans without any selected path or filename.
+
+Updater slice contract: signed manifest verification precedes parsing; only a bounded Windows-x64
+MSI descriptor is accepted. Explicit download and second install confirmation are separate,
+streamed size/SHA-256 plus Authenticode are both required, a verified data snapshot precedes app
+exit, and the release uses a stable jpackage upgrade UUID. CI must fail closed until the dedicated
+manifest key and Windows code-signing identity are provisioned; unsigned/manual trust fallback is
+not accepted as parity.
 
 ## Phase 9: Production hardening and cutover
 
