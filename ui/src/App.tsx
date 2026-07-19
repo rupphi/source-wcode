@@ -23,6 +23,7 @@ import { getZnackCopy } from "./features/znack/znackI18n";
 import { PrintHistoryView } from "./features/history/PrintHistoryView";
 import { getHistoryCopy } from "./features/history/historyI18n";
 import { TemplateDesignerView } from "./features/templates/TemplateDesignerView";
+import { getTemplateDesignerCopy } from "./features/templates/templateDesignerI18n";
 import { LicenseSettingsDialog } from "./features/license/LicenseSettingsDialog";
 import { ShopManagementDialog } from "./features/shops/ShopManagementDialog";
 import { SupportDialog } from "./features/diagnostics/SupportDialog";
@@ -284,7 +285,10 @@ export function App() {
           </section>
 
           {activeView === "templates" ? (
-            <TemplateDesignerView />
+            <TemplateDesignerView
+              copy={getTemplateDesignerCopy(preferences.language)}
+              locale={getSupplyLocale(preferences.language)}
+            />
           ) : selectedShop === null ? (
             <EmptyWorkspace copy={copy.shop} />
           ) : activeView === "supplies" ? (

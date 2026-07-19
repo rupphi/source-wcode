@@ -538,6 +538,56 @@ describe("App", () => {
     expect(loadTemplateDesigner).toHaveBeenCalledTimes(2);
   });
 
+  it("localizes the active template designer without reloading or mutating local templates", async () => {
+    const user = userEvent.setup();
+    loadPreferences.mockResolvedValue({ language: "en", theme: "dark" });
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [],
+      hasSelectedShop: false,
+      selectedShopId: 0,
+    });
+    loadTemplateDesigner.mockResolvedValue(editableDesigner("fbs", "1", "Persisted template"));
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Label designer" }));
+
+    expect(await screen.findByText("Typed catalog · stored locally")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Templates" })).toBeVisible();
+    const xField = screen.getByRole("spinbutton", { name: "X, mm" });
+    await user.clear(xField);
+    await user.type(xField, "4");
+    expect(screen.getByText("Unsaved changes")).toBeVisible();
+    await user.click(screen.getByRole("tab", { name: "FBO" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Save or discard your changes first.");
+    const readsBeforeLanguageChange = loadTemplateDesigner.mock.calls.length;
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Language" }), "vi");
+    await user.click(await screen.findByRole("button", { name: "Đóng cài đặt" }));
+    expect(await screen.findByText("Danh mục định kiểu · lưu cục bộ")).toBeVisible();
+    expect(screen.getByText("Có thay đổi chưa lưu")).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent("Hãy lưu hoặc hủy các thay đổi trước.");
+
+    await user.click(screen.getByRole("button", { name: "Cài đặt" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Ngôn ngữ" }), "zh");
+    await user.click(await screen.findByRole("button", { name: "关闭设置" }));
+    expect(await screen.findByText("类型化目录 · 本地存储")).toBeVisible();
+    expect(screen.getByText("有未保存的更改")).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent("请先保存或放弃更改。");
+    expect(screen.getAllByText("Persisted template")).toHaveLength(2);
+    expect(screen.getByRole("spinbutton", { name: "X，毫米" })).toHaveValue(4);
+    expect(loadTemplateDesigner).toHaveBeenCalledTimes(readsBeforeLanguageChange);
+    expect(createTemplate).not.toHaveBeenCalled();
+    expect(createTemplateElement).not.toHaveBeenCalled();
+    expect(deleteTemplate).not.toHaveBeenCalled();
+    expect(duplicateTemplate).not.toHaveBeenCalled();
+    expect(renameTemplate).not.toHaveBeenCalled();
+    expect(resetTemplate).not.toHaveBeenCalled();
+    expect(saveTemplate).not.toHaveBeenCalled();
+    expect(setDefaultTemplate).not.toHaveBeenCalled();
+  });
+
   it("edits, adds, copies, removes, and saves a typed template draft", async () => {
     const user = userEvent.setup();
     bootstrap.mockResolvedValue({

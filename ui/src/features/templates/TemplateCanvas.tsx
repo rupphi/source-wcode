@@ -2,17 +2,7 @@ import { useRef } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import type { TemplateElementItem, TemplateSummary } from "../../generated/types";
 import { moveGeometry, resizeGeometry } from "./templateGeometry";
-
-const sampleText: Record<string, string> = {
-  article: "WB-1048",
-  barcode: "2039556250474",
-  brand: "WCODE STUDIO",
-  color: "Графит",
-  name: "Базовая футболка",
-  ru_size: "RU 46",
-  size: "M",
-  subject_name: "Футболки",
-};
+import type { TemplateDesignerCopy } from "./templateDesignerI18n";
 
 export function TemplateCanvas({
   template,
@@ -21,6 +11,8 @@ export function TemplateCanvas({
   heightMm,
   snap,
   disabled,
+  copy,
+  locale,
   onElement,
   onChange,
 }: {
@@ -30,6 +22,8 @@ export function TemplateCanvas({
   heightMm: number;
   snap: boolean;
   disabled: boolean;
+  copy: TemplateDesignerCopy["canvas"];
+  locale: string;
   onElement: (id: string) => void;
   onChange: (id: string, geometry: Partial<TemplateElementItem>) => void;
 }) {
@@ -38,17 +32,17 @@ export function TemplateCanvas({
       <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-4 py-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">{template.name}</p>
-          <p className="mt-0.5 text-xs text-[var(--text-muted)]">Перетаскивайте элементы; маркер меняет размер</p>
+          <p className="mt-0.5 text-xs text-[var(--text-muted)]">{copy.hint}</p>
         </div>
         <span className="shrink-0 rounded-lg bg-[var(--surface-muted)] px-2.5 py-1.5 text-xs font-semibold">
-          {formatNumber(widthMm)} × {formatNumber(heightMm)} мм
+          {formatNumber(widthMm, locale)} × {formatNumber(heightMm, locale)} {copy.unit}
         </span>
       </div>
       <div className="grid min-h-[27rem] place-items-center overflow-auto p-5 sm:p-8">
         <div
           className="template-canvas relative w-full max-w-[42rem] overflow-hidden border border-slate-300 bg-white shadow-[0_18px_45px_rgb(20_35_29_/_0.15)]"
           style={{ aspectRatio: `${widthMm} / ${heightMm}` }}
-          aria-label={`Предпросмотр шаблона ${template.name}`}
+          aria-label={copy.previewAria.replace("{name}", template.name)}
         >
           {template.elements.filter((element) => element.visible).map((element) => (
             <CanvasElement
@@ -58,6 +52,7 @@ export function TemplateCanvas({
               selected={element.id === selectedElementId}
               snap={snap}
               disabled={disabled}
+              copy={copy}
               onSelect={() => onElement(element.id)}
               onChange={(geometry) => onChange(element.id, geometry)}
               key={element.id}
@@ -76,6 +71,7 @@ function CanvasElement({
   selected,
   snap,
   disabled,
+  copy,
   onSelect,
   onChange,
 }: {
@@ -85,6 +81,7 @@ function CanvasElement({
   selected: boolean;
   snap: boolean;
   disabled: boolean;
+  copy: TemplateDesignerCopy["canvas"];
   onSelect: () => void;
   onChange: (geometry: Partial<TemplateElementItem>) => void;
 }) {
@@ -146,7 +143,7 @@ function CanvasElement({
       style={style}
       role="button"
       tabIndex={0}
-      aria-label={`Выбрать элемент ${element.label}`}
+      aria-label={copy.selectElement.replace("{name}", element.label)}
       onClick={onSelect}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") onSelect();
@@ -156,7 +153,7 @@ function CanvasElement({
       onPointerUp={finish}
       onPointerCancel={finish}
     >
-      <ElementPreview element={element} />
+      <ElementPreview element={element} copy={copy} />
       {selected && !disabled && (
         <span
           className="absolute right-0 bottom-0 size-3 cursor-nwse-resize border border-white bg-emerald-500 shadow"
@@ -168,12 +165,16 @@ function CanvasElement({
   );
 }
 
-function ElementPreview({ element }: { element: TemplateElementItem }) {
+function ElementPreview({ element, copy }: { element: TemplateElementItem; copy: TemplateDesignerCopy["canvas"] }) {
   if (element.type === "barcode_code128") {
     return <span className="flex h-full flex-col justify-end gap-[3%] p-[3%]"><span className="barcode-sample min-h-0 flex-1" />{element.humanReadable && <span className="truncate text-center text-[clamp(0.35rem,1vw,0.65rem)]">2039556250474</span>}</span>;
   }
   if (element.type === "kiz_datamatrix") return <span className="data-matrix-sample block size-full" />;
   if (element.type === "separator_line") return <span className="block h-1/2 border-b border-slate-950" />;
+  const sampleText: Record<string, string> = {
+    article: "WB-1048", barcode: "2039556250474", brand: "WCODE STUDIO", color: copy.sample.color,
+    name: copy.sample.name, ru_size: "RU 46", size: "M", subject_name: copy.sample.subject,
+  };
   const text = element.type === "static_text"
     ? `${element.prefix}${element.content}`
     : element.type === "sticker_tail"
@@ -194,6 +195,6 @@ function ElementPreview({ element }: { element: TemplateElementItem }) {
   );
 }
 
-function formatNumber(value: number) {
-  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(value);
+function formatNumber(value: number, locale: string) {
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(value);
 }

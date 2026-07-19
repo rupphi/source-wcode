@@ -373,6 +373,8 @@ artifact. Recovery/idempotency tests precede implementation changes.
       including locale KPI formatting and runtime language changes without a new read or sync.
 - [x] Translate print history, filters, statuses, pagination and explicit reprint/open feedback in
       RU/EN/VI/ZH with locale date/count formatting and a no-file browser rehearsal.
+- [x] Translate the complete FBS/FBO template designer in RU/EN/VI/ZH: mode/catalog, canvas,
+      inspector, dialogs and feedback with locale dimensions and a no-mutation browser rehearsal.
 - [x] Translate the complete FBS supplies journey in RU/EN/VI/ZH: list/detail/orders, Excel import,
       GTIN inventory, print setup and guarded delivery/purchase dialogs with locale formatting.
 - [x] Translate the complete FBS packing board in RU/EN/VI/ZH and share its guarded
