@@ -16,7 +16,7 @@ import {
   Tags,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { commands } from "../../generated/commands";
 import type {
   CatalogResponse,
@@ -26,7 +26,9 @@ import type {
   SelectionRequest,
   SubjectOption,
 } from "../../generated/types";
+import { interpolate } from "../../i18n";
 import { matchesCatalogResponse } from "./kizCatalogContract";
+import { defaultKizMappingCopy, formatKizCount, type KizMappingCopy } from "./kizMappingI18n";
 
 type CatalogState =
   | { status: "loading"; requestKey: string }
@@ -55,9 +57,7 @@ const PAGE_SIZE = 50;
 const PAGE_LIMIT = 100_000;
 const MAX_CATEGORY_FILTERS = 30;
 const UNSPECIFIED_GENDER = "__UNSPECIFIED__";
-const numberFormat = new Intl.NumberFormat("ru-RU");
-
-export function KizMappingView({ shopId }: { shopId: number }) {
+export function KizMappingView({ shopId, copy = defaultKizMappingCopy, locale = "ru-RU" }: { shopId: number; copy?: KizMappingCopy; locale?: string }) {
   const [draftQuery, setDraftQuery] = useState("");
   const [query, setQuery] = useState("");
   const [categories, setCategories] = useState<string[]>([]);
@@ -70,6 +70,8 @@ export function KizMappingView({ shopId }: { shopId: number }) {
   const catalogSequence = useRef(0);
   const editorSequence = useRef(0);
   const requestKey = JSON.stringify([shopId, query, categories, page, retryKey]);
+  const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
+  const dateFormat = useMemo(() => new Intl.DateTimeFormat(locale, { dateStyle: "short", timeStyle: "short" }), [locale]);
 
   useEffect(() => {
     const requestId = ++catalogSequence.current;
@@ -194,15 +196,15 @@ export function KizMappingView({ shopId }: { shopId: number }) {
               <Link2 aria-hidden="true" size={20} />
             </span>
             <div>
-              <h3 className="font-semibold tracking-[-0.01em]">Соответствия SKU и GTIN</h3>
+              <h3 className="font-semibold tracking-[-0.01em]">{copy.header.title}</h3>
               <p className="mt-1 max-w-2xl text-sm leading-5 text-[var(--text-secondary)]">
-                Свяжите категории и значения пола из локального каталога Wildberries с GTIN для точного подбора KIZ при печати.
+                {copy.header.description}
               </p>
             </div>
           </div>
           <span className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
             <ShieldCheck aria-hidden="true" size={15} />
-            Изменяются только локальные правила WCode
+            {copy.header.guarded}
           </span>
         </div>
       </section>
@@ -211,9 +213,9 @@ export function KizMappingView({ shopId }: { shopId: number }) {
         <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" role="status">
           <span className="flex items-center gap-2 font-medium">
             <CheckCircle2 aria-hidden="true" size={18} />
-            Соответствие GTIN сохранено
+            {copy.notice.saved}
           </span>
-          <button className="rounded-lg p-1 text-emerald-800 hover:bg-emerald-100" type="button" aria-label="Закрыть уведомление" onClick={() => setSavedNotice(false)}>
+          <button className="rounded-lg p-1 text-emerald-800 hover:bg-emerald-100" type="button" aria-label={copy.notice.close} onClick={() => setSavedNotice(false)}>
             <X aria-hidden="true" size={17} />
           </button>
         </div>
@@ -222,32 +224,32 @@ export function KizMappingView({ shopId }: { shopId: number }) {
       <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)] md:p-5">
         <form className="flex flex-col gap-3 lg:flex-row" role="search" onSubmit={submitSearch}>
           <label className="relative min-w-0 flex-1">
-            <span className="sr-only">Поиск GTIN</span>
+            <span className="sr-only">{copy.search.label}</span>
             <Search className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden="true" size={18} />
             <input
-              aria-label="Поиск GTIN"
+              aria-label={copy.search.label}
               className="h-11 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] pr-4 pl-10 text-sm shadow-[var(--shadow-control)] outline-none transition placeholder:text-[var(--text-muted)] hover:border-[var(--accent)] focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]"
               maxLength={120}
               onChange={(event) => setDraftQuery(event.target.value)}
-              placeholder="GTIN, название товара или категория"
+              placeholder={copy.search.placeholder}
               type="search"
               value={draftQuery}
             />
           </label>
-          <button className="h-11 rounded-xl bg-[var(--sidebar)] px-5 text-sm font-semibold text-white transition hover:bg-[#203b30]" type="submit" aria-label="Найти GTIN">
-            Найти
+          <button className="h-11 rounded-xl bg-[var(--sidebar)] px-5 text-sm font-semibold text-white transition hover:bg-[#203b30]" type="submit" aria-label={copy.search.submitAria}>
+            {copy.search.submit}
           </button>
           <div className="relative">
             <button
               aria-expanded={categoriesOpen}
-              aria-label="Категории GTIN"
+              aria-label={copy.search.categoriesAria}
               className="flex h-11 w-full items-center justify-between gap-2 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-4 text-sm font-medium text-[var(--text-primary)] shadow-[var(--shadow-control)] transition hover:border-[var(--accent)] lg:w-auto"
               onClick={() => setCategoriesOpen((value) => !value)}
               type="button"
             >
               <span className="flex items-center gap-2">
                 <Tags aria-hidden="true" size={17} />
-                {categories.length === 0 ? "Категории" : `Выбрано: ${categories.length}`}
+                {categories.length === 0 ? copy.search.categories : interpolate(copy.search.selected, { count: numberFormat.format(categories.length) })}
               </span>
               <ChevronDown aria-hidden="true" size={16} />
             </button>
@@ -261,14 +263,14 @@ export function KizMappingView({ shopId }: { shopId: number }) {
                     </label>
                   ))
                 ) : (
-                  <p className="px-3 py-2 text-sm text-[var(--text-muted)]">Категорий пока нет</p>
+                  <p className="px-3 py-2 text-sm text-[var(--text-muted)]">{copy.search.none}</p>
                 )}
               </div>
             ) : null}
           </div>
           {(query || categories.length > 0) ? (
             <button className="h-11 rounded-xl px-3 text-sm font-medium text-[var(--accent-strong)] hover:bg-[var(--accent-soft)]" onClick={clearFilters} type="button">
-              Сбросить
+              {copy.search.clear}
             </button>
           ) : null}
         </form>
@@ -288,15 +290,18 @@ export function KizMappingView({ shopId }: { shopId: number }) {
         <section className="flex flex-col items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-900 shadow-[var(--shadow-panel)] sm:flex-row sm:items-center sm:justify-between" role="alert">
           <span className="flex items-center gap-2 text-sm font-medium">
             <AlertCircle aria-hidden="true" size={18} />
-            Не удалось открыть редактор соответствий
+            {copy.editorError.title}
           </span>
-          <button className="rounded-lg border border-[var(--danger)]/35 bg-[var(--surface-elevated)] px-3 py-2 text-sm font-semibold text-[var(--danger)] hover:bg-[var(--danger-soft)]" onClick={() => openEditor(editor.gtin)} type="button" aria-label="Повторить открытие редактора">
-            Повторить
+          <button className="rounded-lg border border-[var(--danger)]/35 bg-[var(--surface-elevated)] px-3 py-2 text-sm font-semibold text-[var(--danger)] hover:bg-[var(--danger-soft)]" onClick={() => openEditor(editor.gtin)} type="button" aria-label={copy.editorError.retryAria}>
+            {copy.editorError.retry}
           </button>
         </section>
       ) : null}
 
       <CatalogContent
+        copy={copy}
+        dateFormat={dateFormat}
+        numberFormat={numberFormat}
         state={visibleCatalog}
         filtered={Boolean(query || categories.length > 0)}
         onRetry={() => setRetryKey((value) => value + 1)}
@@ -305,9 +310,12 @@ export function KizMappingView({ shopId }: { shopId: number }) {
         onNext={() => setPage((value) => Math.min(PAGE_LIMIT, value + 1))}
       />
 
-      {editor.status === "loading" ? <EditorLoading gtin={editor.gtin} onClose={closeEditor} /> : null}
+      {editor.status === "loading" ? <EditorLoading copy={copy} gtin={editor.gtin} onClose={closeEditor} /> : null}
       {editor.status === "ready" ? (
         <MappingEditor
+          copy={copy}
+          locale={locale}
+          numberFormat={numberFormat}
           state={editor}
           onChange={setEditor}
           onClose={closeEditor}
@@ -319,6 +327,9 @@ export function KizMappingView({ shopId }: { shopId: number }) {
 }
 
 function CatalogContent({
+  copy,
+  dateFormat,
+  numberFormat,
   state,
   filtered,
   onRetry,
@@ -326,6 +337,9 @@ function CatalogContent({
   onPrevious,
   onNext,
 }: {
+  copy: KizMappingCopy;
+  dateFormat: Intl.DateTimeFormat;
+  numberFormat: Intl.NumberFormat;
   state: CatalogState;
   filtered: boolean;
   onRetry: () => void;
@@ -335,10 +349,10 @@ function CatalogContent({
 }) {
   if (state.status === "loading") {
     return (
-      <section className="grid min-h-72 place-items-center rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]" aria-label="Загрузка каталога GTIN">
+      <section className="grid min-h-72 place-items-center rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]" aria-label={copy.catalog.loadingAria}>
         <div className="grid justify-items-center gap-3 text-sm text-[var(--text-secondary)]">
           <LoaderCircle className="animate-spin text-[var(--accent-strong)]" aria-hidden="true" size={28} />
-          Загружаем локальный каталог GTIN…
+          {copy.catalog.loading}
         </div>
       </section>
     );
@@ -349,11 +363,11 @@ function CatalogContent({
         <div className="grid max-w-md justify-items-center gap-3">
           <span className="grid size-11 place-items-center rounded-full bg-rose-100 text-rose-700"><AlertCircle aria-hidden="true" size={22} /></span>
           <div>
-            <h3 className="font-semibold text-rose-950">Не удалось загрузить каталог GTIN</h3>
-            <p className="mt-1 text-sm leading-5 text-rose-800">Локальные данные не изменены. Повторите запрос.</p>
+            <h3 className="font-semibold text-rose-950">{copy.catalog.errorTitle}</h3>
+            <p className="mt-1 text-sm leading-5 text-rose-800">{copy.catalog.errorDescription}</p>
           </div>
           <button className="rounded-xl bg-rose-900 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-800" onClick={onRetry} type="button">
-            Повторить
+            {copy.catalog.retry}
           </button>
         </div>
       </section>
@@ -365,9 +379,9 @@ function CatalogContent({
         <div className="grid max-w-lg justify-items-center gap-3">
           <span className="grid size-12 place-items-center rounded-2xl bg-[var(--surface-muted)] text-[var(--text-secondary)]"><Boxes aria-hidden="true" size={23} /></span>
           <div>
-            <h3 className="font-semibold">{filtered ? "GTIN по фильтрам не найдены" : "Каталог GTIN пока пуст"}</h3>
+            <h3 className="font-semibold">{filtered ? copy.catalog.filteredEmptyTitle : copy.catalog.emptyTitle}</h3>
             <p className="mt-1 text-sm leading-5 text-[var(--text-secondary)]">
-              {filtered ? "Измените запрос или сбросьте категории." : "Синхронизация товаров Znack появится в следующем шаге миграции."}
+              {filtered ? copy.catalog.filteredEmptyDescription : copy.catalog.emptyDescription}
             </p>
           </div>
         </div>
@@ -383,25 +397,25 @@ function CatalogContent({
     <section className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
       <div className="flex flex-col gap-3 border-b border-[var(--border-subtle)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h3 className="font-semibold">Локальный каталог GTIN</h3>
-          <p className="mt-0.5 text-xs text-[var(--text-muted)]">На странице {state.data.items.length} · с правилами {totals.mapped}</p>
+          <h3 className="font-semibold">{copy.catalog.title}</h3>
+          <p className="mt-0.5 text-xs text-[var(--text-muted)]">{interpolate(copy.catalog.summary, { count: numberFormat.format(state.data.items.length), mapped: numberFormat.format(totals.mapped) })}</p>
         </div>
         <span className="inline-flex w-fit items-center gap-2 rounded-full bg-[var(--accent-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--accent-strong)]">
           <PackageCheck aria-hidden="true" size={15} />
-          {numberFormat.format(totals.available)} KIZ доступно
+          {interpolate(copy.catalog.available, { count: numberFormat.format(totals.available) })}
         </span>
       </div>
       <div className="divide-y divide-[var(--border-subtle)]">
-        {state.data.items.map((item) => <GtinRow item={item} key={item.gtin} onEdit={() => onOpenEditor(item.gtin)} />)}
+        {state.data.items.map((item) => <GtinRow copy={copy} dateFormat={dateFormat} item={item} key={item.gtin} numberFormat={numberFormat} onEdit={() => onOpenEditor(item.gtin)} />)}
       </div>
       <div className="flex items-center justify-between gap-3 border-t border-[var(--border-subtle)] bg-[var(--surface-muted)]/55 px-4 py-3">
-        <button className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-3 py-2 text-sm font-medium disabled:cursor-default disabled:opacity-40" disabled={state.data.page <= 1} onClick={onPrevious} type="button" aria-label="Предыдущая страница GTIN">
+        <button className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-3 py-2 text-sm font-medium disabled:cursor-default disabled:opacity-40" disabled={state.data.page <= 1} onClick={onPrevious} type="button" aria-label={copy.catalog.previousAria}>
           <ChevronLeft aria-hidden="true" size={16} />
-          Назад
+          {copy.catalog.previous}
         </button>
-        <span className="text-sm font-semibold text-[var(--text-secondary)]">Страница {state.data.page}</span>
-        <button className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-3 py-2 text-sm font-medium disabled:cursor-default disabled:opacity-40" disabled={!state.data.hasMore} onClick={onNext} type="button" aria-label="Следующая страница GTIN">
-          Далее
+        <span className="text-sm font-semibold text-[var(--text-secondary)]">{interpolate(copy.catalog.page, { page: numberFormat.format(state.data.page) })}</span>
+        <button className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-3 py-2 text-sm font-medium disabled:cursor-default disabled:opacity-40" disabled={!state.data.hasMore} onClick={onNext} type="button" aria-label={copy.catalog.nextAria}>
+          {copy.catalog.next}
           <ChevronRight aria-hidden="true" size={16} />
         </button>
       </div>
@@ -409,8 +423,8 @@ function CatalogContent({
   );
 }
 
-function GtinRow({ item, onEdit }: { item: GtinItem; onEdit: () => void }) {
-  const status = statusLabel(item.pipelineStage || item.orderStatus);
+function GtinRow({ copy, dateFormat, item, numberFormat, onEdit }: { copy: KizMappingCopy; dateFormat: Intl.DateTimeFormat; item: GtinItem; numberFormat: Intl.NumberFormat; onEdit: () => void }) {
+  const status = statusLabel(copy, item.pipelineStage || item.orderStatus);
   return (
     <article className="grid gap-4 px-4 py-4 transition hover:bg-[var(--surface-muted)] xl:grid-cols-[minmax(14rem,1.25fr)_minmax(17rem,1fr)_minmax(12rem,.8fr)_auto] xl:items-center xl:px-5">
       <div className="min-w-0">
@@ -418,31 +432,31 @@ function GtinRow({ item, onEdit }: { item: GtinItem; onEdit: () => void }) {
           <code className="rounded-md bg-[var(--sidebar)] px-2 py-1 text-xs font-semibold text-white">{item.gtin}</code>
           {item.category ? <span className="rounded-full bg-[var(--surface-muted)] px-2.5 py-1 text-xs font-medium text-[var(--text-secondary)]">{item.category}</span> : null}
         </div>
-        <h4 className="mt-2 truncate font-semibold tracking-[-0.01em]">{item.productName || "Без названия"}</h4>
-        <p className="mt-1 text-xs text-[var(--text-muted)]">Обновлено: {formatDate(item.syncedAt)}</p>
+        <h4 className="mt-2 truncate font-semibold tracking-[-0.01em]">{item.productName || copy.row.unnamed}</h4>
+        <p className="mt-1 text-xs text-[var(--text-muted)]">{interpolate(copy.row.updated, { date: formatDate(copy, dateFormat, item.syncedAt) })}</p>
       </div>
       <div className="grid grid-cols-3 gap-2">
-        <InventoryMetric tone="green" value={item.available} label="доступно" />
-        <InventoryMetric tone="amber" value={item.reserved} label="в резерве" />
-        <InventoryMetric tone="gray" value={item.consumed} label="использовано" />
+        <InventoryMetric numberFormat={numberFormat} tone="green" value={item.available} label={copy.row.available} primary />
+        <InventoryMetric numberFormat={numberFormat} tone="amber" value={item.reserved} label={copy.row.reserved} />
+        <InventoryMetric numberFormat={numberFormat} tone="gray" value={item.consumed} label={copy.row.consumed} />
       </div>
       <div className="grid gap-2">
         <span className={`inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${item.mappingRuleCount > 0 ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
           {item.mappingRuleCount > 0 ? <Check aria-hidden="true" size={13} /> : <CircleDot aria-hidden="true" size={13} />}
-          {item.mappingRuleCount > 0 ? `${item.mappingRuleCount} правил` : "Не сопоставлен"}
+          {item.mappingRuleCount > 0 ? formatKizCount(copy, numberFormat.resolvedOptions().locale, item.mappingRuleCount, "rules") : copy.row.unmapped}
         </span>
         {status ? <span className="text-xs font-medium text-[var(--text-secondary)]">{status}</span> : null}
         {item.errorMessage ? <p className="line-clamp-2 text-xs leading-4 text-rose-700" title={item.errorMessage}>{item.errorMessage}</p> : null}
       </div>
-      <button className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-4 text-sm font-semibold shadow-[var(--shadow-control)] transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]" onClick={onEdit} type="button" aria-label={`Настроить соответствие для ${item.gtin}`}>
+      <button className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-4 text-sm font-semibold shadow-[var(--shadow-control)] transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]" onClick={onEdit} type="button" aria-label={interpolate(copy.row.editAria, { gtin: item.gtin })}>
         <Layers3 aria-hidden="true" size={17} />
-        Настроить
+        {copy.row.edit}
       </button>
     </article>
   );
 }
 
-function InventoryMetric({ value, label, tone }: { value: number; label: string; tone: "green" | "amber" | "gray" }) {
+function InventoryMetric({ value, label, numberFormat, tone, primary = false }: { value: number; label: string; numberFormat: Intl.NumberFormat; tone: "green" | "amber" | "gray"; primary?: boolean }) {
   const tones = {
     green: "bg-emerald-50 text-emerald-900",
     amber: "bg-amber-50 text-amber-900",
@@ -450,20 +464,20 @@ function InventoryMetric({ value, label, tone }: { value: number; label: string;
   };
   return (
     <div className={`rounded-xl px-2 py-2.5 text-center ${tones[tone]}`}>
-      <strong className="block text-sm">{numberFormat.format(value)} {label === "доступно" ? label : ""}</strong>
-      {label !== "доступно" ? <span className="mt-0.5 block text-[0.65rem] leading-3 opacity-70">{label}</span> : null}
+      <strong className="block text-sm">{numberFormat.format(value)} {primary ? label : ""}</strong>
+      {!primary ? <span className="mt-0.5 block text-[0.65rem] leading-3 opacity-70">{label}</span> : null}
     </div>
   );
 }
 
-function EditorLoading({ gtin, onClose }: { gtin: string; onClose: () => void }) {
+function EditorLoading({ copy, gtin, onClose }: { copy: KizMappingCopy; gtin: string; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-[#0b1712]/55 p-4 backdrop-blur-[2px]">
-      <section className="relative grid min-h-56 w-full max-w-xl place-items-center rounded-2xl bg-[var(--surface-elevated)] p-8 shadow-2xl" role="dialog" aria-label={`Соответствие GTIN ${gtin}`} aria-modal="true">
-        <button className="absolute top-4 right-4 rounded-lg p-2 text-[var(--text-muted)] hover:bg-[var(--surface-muted)]" onClick={onClose} type="button" aria-label="Закрыть редактор"><X aria-hidden="true" size={18} /></button>
+      <section className="relative grid min-h-56 w-full max-w-xl place-items-center rounded-2xl bg-[var(--surface-elevated)] p-8 shadow-2xl" role="dialog" aria-label={interpolate(copy.editor.dialogAria, { gtin })} aria-modal="true">
+        <button className="absolute top-4 right-4 rounded-lg p-2 text-[var(--text-muted)] hover:bg-[var(--surface-muted)]" onClick={onClose} type="button" aria-label={copy.editor.close}><X aria-hidden="true" size={18} /></button>
         <div className="grid justify-items-center gap-3 text-sm text-[var(--text-secondary)]">
           <LoaderCircle className="animate-spin text-[var(--accent-strong)]" aria-hidden="true" size={30} />
-          Загружаем правила и владельцев…
+          {copy.editor.loading}
         </div>
       </section>
     </div>
@@ -471,11 +485,17 @@ function EditorLoading({ gtin, onClose }: { gtin: string; onClose: () => void })
 }
 
 function MappingEditor({
+  copy,
+  locale,
+  numberFormat,
   state,
   onChange,
   onClose,
   onSave,
 }: {
+  copy: KizMappingCopy;
+  locale: string;
+  numberFormat: Intl.NumberFormat;
   state: Extract<EditorState, { status: "ready" }>;
   onChange: (state: EditorState) => void;
   onClose: () => void;
@@ -550,41 +570,41 @@ function MappingEditor({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-[#0b1712]/60 p-3 backdrop-blur-[2px] sm:p-6">
-      <section className="mx-auto flex min-h-[calc(100vh-1.5rem)] w-full max-w-[82rem] flex-col overflow-hidden rounded-2xl bg-[var(--surface-elevated)] shadow-2xl sm:min-h-0 sm:max-h-[calc(100vh-3rem)]" role="dialog" aria-label={`Соответствие GTIN ${state.data.gtin}`} aria-modal="true" onKeyDown={(event) => {
+      <section className="mx-auto flex min-h-[calc(100vh-1.5rem)] w-full max-w-[82rem] flex-col overflow-hidden rounded-2xl bg-[var(--surface-elevated)] shadow-2xl sm:min-h-0 sm:max-h-[calc(100vh-3rem)]" role="dialog" aria-label={interpolate(copy.editor.dialogAria, { gtin: state.data.gtin })} aria-modal="true" onKeyDown={(event) => {
         if (event.key === "Escape" && !state.saving) onClose();
       }} ref={dialogRef} tabIndex={-1}>
         <header className="flex items-start justify-between gap-4 border-b border-[var(--border-subtle)] bg-[linear-gradient(120deg,var(--surface-elevated),var(--accent-soft))] px-5 py-4 sm:px-6">
           <div className="min-w-0">
-            <p className="text-xs font-semibold tracking-[0.12em] text-[var(--accent-strong)] uppercase">Редактор соответствий</p>
+            <p className="text-xs font-semibold tracking-[0.12em] text-[var(--accent-strong)] uppercase">{copy.editor.eyebrow}</p>
             <div className="mt-1 flex flex-wrap items-center gap-2">
-              <h3 className="text-xl font-semibold tracking-[-0.025em]">Категории → GTIN</h3>
+              <h3 className="text-xl font-semibold tracking-[-0.025em]">{copy.editor.title}</h3>
               <code className="rounded-md bg-[var(--sidebar)] px-2 py-1 text-xs font-semibold text-white">{state.data.gtin}</code>
             </div>
-            <p className="mt-1 text-sm text-[var(--text-secondary)]">Один вариант категории и пола может принадлежать только одному GTIN.</p>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">{copy.editor.description}</p>
           </div>
-          <button className="shrink-0 rounded-xl p-2 text-[var(--text-muted)] hover:bg-[var(--surface-muted)]" disabled={state.saving} onClick={onClose} type="button" aria-label="Закрыть редактор"><X aria-hidden="true" size={20} /></button>
+          <button className="shrink-0 rounded-xl p-2 text-[var(--text-muted)] hover:bg-[var(--surface-muted)]" disabled={state.saving} onClick={onClose} type="button" aria-label={copy.editor.close}><X aria-hidden="true" size={20} /></button>
         </header>
 
         <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(14rem,.8fr)_minmax(16rem,1fr)_minmax(16rem,1fr)]">
-          <EditorColumn title="Категории WB" subtitle={`${state.data.subjects.length} доступно`}>
+          <EditorColumn title={copy.editor.subjectsTitle} subtitle={interpolate(copy.editor.available, { count: numberFormat.format(state.data.subjects.length) })}>
             <div className="grid gap-1.5">
               {state.data.subjects.map((subject) => {
                 const rule = state.draft.get(subject.subjectName);
                 const owners = foreignOwners(subject, state.data.gtin);
                 const blocked = fullyBlocked(subject, state.data.gtin);
-                const ownerSuffix = blocked && owners[0] ? ` · занято ${owners[0]}` : "";
+                const ownerSuffix = blocked && owners[0] ? interpolate(copy.editor.occupiedSuffix, { gtin: owners[0] }) : "";
                 return (
                   <div className={`flex items-center gap-2 rounded-xl border px-2 py-1.5 transition ${state.activeSubject === subject.subjectName ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-transparent hover:bg-[var(--surface-muted)]"}`} key={subject.subjectName}>
                     <input
-                      aria-label={`Использовать категорию ${subject.subjectName}${ownerSuffix}`}
+                      aria-label={interpolate(copy.editor.useSubject, { subject: subject.subjectName, owner: ownerSuffix })}
                       checked={Boolean(rule)}
                       disabled={blocked || state.saving}
                       onChange={() => toggleSubject(subject)}
                       type="checkbox"
                     />
-                    <button className="min-w-0 flex-1 py-1 text-left" onClick={() => onChange({ ...state, activeSubject: subject.subjectName })} type="button" aria-label={`Выбрать категорию ${subject.subjectName}`}>
+                    <button className="min-w-0 flex-1 py-1 text-left" onClick={() => onChange({ ...state, activeSubject: subject.subjectName })} type="button" aria-label={interpolate(copy.editor.chooseSubjectAria, { subject: subject.subjectName })}>
                       <span className="block truncate text-sm font-medium">{subject.subjectName}</span>
-                      <span className="mt-0.5 block truncate text-[0.68rem] text-[var(--text-muted)]">{ruleLabel(rule, owners)}</span>
+                      <span className="mt-0.5 block truncate text-[0.68rem] text-[var(--text-muted)]">{ruleLabel(copy, locale, rule, owners)}</span>
                     </button>
                   </div>
                 );
@@ -592,9 +612,10 @@ function MappingEditor({
             </div>
           </EditorColumn>
 
-          <EditorColumn title="Значения пола" subtitle={active?.subjectName ?? "Выберите категорию"} accent>
+          <EditorColumn title={copy.editor.gendersTitle} subtitle={active?.subjectName ?? copy.editor.chooseSubject} accent>
             {active ? (
               <GenderEditor
+                copy={copy}
                 gtin={state.data.gtin}
                 subject={active}
                 rule={state.draft.get(active.subjectName)}
@@ -604,13 +625,13 @@ function MappingEditor({
                 onToggleGender={(gender) => toggleGender(active, gender)}
               />
             ) : (
-              <EditorHint icon={<Tags aria-hidden="true" size={22} />} text="В локальном каталоге нет категорий для настройки." />
+              <EditorHint icon={<Tags aria-hidden="true" size={22} />} text={copy.editor.noSubjects} />
             )}
           </EditorColumn>
 
-          <EditorColumn title="Выбранные правила" subtitle={`${selectedCount} категорий`}>
+          <EditorColumn title={copy.editor.selectedTitle} subtitle={interpolate(copy.editor.categories, { count: numberFormat.format(selectedCount) })}>
             {selectedCount === 0 ? (
-              <EditorHint icon={<Layers3 aria-hidden="true" size={22} />} text="Выберите категории и значения пола. Пустой список очистит соответствие этого GTIN." />
+              <EditorHint icon={<Layers3 aria-hidden="true" size={22} />} text={copy.editor.emptySelection} />
             ) : (
               <div className="grid gap-2">
                 {state.data.subjects.filter((subject) => state.draft.has(subject.subjectName)).map((subject) => {
@@ -621,13 +642,13 @@ function MappingEditor({
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold">{subject.subjectName}</p>
-                          <p className="mt-1 text-xs leading-4 text-[var(--text-secondary)]">{rule.wildcard ? "Все значения пола" : `${rule.genders.size} ${rule.genders.size === 1 ? "точное значение" : "точных значения"}`}</p>
+                          <p className="mt-1 text-xs leading-4 text-[var(--text-secondary)]">{rule.wildcard ? copy.rule.wildcard : formatKizCount(copy, locale, rule.genders.size, "exact")}</p>
                         </div>
-                        <button className="rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-elevated)] hover:text-[var(--danger)]" disabled={state.saving} onClick={() => removeSubject(subject.subjectName)} type="button" aria-label={`Удалить правило ${subject.subjectName}`}><X aria-hidden="true" size={16} /></button>
+                        <button className="rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-elevated)] hover:text-[var(--danger)]" disabled={state.saving} onClick={() => removeSubject(subject.subjectName)} type="button" aria-label={interpolate(copy.editor.removeRule, { subject: subject.subjectName })}><X aria-hidden="true" size={16} /></button>
                       </div>
                       {!rule.wildcard ? (
                         <div className="mt-2 flex flex-wrap gap-1.5">
-                          {[...rule.genders].map((gender) => <span className="rounded-full bg-[var(--surface-elevated)] px-2 py-1 text-[0.68rem] font-medium text-[var(--text-secondary)]" key={gender}>{displayGender(gender)}</span>)}
+                          {[...rule.genders].map((gender) => <span className="rounded-full bg-[var(--surface-elevated)] px-2 py-1 text-[0.68rem] font-medium text-[var(--text-secondary)]" key={gender}>{displayGender(copy, gender)}</span>)}
                         </div>
                       ) : null}
                     </div>
@@ -641,16 +662,16 @@ function MappingEditor({
         <footer className="flex flex-col gap-3 border-t border-[var(--border-subtle)] bg-[var(--surface-muted)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div className="min-h-5">
             {state.saveError ? (
-              <p className="flex items-center gap-2 text-sm font-medium text-rose-700" role="alert"><AlertCircle aria-hidden="true" size={17} />Не удалось сохранить соответствие</p>
+              <p className="flex items-center gap-2 text-sm font-medium text-rose-700" role="alert"><AlertCircle aria-hidden="true" size={17} />{copy.editor.saveError}</p>
             ) : (
-              <p className="text-xs text-[var(--text-muted)]">Сохранение атомарно заменит правила только для этого GTIN.</p>
+              <p className="text-xs text-[var(--text-muted)]">{copy.editor.atomic}</p>
             )}
           </div>
           <div className="flex justify-end gap-2">
-            <button className="h-10 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-4 text-sm font-semibold hover:bg-[var(--surface-muted)] disabled:opacity-50" disabled={state.saving} onClick={onClose} type="button">Отмена</button>
-            <button className="inline-flex h-10 items-center gap-2 rounded-xl bg-[var(--sidebar)] px-4 text-sm font-semibold text-white hover:bg-[#203b30] disabled:cursor-wait disabled:opacity-60" disabled={state.saving} onClick={onSave} type="button" aria-label="Сохранить соответствие">
+            <button className="h-10 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-4 text-sm font-semibold hover:bg-[var(--surface-muted)] disabled:opacity-50" disabled={state.saving} onClick={onClose} type="button">{copy.editor.cancel}</button>
+            <button className="inline-flex h-10 items-center gap-2 rounded-xl bg-[var(--sidebar)] px-4 text-sm font-semibold text-white hover:bg-[#203b30] disabled:cursor-wait disabled:opacity-60" disabled={state.saving} onClick={onSave} type="button" aria-label={copy.editor.saveAria}>
               {state.saving ? <LoaderCircle className="animate-spin" aria-hidden="true" size={16} /> : <Check aria-hidden="true" size={16} />}
-              {state.saving ? "Сохраняем…" : "Сохранить"}
+              {state.saving ? copy.editor.saving : copy.editor.save}
             </button>
           </div>
         </footer>
@@ -672,6 +693,7 @@ function EditorColumn({ title, subtitle, accent = false, children }: { title: st
 }
 
 function GenderEditor({
+  copy,
   gtin,
   subject,
   rule,
@@ -680,6 +702,7 @@ function GenderEditor({
   onToggleWildcard,
   onToggleGender,
 }: {
+  copy: KizMappingCopy;
   gtin: string;
   subject: SubjectOption;
   rule: RuleDraft | undefined;
@@ -693,34 +716,34 @@ function GenderEditor({
   if (!rule) {
     return (
       <div className="grid gap-4">
-        <EditorHint icon={<CircleDot aria-hidden="true" size={22} />} text={fullyBlocked(subject, gtin) ? `Все варианты уже принадлежат ${owners.join(", ")}.` : "Включите категорию, чтобы выбрать допустимые значения пола."} />
-        {!fullyBlocked(subject, gtin) ? <button className="rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-4 py-2.5 text-sm font-semibold text-[var(--accent-strong)]" onClick={onToggleSubject} type="button">Включить категорию</button> : null}
+        <EditorHint icon={<CircleDot aria-hidden="true" size={22} />} text={fullyBlocked(subject, gtin) ? interpolate(copy.gender.allOwned, { owners: owners.join(", ") }) : copy.gender.enableHint} />
+        {!fullyBlocked(subject, gtin) ? <button className="rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-4 py-2.5 text-sm font-semibold text-[var(--accent-strong)]" onClick={onToggleSubject} type="button">{copy.gender.enable}</button> : null}
       </div>
     );
   }
   return (
     <div className="grid gap-2">
       <label className={`flex items-start gap-3 rounded-xl border p-3 ${wildcardBlocked ? "border-[var(--border-subtle)] bg-[var(--surface-muted)] opacity-70" : "border-emerald-200 bg-emerald-50"}`}>
-        <input aria-label="Все значения пола" checked={rule.wildcard} disabled={saving || wildcardBlocked} onChange={onToggleWildcard} type="checkbox" />
+        <input aria-label={copy.rule.wildcard} checked={rule.wildcard} disabled={saving || wildcardBlocked} onChange={onToggleWildcard} type="checkbox" />
         <span className="min-w-0">
-          <span className="block text-sm font-semibold">Все значения пола</span>
-          <span className="mt-0.5 block text-xs leading-4 text-[var(--text-secondary)]">Будущие значения этой категории тоже получат этот GTIN.</span>
-          {wildcardBlocked ? <span className="mt-1 block text-xs font-medium text-amber-800">Недоступно: часть вариантов занята {owners.join(", ")}</span> : null}
+          <span className="block text-sm font-semibold">{copy.rule.wildcard}</span>
+          <span className="mt-0.5 block text-xs leading-4 text-[var(--text-secondary)]">{copy.gender.wildcardDescription}</span>
+          {wildcardBlocked ? <span className="mt-1 block text-xs font-medium text-amber-800">{interpolate(copy.gender.wildcardBlocked, { owners: owners.join(", ") })}</span> : null}
         </span>
       </label>
       {subject.genders.map((gender) => {
         const occupied = foreignOwner(gender.ownerGtin, gtin);
         const checked = rule.wildcard || rule.genders.has(gender.value);
-        const ownerSuffix = occupied ? ` · занято ${gender.ownerGtin}` : "";
+        const ownerSuffix = occupied ? interpolate(copy.gender.occupiedSuffix, { gtin: gender.ownerGtin }) : "";
         return (
           <label className={`flex items-center gap-3 rounded-xl border px-3 py-3 ${occupied ? "border-[var(--border-subtle)] bg-[var(--surface-muted)] text-[var(--text-muted)]" : checked ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--border-subtle)] bg-[var(--surface-elevated)] hover:border-[var(--accent)]"}`} key={gender.value}>
-            <input aria-label={`${displayGender(gender.value)}${ownerSuffix}`} checked={checked} disabled={saving || occupied} onChange={() => onToggleGender(gender)} type="checkbox" />
-            <span className="min-w-0 flex-1 truncate text-sm font-medium">{displayGender(gender.value)}</span>
+            <input aria-label={`${displayGender(copy, gender.value)}${ownerSuffix}`} checked={checked} disabled={saving || occupied} onChange={() => onToggleGender(gender)} type="checkbox" />
+            <span className="min-w-0 flex-1 truncate text-sm font-medium">{displayGender(copy, gender.value)}</span>
             {occupied ? <code className="text-[0.65rem]">{gender.ownerGtin}</code> : null}
           </label>
         );
       })}
-      {subject.genders.length === 0 ? <p className="rounded-xl bg-[var(--surface-muted)] p-3 text-sm text-[var(--text-secondary)]">У категории нет сохранённых значений пола. Используйте правило «Все значения пола».</p> : null}
+      {subject.genders.length === 0 ? <p className="rounded-xl bg-[var(--surface-muted)] p-3 text-sm text-[var(--text-secondary)]">{copy.gender.empty}</p> : null}
     </div>
   );
 }
@@ -792,41 +815,25 @@ function fullyBlocked(subject: SubjectOption, gtin: string) {
     && subject.genders.every((gender) => foreignOwner(gender.ownerGtin, gtin));
 }
 
-function ruleLabel(rule: RuleDraft | undefined, owners: string[]) {
-  if (rule?.wildcard) return "Все значения пола";
-  if (rule) return `${rule.genders.size} выбрано`;
-  if (owners.length > 0) return `Занято: ${owners.join(", ")}`;
-  return "Не используется";
+function ruleLabel(copy: KizMappingCopy, locale: string, rule: RuleDraft | undefined, owners: string[]) {
+  if (rule?.wildcard) return copy.rule.wildcard;
+  if (rule) return interpolate(copy.rule.selected, { count: new Intl.NumberFormat(locale).format(rule.genders.size) });
+  if (owners.length > 0) return interpolate(copy.rule.occupied, { owners: owners.join(", ") });
+  return copy.rule.unused;
 }
 
-function displayGender(value: string) {
-  return value === UNSPECIFIED_GENDER ? "Пол не указан" : value;
+function displayGender(copy: KizMappingCopy, value: string) {
+  return value === UNSPECIFIED_GENDER ? copy.gender.unspecified : value;
 }
 
-function statusLabel(value: string) {
-  const labels: Record<string, string> = {
-    VALIDATING: "Проверка",
-    CREATING_ORDER: "Создание заказа",
-    POLLING_ORDER: "Ожидание кодов",
-    DOWNLOADING_CODES: "Загрузка кодов",
-    CODES_READY: "Коды готовы",
-    CODES_DOWNLOADED: "Коды загружены",
-    WAITING_INTRODUCTION_READINESS: "Ожидает ввода в оборот",
-    SUBMITTING_INTRODUCTION: "Отправка в оборот",
-    POLLING_INTRODUCTION: "Проверка ввода",
-    INTRODUCTION_FAILED: "Ошибка ввода",
-    INTRODUCED: "Введено в оборот",
-    COMPLETED: "Завершено",
-    FAILED: "Ошибка",
-    CANCELLED: "Отменено",
-  };
-  return labels[value] ?? "";
+function statusLabel(copy: KizMappingCopy, value: string) {
+  return copy.statuses[value as keyof KizMappingCopy["statuses"]] ?? "";
 }
 
-function formatDate(value: string) {
-  if (!value) return "нет данных";
+function formatDate(copy: KizMappingCopy, dateFormat: Intl.DateTimeFormat, value: string) {
+  if (!value) return copy.row.noDate;
   const date = new Date(value);
   return Number.isNaN(date.getTime())
-    ? "нет данных"
-    : new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short" }).format(date);
+    ? copy.row.noDate
+    : dateFormat.format(date);
 }

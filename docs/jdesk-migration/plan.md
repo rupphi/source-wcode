@@ -375,6 +375,8 @@ artifact. Recovery/idempotency tests precede implementation changes.
       create/add/deliver dialog copy with the supplies journey.
 - [x] Translate the complete FBO label-printing journey in RU/EN/VI/ZH, including locale-aware
       pair plurals, catalog/filter states and explicit quick/batch PDF export feedback.
+- [x] Translate the complete GTIN/KIZ mapping journey in RU/EN/VI/ZH: local inventory, filters,
+      pipeline statuses, locale dates/counts and the conflict-safe wildcard/exact rule editor.
 - [ ] Migrate every remaining feature surface before marking language parity complete.
 - [x] Port signed update check/download/install, shared optional-version skip, bounded streamed
       checksum validation, Authenticode/snapshot gates and fail-closed signed release automation.

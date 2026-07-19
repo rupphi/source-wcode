@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands } from "../../generated/commands";
 import { KizMappingView } from "./KizMappingView";
+import { getKizMappingCopy } from "./kizMappingI18n";
 
 vi.mock("../../generated/commands", () => ({
   commands: {
@@ -209,5 +210,26 @@ describe("KizMappingView", () => {
     await user.click(within(dialog).getByRole("button", { name: "Сохранить соответствие" }));
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("Не удалось сохранить соответствие");
     expect(document.body).not.toHaveTextContent(secret);
+  });
+
+  it("localizes the English catalog and editor without saving before an explicit action", async () => {
+    const user = userEvent.setup();
+    render(<KizMappingView copy={getKizMappingCopy("en")} locale="en-US" shopId={7} />);
+
+    expect(await screen.findByRole("heading", { name: "SKU and GTIN mappings" })).toBeVisible();
+    expect(screen.getByText("12 available")).toBeVisible();
+    expect(screen.getByText("Completed")).toBeVisible();
+    expect(screen.getByText(/^Updated:/)).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: `Configure mapping for ${gtin}` }));
+    const dialog = await screen.findByRole("dialog", { name: `GTIN mapping ${gtin}` });
+    expect(within(dialog).getByText("Mapping editor")).toBeVisible();
+    expect(within(dialog).getByRole("checkbox", { name: "All gender values" })).toBeChecked();
+    expect(within(dialog).getByRole("button", { name: "Save mapping" })).toBeVisible();
+    expect(saveMapping).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(saveMapping).not.toHaveBeenCalled();
   });
 });

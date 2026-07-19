@@ -950,6 +950,47 @@ describe("App", () => {
     expect(screen.getByText("04601234567890")).toBeVisible();
   });
 
+  it("switches the active GTIN mapping catalog from English to Vietnamese and Chinese", async () => {
+    const user = userEvent.setup();
+    loadPreferences.mockResolvedValue({ language: "en", theme: "dark" });
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Main shop", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard.mockResolvedValue({ shopId: 7, productCount: 0, newOrderCount: 0, openSupplyCount: 0 });
+    loadKizMappingCatalog.mockResolvedValue({
+      shopId: 7,
+      query: "",
+      categories: [],
+      page: 1,
+      pageSize: 50,
+      hasMore: false,
+      availableCategories: [],
+      items: [],
+    });
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "GTIN and KIZ" }));
+
+    expect(await screen.findByRole("heading", { name: "GTIN mappings" })).toBeVisible();
+    expect(screen.getByText("The GTIN catalog is empty")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Language" }), "vi");
+    await user.click(await screen.findByRole("button", { name: "Đóng cài đặt" }));
+    expect(await screen.findByRole("heading", { name: "Ánh xạ GTIN" })).toBeVisible();
+    expect(screen.getByText("Danh mục GTIN đang trống")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Cài đặt" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Ngôn ngữ" }), "zh");
+    await user.click(await screen.findByRole("button", { name: "关闭设置" }));
+    expect(await screen.findByRole("heading", { name: "GTIN 映射" })).toBeVisible();
+    expect(screen.getByText("GTIN 目录为空")).toBeVisible();
+    expect(loadKizMappingCatalog).toHaveBeenCalledTimes(1);
+  });
+
   it("opens the safe local Znack settings workspace from primary navigation", async () => {
     const user = userEvent.setup();
     bootstrap.mockResolvedValue({
