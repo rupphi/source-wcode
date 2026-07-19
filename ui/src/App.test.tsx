@@ -1140,19 +1140,19 @@ describe("App", () => {
     render(<App />);
     await user.click(await screen.findByRole("button", { name: "Znack Automation" }));
 
-    expect(await screen.findByRole("heading", { name: "Secure Znack workspace" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Znack marking workspace" })).toBeVisible();
     expect(screen.getByText("Default document")).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Settings" }));
     await user.selectOptions(screen.getByRole("combobox", { name: "Language" }), "vi");
     await user.click(await screen.findByRole("button", { name: "Đóng cài đặt" }));
-    expect(await screen.findByRole("heading", { name: "Không gian Znack bảo mật" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Khu vực đánh dấu Znack" })).toBeVisible();
     expect(screen.getByText("Tài liệu mặc định")).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Cài đặt" }));
     await user.selectOptions(screen.getByRole("combobox", { name: "Ngôn ngữ" }), "zh");
     await user.click(await screen.findByRole("button", { name: "关闭设置" }));
-    expect(await screen.findByRole("heading", { name: "Znack 安全工作区" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Znack 标记工作区" })).toBeVisible();
     expect(screen.getByText("默认文档")).toBeVisible();
     expect(loadZnackSettings).toHaveBeenCalledTimes(1);
   });

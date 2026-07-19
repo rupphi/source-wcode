@@ -1,8 +1,6 @@
 import {
   Archive,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   EyeOff,
   FileText,
   KeyRound,
@@ -17,7 +15,9 @@ import {
   SlidersHorizontal,
   Tag,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { InfiniteLoadTrigger } from "../../components/InfiniteLoadTrigger";
+import { useBoundedInfinitePages, type InfinitePagesStatus } from "../../components/useBoundedInfinitePages";
 import { commands } from "../../generated/commands";
 import type { CertificateDiscoveryResponse, ProductItem, ProductsResponse, SettingsResponse } from "../../generated/types";
 import { interpolate } from "../../i18n";
@@ -117,11 +117,9 @@ export function ZnackView({ shopId, licenseAllowed = true, copy = defaultZnackCo
   const [certificateState, setCertificateState] = useState<CertificateState>({ status: "idle" });
   const [selectedCertificate, setSelectedCertificate] = useState("");
   const [testingCertificate, setTestingCertificate] = useState(false);
-  const [productState, setProductState] = useState<ProductState>({ status: "idle" });
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
   const [categories, setCategories] = useState<string[]>([]);
-  const [page, setPage] = useState(1);
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [mutating, setMutating] = useState(false);
@@ -133,7 +131,6 @@ export function ZnackView({ shopId, licenseAllowed = true, copy = defaultZnackCo
   const [purchaseTarget, setPurchaseTarget] = useState<ProductItem | null>(null);
   const [operationsRefresh, setOperationsRefresh] = useState(0);
   const settingsRequest = useRef(0);
-  const productsRequest = useRef(0);
   const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
 
   useEffect(() => {
@@ -160,36 +157,36 @@ export function ZnackView({ shopId, licenseAllowed = true, copy = defaultZnackCo
   }, [settingsRetry, shopId]);
 
   const deleted = tab === "deleted";
-  useEffect(() => {
-    if (tab !== "products" && tab !== "deleted") return;
-    const request = ++productsRequest.current;
-    let active = true;
-    void commands.znack.products({
+  const productsActive = tab === "products" || tab === "deleted";
+  const loadProductPage = useCallback(async (page: number) => {
+    if (!productsActive) return { items: [], hasMore: false };
+    const response = await commands.znack.products({
       shopId,
       query,
       categories,
       deleted,
       page,
       pageSize: PAGE_SIZE,
-    }).then(
-      (response) => {
-        if (!active || request !== productsRequest.current) return;
-        if (!matchesProducts(response, shopId, query, categories, deleted, page)) {
-          setProductState({ status: "error" });
-          return;
-        }
-        setProductState({ status: "ready", data: response });
-        setSelected(new Set());
-      },
-      () => {
-        if (active && request === productsRequest.current) setProductState({ status: "error" });
-      },
-    );
-    return () => {
-      active = false;
-      productsRequest.current += 1;
-    };
-  }, [categories, deleted, page, productRetry, query, shopId, tab]);
+    });
+    if (!matchesProducts(response, shopId, query, categories, deleted, page)) {
+      throw new Error("Unexpected Znack products response");
+    }
+    return { items: response.items, hasMore: response.hasMore, summary: response };
+  }, [categories, deleted, productsActive, query, shopId]);
+  const productPages = useBoundedInfinitePages<ProductItem, ProductsResponse>({
+    resetKey: JSON.stringify([shopId, tab, query, categories, productRetry]),
+    loadPage: loadProductPage,
+    getId: (item) => item.gtin,
+  });
+  const productState: ProductState = !productsActive
+    ? { status: "idle" }
+    : productPages.items.length === 0 && productPages.status === "loading"
+      ? { status: "loading" }
+      : productPages.items.length === 0 && productPages.status === "error"
+        ? { status: "error" }
+        : productPages.summary
+          ? { status: "ready", data: { ...productPages.summary, items: [...productPages.items] } }
+          : { status: "loading" };
 
   const activeSyncJobId = syncJob?.jobId ?? "";
   useEffect(() => {
@@ -212,7 +209,6 @@ export function ZnackView({ shopId, licenseAllowed = true, copy = defaultZnackCo
         setSyncJob(null);
         if (response.state === "completed") {
           setProductNotice(interpolate(copy.products.synced, { count: numberFormat.format(response.products) }));
-          setProductState({ status: "loading" });
           setProductRetry((value) => value + 1);
         } else if (response.state === "cancelled") {
           setProductNotice(copy.products.syncCancelled);
@@ -241,8 +237,8 @@ export function ZnackView({ shopId, licenseAllowed = true, copy = defaultZnackCo
   };
 
   const reloadProducts = () => {
-    setProductState({ status: "loading" });
     setProductError("");
+    setSelected(new Set());
     setProductRetry((value) => value + 1);
   };
 
@@ -251,12 +247,10 @@ export function ZnackView({ shopId, licenseAllowed = true, copy = defaultZnackCo
     setQueryInput("");
     setQuery("");
     setCategories([]);
-    setPage(1);
     setCategoryOpen(false);
     setSelected(new Set());
     setProductNotice("");
     setProductError("");
-    if (next === "products" || next === "deleted") setProductState({ status: "loading" });
   };
 
   const settingsDirty = useMemo(() => {
@@ -374,16 +368,12 @@ export function ZnackView({ shopId, licenseAllowed = true, copy = defaultZnackCo
 
   const search = (event: FormEvent) => {
     event.preventDefault();
-    setProductState({ status: "loading" });
     setSelected(new Set());
-    setPage(1);
     setQuery(queryInput.trim());
   };
 
   const toggleCategory = (category: string) => {
-    setProductState({ status: "loading" });
     setSelected(new Set());
-    setPage(1);
     setCategories((current) => current.includes(category)
       ? current.filter((value) => value !== category)
       : current.length < 30 ? [...current, category] : current);
@@ -421,27 +411,21 @@ export function ZnackView({ shopId, licenseAllowed = true, copy = defaultZnackCo
     }
   };
 
-  const changePage = (next: number) => {
-    setProductState({ status: "loading" });
-    setSelected(new Set());
-    setPage(next);
-  };
-
   const openPurchase = (product: ProductItem) => {
     setPurchaseTarget(product);
   };
 
   return (
-    <section className="space-y-5" aria-label={copy.header.aria}>
-      <div className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-card)]">
-        <div className="flex flex-col gap-4 border-b border-[var(--border-subtle)] bg-[linear-gradient(120deg,color-mix(in_srgb,var(--accent)_12%,transparent),transparent_58%)] p-5 lg:flex-row lg:items-center lg:justify-between">
+    <section className="space-y-3" aria-label={copy.header.aria}>
+      <div className="overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-card)]">
+        <div className="flex flex-col gap-3 border-b border-[var(--border-subtle)] bg-[var(--accent-soft)] p-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-start gap-3">
             <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent-strong)]">
               <Tag aria-hidden="true" size={21} />
             </div>
             <div>
-              <h3 className="text-lg font-semibold tracking-[-0.02em]">{copy.header.title}</h3>
-              <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--text-secondary)]">
+              <h3 className="text-base font-semibold tracking-[-0.02em]">{copy.header.title}</h3>
+              <p className="mt-1 max-w-2xl text-xs leading-5 text-[var(--text-secondary)]">
                 {copy.header.description}
               </p>
             </div>
@@ -464,7 +448,7 @@ export function ZnackView({ shopId, licenseAllowed = true, copy = defaultZnackCo
               role="tab"
               aria-selected={tab === value}
               aria-controls={`znack-panel-${value}`}
-              className={`inline-flex min-w-fit items-center gap-2 rounded-t-xl border-b-2 px-4 py-3 text-sm font-semibold transition ${
+              className={`inline-flex min-w-fit items-center gap-1.5 rounded-t-lg border-b-2 px-3 py-2.5 text-xs font-semibold transition ${
                 tab === value
                   ? "border-[var(--accent)] text-[var(--accent-strong)]"
                   : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]"
@@ -500,7 +484,7 @@ export function ZnackView({ shopId, licenseAllowed = true, copy = defaultZnackCo
             />
           </div>
         ) : tab === "products" || tab === "deleted" ? (
-          <div id={`znack-panel-${tab}`} role="tabpanel" aria-label={deleted ? copy.tabs.deleted : copy.tabs.products} className="p-4 lg:p-5">
+          <div id={`znack-panel-${tab}`} role="tabpanel" aria-label={deleted ? copy.tabs.deleted : copy.tabs.products} className="p-3 lg:p-4">
             <ProductPanel
               copy={copy}
               numberFormat={numberFormat}
@@ -510,7 +494,9 @@ export function ZnackView({ shopId, licenseAllowed = true, copy = defaultZnackCo
               categories={categories}
               categoryOpen={categoryOpen}
               selected={selected}
-              page={page}
+              loadStatus={productPages.status}
+              hasMore={productPages.hasMore}
+              addedCount={productPages.addedCount}
               mutating={mutating}
               notice={productNotice}
               error={productError}
@@ -524,7 +510,8 @@ export function ZnackView({ shopId, licenseAllowed = true, copy = defaultZnackCo
               onCategoryOpen={() => setCategoryOpen((open) => !open)}
               onToggleSelected={toggleSelected}
               onVisibility={() => void changeVisibility()}
-              onPage={changePage}
+              onLoadMore={productPages.loadMore}
+              onLoadRetry={productPages.retry}
               onRetry={reloadProducts}
               onSync={() => void startSync()}
               onCancelSync={() => void cancelSync()}
@@ -753,7 +740,9 @@ function ProductPanel({
   categories,
   categoryOpen,
   selected,
-  page,
+  loadStatus,
+  hasMore,
+  addedCount,
   mutating,
   notice,
   error,
@@ -766,7 +755,8 @@ function ProductPanel({
   onCategoryOpen,
   onToggleSelected,
   onVisibility,
-  onPage,
+  onLoadMore,
+  onLoadRetry,
   onRetry,
   onSync,
   onCancelSync,
@@ -781,7 +771,9 @@ function ProductPanel({
   categories: string[];
   categoryOpen: boolean;
   selected: Set<string>;
-  page: number;
+  loadStatus: InfinitePagesStatus;
+  hasMore: boolean;
+  addedCount: number;
   mutating: boolean;
   notice: string;
   error: string;
@@ -794,7 +786,8 @@ function ProductPanel({
   onCategoryOpen: () => void;
   onToggleSelected: (gtin: string) => void;
   onVisibility: () => void;
-  onPage: (page: number) => void;
+  onLoadMore: () => void;
+  onLoadRetry: () => void;
   onRetry: () => void;
   onSync: () => void;
   onCancelSync: () => void;
@@ -883,7 +876,7 @@ function ProductPanel({
       ) : null}
       {data && data.items.length > 0 ? (
         <div className="overflow-hidden rounded-xl border border-[var(--border-subtle)]">
-          <div className="hidden grid-cols-[2.2rem_9.5rem_minmax(14rem,1.2fr)_minmax(8rem,.6fr)_minmax(11rem,.8fr)_7rem] gap-3 border-b border-[var(--border-subtle)] bg-[var(--surface-muted)] px-4 py-3 text-xs font-semibold tracking-wide text-[var(--text-muted)] uppercase lg:grid">
+          <div className="hidden grid-cols-[2.2rem_9.5rem_minmax(14rem,1.2fr)_minmax(8rem,.6fr)_minmax(11rem,.8fr)_3rem] gap-3 border-b border-[var(--border-subtle)] bg-[var(--surface-muted)] px-4 py-2.5 text-xs font-semibold tracking-wide text-[var(--text-muted)] uppercase lg:grid">
             <span /><span>GTIN</span><span>{copy.products.columns.product}</span><span>{copy.products.columns.classification}</span><span>{copy.products.columns.readiness}</span><span>{copy.products.columns.kiz}</span>
           </div>
           <ul className="divide-y divide-[var(--border-subtle)]">
@@ -891,13 +884,13 @@ function ProductPanel({
               const mark = readiness(copy, item.goodMarkStatus, "mark");
               const turn = readiness(copy, item.goodTurnStatus, "turn");
               return (
-                <li key={item.gtin} className="grid gap-3 px-4 py-4 lg:grid-cols-[2.2rem_9.5rem_minmax(14rem,1.2fr)_minmax(8rem,.6fr)_minmax(11rem,.8fr)_7rem] lg:items-center">
+                <li key={item.gtin} className="grid [content-visibility:auto] [contain-intrinsic-size:auto_7rem] gap-3 px-3 py-3 lg:grid-cols-[2.2rem_9.5rem_minmax(14rem,1.2fr)_minmax(8rem,.6fr)_minmax(11rem,.8fr)_3rem] lg:items-center lg:px-4">
                   <input type="checkbox" className="size-4 accent-[var(--accent)]" aria-label={interpolate(copy.products.selectAria, { gtin: item.gtin })} checked={selected.has(item.gtin)} onChange={() => onToggleSelected(item.gtin)} />
                   <code className="text-xs font-semibold text-[var(--text-primary)]">{item.gtin}</code>
                   <div className="min-w-0"><p className="truncate text-sm font-semibold">{item.productName || copy.products.unnamed}</p><p className="mt-1 truncate text-xs text-[var(--text-muted)]">{item.category || copy.products.uncategorized}</p></div>
                   <div className="text-xs text-[var(--text-secondary)]"><p>{copy.products.customsCode} {item.tnVed || "—"}</p><p className="mt-1">CIS {item.cisType || "—"}</p></div>
                   <div className="flex flex-wrap gap-1.5"><span className={mark.className}>{mark.label}</span><span className={turn.className}>{turn.label}</span></div>
-                  {!deleted ? <button className="secondary-button justify-center" type="button" disabled={!canPurchase} onClick={() => onBuy(item)} aria-label={interpolate(copy.products.buyAria, { gtin: item.gtin })}><ShoppingCart aria-hidden="true" size={15} />{copy.products.buy}</button> : <span />}
+                  {!deleted ? <button className="icon-button justify-self-end" type="button" title={copy.products.buy} disabled={!canPurchase} onClick={() => onBuy(item)} aria-label={interpolate(copy.products.buyAria, { gtin: item.gtin })}><ShoppingCart aria-hidden="true" size={15} /></button> : <span />}
                 </li>
               );
             })}
@@ -905,11 +898,14 @@ function ProductPanel({
         </div>
       ) : null}
       {data ? (
-        <div className="flex items-center justify-between gap-3">
-          <button className="secondary-button" type="button" disabled={page <= 1 || state.status === "loading"} onClick={() => onPage(page - 1)} aria-label={copy.products.previousAria}><ChevronLeft aria-hidden="true" size={16} />{copy.products.previous}</button>
-          <span className="text-sm font-medium text-[var(--text-secondary)]">{interpolate(copy.products.page, { page: numberFormat.format(page) })}</span>
-          <button className="secondary-button" type="button" disabled={!data.hasMore || state.status === "loading"} onClick={() => onPage(page + 1)} aria-label={copy.products.nextAria}>{copy.products.next}<ChevronRight aria-hidden="true" size={16} /></button>
-        </div>
+        <InfiniteLoadTrigger
+          status={loadStatus}
+          hasMore={hasMore}
+          copy={{ loading: copy.products.loadingMore, loadMore: copy.products.loadMore, loadError: copy.products.loadMoreError, retry: copy.products.retry, end: copy.products.end }}
+          announcement={addedCount > 0 ? interpolate(copy.products.added, { count: numberFormat.format(addedCount) }) : ""}
+          onLoadMore={onLoadMore}
+          onRetry={onLoadRetry}
+        />
       ) : null}
     </div>
   );

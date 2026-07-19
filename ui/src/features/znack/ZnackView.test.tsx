@@ -263,9 +263,13 @@ describe("ZnackView", () => {
       page: 1,
     })));
 
-    await user.click(screen.getByRole("button", { name: "Следующая страница товаров Znack" }));
+    await user.click(screen.getByRole("checkbox", { name: `Выбрать GTIN ${gtin}` }));
+    expect(screen.queryByRole("button", { name: "Следующая страница товаров Znack" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Показать ещё" }));
     expect(await screen.findByText("Кеды North")).toBeVisible();
-    expect(screen.getByText("Страница 2")).toBeVisible();
+    expect(screen.getByText("Ботинки Alpine")).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: `Выбрать GTIN ${gtin}` })).toBeChecked();
+    expect(loadProducts).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, pageSize: 50 }));
   });
 
   it("discovers and tests a certificate using only opaque ids and the current version", async () => {
@@ -519,7 +523,7 @@ describe("ZnackView", () => {
     const user = userEvent.setup();
     render(<ZnackView copy={getZnackCopy("en")} locale="en-US" shopId={7} />);
 
-    expect(await screen.findByRole("heading", { name: "Secure Znack workspace" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Znack marking workspace" })).toBeVisible();
     expect(screen.getByText("Signature verified")).toBeVisible();
     await user.click(screen.getByRole("tab", { name: "Products" }));
 
@@ -541,7 +545,7 @@ describe("ZnackView", () => {
   it("localizes the English persisted purchases and sanitized operation log", async () => {
     const user = userEvent.setup();
     render(<ZnackView copy={getZnackCopy("en")} locale="en-US" shopId={7} />);
-    await screen.findByRole("heading", { name: "Secure Znack workspace" });
+    await screen.findByRole("heading", { name: "Znack marking workspace" });
 
     await user.click(screen.getByRole("tab", { name: "Purchases" }));
     expect(await screen.findByRole("heading", { name: "KIZ purchases and introduction" })).toBeVisible();
