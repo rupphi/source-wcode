@@ -123,10 +123,11 @@ describe("KizMappingView", () => {
       page: 1,
     })));
 
-    await user.click(screen.getByRole("button", { name: "Следующая страница GTIN" }));
+    expect(screen.queryByRole("button", { name: "Следующая страница GTIN" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Показать ещё" }));
     expect(await screen.findByText("Ботинки North")).toBeVisible();
-    expect(screen.getByText("Страница 2")).toBeVisible();
-    expect(screen.queryByText("Куртка Alpine")).not.toBeInTheDocument();
+    expect(screen.getByText("Куртка Alpine")).toBeVisible();
+    expect(loadCatalog).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, pageSize: 50 }));
   });
 
   it("retries a redacted load failure and renders the local empty state", async () => {

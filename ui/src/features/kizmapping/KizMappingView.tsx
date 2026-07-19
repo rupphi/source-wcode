@@ -4,8 +4,6 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   CircleDot,
   Layers3,
   Link2,
@@ -16,7 +14,9 @@ import {
   Tags,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { InfiniteLoadTrigger } from "../../components/InfiniteLoadTrigger";
+import { useBoundedInfinitePages } from "../../components/useBoundedInfinitePages";
 import { commands } from "../../generated/commands";
 import type {
   CatalogResponse,
@@ -54,7 +54,6 @@ type RuleDraft = {
 };
 
 const PAGE_SIZE = 50;
-const PAGE_LIMIT = 100_000;
 const MAX_CATEGORY_FILTERS = 30;
 const UNSPECIFIED_GENDER = "__UNSPECIFIED__";
 export function KizMappingView({ shopId, copy = defaultKizMappingCopy, locale = "ru-RU" }: { shopId: number; copy?: KizMappingCopy; locale?: string }) {
@@ -62,60 +61,47 @@ export function KizMappingView({ shopId, copy = defaultKizMappingCopy, locale = 
   const [query, setQuery] = useState("");
   const [categories, setCategories] = useState<string[]>([]);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
-  const [page, setPage] = useState(1);
   const [retryKey, setRetryKey] = useState(0);
-  const [catalog, setCatalog] = useState<CatalogState>({ status: "loading", requestKey: "" });
   const [editor, setEditor] = useState<EditorState>({ status: "closed" });
   const [savedNotice, setSavedNotice] = useState(false);
-  const catalogSequence = useRef(0);
   const editorSequence = useRef(0);
-  const requestKey = JSON.stringify([shopId, query, categories, page, retryKey]);
   const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   const dateFormat = useMemo(() => new Intl.DateTimeFormat(locale, { dateStyle: "short", timeStyle: "short" }), [locale]);
 
-  useEffect(() => {
-    const requestId = ++catalogSequence.current;
-    let active = true;
-    void commands.kizMapping.catalog({
+  const loadPage = useCallback(async (page: number) => {
+    const response = await commands.kizMapping.catalog({
       shopId,
       query,
       categories,
       page,
       pageSize: PAGE_SIZE,
-    }).then(
-      (response) => {
-        if (!active || catalogSequence.current !== requestId) return;
-        if (!matchesCatalogResponse(response, shopId, query, categories, page, PAGE_SIZE)) {
-          setCatalog({ status: "error", requestKey });
-          return;
-        }
-        setCatalog({ status: "ready", requestKey, data: response });
-      },
-      () => {
-        if (active && catalogSequence.current === requestId) {
-          setCatalog({ status: "error", requestKey });
-        }
-      },
-    );
-    return () => {
-      active = false;
-    };
-  }, [categories, page, query, requestKey, shopId]);
-
-  const visibleCatalog: CatalogState = catalog.requestKey === requestKey
-    ? catalog
-    : { status: "loading", requestKey };
+    });
+    if (!matchesCatalogResponse(response, shopId, query, categories, page, PAGE_SIZE)) {
+      throw new Error("Unexpected GTIN catalog response");
+    }
+    return { items: response.items, hasMore: response.hasMore, summary: response };
+  }, [categories, query, shopId]);
+  const pages = useBoundedInfinitePages<GtinItem, CatalogResponse>({
+    resetKey: JSON.stringify([shopId, query, categories, retryKey]),
+    loadPage,
+    getId: (item) => item.gtin,
+  });
+  const visibleCatalog: CatalogState = pages.items.length === 0 && pages.status === "loading"
+    ? { status: "loading", requestKey: String(pages.resetKey) }
+    : pages.items.length === 0 && pages.status === "error"
+      ? { status: "error", requestKey: String(pages.resetKey) }
+      : pages.summary
+        ? { status: "ready", requestKey: String(pages.resetKey), data: { ...pages.summary, items: [...pages.items] } }
+        : { status: "loading", requestKey: String(pages.resetKey) };
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const next = draftQuery.trim();
-    setPage(1);
     if (next === query) setRetryKey((value) => value + 1);
     else setQuery(next);
   };
 
   const toggleCategory = (category: string) => {
-    setPage(1);
     setCategories((current) => {
       if (current.includes(category)) return current.filter((value) => value !== category);
       return current.length >= MAX_CATEGORY_FILTERS ? current : [...current, category];
@@ -126,9 +112,8 @@ export function KizMappingView({ shopId, copy = defaultKizMappingCopy, locale = 
     setDraftQuery("");
     setQuery("");
     setCategories([]);
-    setPage(1);
     setCategoriesOpen(false);
-    if (!query && categories.length === 0 && page === 1) {
+    if (!query && categories.length === 0) {
       setRetryKey((value) => value + 1);
     }
   };
@@ -188,16 +173,16 @@ export function KizMappingView({ shopId, copy = defaultKizMappingCopy, locale = 
   };
 
   return (
-    <div className="grid gap-5">
-      <section className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
-        <div className="flex flex-col gap-4 bg-[linear-gradient(120deg,var(--surface-elevated),#eef9f3)] p-5 lg:flex-row lg:items-center lg:justify-between">
+    <div className="grid gap-3">
+      <section className="overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
+        <div className="flex flex-col gap-3 bg-[var(--accent-soft)] p-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-start gap-3">
             <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[var(--sidebar)] text-white">
               <Link2 aria-hidden="true" size={20} />
             </span>
             <div>
               <h3 className="font-semibold tracking-[-0.01em]">{copy.header.title}</h3>
-              <p className="mt-1 max-w-2xl text-sm leading-5 text-[var(--text-secondary)]">
+              <p className="mt-1 max-w-2xl text-xs leading-5 text-[var(--text-secondary)]">
                 {copy.header.description}
               </p>
             </div>
@@ -221,14 +206,14 @@ export function KizMappingView({ shopId, copy = defaultKizMappingCopy, locale = 
         </div>
       ) : null}
 
-      <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)] md:p-5">
-        <form className="flex flex-col gap-3 lg:flex-row" role="search" onSubmit={submitSearch}>
+      <section className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-3 shadow-[var(--shadow-panel)] md:p-4">
+        <form className="flex flex-col gap-2 lg:flex-row" role="search" onSubmit={submitSearch}>
           <label className="relative min-w-0 flex-1">
             <span className="sr-only">{copy.search.label}</span>
             <Search className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden="true" size={18} />
             <input
               aria-label={copy.search.label}
-              className="h-11 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] pr-4 pl-10 text-sm shadow-[var(--shadow-control)] outline-none transition placeholder:text-[var(--text-muted)] hover:border-[var(--accent)] focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]"
+              className="h-9 w-full rounded-lg border border-[var(--border-strong)] bg-[var(--surface-elevated)] pr-3 pl-10 text-xs shadow-[var(--shadow-control)] outline-none transition placeholder:text-[var(--text-muted)] hover:border-[var(--accent)] focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]"
               maxLength={120}
               onChange={(event) => setDraftQuery(event.target.value)}
               placeholder={copy.search.placeholder}
@@ -236,14 +221,14 @@ export function KizMappingView({ shopId, copy = defaultKizMappingCopy, locale = 
               value={draftQuery}
             />
           </label>
-          <button className="h-11 rounded-xl bg-[var(--sidebar)] px-5 text-sm font-semibold text-white transition hover:bg-[#203b30]" type="submit" aria-label={copy.search.submitAria}>
+          <button className="h-9 rounded-lg bg-[var(--button-primary)] px-4 text-xs font-semibold text-white transition hover:brightness-110" type="submit" aria-label={copy.search.submitAria}>
             {copy.search.submit}
           </button>
           <div className="relative">
             <button
               aria-expanded={categoriesOpen}
               aria-label={copy.search.categoriesAria}
-              className="flex h-11 w-full items-center justify-between gap-2 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-4 text-sm font-medium text-[var(--text-primary)] shadow-[var(--shadow-control)] transition hover:border-[var(--accent)] lg:w-auto"
+              className="flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-3 text-xs font-medium text-[var(--text-primary)] shadow-[var(--shadow-control)] transition hover:border-[var(--accent)] lg:w-auto"
               onClick={() => setCategoriesOpen((value) => !value)}
               type="button"
             >
@@ -269,7 +254,7 @@ export function KizMappingView({ shopId, copy = defaultKizMappingCopy, locale = 
             ) : null}
           </div>
           {(query || categories.length > 0) ? (
-            <button className="h-11 rounded-xl px-3 text-sm font-medium text-[var(--accent-strong)] hover:bg-[var(--accent-soft)]" onClick={clearFilters} type="button">
+            <button className="h-9 rounded-lg px-3 text-xs font-medium text-[var(--accent-strong)] hover:bg-[var(--accent-soft)]" onClick={clearFilters} type="button">
               {copy.search.clear}
             </button>
           ) : null}
@@ -304,11 +289,20 @@ export function KizMappingView({ shopId, copy = defaultKizMappingCopy, locale = 
         numberFormat={numberFormat}
         state={visibleCatalog}
         filtered={Boolean(query || categories.length > 0)}
-        onRetry={() => setRetryKey((value) => value + 1)}
+        onRetry={pages.retry}
         onOpenEditor={openEditor}
-        onPrevious={() => setPage((value) => Math.max(1, value - 1))}
-        onNext={() => setPage((value) => Math.min(PAGE_LIMIT, value + 1))}
       />
+
+      {pages.items.length > 0 ? (
+        <InfiniteLoadTrigger
+          status={pages.status}
+          hasMore={pages.hasMore}
+          copy={{ loading: copy.catalog.loadingMore, loadMore: copy.catalog.loadMore, loadError: copy.catalog.loadMoreError, retry: copy.catalog.retry, end: copy.catalog.end }}
+          announcement={pages.addedCount > 0 ? interpolate(copy.catalog.added, { count: numberFormat.format(pages.addedCount) }) : ""}
+          onLoadMore={pages.loadMore}
+          onRetry={pages.retry}
+        />
+      ) : null}
 
       {editor.status === "loading" ? <EditorLoading copy={copy} gtin={editor.gtin} onClose={closeEditor} /> : null}
       {editor.status === "ready" ? (
@@ -334,8 +328,6 @@ function CatalogContent({
   filtered,
   onRetry,
   onOpenEditor,
-  onPrevious,
-  onNext,
 }: {
   copy: KizMappingCopy;
   dateFormat: Intl.DateTimeFormat;
@@ -344,8 +336,6 @@ function CatalogContent({
   filtered: boolean;
   onRetry: () => void;
   onOpenEditor: (gtin: string) => void;
-  onPrevious: () => void;
-  onNext: () => void;
 }) {
   if (state.status === "loading") {
     return (
@@ -394,8 +384,8 @@ function CatalogContent({
     mapped: result.mapped + (item.mappingRuleCount > 0 ? 1 : 0),
   }), { available: 0, mapped: 0 });
   return (
-    <section className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
-      <div className="flex flex-col gap-3 border-b border-[var(--border-subtle)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+    <section className="overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
+      <div className="flex flex-col gap-2 border-b border-[var(--border-subtle)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h3 className="font-semibold">{copy.catalog.title}</h3>
           <p className="mt-0.5 text-xs text-[var(--text-muted)]">{interpolate(copy.catalog.summary, { count: numberFormat.format(state.data.items.length), mapped: numberFormat.format(totals.mapped) })}</p>
@@ -408,17 +398,6 @@ function CatalogContent({
       <div className="divide-y divide-[var(--border-subtle)]">
         {state.data.items.map((item) => <GtinRow copy={copy} dateFormat={dateFormat} item={item} key={item.gtin} numberFormat={numberFormat} onEdit={() => onOpenEditor(item.gtin)} />)}
       </div>
-      <div className="flex items-center justify-between gap-3 border-t border-[var(--border-subtle)] bg-[var(--surface-muted)]/55 px-4 py-3">
-        <button className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-3 py-2 text-sm font-medium disabled:cursor-default disabled:opacity-40" disabled={state.data.page <= 1} onClick={onPrevious} type="button" aria-label={copy.catalog.previousAria}>
-          <ChevronLeft aria-hidden="true" size={16} />
-          {copy.catalog.previous}
-        </button>
-        <span className="text-sm font-semibold text-[var(--text-secondary)]">{interpolate(copy.catalog.page, { page: numberFormat.format(state.data.page) })}</span>
-        <button className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-3 py-2 text-sm font-medium disabled:cursor-default disabled:opacity-40" disabled={!state.data.hasMore} onClick={onNext} type="button" aria-label={copy.catalog.nextAria}>
-          {copy.catalog.next}
-          <ChevronRight aria-hidden="true" size={16} />
-        </button>
-      </div>
     </section>
   );
 }
@@ -426,7 +405,7 @@ function CatalogContent({
 function GtinRow({ copy, dateFormat, item, numberFormat, onEdit }: { copy: KizMappingCopy; dateFormat: Intl.DateTimeFormat; item: GtinItem; numberFormat: Intl.NumberFormat; onEdit: () => void }) {
   const status = statusLabel(copy, item.pipelineStage || item.orderStatus);
   return (
-    <article className="grid gap-4 px-4 py-4 transition hover:bg-[var(--surface-muted)] xl:grid-cols-[minmax(14rem,1.25fr)_minmax(17rem,1fr)_minmax(12rem,.8fr)_auto] xl:items-center xl:px-5">
+    <article className="grid [content-visibility:auto] [contain-intrinsic-size:auto_9rem] gap-3 px-3 py-3 transition hover:bg-[var(--surface-muted)] xl:grid-cols-[minmax(14rem,1.25fr)_minmax(17rem,1fr)_minmax(12rem,.8fr)_auto] xl:items-center xl:px-4">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <code className="rounded-md bg-[var(--sidebar)] px-2 py-1 text-xs font-semibold text-white">{item.gtin}</code>
@@ -448,9 +427,8 @@ function GtinRow({ copy, dateFormat, item, numberFormat, onEdit }: { copy: KizMa
         {status ? <span className="text-xs font-medium text-[var(--text-secondary)]">{status}</span> : null}
         {item.errorMessage ? <p className="line-clamp-2 text-xs leading-4 text-rose-700" title={item.errorMessage}>{item.errorMessage}</p> : null}
       </div>
-      <button className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-4 text-sm font-semibold shadow-[var(--shadow-control)] transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]" onClick={onEdit} type="button" aria-label={interpolate(copy.row.editAria, { gtin: item.gtin })}>
+      <button className="icon-button justify-self-end" onClick={onEdit} type="button" title={copy.row.edit} aria-label={interpolate(copy.row.editAria, { gtin: item.gtin })}>
         <Layers3 aria-hidden="true" size={17} />
-        {copy.row.edit}
       </button>
     </article>
   );
