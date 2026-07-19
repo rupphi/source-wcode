@@ -1027,6 +1027,49 @@ describe("App", () => {
     expect(screen.getByText("Подпись проверена")).toBeVisible();
   });
 
+  it("switches the active Znack settings workspace from English to Vietnamese and Chinese", async () => {
+    const user = userEvent.setup();
+    loadPreferences.mockResolvedValue({ language: "en", theme: "dark" });
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Main shop", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard.mockResolvedValue({ shopId: 7, productCount: 0, newOrderCount: 0, openSupplyCount: 0 });
+    loadZnackSettings.mockResolvedValue({
+      shopId: 7,
+      omsId: "OMS-7",
+      omsConnection: "CONNECTION-7",
+      documentNumber: "",
+      documentDate: "",
+      autoIntroduction: false,
+      signatureStatus: "UNCONFIGURED",
+      certificateLabel: "",
+      certificateValidTo: "",
+      version: "a".repeat(64),
+    });
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Znack Automation" }));
+
+    expect(await screen.findByRole("heading", { name: "Secure Znack workspace" })).toBeVisible();
+    expect(screen.getByText("Default document")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Language" }), "vi");
+    await user.click(await screen.findByRole("button", { name: "Đóng cài đặt" }));
+    expect(await screen.findByRole("heading", { name: "Không gian Znack bảo mật" })).toBeVisible();
+    expect(screen.getByText("Tài liệu mặc định")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Cài đặt" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Ngôn ngữ" }), "zh");
+    await user.click(await screen.findByRole("button", { name: "关闭设置" }));
+    expect(await screen.findByRole("heading", { name: "Znack 安全工作区" })).toBeVisible();
+    expect(screen.getByText("默认文档")).toBeVisible();
+    expect(loadZnackSettings).toHaveBeenCalledTimes(1);
+  });
+
   it("opens, searches, and filters the bounded print history", async () => {
     const user = userEvent.setup();
     bootstrap.mockResolvedValue({

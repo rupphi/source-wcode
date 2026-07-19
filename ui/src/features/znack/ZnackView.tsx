@@ -20,8 +20,10 @@ import {
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { commands } from "../../generated/commands";
 import type { CertificateDiscoveryResponse, ProductItem, ProductsResponse, SettingsResponse } from "../../generated/types";
+import { interpolate } from "../../i18n";
 import { ZnackLogsPanel, ZnackPurchasesPanel } from "./ZnackOperationsPanel";
 import { ZnackPurchaseDialog } from "./ZnackPurchaseDialog";
+import { defaultZnackCopy, type ZnackCopy } from "./znackI18n";
 
 type Tab = "settings" | "products" | "deleted" | "purchases" | "logs";
 type SettingsState =
@@ -84,27 +86,27 @@ function matchesDiscovery(response: CertificateDiscoveryResponse, shopId: number
       && ["SELECTABLE", "EXPIRED", "NO_PRIVATE_KEY"].includes(item.status));
 }
 
-function signatureCopy(status: string) {
+function signatureCopy(copy: ZnackCopy, status: string) {
   switch (status) {
     case "VERIFIED":
-      return { title: "Подпись проверена", detail: "Конфигурация готова для безопасных операций.", tone: "success" };
+      return { title: copy.settings.signature.verifiedTitle, detail: copy.settings.signature.verifiedDetail, tone: "success" };
     case "EXPIRED":
-      return { title: "Сертификат истёк", detail: "Выберите и проверьте действующий сертификат.", tone: "danger" };
+      return { title: copy.settings.signature.expiredTitle, detail: copy.settings.signature.expiredDetail, tone: "danger" };
     case "NOT_VERIFIED":
-      return { title: "Подпись не проверена", detail: "Найдите сертификат CryptoPro и подтвердите подпись.", tone: "warning" };
+      return { title: copy.settings.signature.notVerifiedTitle, detail: copy.settings.signature.notVerifiedDetail, tone: "warning" };
     default:
-      return { title: "Сертификат не настроен", detail: "Поиск выполняется локально, selector остаётся в Java.", tone: "neutral" };
+      return { title: copy.settings.signature.unconfiguredTitle, detail: copy.settings.signature.unconfiguredDetail, tone: "neutral" };
   }
 }
 
-function readiness(status: string, kind: "mark" | "turn") {
-  const label = kind === "mark" ? "Маркировка" : "Оборот";
-  if (status === "READY") return { label: `${label} ${kind === "mark" ? "готова" : "готов"}`, className: "status-pill status-success" };
-  if (status === "NOT_READY") return { label: `${label} ${kind === "mark" ? "не готова" : "не готов"}`, className: "status-pill status-warning" };
-  return { label: `${label}: нет данных`, className: "status-pill" };
+function readiness(copy: ZnackCopy, status: string, kind: "mark" | "turn") {
+  const label = copy.products.readiness[kind];
+  if (status === "READY") return { label: copy.products.readiness[kind === "mark" ? "markReady" : "turnReady"], className: "status-pill status-success" };
+  if (status === "NOT_READY") return { label: copy.products.readiness[kind === "mark" ? "markNotReady" : "turnNotReady"], className: "status-pill status-warning" };
+  return { label: interpolate(copy.products.readiness.noData, { label }), className: "status-pill" };
 }
 
-export function ZnackView({ shopId, licenseAllowed = true }: { shopId: number; licenseAllowed?: boolean }) {
+export function ZnackView({ shopId, licenseAllowed = true, copy = defaultZnackCopy, locale = "ru-RU" }: { shopId: number; licenseAllowed?: boolean; copy?: ZnackCopy; locale?: string }) {
   const [tab, setTab] = useState<Tab>("settings");
   const [settingsState, setSettingsState] = useState<SettingsState>({ status: "loading" });
   const [draft, setDraft] = useState<SettingsDraft | null>(null);
@@ -132,6 +134,7 @@ export function ZnackView({ shopId, licenseAllowed = true }: { shopId: number; l
   const [operationsRefresh, setOperationsRefresh] = useState(0);
   const settingsRequest = useRef(0);
   const productsRequest = useRef(0);
+  const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
 
   useEffect(() => {
     const request = ++settingsRequest.current;
@@ -208,20 +211,20 @@ export function ZnackView({ shopId, licenseAllowed = true }: { shopId: number; l
         }
         setSyncJob(null);
         if (response.state === "completed") {
-          setProductNotice(`Синхронизировано товаров: ${response.products}`);
+          setProductNotice(interpolate(copy.products.synced, { count: numberFormat.format(response.products) }));
           setProductState({ status: "loading" });
           setProductRetry((value) => value + 1);
         } else if (response.state === "cancelled") {
-          setProductNotice("Синхронизация остановлена. Уже сохранённые локальные пакеты не откатываются.");
+          setProductNotice(copy.products.syncCancelled);
         } else {
           setProductError(response.retryable
-            ? "Синхронизация не завершена. Проверьте соединение и повторите."
-            : "Синхронизация отклонена. Проверьте сертификат и настройки Znack.");
+            ? copy.products.syncRetryable
+            : copy.products.syncRejected);
         }
       } catch {
         if (!active) return;
         setSyncJob(null);
-        setProductError("Не удалось получить статус синхронизации Znack.");
+        setProductError(copy.products.syncStatusError);
       }
     };
     void poll();
@@ -229,7 +232,7 @@ export function ZnackView({ shopId, licenseAllowed = true }: { shopId: number; l
       active = false;
       if (timer) clearTimeout(timer);
     };
-  }, [activeSyncJobId, shopId]);
+  }, [activeSyncJobId, copy, numberFormat, shopId]);
 
   const reloadSettings = () => {
     setSettingsState({ status: "loading" });
@@ -285,9 +288,9 @@ export function ZnackView({ shopId, licenseAllowed = true }: { shopId: number; l
       if (!matchesSettings(response, shopId)) throw new Error("Unexpected Znack settings response");
       setSettingsState({ status: "ready", data: response });
       setDraft(editable(response));
-      setSettingsNotice("Настройки Znack сохранены");
+      setSettingsNotice(copy.settings.saved);
     } catch {
-      setSettingsError("Не удалось сохранить настройки. Загрузите актуальные данные и повторите.");
+      setSettingsError(copy.settings.saveError);
     } finally {
       setSaving(false);
     }
@@ -305,7 +308,7 @@ export function ZnackView({ shopId, licenseAllowed = true }: { shopId: number; l
       setCertificateState({ status: "ready", data: response });
     } catch {
       setCertificateState({ status: "error" });
-      setSettingsError("Не удалось найти сертификаты CryptoPro. Проверьте установку и повторите.");
+      setSettingsError(copy.settings.certificatesError);
     }
   };
 
@@ -329,11 +332,11 @@ export function ZnackView({ shopId, licenseAllowed = true }: { shopId: number; l
       setDraft(editable(response));
       setCertificateState({ status: "idle" });
       setSelectedCertificate("");
-      setSettingsNotice("Сертификат проверен и сохранён");
+      setSettingsNotice(copy.settings.certificateSaved);
     } catch {
       setCertificateState({ status: "idle" });
       setSelectedCertificate("");
-      setSettingsError("Проверка сертификата не выполнена. Найдите сертификаты заново и повторите.");
+      setSettingsError(copy.settings.certificateTestError);
     } finally {
       setTestingCertificate(false);
     }
@@ -350,7 +353,7 @@ export function ZnackView({ shopId, licenseAllowed = true }: { shopId: number; l
       if (response.shopId !== shopId || !UUID.test(response.jobId)) throw new Error("Unexpected sync response");
       setSyncJob({ jobId: response.jobId, cancelling: false });
     } catch {
-      setProductError("Не удалось запустить синхронизацию. Проверьте подпись и настройки Znack.");
+      setProductError(copy.products.syncStartError);
     } finally {
       setSyncStarting(false);
     }
@@ -365,7 +368,7 @@ export function ZnackView({ shopId, licenseAllowed = true }: { shopId: number; l
       if (response.shopId !== shopId || response.jobId !== jobId) throw new Error("Unexpected cancel response");
     } catch {
       setSyncJob({ jobId, cancelling: false });
-      setProductError("Не удалось запросить остановку синхронизации.");
+      setProductError(copy.products.syncCancelError);
     }
   };
 
@@ -409,14 +412,10 @@ export function ZnackView({ shopId, licenseAllowed = true }: { shopId: number; l
       if (response.shopId !== shopId || response.deleted !== !deleted || response.changed !== selected.size) {
         throw new Error("Unexpected Znack visibility response");
       }
-      setProductNotice(deleted
-        ? `Восстановлено GTIN: ${response.changed}`
-        : `Скрыто GTIN: ${response.changed}`);
+      setProductNotice(interpolate(deleted ? copy.products.restored : copy.products.hidden, { count: numberFormat.format(response.changed) }));
       reloadProducts();
     } catch {
-      setProductError(deleted
-        ? "Не удалось восстановить выбранные GTIN. Обновите список и повторите."
-        : "Не удалось скрыть выбранные GTIN. Обновите список и повторите.");
+      setProductError(deleted ? copy.products.restoreError : copy.products.hideError);
     } finally {
       setMutating(false);
     }
@@ -433,7 +432,7 @@ export function ZnackView({ shopId, licenseAllowed = true }: { shopId: number; l
   };
 
   return (
-    <section className="space-y-5" aria-label="Znack Automation">
+    <section className="space-y-5" aria-label={copy.header.aria}>
       <div className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-card)]">
         <div className="flex flex-col gap-4 border-b border-[var(--border-subtle)] bg-[linear-gradient(120deg,color-mix(in_srgb,var(--accent)_12%,transparent),transparent_58%)] p-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-start gap-3">
@@ -441,24 +440,24 @@ export function ZnackView({ shopId, licenseAllowed = true }: { shopId: number; l
               <Tag aria-hidden="true" size={21} />
             </div>
             <div>
-              <h3 className="text-lg font-semibold tracking-[-0.02em]">Защищённый контур Znack</h3>
+              <h3 className="text-lg font-semibold tracking-[-0.02em]">{copy.header.title}</h3>
               <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--text-secondary)]">
-                CryptoPro, синхронизация каталога и локальный жизненный цикл GTIN без передачи секретов в WebView.
+                {copy.header.description}
               </p>
             </div>
           </div>
           <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-3 py-1.5 text-xs font-semibold text-[var(--text-secondary)]">
-            <ShieldCheck aria-hidden="true" size={14} /> Secure Java bridge
+            <ShieldCheck aria-hidden="true" size={14} /> {copy.header.badge}
           </div>
         </div>
 
-        <div className="flex gap-1 overflow-x-auto border-b border-[var(--border-subtle)] px-4 pt-3" role="tablist" aria-label="Разделы Znack">
+        <div className="flex gap-1 overflow-x-auto border-b border-[var(--border-subtle)] px-4 pt-3" role="tablist" aria-label={copy.tabs.aria}>
           {([
-            ["settings", "Настройки", SlidersHorizontal],
-            ["products", "Товары", PackageSearch],
-            ["deleted", "Скрытые", Archive],
-            ["purchases", "Покупки", ShoppingCart],
-            ["logs", "Журнал", ScrollText],
+            ["settings", copy.tabs.settings, SlidersHorizontal],
+            ["products", copy.tabs.products, PackageSearch],
+            ["deleted", copy.tabs.deleted, Archive],
+            ["purchases", copy.tabs.purchases, ShoppingCart],
+            ["logs", copy.tabs.logs, ScrollText],
           ] as const).map(([value, label, Icon]) => (
             <button
               key={value}
@@ -479,8 +478,9 @@ export function ZnackView({ shopId, licenseAllowed = true }: { shopId: number; l
         </div>
 
         {tab === "settings" ? (
-          <div id="znack-panel-settings" role="tabpanel" aria-label="Настройки" className="p-5 lg:p-6">
+          <div id="znack-panel-settings" role="tabpanel" aria-label={copy.tabs.settings} className="p-5 lg:p-6">
             <SettingsPanel
+              copy={copy}
               state={settingsState}
               draft={draft}
               dirty={settingsDirty}
@@ -500,8 +500,10 @@ export function ZnackView({ shopId, licenseAllowed = true }: { shopId: number; l
             />
           </div>
         ) : tab === "products" || tab === "deleted" ? (
-          <div id={`znack-panel-${tab}`} role="tabpanel" aria-label={deleted ? "Скрытые" : "Товары"} className="p-4 lg:p-5">
+          <div id={`znack-panel-${tab}`} role="tabpanel" aria-label={deleted ? copy.tabs.deleted : copy.tabs.products} className="p-4 lg:p-5">
             <ProductPanel
+              copy={copy}
+              numberFormat={numberFormat}
               deleted={deleted}
               state={productState}
               queryInput={queryInput}
@@ -532,7 +534,7 @@ export function ZnackView({ shopId, licenseAllowed = true }: { shopId: number; l
             />
           </div>
         ) : tab === "purchases" ? (
-          <div id="znack-panel-purchases" role="tabpanel" aria-label="Покупки" className="p-4 lg:p-5">
+          <div id="znack-panel-purchases" role="tabpanel" aria-label={copy.tabs.purchases} className="p-4 lg:p-5">
             <ZnackPurchasesPanel
               shopId={shopId}
               settingsVersion={settingsState.status === "ready" ? settingsState.data.version : ""}
@@ -542,13 +544,14 @@ export function ZnackView({ shopId, licenseAllowed = true }: { shopId: number; l
             />
           </div>
         ) : (
-          <div id="znack-panel-logs" role="tabpanel" aria-label="Журнал" className="p-4 lg:p-5">
+          <div id="znack-panel-logs" role="tabpanel" aria-label={copy.tabs.logs} className="p-4 lg:p-5">
             <ZnackLogsPanel shopId={shopId} />
           </div>
         )}
       </div>
       {purchaseTarget ? (
         <ZnackPurchaseDialog
+          copy={copy.purchase}
           shopId={shopId}
           product={purchaseTarget}
           settingsVersion={settingsState.status === "ready" ? settingsState.data.version : ""}
@@ -567,6 +570,7 @@ export function ZnackView({ shopId, licenseAllowed = true }: { shopId: number; l
 }
 
 function SettingsPanel({
+  copy,
   state,
   draft,
   dirty,
@@ -584,6 +588,7 @@ function SettingsPanel({
   onSelectCertificate,
   onTestCertificate,
 }: {
+  copy: ZnackCopy;
   state: SettingsState;
   draft: SettingsDraft | null;
   dirty: boolean;
@@ -601,11 +606,11 @@ function SettingsPanel({
   onSelectCertificate: (certificateId: string) => void;
   onTestCertificate: () => void;
 }) {
-  if (state.status === "loading") return <PanelLoading label="Загрузка настроек Znack" />;
+  if (state.status === "loading") return <PanelLoading label={copy.settings.loading} />;
   if (state.status === "error" || draft === null) {
-    return <PanelError message="Не удалось загрузить настройки Znack" button="Повторить загрузку настроек" onRetry={onRetry} />;
+    return <PanelError message={copy.settings.loadError} button={copy.settings.retryLoad} onRetry={onRetry} />;
   }
-  const signature = signatureCopy(state.data.signatureStatus);
+  const signature = signatureCopy(copy, state.data.signatureStatus);
   const update = <K extends keyof SettingsDraft>(key: K, value: SettingsDraft[K]) => onDraft({ ...draft, [key]: value });
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(18rem,.6fr)]">
@@ -616,36 +621,36 @@ function SettingsPanel({
             <input className="text-input" maxLength={100} value={draft.omsId} onChange={(event) => update("omsId", event.target.value)} />
           </label>
           <label className="field-label">
-            <span>Соединение OMS</span>
+            <span>{copy.settings.omsConnection}</span>
             <input className="text-input" maxLength={120} value={draft.omsConnection} onChange={(event) => update("omsConnection", event.target.value)} />
           </label>
         </div>
         <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-muted)] p-4">
           <div className="mb-4 flex items-center gap-2">
             <FileText aria-hidden="true" size={17} className="text-[var(--accent-strong)]" />
-            <h4 className="text-sm font-semibold">Документ по умолчанию</h4>
+            <h4 className="text-sm font-semibold">{copy.settings.defaultDocument}</h4>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <label className="field-label">
-              <span>Номер документа</span>
+              <span>{copy.settings.documentNumber}</span>
               <input className="text-input" maxLength={120} value={draft.documentNumber} onChange={(event) => update("documentNumber", event.target.value)} />
             </label>
             <label className="field-label">
-              <span>Дата документа</span>
-              <input className="text-input" maxLength={10} placeholder="дд.мм.гггг" value={draft.documentDate} onChange={(event) => update("documentDate", event.target.value)} />
+              <span>{copy.settings.documentDate}</span>
+              <input className="text-input" maxLength={10} placeholder={copy.settings.datePlaceholder} value={draft.documentDate} onChange={(event) => update("documentDate", event.target.value)} />
             </label>
           </div>
           <label className="mt-4 flex cursor-pointer items-start gap-3 text-sm text-[var(--text-secondary)]">
             <input type="checkbox" className="mt-0.5 size-4 accent-[var(--accent)]" checked={draft.autoIntroduction} onChange={(event) => update("autoIntroduction", event.target.checked)} />
-            <span><strong className="block text-[var(--text-primary)]">Автоматический ввод в оборот</strong>Запускать только когда документы и metadata GTIN готовы.</span>
+            <span><strong className="block text-[var(--text-primary)]">{copy.settings.autoIntroduction}</strong>{copy.settings.autoIntroductionHint}</span>
           </label>
         </div>
-        {!valid && dirty ? <p role="alert" className="text-sm text-[var(--danger)]">Заполните OMS-поля и оба поля документа либо оставьте оба пустыми.</p> : null}
+        {!valid && dirty ? <p role="alert" className="text-sm text-[var(--danger)]">{copy.settings.invalid}</p> : null}
         {notice ? <p className="notice-success" role="status"><CheckCircle2 aria-hidden="true" size={16} />{notice}</p> : null}
-        {error ? <div className="notice-error" role="alert"><span>{error}</span><button type="button" onClick={onRetry}>Загрузить актуальные</button></div> : null}
+        {error ? <div className="notice-error" role="alert"><span>{error}</span><button type="button" onClick={onRetry}>{copy.settings.reloadCurrent}</button></div> : null}
         <div className="flex justify-end">
           <button className="primary-button" type="button" disabled={!dirty || !valid || saving} onClick={onSave}>
-            <Save aria-hidden="true" size={16} /> {saving ? "Сохранение…" : "Сохранить настройки Znack"}
+            <Save aria-hidden="true" size={16} /> {saving ? copy.settings.saving : copy.settings.save}
           </button>
         </div>
       </div>
@@ -660,27 +665,27 @@ function SettingsPanel({
           </div>
         </div>
         {state.data.certificateLabel ? <p className="mt-4 text-sm font-medium">{state.data.certificateLabel}</p> : null}
-        {state.data.certificateValidTo ? <p className="mt-1 text-xs text-[var(--text-muted)]">Действует до {state.data.certificateValidTo}</p> : null}
+        {state.data.certificateValidTo ? <p className="mt-1 text-xs text-[var(--text-muted)]">{interpolate(copy.settings.validUntil, { date: state.data.certificateValidTo })}</p> : null}
         <div className="mt-4 border-t border-[var(--border-subtle)] pt-4">
           <button
             className="secondary-button w-full justify-center"
             type="button"
-            aria-label="Найти сертификаты CryptoPro"
+            aria-label={copy.settings.discoverAria}
             disabled={dirty || certificateState.status === "loading" || testingCertificate}
             onClick={onDiscover}
           >
             {certificateState.status === "loading"
               ? <RefreshCw aria-hidden="true" className="animate-spin" size={16} />
               : <KeyRound aria-hidden="true" size={16} />}
-            {certificateState.status === "loading" ? "Поиск…" : "Найти сертификаты"}
+            {certificateState.status === "loading" ? copy.settings.discovering : copy.settings.discover}
           </button>
-          {dirty ? <p className="mt-2 text-xs leading-5 text-[var(--warning)]">Сначала сохраните изменения настроек.</p> : null}
-          {certificateState.status === "error" ? <p className="mt-2 text-xs text-[var(--danger)]">Поиск не выполнен.</p> : null}
+          {dirty ? <p className="mt-2 text-xs leading-5 text-[var(--warning)]">{copy.settings.saveFirst}</p> : null}
+          {certificateState.status === "error" ? <p className="mt-2 text-xs text-[var(--danger)]">{copy.settings.discoveryFailed}</p> : null}
           {certificateState.status === "ready" ? (
             <div className="mt-3 space-y-2">
               {certificateState.data.items.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-[var(--border-subtle)] p-3 text-xs leading-5 text-[var(--text-muted)]">
-                  Доступные сертификаты не найдены.
+                  {copy.settings.none}
                 </p>
               ) : certificateState.data.items.map((certificate) => {
                 const selectable = certificate.status === "SELECTABLE";
@@ -699,15 +704,15 @@ function SettingsPanel({
                         disabled={!selectable || testingCertificate}
                         checked={selectedCertificate === certificate.certificateId}
                         onChange={() => onSelectCertificate(certificate.certificateId)}
-                        aria-label={`${certificate.label}${certificate.inn ? `, ИНН ${certificate.inn}` : ""}`}
+                        aria-label={`${certificate.label}${certificate.inn ? `, ${copy.settings.inn} ${certificate.inn}` : ""}`}
                       />
                       <span className="min-w-0">
                         <strong className="block truncate text-xs text-[var(--text-primary)]">{certificate.label}</strong>
-                        {certificate.inn ? <span className="mt-1 block text-[11px] text-[var(--text-muted)]">ИНН {certificate.inn}</span> : null}
+                        {certificate.inn ? <span className="mt-1 block text-[11px] text-[var(--text-muted)]">{copy.settings.inn} {certificate.inn}</span> : null}
                         <span className="mt-1 block text-[11px] text-[var(--text-muted)]">
-                          {certificate.status === "EXPIRED" ? "Срок действия истёк"
-                            : certificate.status === "NO_PRIVATE_KEY" ? "Закрытый ключ недоступен"
-                              : certificate.validTo ? `Действует до ${certificate.validTo}` : "Готов к проверке"}
+                          {certificate.status === "EXPIRED" ? copy.settings.expired
+                            : certificate.status === "NO_PRIVATE_KEY" ? copy.settings.noPrivateKey
+                              : certificate.validTo ? interpolate(copy.settings.validUntil, { date: certificate.validTo }) : copy.settings.ready}
                         </span>
                       </span>
                     </span>
@@ -718,19 +723,19 @@ function SettingsPanel({
                 <button
                   className="primary-button w-full justify-center"
                   type="button"
-                  aria-label="Проверить выбранный сертификат"
+                  aria-label={copy.settings.testAria}
                   disabled={!selectedCertificate || testingCertificate}
                   onClick={onTestCertificate}
                 >
                   {testingCertificate ? <RefreshCw aria-hidden="true" className="animate-spin" size={16} /> : <ShieldCheck aria-hidden="true" size={16} />}
-                  {testingCertificate ? "Ожидание CryptoPro…" : "Проверить сертификат"}
+                  {testingCertificate ? copy.settings.testing : copy.settings.test}
                 </button>
               ) : null}
             </div>
           ) : null}
         </div>
         <p className="mt-4 border-t border-[var(--border-subtle)] pt-4 text-xs leading-5 text-[var(--text-muted)]">
-          Selector, thumbprint, executable paths и metadata сертификата не передаются в WebView.
+          {copy.settings.privacy}
         </p>
       </aside>
     </div>
@@ -738,6 +743,8 @@ function SettingsPanel({
 }
 
 function ProductPanel({
+  copy,
+  numberFormat,
   deleted,
   state,
   queryInput,
@@ -764,6 +771,8 @@ function ProductPanel({
   canPurchase,
   onBuy,
 }: {
+  copy: ZnackCopy;
+  numberFormat: Intl.NumberFormat;
   deleted: boolean;
   state: ProductState;
   queryInput: string;
@@ -796,9 +805,9 @@ function ProductPanel({
       {!deleted || syncJob ? (
         <div className="flex flex-col gap-3 rounded-xl border border-[var(--border-subtle)] bg-[linear-gradient(120deg,color-mix(in_srgb,var(--accent)_9%,var(--surface-muted)),var(--surface-muted))] p-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-sm font-semibold">Каталог участника Честный ЗНАК</p>
+            <p className="text-sm font-semibold">{copy.products.syncTitle}</p>
             <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
-              Авторизация и подпись выполняются в Java. Локальные пакеты сохраняются последовательно.
+              {copy.products.syncDescription}
             </p>
           </div>
           {syncJob ? (
@@ -807,10 +816,10 @@ function ProductPanel({
               type="button"
               disabled={syncJob.cancelling}
               onClick={onCancelSync}
-              aria-label="Остановить синхронизацию товаров Znack"
+              aria-label={copy.products.stopAria}
             >
               <RefreshCw aria-hidden="true" className="animate-spin" size={16} />
-              {syncJob.cancelling ? "Остановка…" : "Остановить"}
+              {syncJob.cancelling ? copy.products.stopping : copy.products.stop}
             </button>
           ) : (
             <button
@@ -818,35 +827,35 @@ function ProductPanel({
               type="button"
               disabled={!canSync || syncStarting}
               onClick={onSync}
-              aria-label="Синхронизировать товары Znack"
+              aria-label={copy.products.syncAria}
             >
               <RefreshCw aria-hidden="true" className={syncStarting ? "animate-spin" : ""} size={16} />
-              {syncStarting ? "Запуск…" : "Синхронизировать"}
+              {syncStarting ? copy.products.starting : copy.products.sync}
             </button>
           )}
         </div>
       ) : null}
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div>
-          <h4 className="text-base font-semibold">{deleted ? "Скрытые GTIN" : "Локальный каталог товаров"}</h4>
-          <p className="mt-1 text-xs text-[var(--text-muted)]">До 50 GTIN на странице · до 100 в одной операции</p>
+          <h4 className="text-base font-semibold">{deleted ? copy.products.deletedTitle : copy.products.title}</h4>
+          <p className="mt-1 text-xs text-[var(--text-muted)]">{copy.products.limits}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <form className="flex min-w-0 flex-1 gap-2 sm:min-w-80" role="search" onSubmit={onSearch}>
             <label className="relative min-w-0 flex-1">
-              <span className="sr-only">Поиск товаров Znack</span>
+              <span className="sr-only">{copy.products.searchLabel}</span>
               <Search aria-hidden="true" className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[var(--text-muted)]" size={16} />
-              <input type="search" className="text-input w-full pl-9" maxLength={120} value={queryInput} onChange={(event) => onQueryInput(event.target.value)} placeholder="GTIN, название, категория, ТН ВЭД" />
+              <input aria-label={copy.products.searchLabel} type="search" className="text-input w-full pl-9" maxLength={120} value={queryInput} onChange={(event) => onQueryInput(event.target.value)} placeholder={copy.products.searchPlaceholder} />
             </label>
-            <button className="secondary-button" type="submit" aria-label="Найти товар Znack">Найти</button>
+            <button className="secondary-button" type="submit" aria-label={copy.products.searchAria}>{copy.products.search}</button>
           </form>
           <div className="relative">
-            <button className="secondary-button" type="button" aria-label="Категории товаров Znack" aria-expanded={categoryOpen} onClick={onCategoryOpen}>
-              <SlidersHorizontal aria-hidden="true" size={16} /> Категории{categories.length ? ` · ${categories.length}` : ""}
+            <button className="secondary-button" type="button" aria-label={copy.products.categoriesAria} aria-expanded={categoryOpen} onClick={onCategoryOpen}>
+              <SlidersHorizontal aria-hidden="true" size={16} /> {copy.products.categories}{categories.length ? ` · ${numberFormat.format(categories.length)}` : ""}
             </button>
             {categoryOpen ? (
               <div className="absolute right-0 z-10 mt-2 max-h-64 min-w-56 overflow-auto rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-2 shadow-[var(--shadow-popover)]">
-                {(data?.availableCategories ?? []).length === 0 ? <p className="px-2 py-2 text-xs text-[var(--text-muted)]">Категорий нет</p> : (data?.availableCategories ?? []).map((category) => (
+                {(data?.availableCategories ?? []).length === 0 ? <p className="px-2 py-2 text-xs text-[var(--text-muted)]">{copy.products.noCategories}</p> : (data?.availableCategories ?? []).map((category) => (
                   <label key={category} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-[var(--surface-muted)]">
                     <input type="checkbox" checked={categories.includes(category)} onChange={() => onToggleCategory(category)} /> {category}
                   </label>
@@ -854,39 +863,39 @@ function ProductPanel({
               </div>
             ) : null}
           </div>
-          <button className={deleted ? "secondary-button" : "danger-button"} type="button" disabled={selected.size === 0 || mutating} onClick={onVisibility} aria-label={deleted ? "Восстановить выбранные GTIN" : "Скрыть выбранные GTIN"}>
+          <button className={deleted ? "secondary-button" : "danger-button"} type="button" disabled={selected.size === 0 || mutating} onClick={onVisibility} aria-label={deleted ? copy.products.restoreAria : copy.products.hideAria}>
             {deleted ? <RotateCcw aria-hidden="true" size={16} /> : <EyeOff aria-hidden="true" size={16} />}
-            {mutating ? "Обработка…" : deleted ? `Восстановить · ${selected.size}` : `Скрыть · ${selected.size}`}
+            {mutating ? copy.products.processing : interpolate(deleted ? copy.products.restore : copy.products.hide, { count: numberFormat.format(selected.size) })}
           </button>
         </div>
       </div>
 
       {notice ? <p className="notice-success" role="status"><CheckCircle2 aria-hidden="true" size={16} />{notice}</p> : null}
-      {error ? <div className="notice-error" role="alert"><span>{error}</span><button type="button" onClick={onRetry}>Обновить список</button></div> : null}
-      {state.status === "loading" || state.status === "idle" ? <PanelLoading label="Загрузка товаров Znack" /> : null}
-      {state.status === "error" ? <PanelError message="Не удалось загрузить каталог Znack" button="Повторить" onRetry={onRetry} /> : null}
+      {error ? <div className="notice-error" role="alert"><span>{error}</span><button type="button" onClick={onRetry}>{copy.products.refreshList}</button></div> : null}
+      {state.status === "loading" || state.status === "idle" ? <PanelLoading label={copy.products.loading} /> : null}
+      {state.status === "error" ? <PanelError message={copy.products.loadError} button={copy.products.retry} onRetry={onRetry} /> : null}
       {data && data.items.length === 0 ? (
         <div className="grid min-h-64 place-items-center rounded-xl border border-dashed border-[var(--border-subtle)] bg-[var(--surface-muted)] p-8 text-center">
-          <div><PackageSearch aria-hidden="true" className="mx-auto text-[var(--text-muted)]" size={28} /><h5 className="mt-3 font-semibold">{deleted ? "Скрытых GTIN нет" : "Локальный каталог Znack пока пуст"}</h5><p className="mt-1 text-sm text-[var(--text-muted)]">{deleted ? "Скрытые товары появятся здесь." : "Проверьте сертификат и запустите синхронизацию каталога."}</p></div>
+          <div><PackageSearch aria-hidden="true" className="mx-auto text-[var(--text-muted)]" size={28} /><h5 className="mt-3 font-semibold">{deleted ? copy.products.deletedEmpty : copy.products.empty}</h5><p className="mt-1 text-sm text-[var(--text-muted)]">{deleted ? copy.products.deletedEmptyHint : copy.products.emptyHint}</p></div>
         </div>
       ) : null}
       {data && data.items.length > 0 ? (
         <div className="overflow-hidden rounded-xl border border-[var(--border-subtle)]">
           <div className="hidden grid-cols-[2.2rem_9.5rem_minmax(14rem,1.2fr)_minmax(8rem,.6fr)_minmax(11rem,.8fr)_7rem] gap-3 border-b border-[var(--border-subtle)] bg-[var(--surface-muted)] px-4 py-3 text-xs font-semibold tracking-wide text-[var(--text-muted)] uppercase lg:grid">
-            <span /><span>GTIN</span><span>Товар</span><span>Классификация</span><span>Готовность</span><span>КИЗ</span>
+            <span /><span>GTIN</span><span>{copy.products.columns.product}</span><span>{copy.products.columns.classification}</span><span>{copy.products.columns.readiness}</span><span>{copy.products.columns.kiz}</span>
           </div>
           <ul className="divide-y divide-[var(--border-subtle)]">
             {data.items.map((item) => {
-              const mark = readiness(item.goodMarkStatus, "mark");
-              const turn = readiness(item.goodTurnStatus, "turn");
+              const mark = readiness(copy, item.goodMarkStatus, "mark");
+              const turn = readiness(copy, item.goodTurnStatus, "turn");
               return (
                 <li key={item.gtin} className="grid gap-3 px-4 py-4 lg:grid-cols-[2.2rem_9.5rem_minmax(14rem,1.2fr)_minmax(8rem,.6fr)_minmax(11rem,.8fr)_7rem] lg:items-center">
-                  <input type="checkbox" className="size-4 accent-[var(--accent)]" aria-label={`Выбрать GTIN ${item.gtin}`} checked={selected.has(item.gtin)} onChange={() => onToggleSelected(item.gtin)} />
+                  <input type="checkbox" className="size-4 accent-[var(--accent)]" aria-label={interpolate(copy.products.selectAria, { gtin: item.gtin })} checked={selected.has(item.gtin)} onChange={() => onToggleSelected(item.gtin)} />
                   <code className="text-xs font-semibold text-[var(--text-primary)]">{item.gtin}</code>
-                  <div className="min-w-0"><p className="truncate text-sm font-semibold">{item.productName || "Без названия"}</p><p className="mt-1 truncate text-xs text-[var(--text-muted)]">{item.category || "Без категории"}</p></div>
-                  <div className="text-xs text-[var(--text-secondary)]"><p>ТН ВЭД {item.tnVed || "—"}</p><p className="mt-1">CIS {item.cisType || "—"}</p></div>
+                  <div className="min-w-0"><p className="truncate text-sm font-semibold">{item.productName || copy.products.unnamed}</p><p className="mt-1 truncate text-xs text-[var(--text-muted)]">{item.category || copy.products.uncategorized}</p></div>
+                  <div className="text-xs text-[var(--text-secondary)]"><p>{copy.products.customsCode} {item.tnVed || "—"}</p><p className="mt-1">CIS {item.cisType || "—"}</p></div>
                   <div className="flex flex-wrap gap-1.5"><span className={mark.className}>{mark.label}</span><span className={turn.className}>{turn.label}</span></div>
-                  {!deleted ? <button className="secondary-button justify-center" type="button" disabled={!canPurchase} onClick={() => onBuy(item)} aria-label={`Купить КИЗ для ${item.gtin}`}><ShoppingCart aria-hidden="true" size={15} />Купить</button> : <span />}
+                  {!deleted ? <button className="secondary-button justify-center" type="button" disabled={!canPurchase} onClick={() => onBuy(item)} aria-label={interpolate(copy.products.buyAria, { gtin: item.gtin })}><ShoppingCart aria-hidden="true" size={15} />{copy.products.buy}</button> : <span />}
                 </li>
               );
             })}
@@ -895,9 +904,9 @@ function ProductPanel({
       ) : null}
       {data ? (
         <div className="flex items-center justify-between gap-3">
-          <button className="secondary-button" type="button" disabled={page <= 1 || state.status === "loading"} onClick={() => onPage(page - 1)} aria-label="Предыдущая страница товаров Znack"><ChevronLeft aria-hidden="true" size={16} />Назад</button>
-          <span className="text-sm font-medium text-[var(--text-secondary)]">Страница {page}</span>
-          <button className="secondary-button" type="button" disabled={!data.hasMore || state.status === "loading"} onClick={() => onPage(page + 1)} aria-label="Следующая страница товаров Znack">Вперёд<ChevronRight aria-hidden="true" size={16} /></button>
+          <button className="secondary-button" type="button" disabled={page <= 1 || state.status === "loading"} onClick={() => onPage(page - 1)} aria-label={copy.products.previousAria}><ChevronLeft aria-hidden="true" size={16} />{copy.products.previous}</button>
+          <span className="text-sm font-medium text-[var(--text-secondary)]">{interpolate(copy.products.page, { page: numberFormat.format(page) })}</span>
+          <button className="secondary-button" type="button" disabled={!data.hasMore || state.status === "loading"} onClick={() => onPage(page + 1)} aria-label={copy.products.nextAria}>{copy.products.next}<ChevronRight aria-hidden="true" size={16} /></button>
         </div>
       ) : null}
     </div>

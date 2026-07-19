@@ -18,6 +18,7 @@ import { getFboCopy } from "./features/fbo/fboI18n";
 import { KizMappingView } from "./features/kizmapping/KizMappingView";
 import { getKizMappingCopy } from "./features/kizmapping/kizMappingI18n";
 import { ZnackView } from "./features/znack/ZnackView";
+import { getZnackCopy } from "./features/znack/znackI18n";
 import { PrintHistoryView } from "./features/history/PrintHistoryView";
 import { TemplateDesignerView } from "./features/templates/TemplateDesignerView";
 import { LicenseSettingsDialog } from "./features/license/LicenseSettingsDialog";
@@ -314,7 +315,13 @@ export function App() {
               locale={getSupplyLocale(preferences.language)}
             />
           ) : activeView === "znack" ? (
-            <ZnackView key={selectedShop.id} shopId={selectedShop.id} licenseAllowed={licenseAllowed} />
+            <ZnackView
+              key={selectedShop.id}
+              shopId={selectedShop.id}
+              licenseAllowed={licenseAllowed}
+              copy={getZnackCopy(preferences.language)}
+              locale={getSupplyLocale(preferences.language)}
+            />
           ) : activeView === "history" ? (
             <PrintHistoryView key={selectedShop.id} shopId={selectedShop.id} />
           ) : (

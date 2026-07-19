@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands } from "../../generated/commands";
 import { ZnackView } from "./ZnackView";
+import { getZnackCopy } from "./znackI18n";
 
 vi.mock("../../generated/commands", () => ({
   commands: {
@@ -512,5 +513,28 @@ describe("ZnackView", () => {
     await user.click(screen.getByRole("tab", { name: "Журнал" }));
     expect(await screen.findByText("Не удалось загрузить журнал Znack")).toBeVisible();
     expect(document.body).not.toHaveTextContent(secret);
+  });
+
+  it("localizes the English product workspace and keeps paid preparation explicit", async () => {
+    const user = userEvent.setup();
+    render(<ZnackView copy={getZnackCopy("en")} locale="en-US" shopId={7} />);
+
+    expect(await screen.findByRole("heading", { name: "Secure Znack workspace" })).toBeVisible();
+    expect(screen.getByText("Signature verified")).toBeVisible();
+    await user.click(screen.getByRole("tab", { name: "Products" }));
+
+    expect(await screen.findByText("Ботинки Alpine")).toBeVisible();
+    expect(screen.getByText("Marking ready")).toBeVisible();
+    expect(screen.getByText("Introduction not ready")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: `Buy KIZ for ${gtin}` }));
+    const dialog = await screen.findByRole("dialog", { name: "Prepare KIZ purchase" });
+    expect(within(dialog).getByText(/may create a paid Znack order/)).toBeVisible();
+    expect(preparePurchase).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole("button", { name: "Close KIZ purchase" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(preparePurchase).not.toHaveBeenCalled();
+    expect(startProductSync).not.toHaveBeenCalled();
+    expect(discoverCertificates).not.toHaveBeenCalled();
   });
 });

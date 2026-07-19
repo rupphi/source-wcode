@@ -377,6 +377,9 @@ artifact. Recovery/idempotency tests precede implementation changes.
       pair plurals, catalog/filter states and explicit quick/batch PDF export feedback.
 - [x] Translate the complete GTIN/KIZ mapping journey in RU/EN/VI/ZH: local inventory, filters,
       pipeline statuses, locale dates/counts and the conflict-safe wildcard/exact rule editor.
+- [x] Translate Znack settings, certificate states, active/hidden products, readiness, sync feedback
+      and the guarded paid-purchase entry dialog in RU/EN/VI/ZH.
+- [ ] Translate persisted Znack purchases, retry-introduction confirmation and sanitized logs.
 - [ ] Migrate every remaining feature surface before marking language parity complete.
 - [x] Port signed update check/download/install, shared optional-version skip, bounded streamed
       checksum validation, Authenticode/snapshot gates and fail-closed signed release automation.
