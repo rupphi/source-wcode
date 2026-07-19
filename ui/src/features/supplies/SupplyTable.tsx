@@ -8,38 +8,38 @@ export function SupplyTable({ items, onOpen, copy = defaultSupplyCopy, locale = 
   const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   const dateTimeFormat = useMemo(() => new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }), [locale]);
   return (
-    <section className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
+    <section className="overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[52rem] border-collapse text-left">
+        <table className="w-full table-fixed border-collapse text-left">
           <thead className="border-b border-[var(--border-subtle)] bg-[var(--surface-muted)]/70">
             <tr className="text-xs font-semibold tracking-[0.04em] text-[var(--text-secondary)] uppercase">
-              <th className="px-5 py-3.5" scope="col">{copy.list.columns.supply}</th>
-              <th className="px-4 py-3.5" scope="col">{copy.list.columns.status}</th>
-              <th className="px-4 py-3.5" scope="col">{copy.list.columns.mode}</th>
-              <th className="px-4 py-3.5" scope="col">{copy.list.columns.created}</th>
-              <th className="px-5 py-3.5 text-right" scope="col">{copy.list.columns.items}</th>
-              <th className="w-16 px-4 py-3.5" scope="col"><span className="sr-only">{copy.list.columns.actions}</span></th>
+              <th className="px-3 py-2.5" scope="col">{copy.list.columns.supply}</th>
+              <th className="w-24 px-3 py-2.5" scope="col">{copy.list.columns.status}</th>
+              <th className="hidden w-24 px-3 py-2.5 lg:table-cell" scope="col">{copy.list.columns.mode}</th>
+              <th className="hidden w-44 px-3 py-2.5 xl:table-cell" scope="col">{copy.list.columns.created}</th>
+              <th className="hidden w-24 px-3 py-2.5 text-right sm:table-cell" scope="col">{copy.list.columns.items}</th>
+              <th className="w-14 px-2 py-2.5" scope="col"><span className="sr-only">{copy.list.columns.actions}</span></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border-subtle)]">
             {items.map((item) => (
               <tr className="transition hover:bg-[var(--surface-muted)]/55" key={item.id}>
-                <td className="px-5 py-4">
+                <td className="min-w-0 px-3 py-3">
                   <p className="max-w-md truncate text-sm font-semibold">{item.name}</p>
-                  <p className="mt-1 font-mono text-xs text-[var(--text-muted)]">{item.id}</p>
+                  <p className="mt-0.5 truncate font-mono text-[0.68rem] text-[var(--text-muted)]">{item.id}</p>
                 </td>
-                <td className="px-4 py-4"><StatusBadge status={item.status} copy={copy} /></td>
-                <td className="px-4 py-4 text-sm text-[var(--text-secondary)]">{modeLabel(item.mode, copy)}</td>
-                <td className="px-4 py-4 text-sm text-[var(--text-secondary)]">
+                <td className="px-3 py-3"><StatusBadge status={item.status} copy={copy} /></td>
+                <td className="hidden px-3 py-3 text-xs text-[var(--text-secondary)] lg:table-cell">{modeLabel(item.mode, copy)}</td>
+                <td className="hidden px-3 py-3 text-xs text-[var(--text-secondary)] xl:table-cell">
                   <span className="inline-flex items-center gap-2 whitespace-nowrap">
                     <CalendarDays aria-hidden="true" size={15} />
                     {formatCreatedAt(item.createdAt, dateTimeFormat)}
                   </span>
                 </td>
-                <td className="px-5 py-4 text-right text-sm font-semibold tabular-nums">
+                <td className="hidden px-3 py-3 text-right text-xs font-semibold tabular-nums sm:table-cell">
                   {numberFormat.format(item.itemCount)}
                 </td>
-                <td className="px-4 py-4">
+                <td className="px-2 py-3">
                   <button
                     className="icon-button"
                     type="button"

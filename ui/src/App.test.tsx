@@ -1482,7 +1482,7 @@ describe("App", () => {
     expect(document.body).not.toHaveTextContent("401");
   });
 
-  it("opens a paginated local supply workspace without exposing secrets", async () => {
+  it("opens a bounded local supply workspace without exposing secrets", async () => {
     const user = userEvent.setup();
     bootstrap.mockResolvedValue({
       app: { name: "WCode", version: "1.1.7" },
@@ -1535,7 +1535,8 @@ describe("App", () => {
     expect(screen.getByText("Поставка Москва")).toBeVisible();
     expect(screen.getByText("WB-GI-1")).toBeVisible();
     expect(screen.getByRole("button", { name: /Открытые.*20/ })).toBeVisible();
-    expect(screen.getByText("Страница 1 из 2")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Показать ещё" })).toBeVisible();
+    expect(screen.queryByText(/Страница 1 из/)).not.toBeInTheDocument();
     expect(document.body).not.toHaveTextContent(secret);
   });
 
@@ -1618,7 +1619,7 @@ describe("App", () => {
     expect(screen.queryByText("К списку поставок")).not.toBeInTheDocument();
   });
 
-  it("searches, filters, and paginates supplies from the local bridge", async () => {
+  it("searches, filters, and appends supplies from the local bridge", async () => {
     const user = userEvent.setup();
     bootstrap.mockResolvedValue({
       app: { name: "WCode", version: "1.1.7" },
@@ -1671,7 +1672,9 @@ describe("App", () => {
       }),
     );
 
-    await user.click(await screen.findByRole("button", { name: "Следующая страница" }));
+    expect(await screen.findByText("SUPPLY-1")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Следующая страница" })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Показать ещё" }));
     await waitFor(() =>
       expect(listSupplies).toHaveBeenLastCalledWith({
         shopId: 7,
@@ -1682,6 +1685,8 @@ describe("App", () => {
       }),
     );
     expect(await screen.findByText("SUPPLY-2")).toBeVisible();
+    expect(screen.getByText("SUPPLY-1")).toBeVisible();
+    expect(screen.getByText("Все поставки загружены")).toBeVisible();
   });
 
   it("shows a safe retry state when the supply query fails", async () => {

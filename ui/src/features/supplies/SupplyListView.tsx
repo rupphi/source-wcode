@@ -3,18 +3,21 @@ import {
   PackageOpen,
   Search,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { InfiniteLoadTrigger } from "../../components/InfiniteLoadTrigger";
+import { useBoundedInfinitePages } from "../../components/useBoundedInfinitePages";
 import { commands } from "../../generated/commands";
-import type { ListSuppliesResponse, SupplyItem } from "../../generated/types";
+import type { SupplyItem } from "../../generated/types";
+import { interpolate } from "../../i18n";
 import { SupplyDetailView } from "./SupplyDetailView";
-import { Pagination, SupplyTable } from "./SupplyTable";
+import { SupplyTable } from "./SupplyTable";
 import { defaultSupplyCopy, type SupplyCopy } from "./supplyI18n";
 
 type SupplyStatus = "all" | "open" | "closed";
-type SupplyListState =
-  | { status: "loading"; requestKey: string }
-  | { status: "error"; requestKey: string }
-  | { status: "ready"; requestKey: string; data: ListSuppliesResponse };
+type SupplyListSummary = {
+  openItems: number;
+  closedItems: number;
+};
 
 const PAGE_SIZE = 25;
 export function SupplyListView({
@@ -31,62 +34,48 @@ export function SupplyListView({
   const [draftQuery, setDraftQuery] = useState("");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SupplyStatus>("all");
-  const [page, setPage] = useState(1);
   const [retryKey, setRetryKey] = useState(0);
-  const [state, setState] = useState<SupplyListState>({ status: "loading", requestKey: "" });
   const [selectedSupply, setSelectedSupply] = useState<{ shopId: number; item: SupplyItem } | null>(null);
-  const requestSequence = useRef(0);
   const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
-  const requestKey = JSON.stringify([shopId, query, filter, page, retryKey]);
-
-  useEffect(() => {
-    const requestId = ++requestSequence.current;
-    let active = true;
-    void commands.supplies.list({ shopId, query, status: filter, page, pageSize: PAGE_SIZE }).then(
-      (response) => {
-        if (!active || requestSequence.current !== requestId) return;
-        if (response.shopId !== shopId
-          || response.query !== query
-          || response.status !== filter
-          || response.page !== page
-          || response.pageSize !== PAGE_SIZE) {
-          setState({ status: "error", requestKey });
-          return;
-        }
-        setState({ status: "ready", requestKey, data: response });
+  const loadPage = useCallback(async (page: number) => {
+    const response = await commands.supplies.list({ shopId, query, status: filter, page, pageSize: PAGE_SIZE });
+    if (response.shopId !== shopId
+      || response.query !== query
+      || response.status !== filter
+      || response.page !== page
+      || response.pageSize !== PAGE_SIZE) {
+      throw new Error("Unexpected supply list response");
+    }
+    return {
+      items: response.items,
+      hasMore: page < response.totalPages,
+      summary: {
+        openItems: response.openItems,
+        closedItems: response.closedItems,
       },
-      () => {
-        if (active && requestSequence.current === requestId) {
-          setState({ status: "error", requestKey });
-        }
-      },
-    );
-    return () => {
-      active = false;
     };
-  }, [filter, page, query, requestKey, shopId]);
+  }, [filter, query, shopId]);
+  const pages = useBoundedInfinitePages<SupplyItem, SupplyListSummary>({
+    resetKey: JSON.stringify([shopId, query, filter, retryKey]),
+    loadPage,
+    getId: supplyId,
+  });
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const normalizedQuery = draftQuery.trim();
-    if (normalizedQuery === query && page === 1) {
+    if (normalizedQuery === query) {
       setRetryKey((key) => key + 1);
     }
-    setPage(1);
     setQuery(normalizedQuery);
   };
 
   const selectFilter = (status: SupplyStatus) => {
     setFilter(status);
-    setPage(1);
   };
 
-  const visibleState: SupplyListState = state.requestKey === requestKey
-    ? state
-    : { status: "loading", requestKey };
-  const data = visibleState.status === "ready" ? visibleState.data : null;
-  const openItems = data?.openItems ?? 0;
-  const closedItems = data?.closedItems ?? 0;
+  const openItems = pages.summary?.openItems ?? 0;
+  const closedItems = pages.summary?.closedItems ?? 0;
   const totalItems = openItems + closedItems;
 
   if (selectedSupply?.shopId === shopId) {
@@ -104,9 +93,9 @@ export function SupplyListView({
   }
 
   return (
-    <div className="grid gap-5">
-      <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)] md:p-5">
-        <form className="flex flex-col gap-3 sm:flex-row" onSubmit={submitSearch} role="search">
+    <div className="grid gap-3">
+      <section className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-3 shadow-[var(--shadow-panel)] md:p-4">
+        <form className="flex flex-col gap-2 sm:flex-row" onSubmit={submitSearch} role="search">
           <label className="relative min-w-0 flex-1">
             <span className="sr-only">{copy.list.searchLabel}</span>
             <Search
@@ -115,7 +104,7 @@ export function SupplyListView({
               size={18}
             />
             <input
-              className="h-11 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] pr-4 pl-10 text-sm shadow-[var(--shadow-control)] outline-none transition placeholder:text-[var(--text-muted)] hover:border-[var(--accent)] focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]"
+              className="h-9 w-full rounded-lg border border-[var(--border-strong)] bg-[var(--surface-elevated)] pr-3 pl-10 text-xs shadow-[var(--shadow-control)] outline-none transition placeholder:text-[var(--text-muted)] hover:border-[var(--accent)] focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]"
               type="search"
               value={draftQuery}
               maxLength={120}
@@ -125,7 +114,7 @@ export function SupplyListView({
             />
           </label>
           <button
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--sidebar)] px-5 text-sm font-semibold text-white transition hover:bg-[#1c3329]"
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-[var(--accent-strong)] px-4 text-xs font-semibold text-white transition hover:bg-[var(--accent)]"
             type="submit"
           >
             <Search aria-hidden="true" size={16} />
@@ -133,46 +122,58 @@ export function SupplyListView({
           </button>
         </form>
 
-        <div className="mt-4 flex flex-wrap gap-2" aria-label={copy.list.filtersLabel}>
+        <div className="mt-3 flex flex-wrap gap-1.5" aria-label={copy.list.filtersLabel}>
           <FilterButton active={filter === "all"} onClick={() => selectFilter("all")}>
-            {copy.list.all} <Count value={totalItems} loading={visibleState.status === "loading"} numberFormat={numberFormat} />
+            {copy.list.all} <Count value={totalItems} loading={pages.status === "loading"} numberFormat={numberFormat} />
           </FilterButton>
           <FilterButton active={filter === "open"} onClick={() => selectFilter("open")}>
-            {copy.list.openPlural} <Count value={openItems} loading={visibleState.status === "loading"} numberFormat={numberFormat} />
+            {copy.list.openPlural} <Count value={openItems} loading={pages.status === "loading"} numberFormat={numberFormat} />
           </FilterButton>
           <FilterButton active={filter === "closed"} onClick={() => selectFilter("closed")}>
-            {copy.list.closedPlural} <Count value={closedItems} loading={visibleState.status === "loading"} numberFormat={numberFormat} />
+            {copy.list.closedPlural} <Count value={closedItems} loading={pages.status === "loading"} numberFormat={numberFormat} />
           </FilterButton>
         </div>
       </section>
 
-      {visibleState.status === "loading" ? (
+      {pages.status === "loading" && pages.items.length === 0 ? (
         <LoadingTable label={copy.list.loading} />
-      ) : visibleState.status === "error" ? (
-        <ErrorState copy={copy} onRetry={() => setRetryKey((key) => key + 1)} />
-      ) : visibleState.data.items.length === 0 ? (
+      ) : pages.status === "error" && pages.items.length === 0 ? (
+        <ErrorState copy={copy} onRetry={pages.retry} />
+      ) : pages.items.length === 0 ? (
         <EmptyState copy={copy} hasQuery={query.length > 0 || filter !== "all"} />
       ) : (
         <SupplyTable
-          items={visibleState.data.items}
+          items={[...pages.items]}
           onOpen={(item) => setSelectedSupply({ shopId, item })}
           copy={copy}
           locale={locale}
         />
       )}
 
-      {visibleState.status === "ready" && visibleState.data.items.length > 0 && (
-        <Pagination
-          page={visibleState.data.page}
-          totalPages={visibleState.data.totalPages}
-          totalItems={visibleState.data.totalItems}
-          onPage={setPage}
-          copy={copy}
-          locale={locale}
+      {pages.items.length > 0 && (
+        <InfiniteLoadTrigger
+          status={pages.status}
+          hasMore={pages.hasMore}
+          copy={{
+            loading: copy.list.loadingMore,
+            loadMore: copy.list.loadMore,
+            loadError: copy.list.loadMoreError,
+            retry: copy.list.retry,
+            end: copy.list.allLoaded,
+          }}
+          announcement={pages.addedCount > 0
+            ? interpolate(copy.list.added, { count: numberFormat.format(pages.addedCount) })
+            : ""}
+          onLoadMore={pages.loadMore}
+          onRetry={pages.retry}
         />
       )}
     </div>
   );
+}
+
+function supplyId(item: SupplyItem) {
+  return item.id;
 }
 
 function FilterButton({
@@ -186,7 +187,7 @@ function FilterButton({
 }) {
   return (
     <button
-      className={`inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition ${
+      className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold transition ${
         active
           ? "bg-[var(--accent-soft)] text-[var(--accent-strong)]"
           : "bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"

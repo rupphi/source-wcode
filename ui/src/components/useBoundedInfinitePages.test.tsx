@@ -30,9 +30,9 @@ describe("useBoundedInfinitePages", () => {
   });
 
   it("loads one next page at a time and deduplicates stable item IDs", async () => {
-    const secondPage = deferred<{ items: Item[]; hasMore: boolean }>();
+    const secondPage = deferred<{ items: Item[]; hasMore: boolean; summary: { total: number } }>();
     const loadPage = vi.fn(async (page: number) => page === 1
-      ? { items: [{ id: 1, label: "One" }, { id: 2, label: "Two" }], hasMore: true }
+      ? { items: [{ id: 1, label: "One" }, { id: 2, label: "Two" }], hasMore: true, summary: { total: 3 } }
       : secondPage.promise);
     const { result } = renderHook(() => useBoundedInfinitePages({
       resetKey: "shop-7:all",
@@ -41,6 +41,7 @@ describe("useBoundedInfinitePages", () => {
     }));
 
     await waitFor(() => expect(result.current.status).toBe("ready"));
+    expect(result.current.summary).toEqual({ total: 3 });
     act(() => {
       result.current.loadMore();
       result.current.loadMore();
@@ -52,11 +53,13 @@ describe("useBoundedInfinitePages", () => {
     secondPage.resolve({
       items: [{ id: 2, label: "Updated duplicate" }, { id: 3, label: "Three" }],
       hasMore: false,
+      summary: { total: 4 },
     });
     await waitFor(() => expect(result.current.status).toBe("ready"));
     expect(result.current.items.map((item) => item.id)).toEqual([1, 2, 3]);
     expect(result.current.addedCount).toBe(1);
     expect(result.current.hasMore).toBe(false);
+    expect(result.current.summary).toEqual({ total: 4 });
   });
 
   it("ignores a stale response after the list key changes", async () => {
@@ -84,6 +87,28 @@ describe("useBoundedInfinitePages", () => {
     newPage.resolve({ items: [{ id: 8, label: "New shop" }], hasMore: false });
     await waitFor(() => expect(result.current.status).toBe("ready"));
     expect(result.current.items).toEqual([{ id: 8, label: "New shop" }]);
+  });
+
+  it("hides the previous list as soon as its key changes", async () => {
+    const nextPage = deferred<{ items: Item[]; hasMore: boolean }>();
+    const oldLoader = vi.fn().mockResolvedValue({ items: [{ id: 7, label: "Old filter" }], hasMore: false });
+    const newLoader = vi.fn(() => nextPage.promise);
+    const { result, rerender } = renderHook(
+      ({ resetKey, loadPage }) => useBoundedInfinitePages({
+        resetKey,
+        loadPage,
+        getId: (item: Item) => item.id,
+      }),
+      { initialProps: { resetKey: "all", loadPage: oldLoader } },
+    );
+
+    await waitFor(() => expect(result.current.items).toEqual([{ id: 7, label: "Old filter" }]));
+    rerender({ resetKey: "open", loadPage: newLoader });
+    expect(result.current.items).toEqual([]);
+    expect(result.current.status).toBe("loading");
+
+    nextPage.resolve({ items: [{ id: 8, label: "New filter" }], hasMore: false });
+    await waitFor(() => expect(result.current.items).toEqual([{ id: 8, label: "New filter" }]));
   });
 
   it("keeps loaded items when a later page fails and retries that page", async () => {
