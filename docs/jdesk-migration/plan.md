@@ -369,6 +369,8 @@ artifact. Recovery/idempotency tests precede implementation changes.
 - [x] Apply dark/light/system design tokens before workspace render and native-test both explicit
       themes plus an emulated system preference without horizontal overflow or contrast regressions.
 - [x] Translate the shared shell and settings/license surface in RU/EN/VI/ZH.
+- [x] Translate the complete FBS supplies journey in RU/EN/VI/ZH: list/detail/orders, Excel import,
+      GTIN inventory, print setup and guarded delivery/purchase dialogs with locale formatting.
 - [ ] Migrate every remaining feature surface before marking language parity complete.
 - [x] Port signed update check/download/install, shared optional-version skip, bounded streamed
       checksum validation, Authenticode/snapshot gates and fail-closed signed release automation.

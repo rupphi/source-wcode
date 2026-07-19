@@ -312,6 +312,10 @@ luồng hiện tại trong UI mới, nhanh, rõ trạng thái, dùng được b�
 - Language control is not considered parity until every reachable React journey uses translated
   copy. Migration may land incrementally, but parity/evidence must name the translated surfaces and
   the UI must not claim full-language completion while hard-coded Russian remains.
+- Feature copy uses the same allowlisted language oracle as the shell, with typed complete
+  RU/EN/VI/ZH dictionaries and locale-aware number/date formatting. Shared guarded dialogs accept
+  an explicit copy contract so the invoking journey changes language without weakening preview,
+  confirmation, receipt validation or capability gates; Russian remains the rollback/default copy.
 
 ## Tech Stack
 

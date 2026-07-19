@@ -1209,6 +1209,85 @@ describe("App", () => {
     expect(document.body).not.toHaveTextContent(secret);
   });
 
+  it("applies the persisted language to the complete supply-list surface", async () => {
+    const user = userEvent.setup();
+    loadPreferences.mockResolvedValue({ language: "en", theme: "dark" });
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Main shop", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard.mockResolvedValue({ shopId: 7, productCount: 10, newOrderCount: 1, openSupplyCount: 0 });
+    listSupplies.mockResolvedValue({
+      shopId: 7,
+      query: "",
+      status: "all",
+      page: 1,
+      pageSize: 25,
+      totalItems: 0,
+      totalPages: 0,
+      openItems: 0,
+      closedItems: 0,
+      items: [],
+    });
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "FBS supplies" }));
+
+    expect(await screen.findByRole("searchbox", { name: "Search supplies" })).toBeVisible();
+    expect(screen.getByRole("button", { name: /All.*0/ })).toBeVisible();
+    expect(screen.getByText("No supplies yet")).toBeVisible();
+    expect(screen.queryByText("Поставок пока нет")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Language" }), "vi");
+    await user.click(await screen.findByRole("button", { name: "Đóng cài đặt" }));
+    expect(await screen.findByRole("searchbox", { name: "Tìm kiếm lô giao hàng" })).toBeVisible();
+    expect(screen.getByText("Chưa có lô giao hàng")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Cài đặt" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Ngôn ngữ" }), "zh");
+    await user.click(await screen.findByRole("button", { name: "关闭设置" }));
+    expect(await screen.findByRole("searchbox", { name: "搜索供货" })).toBeVisible();
+    expect(screen.getByText("暂无供货")).toBeVisible();
+  });
+
+  it("keeps persisted English across the supply detail and local inventory", async () => {
+    const user = userEvent.setup();
+    loadPreferences.mockResolvedValue({ language: "en", theme: "dark" });
+    bootstrap.mockResolvedValue({
+      app: { name: "WCode", version: "1.1.7" },
+      shops: [{ id: 7, name: "Main shop", tokenConfigured: true }],
+      hasSelectedShop: true,
+      selectedShopId: 7,
+    });
+    loadDashboard.mockResolvedValue({ shopId: 7, productCount: 1, newOrderCount: 1, openSupplyCount: 1 });
+    const supply = { id: "SUP-EN", name: "English fixture", status: "open", mode: "consumer", createdAt: "2026-07-19T10:00:00Z", itemCount: 1 };
+    listSupplies.mockResolvedValue({ shopId: 7, query: "", status: "all", page: 1, pageSize: 25, totalItems: 1, totalPages: 1, openItems: 1, closedItems: 0, items: [supply] });
+    loadSupplyDetail.mockResolvedValue({
+      supply,
+      query: "",
+      page: 1,
+      pageSize: 25,
+      totalItems: 0,
+      totalPages: 0,
+      sort: { bySubject: true, byArticle: true, byColor: true, bySize: true },
+      items: [],
+    });
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "FBS supplies" }));
+    await user.click(await screen.findByRole("button", { name: "Open supply English fixture" }));
+
+    expect(await screen.findByRole("button", { name: "Back to supplies" })).toBeVisible();
+    expect(screen.getByText("Orders in supply")).toBeVisible();
+    expect(screen.getByRole("searchbox", { name: "Search orders" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "GTIN and local KIZ stock" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Print setup" })).toBeVisible();
+    expect(screen.queryByText("К списку поставок")).not.toBeInTheDocument();
+  });
+
   it("searches, filters, and paginates supplies from the local bridge", async () => {
     const user = userEvent.setup();
     bootstrap.mockResolvedValue({

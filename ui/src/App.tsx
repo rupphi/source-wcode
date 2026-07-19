@@ -10,6 +10,7 @@ import {
 } from "./features/dashboard/DashboardView";
 import { useWildberriesSync } from "./features/wildberries/useWildberriesSync";
 import { SupplyListView } from "./features/supplies/SupplyListView";
+import { getSupplyCopy, getSupplyLocale } from "./features/supplies/supplyI18n";
 import { PackingView } from "./features/packing/PackingView";
 import { FboPackingView } from "./features/fbo/FboPackingView";
 import { KizMappingView } from "./features/kizmapping/KizMappingView";
@@ -281,7 +282,12 @@ export function App() {
           ) : selectedShop === null ? (
             <EmptyWorkspace copy={copy.shop} />
           ) : activeView === "supplies" ? (
-            <SupplyListView shopId={selectedShop.id} licenseAllowed={licenseAllowed} />
+            <SupplyListView
+              shopId={selectedShop.id}
+              licenseAllowed={licenseAllowed}
+              copy={getSupplyCopy(preferences.language)}
+              locale={getSupplyLocale(preferences.language)}
+            />
           ) : activeView === "packing" ? (
             <PackingView key={selectedShop.id} shopId={selectedShop.id} licenseAllowed={licenseAllowed} />
           ) : activeView === "fbo" ? (

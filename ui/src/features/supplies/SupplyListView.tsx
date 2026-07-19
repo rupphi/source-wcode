@@ -3,11 +3,12 @@ import {
   PackageOpen,
   Search,
 } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { commands } from "../../generated/commands";
 import type { ListSuppliesResponse, SupplyItem } from "../../generated/types";
 import { SupplyDetailView } from "./SupplyDetailView";
 import { Pagination, SupplyTable } from "./SupplyTable";
+import { defaultSupplyCopy, type SupplyCopy } from "./supplyI18n";
 
 type SupplyStatus = "all" | "open" | "closed";
 type SupplyListState =
@@ -16,9 +17,17 @@ type SupplyListState =
   | { status: "ready"; requestKey: string; data: ListSuppliesResponse };
 
 const PAGE_SIZE = 25;
-const numberFormat = new Intl.NumberFormat("ru-RU");
-
-export function SupplyListView({ shopId, licenseAllowed = false }: { shopId: number; licenseAllowed?: boolean }) {
+export function SupplyListView({
+  shopId,
+  licenseAllowed = false,
+  copy = defaultSupplyCopy,
+  locale = "ru-RU",
+}: {
+  shopId: number;
+  licenseAllowed?: boolean;
+  copy?: SupplyCopy;
+  locale?: string;
+}) {
   const [draftQuery, setDraftQuery] = useState("");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SupplyStatus>("all");
@@ -27,6 +36,7 @@ export function SupplyListView({ shopId, licenseAllowed = false }: { shopId: num
   const [state, setState] = useState<SupplyListState>({ status: "loading", requestKey: "" });
   const [selectedSupply, setSelectedSupply] = useState<{ shopId: number; item: SupplyItem } | null>(null);
   const requestSequence = useRef(0);
+  const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   const requestKey = JSON.stringify([shopId, query, filter, page, retryKey]);
 
   useEffect(() => {
@@ -87,6 +97,8 @@ export function SupplyListView({ shopId, licenseAllowed = false }: { shopId: num
         onBack={() => setSelectedSupply(null)}
         onSupplyRefreshed={() => setRetryKey((key) => key + 1)}
         licenseAllowed={licenseAllowed}
+        copy={copy}
+        locale={locale}
       />
     );
   }
@@ -96,7 +108,7 @@ export function SupplyListView({ shopId, licenseAllowed = false }: { shopId: num
       <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)] md:p-5">
         <form className="flex flex-col gap-3 sm:flex-row" onSubmit={submitSearch} role="search">
           <label className="relative min-w-0 flex-1">
-            <span className="sr-only">Поиск поставок</span>
+            <span className="sr-only">{copy.list.searchLabel}</span>
             <Search
               className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-[var(--text-muted)]"
               aria-hidden="true"
@@ -108,8 +120,8 @@ export function SupplyListView({ shopId, licenseAllowed = false }: { shopId: num
               value={draftQuery}
               maxLength={120}
               onChange={(event) => setDraftQuery(event.target.value)}
-              placeholder="ID или название поставки"
-              aria-label="Поиск поставок"
+              placeholder={copy.list.searchPlaceholder}
+              aria-label={copy.list.searchLabel}
             />
           </label>
           <button
@@ -117,33 +129,35 @@ export function SupplyListView({ shopId, licenseAllowed = false }: { shopId: num
             type="submit"
           >
             <Search aria-hidden="true" size={16} />
-            Найти
+            {copy.list.search}
           </button>
         </form>
 
-        <div className="mt-4 flex flex-wrap gap-2" aria-label="Фильтр поставок">
+        <div className="mt-4 flex flex-wrap gap-2" aria-label={copy.list.filtersLabel}>
           <FilterButton active={filter === "all"} onClick={() => selectFilter("all")}>
-            Все <Count value={totalItems} loading={visibleState.status === "loading"} />
+            {copy.list.all} <Count value={totalItems} loading={visibleState.status === "loading"} numberFormat={numberFormat} />
           </FilterButton>
           <FilterButton active={filter === "open"} onClick={() => selectFilter("open")}>
-            Открытые <Count value={openItems} loading={visibleState.status === "loading"} />
+            {copy.list.openPlural} <Count value={openItems} loading={visibleState.status === "loading"} numberFormat={numberFormat} />
           </FilterButton>
           <FilterButton active={filter === "closed"} onClick={() => selectFilter("closed")}>
-            Закрытые <Count value={closedItems} loading={visibleState.status === "loading"} />
+            {copy.list.closedPlural} <Count value={closedItems} loading={visibleState.status === "loading"} numberFormat={numberFormat} />
           </FilterButton>
         </div>
       </section>
 
       {visibleState.status === "loading" ? (
-        <LoadingTable />
+        <LoadingTable label={copy.list.loading} />
       ) : visibleState.status === "error" ? (
-        <ErrorState onRetry={() => setRetryKey((key) => key + 1)} />
+        <ErrorState copy={copy} onRetry={() => setRetryKey((key) => key + 1)} />
       ) : visibleState.data.items.length === 0 ? (
-        <EmptyState hasQuery={query.length > 0 || filter !== "all"} />
+        <EmptyState copy={copy} hasQuery={query.length > 0 || filter !== "all"} />
       ) : (
         <SupplyTable
           items={visibleState.data.items}
           onOpen={(item) => setSelectedSupply({ shopId, item })}
+          copy={copy}
+          locale={locale}
         />
       )}
 
@@ -153,6 +167,8 @@ export function SupplyListView({ shopId, licenseAllowed = false }: { shopId: num
           totalPages={visibleState.data.totalPages}
           totalItems={visibleState.data.totalItems}
           onPage={setPage}
+          copy={copy}
+          locale={locale}
         />
       )}
     </div>
@@ -184,7 +200,7 @@ function FilterButton({
   );
 }
 
-function Count({ value, loading }: { value: number; loading: boolean }) {
+function Count({ value, loading, numberFormat }: { value: number; loading: boolean; numberFormat: Intl.NumberFormat }) {
   return (
     <span className="rounded-md bg-white/65 px-1.5 py-0.5 text-xs tabular-nums">
       {loading ? "…" : numberFormat.format(value)}
@@ -192,11 +208,11 @@ function Count({ value, loading }: { value: number; loading: boolean }) {
   );
 }
 
-function LoadingTable() {
+function LoadingTable({ label }: { label: string }) {
   return (
     <section
       className="grid gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-5 shadow-[var(--shadow-panel)]"
-      aria-label="Загрузка поставок"
+      aria-label={label}
     >
       {[0, 1, 2, 3, 4].map((row) => (
         <div className="flex items-center gap-4 py-2" key={row}>
@@ -209,22 +225,22 @@ function LoadingTable() {
   );
 }
 
-function ErrorState({ onRetry }: { onRetry: () => void }) {
+function ErrorState({ copy, onRetry }: { copy: SupplyCopy; onRetry: () => void }) {
   return (
     <section className="grid min-h-64 place-items-center rounded-2xl border border-red-200 bg-red-50 p-8 text-center" role="alert">
       <div>
         <AlertCircle className="mx-auto mb-3 text-red-600" aria-hidden="true" size={26} />
-        <h3 className="font-semibold text-red-950">Не удалось загрузить поставки</h3>
-        <p className="mt-2 text-sm text-red-800">Локальные данные не изменены. Повторите запрос.</p>
+        <h3 className="font-semibold text-red-950">{copy.list.errorTitle}</h3>
+        <p className="mt-2 text-sm text-red-800">{copy.list.errorDescription}</p>
         <button className="mt-4 rounded-xl bg-red-700 px-4 py-2.5 text-sm font-semibold text-white" type="button" onClick={onRetry}>
-          Повторить
+          {copy.list.retry}
         </button>
       </div>
     </section>
   );
 }
 
-function EmptyState({ hasQuery }: { hasQuery: boolean }) {
+function EmptyState({ copy, hasQuery }: { copy: SupplyCopy; hasQuery: boolean }) {
   return (
     <section className="grid min-h-64 place-items-center rounded-2xl border border-dashed border-[var(--border-strong)] bg-[var(--surface-elevated)] p-8 text-center">
       <div>
@@ -233,9 +249,9 @@ function EmptyState({ hasQuery }: { hasQuery: boolean }) {
         ) : (
           <PackageOpen className="mx-auto mb-3 text-[var(--text-muted)]" aria-hidden="true" size={26} />
         )}
-        <h3 className="font-semibold">{hasQuery ? "Поставки не найдены" : "Поставок пока нет"}</h3>
+        <h3 className="font-semibold">{hasQuery ? copy.list.emptySearchTitle : copy.list.emptyTitle}</h3>
         <p className="mt-2 text-sm text-[var(--text-secondary)]">
-          {hasQuery ? "Измените запрос или выберите другой статус." : "Запустите синхронизацию на главной странице."}
+          {hasQuery ? copy.list.emptySearchDescription : copy.list.emptyDescription}
         </p>
       </div>
     </section>

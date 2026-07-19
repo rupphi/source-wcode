@@ -9,11 +9,13 @@ import {
   X,
 } from "lucide-react";
 import { JDeskError } from "jdesk-client";
-import { useRef, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import { commands } from "../../generated/commands";
 import type { ImportedOrderItem, ImportedOrderPage } from "../../generated/types";
+import { interpolate } from "../../i18n";
 import { OrderThumbnail } from "./OrderTable";
 import { Pagination } from "./SupplyTable";
+import { defaultSupplyCopy, type SupplyCopy } from "./supplyI18n";
 
 const PAGE_SIZE = 25;
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -30,13 +32,18 @@ type ImportErrorKind = "invalid_file" | "token_invalid" | "rate_limited" | "unav
 export function ExcelImportPanel({
   shopId,
   onActiveChange,
+  copy = defaultSupplyCopy,
+  locale = "ru-RU",
 }: {
   shopId: number;
   onActiveChange: (active: boolean) => void;
+  copy?: SupplyCopy;
+  locale?: string;
 }) {
   const [state, setState] = useState<ImportState>({ status: "idle" });
   const [draftQuery, setDraftQuery] = useState("");
   const requestSequence = useRef(0);
+  const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
 
   const importWorkbook = async () => {
     const previous = state.status === "ready" ? state : null;
@@ -115,14 +122,14 @@ export function ExcelImportPanel({
             <FileSpreadsheet aria-hidden="true" size={20} />
           </span>
           <div>
-            <h4 className="text-sm font-semibold text-emerald-950">Заказы из Excel</h4>
+            <h4 className="text-sm font-semibold text-emerald-950">{copy.excel.title}</h4>
             <p className="mt-1 max-w-2xl text-xs leading-5 text-emerald-800">
-              Выберите выгрузку Wildberries. WCode проверит XLSX и загрузит актуальные стикеры для выбранного магазина.
+              {copy.excel.description}
             </p>
             {state.status === "error" && (
               <p className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-red-700" role="alert">
                 <AlertCircle aria-hidden="true" size={14} />
-                {excelImportErrorMessage(state.kind)}
+                {excelImportErrorMessage(state.kind, copy)}
               </p>
             )}
           </div>
@@ -138,7 +145,7 @@ export function ExcelImportPanel({
           ) : (
             <FileSpreadsheet aria-hidden="true" size={16} />
           )}
-          {state.status === "importing" ? "Читаем Excel…" : "Импортировать Excel"}
+          {state.status === "importing" ? copy.excel.reading : copy.excel.import}
         </button>
       </section>
     );
@@ -152,9 +159,9 @@ export function ExcelImportPanel({
           <div className="min-w-0">
             <p className="mb-1 inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-200">
               <ShieldCheck aria-hidden="true" size={14} />
-              Файл проверен, путь остаётся только в Java
+              {copy.excel.verified}
             </p>
-            <h3 className="truncate text-xl font-semibold tracking-[-0.02em]">Заказы из {data.fileName}</h3>
+            <h3 className="truncate text-xl font-semibold tracking-[-0.02em]">{interpolate(copy.excel.ordersFrom, { file: data.fileName })}</h3>
           </div>
           <div className="flex gap-2">
             <button
@@ -163,10 +170,10 @@ export function ExcelImportPanel({
               type="button"
             >
               <FileSpreadsheet aria-hidden="true" size={14} />
-              Другой файл
+              {copy.excel.anotherFile}
             </button>
             <button
-              aria-label="Вернуться к заказам поставки"
+              aria-label={copy.excel.close}
               className="grid size-9 place-items-center rounded-lg border border-white/20 transition hover:bg-white/10"
               onClick={closeWorkspace}
               type="button"
@@ -176,13 +183,13 @@ export function ExcelImportPanel({
           </div>
         </div>
         <div className="grid gap-px bg-[var(--border-subtle)] sm:grid-cols-3">
-          <ImportMetric label="Заказов в файле" value={data.importedItems.toLocaleString("ru-RU")} />
-          <ImportMetric label="Стикеры WB" value={`${data.stickerItems.toLocaleString("ru-RU")} из ${data.importedItems.toLocaleString("ru-RU")}`} />
-          <ImportMetric label="Найдено" value={data.totalItems.toLocaleString("ru-RU")} />
+          <ImportMetric label={copy.excel.fileOrders} value={numberFormat.format(data.importedItems)} />
+          <ImportMetric label={copy.excel.stickers} value={interpolate(copy.excel.countOf, { count: numberFormat.format(data.stickerItems), total: numberFormat.format(data.importedItems) })} />
+          <ImportMetric label={copy.excel.found} value={numberFormat.format(data.totalItems)} />
         </div>
         {state.actionError && (
           <p className="border-t border-red-200 bg-red-50 px-5 py-3 text-xs font-semibold text-red-800" role="alert">
-            Другой файл не импортирован. Текущая сессия сохранена — проверьте формат, токен и соединение.
+            {copy.excel.actionError}
           </p>
         )}
       </section>
@@ -190,28 +197,28 @@ export function ExcelImportPanel({
       <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)]">
         <form className="flex flex-col gap-3 sm:flex-row" onSubmit={submitSearch} role="search">
           <label className="relative min-w-0 flex-1">
-            <span className="sr-only">Поиск импортированных заказов</span>
+            <span className="sr-only">{copy.excel.searchLabel}</span>
             <Search className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden="true" size={18} />
             <input
-              aria-label="Поиск импортированных заказов"
+              aria-label={copy.excel.searchLabel}
               className="h-11 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] pr-4 pl-10 text-sm shadow-[var(--shadow-control)] outline-none transition focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]"
               maxLength={120}
               onChange={(event) => setDraftQuery(event.target.value)}
-              placeholder="Номер задания, артикул или штрихкод"
+              placeholder={copy.excel.searchPlaceholder}
               type="search"
               value={draftQuery}
             />
           </label>
           <button className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--sidebar)] px-5 text-sm font-semibold text-white" type="submit">
             <Search aria-hidden="true" size={16} />
-            Найти импортированный заказ
+            {copy.excel.search}
           </button>
         </form>
         {state.pageError && (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-800" role="alert">
-            Сессия не обновилась. Она могла истечь — повторите запрос или импортируйте файл заново.
+            {copy.excel.pageError}
             <button className="font-semibold underline underline-offset-2" onClick={() => void loadPage(data.query, data.page)} type="button">
-              Повторить
+              {copy.excel.retry}
             </button>
           </div>
         )}
@@ -219,25 +226,27 @@ export function ExcelImportPanel({
 
       {state.pageLoading ? (
         <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-6 text-sm text-[var(--text-secondary)]" role="status">
-          Загружаем страницу импортированных заказов…
+          {copy.excel.loading}
         </section>
       ) : data.items.length === 0 ? (
         <section className="rounded-2xl border border-dashed border-[var(--border-strong)] p-8 text-center text-sm text-[var(--text-secondary)]">
-          По этому запросу заказов нет.
+          {copy.excel.empty}
         </section>
       ) : (
-        <ImportedOrdersTable items={data.items} />
+        <ImportedOrdersTable items={data.items} copy={copy} />
       )}
 
       {data.items.length > 0 && !state.pageLoading && (
         <Pagination
-          ariaLabel="Пагинация импортированных заказов"
-          nextLabel="Следующая страница импортированных заказов"
+          ariaLabel={copy.excel.pagination}
+          nextLabel={copy.excel.nextPage}
           onPage={(page) => void loadPage(data.query, page)}
           page={data.page}
-          previousLabel="Предыдущая страница импортированных заказов"
+          previousLabel={copy.excel.previousPage}
           totalItems={data.totalItems}
           totalPages={data.totalPages}
+          copy={copy}
+          locale={locale}
         />
       )}
     </div>
@@ -253,18 +262,18 @@ function ImportMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ImportedOrdersTable({ items }: { items: ImportedOrderItem[] }) {
+function ImportedOrdersTable({ items, copy }: { items: ImportedOrderItem[]; copy: SupplyCopy }) {
   return (
     <section className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[58rem] border-collapse text-left">
           <thead className="border-b border-[var(--border-subtle)] bg-[var(--surface-muted)]/70">
             <tr className="text-xs font-semibold tracking-[0.04em] text-[var(--text-secondary)] uppercase">
-              <th className="px-5 py-3.5" scope="col">Задание</th>
-              <th className="px-4 py-3.5" scope="col">Товар</th>
-              <th className="px-4 py-3.5" scope="col">Артикул / штрихкод</th>
-              <th className="px-4 py-3.5" scope="col">Вариант</th>
-              <th className="px-5 py-3.5" scope="col">Стикер WB</th>
+              <th className="px-5 py-3.5" scope="col">{copy.excel.columns.order}</th>
+              <th className="px-4 py-3.5" scope="col">{copy.excel.columns.product}</th>
+              <th className="px-4 py-3.5" scope="col">{copy.excel.columns.articleBarcode}</th>
+              <th className="px-4 py-3.5" scope="col">{copy.excel.columns.variant}</th>
+              <th className="px-5 py-3.5" scope="col">{copy.excel.columns.sticker}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border-subtle)]">
@@ -274,14 +283,14 @@ function ImportedOrdersTable({ items }: { items: ImportedOrderItem[] }) {
                 <td className="px-4 py-4 align-top">
                   <div className="flex min-w-0 items-start gap-3">
                     {SAFE_IMAGE_PATH.test(item.imagePath) ? (
-                      <OrderThumbnail name={item.name} path={item.imagePath} />
+                      <OrderThumbnail name={item.name} path={item.imagePath} copy={copy} />
                     ) : (
                       <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-[var(--surface-muted)] text-[var(--text-muted)]">
                         <ImageIcon aria-hidden="true" size={18} />
                       </span>
                     )}
                     <div className="min-w-0">
-                      <p className="max-w-64 truncate text-sm font-semibold">{item.name || item.article || `Заказ ${item.orderId}`}</p>
+                      <p className="max-w-64 truncate text-sm font-semibold">{item.name || item.article || interpolate(copy.excel.fallbackOrder, { id: item.orderId })}</p>
                       <p className="mt-1 max-w-64 truncate text-xs text-[var(--text-secondary)]">{item.brand || "—"}</p>
                     </div>
                   </div>
@@ -296,7 +305,7 @@ function ImportedOrdersTable({ items }: { items: ImportedOrderItem[] }) {
                 <td className="px-5 py-4 align-top">
                   <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${item.stickerAvailable ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>
                     {item.stickerAvailable ? <CheckCircle2 aria-hidden="true" size={13} /> : <AlertCircle aria-hidden="true" size={13} />}
-                    {item.stickerAvailable ? (item.sticker || "Получен") : "Не найден"}
+                    {item.stickerAvailable ? (item.sticker || copy.excel.received) : copy.excel.notFound}
                   </span>
                 </td>
               </tr>
@@ -358,15 +367,15 @@ function excelImportErrorKind(error: unknown): ImportErrorKind {
   return error.code === "INVALID_REQUEST" ? "invalid_file" : "unavailable";
 }
 
-function excelImportErrorMessage(kind: ImportErrorKind): string {
+function excelImportErrorMessage(kind: ImportErrorKind, copy: SupplyCopy): string {
   if (kind === "rate_limited") {
-    return "Wildberries ограничил частоту запросов стикеров. Подождите и повторите импорт.";
+    return copy.excel.errors.rateLimited;
   }
   if (kind === "token_invalid") {
-    return "Токен выбранного магазина не даёт доступ к стикерам Wildberries.";
+    return copy.excel.errors.tokenInvalid;
   }
   if (kind === "invalid_file") {
-    return "Файл не распознан как поддерживаемая выгрузка Wildberries XLSX.";
+    return copy.excel.errors.invalidFile;
   }
-  return "Не удалось импортировать файл. Проверьте соединение и повторите попытку.";
+  return copy.excel.errors.unavailable;
 }

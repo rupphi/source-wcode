@@ -1,9 +1,11 @@
 import { CheckCircle2, FileText, FolderOpen, Layers3, Printer, X } from "lucide-react";
 import { JDeskError } from "jdesk-client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { commands } from "../../generated/commands";
 import type { OrderSortRequest, PrintExportResponse, PrintSetupResponse } from "../../generated/types";
+import { interpolate } from "../../i18n";
 import { exportSupplyPdf } from "./nativePrintCommands";
+import { defaultPrintSetupCopy, type PrintSetupCopy } from "./PrintSetupCopy";
 
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const PRINT_JOB_ID = /^[1-9][0-9]{0,19}$/;
@@ -28,18 +30,23 @@ export function PrintSetupDialog({
   query,
   sort,
   orderCount,
+  copy = defaultPrintSetupCopy,
+  locale = "ru-RU",
 }: {
   shopId: number;
   supplyId: string;
   query: string;
   sort: OrderSortRequest;
   orderCount: number;
+  copy?: PrintSetupCopy;
+  locale?: string;
 }) {
   const [state, setState] = useState<DialogState>({ status: "closed" });
   const [pageOrder, setPageOrder] = useState<PageOrder>("barcode_then_sticker");
   const [copies, setCopies] = useState("1");
   const [exportState, setExportState] = useState<ExportState>({ status: "idle" });
   const busy = state.status === "ready" && (state.saving || exportState.status === "working");
+  const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
 
   const close = () => {
     if (!busy) setState({ status: "closed" });
@@ -183,7 +190,7 @@ export function PrintSetupDialog({
         type="button"
       >
         <Printer aria-hidden="true" size={16} />
-        Настроить печать
+        {copy.button}
       </button>
 
       {state.status !== "closed" && (
@@ -193,51 +200,51 @@ export function PrintSetupDialog({
           <section aria-labelledby="print-setup-title" aria-modal="true" className="max-h-[calc(100vh-2rem)] w-full max-w-2xl overflow-y-auto rounded-3xl border border-white/60 bg-[var(--surface-elevated)] shadow-2xl" role="dialog">
             <header className="flex items-start justify-between border-b border-[var(--border-subtle)] px-6 py-5">
               <div>
-                <p className="mb-1 text-xs font-semibold tracking-[0.12em] text-[var(--accent-strong)] uppercase">PDF и этикетки</p>
-                <h3 className="text-xl font-semibold tracking-[-0.025em]" id="print-setup-title">Настройка печати</h3>
-                <p className="mt-1 text-sm text-[var(--text-secondary)]">Проверьте макет и порядок страниц перед созданием файлов.</p>
+                <p className="mb-1 text-xs font-semibold tracking-[0.12em] text-[var(--accent-strong)] uppercase">{copy.eyebrow}</p>
+                <h3 className="text-xl font-semibold tracking-[-0.025em]" id="print-setup-title">{copy.title}</h3>
+                <p className="mt-1 text-sm text-[var(--text-secondary)]">{copy.description}</p>
               </div>
-              <button autoFocus className="grid size-9 place-items-center rounded-xl text-[var(--text-muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)] disabled:cursor-wait disabled:opacity-50" disabled={busy} onClick={close} type="button" aria-label="Закрыть настройку печати">
+              <button autoFocus className="grid size-9 place-items-center rounded-xl text-[var(--text-muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)] disabled:cursor-wait disabled:opacity-50" disabled={busy} onClick={close} type="button" aria-label={copy.close}>
                 <X aria-hidden="true" size={19} />
               </button>
             </header>
 
-            {state.status === "loading" && <LoadingState />}
-            {state.status === "error" && <LoadError onRetry={() => void open()} />}
+            {state.status === "loading" && <LoadingState copy={copy} />}
+            {state.status === "error" && <LoadError copy={copy} onRetry={() => void open()} />}
 
             {state.status === "ready" && (
               <div className="grid gap-5 p-6">
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <SummaryCard icon={<FileText size={18} />} label="Активный шаблон" value={defaultTemplate(state.data)?.name ?? "Основной шаблон"} detail={`${state.data.pageWidthMm} × ${state.data.pageHeightMm} мм`} />
-                  <SummaryCard icon={<Layers3 size={18} />} label="Объём задания" value={`${orderCount.toLocaleString("ru-RU")} заказов`} detail={`${pageCount.toLocaleString("ru-RU")} страниц PDF`} />
+                  <SummaryCard icon={<FileText size={18} />} label={copy.activeTemplate} value={defaultTemplate(state.data)?.name ?? copy.defaultTemplate} detail={interpolate(copy.dimensions, { width: state.data.pageWidthMm, height: state.data.pageHeightMm })} />
+                  <SummaryCard icon={<Layers3 size={18} />} label={copy.jobVolume} value={interpolate(copy.orders, { count: numberFormat.format(orderCount) })} detail={interpolate(copy.pages, { count: numberFormat.format(pageCount) })} />
                 </div>
 
                 <fieldset>
-                  <legend className="mb-3 text-sm font-semibold">Порядок страниц</legend>
+                  <legend className="mb-3 text-sm font-semibold">{copy.pageOrder}</legend>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <PageOrderOption checked={pageOrder === "barcode_then_sticker"} description="Сначала товарная этикетка, затем стикер задания WB." disabled={busy} label="Этикетка, затем стикер WB" onChange={() => { setPageOrder("barcode_then_sticker"); markChanged(state); }} />
-                    <PageOrderOption checked={pageOrder === "sticker_then_barcode"} description="Сначала стикер задания WB, затем товарная этикетка." disabled={busy} label="Стикер WB, затем этикетка" onChange={() => { setPageOrder("sticker_then_barcode"); markChanged(state); }} />
+                    <PageOrderOption checked={pageOrder === "barcode_then_sticker"} description={copy.labelFirstDescription} disabled={busy} label={copy.labelFirst} onChange={() => { setPageOrder("barcode_then_sticker"); markChanged(state); }} />
+                    <PageOrderOption checked={pageOrder === "sticker_then_barcode"} description={copy.stickerFirstDescription} disabled={busy} label={copy.stickerFirst} onChange={() => { setPageOrder("sticker_then_barcode"); markChanged(state); }} />
                   </div>
                 </fieldset>
 
                 <label className="grid gap-2 sm:max-w-xs">
-                  <span className="text-sm font-semibold">Копий этикетки</span>
-                  <input aria-label="Копий этикетки" className="h-11 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-3 text-sm shadow-[var(--shadow-control)] outline-none focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]" disabled={busy} max={100} min={1} onChange={(event) => { setCopies(event.target.value); markChanged(state); }} type="number" value={copies} />
-                  <span className={`text-xs ${validCopies ? "text-[var(--text-muted)]" : "font-semibold text-red-700"}`}>{validCopies ? "От 1 до 100 копий на один заказ." : "Введите целое число от 1 до 100."}</span>
+                  <span className="text-sm font-semibold">{copy.copies}</span>
+                  <input aria-label={copy.copies} className="h-11 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] px-3 text-sm shadow-[var(--shadow-control)] outline-none focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]" disabled={busy} max={100} min={1} onChange={(event) => { setCopies(event.target.value); markChanged(state); }} type="number" value={copies} />
+                  <span className={`text-xs ${validCopies ? "text-[var(--text-muted)]" : "font-semibold text-red-700"}`}>{validCopies ? copy.copiesHint : copy.copiesInvalid}</span>
                 </label>
 
-                <ExportNotice state={exportState} onOpen={openExport} />
+                <ExportNotice state={exportState} onOpen={openExport} copy={copy} numberFormat={numberFormat} />
 
                 <div className="flex flex-col gap-3 border-t border-[var(--border-subtle)] pt-5 sm:flex-row sm:items-center sm:justify-between">
                   <div aria-live="polite" className={`min-h-5 text-sm font-semibold ${state.saveError ? "text-red-700" : "text-emerald-700"}`}>
-                    {state.saved && <span className="inline-flex items-center gap-2"><CheckCircle2 aria-hidden="true" size={16} />Настройки сохранены</span>}
-                    {state.saveError && "Не удалось сохранить. Проверьте настройки и повторите."}
+                    {state.saved && <span className="inline-flex items-center gap-2"><CheckCircle2 aria-hidden="true" size={16} />{copy.saved}</span>}
+                    {state.saveError && copy.saveError}
                   </div>
                   <div className="flex flex-col gap-2 sm:flex-row">
-                    <button className="inline-flex h-11 items-center justify-center rounded-xl border border-[var(--border-strong)] px-4 text-sm font-semibold transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50" disabled={!validCopies || busy} onClick={() => void save()} type="button">{state.saving ? "Сохраняем…" : "Сохранить настройки"}</button>
+                    <button className="inline-flex h-11 items-center justify-center rounded-xl border border-[var(--border-strong)] px-4 text-sm font-semibold transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50" disabled={!validCopies || busy} onClick={() => void save()} type="button">{state.saving ? copy.saving : copy.save}</button>
                     <button className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--sidebar)] px-5 text-sm font-semibold text-white transition hover:bg-[#1c3329] disabled:cursor-not-allowed disabled:opacity-50" disabled={!validCopies || busy || orderCount < 1} onClick={() => void createPdf()} type="button">
                       <FileText aria-hidden="true" size={16} />
-                      {exportState.status === "working" ? "Готовим PDF…" : "Создать PDF"}
+                      {exportState.status === "working" ? copy.preparingPdf : copy.createPdf}
                     </button>
                   </div>
                 </div>
@@ -250,38 +257,38 @@ export function PrintSetupDialog({
   );
 }
 
-function LoadingState() {
-  return <div className="grid min-h-80 place-items-center p-8" role="status"><div className="text-center"><Printer className="mx-auto mb-3 animate-pulse text-[var(--accent-strong)]" aria-hidden="true" size={28} /><p className="font-semibold">Загружаем настройки печати…</p></div></div>;
+function LoadingState({ copy }: { copy: PrintSetupCopy }) {
+  return <div className="grid min-h-80 place-items-center p-8" role="status"><div className="text-center"><Printer className="mx-auto mb-3 animate-pulse text-[var(--accent-strong)]" aria-hidden="true" size={28} /><p className="font-semibold">{copy.loading}</p></div></div>;
 }
 
-function LoadError({ onRetry }: { onRetry: () => void }) {
-  return <div className="grid min-h-80 place-items-center p-8 text-center" role="alert"><div><h4 className="font-semibold">Не удалось загрузить настройки</h4><p className="mt-2 text-sm text-[var(--text-secondary)]">Локальные данные не изменены. Повторите запрос.</p><button className="mt-4 rounded-xl bg-[var(--sidebar)] px-4 py-2.5 text-sm font-semibold text-white" onClick={onRetry} type="button">Повторить</button></div></div>;
+function LoadError({ copy, onRetry }: { copy: PrintSetupCopy; onRetry: () => void }) {
+  return <div className="grid min-h-80 place-items-center p-8 text-center" role="alert"><div><h4 className="font-semibold">{copy.loadError}</h4><p className="mt-2 text-sm text-[var(--text-secondary)]">{copy.unchanged}</p><button className="mt-4 rounded-xl bg-[var(--sidebar)] px-4 py-2.5 text-sm font-semibold text-white" onClick={onRetry} type="button">{copy.retry}</button></div></div>;
 }
 
-function ExportNotice({ state, onOpen }: { state: ExportState; onOpen: (kind: "labels" | "details") => Promise<void> }) {
+function ExportNotice({ state, onOpen, copy, numberFormat }: { state: ExportState; onOpen: (kind: "labels" | "details") => Promise<void>; copy: PrintSetupCopy; numberFormat: Intl.NumberFormat }) {
   if (state.status === "idle" || state.status === "working") return null;
   if (state.status === "cancelled") {
-    return <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="status">Сохранение отменено. Файлы и история печати не создавались.</div>;
+    return <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="status">{copy.cancelled}</div>;
   }
   if (state.status === "error") {
-    return <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900" role="alert"><span className="font-semibold">Не удалось создать PDF.</span> {printExportErrorMessage(state.kind)}</div>;
+    return <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900" role="alert"><span className="font-semibold">{copy.exportFailed}</span> {printExportErrorMessage(state.kind, copy)}</div>;
   }
   return (
     <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950" role="status">
-      <div className="flex items-center gap-2 font-semibold"><CheckCircle2 aria-hidden="true" size={18} />PDF готовы</div>
-      <p className="mt-1 text-xs leading-5 text-emerald-800">Создано {state.data.pageCount.toLocaleString("ru-RU")} страниц. Пути остаются только в Java; WCode показывает безопасные имена файлов.</p>
+      <div className="flex items-center gap-2 font-semibold"><CheckCircle2 aria-hidden="true" size={18} />{copy.pdfReady}</div>
+      <p className="mt-1 text-xs leading-5 text-emerald-800">{interpolate(copy.pagesCreated, { count: numberFormat.format(state.data.pageCount) })}</p>
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
-        <ExportFileButton fileName={state.data.labelsFileName} label="Открыть этикетки" loading={state.opening === "labels"} onClick={() => void onOpen("labels")} />
-        <ExportFileButton fileName={state.data.detailsFileName} label="Открыть лист подбора" loading={state.opening === "details"} onClick={() => void onOpen("details")} />
+        <ExportFileButton fileName={state.data.labelsFileName} label={copy.openLabels} loading={state.opening === "labels"} onClick={() => void onOpen("labels")} copy={copy} />
+        <ExportFileButton fileName={state.data.detailsFileName} label={copy.openDetails} loading={state.opening === "details"} onClick={() => void onOpen("details")} copy={copy} />
       </div>
-      {state.data.kizAttachmentCount > 0 && <p className="mt-3 text-xs font-semibold text-amber-800">KIZ отправляются в Wildberries в фоне: {state.data.kizAttachmentCount}.</p>}
-      {state.openError && <p className="mt-3 text-xs font-semibold text-red-700" role="alert">Не удалось открыть файл. Он уже сохранён; откройте его из выбранной папки.</p>}
+      {state.data.kizAttachmentCount > 0 && <p className="mt-3 text-xs font-semibold text-amber-800">{interpolate(copy.kizBackground, { count: numberFormat.format(state.data.kizAttachmentCount) })}</p>}
+      {state.openError && <p className="mt-3 text-xs font-semibold text-red-700" role="alert">{copy.openError}</p>}
     </div>
   );
 }
 
-function ExportFileButton({ fileName, label, loading, onClick }: { fileName: string; label: string; loading: boolean; onClick: () => void }) {
-  return <button aria-label={label} className="flex items-center gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-3 py-3 text-left transition hover:border-[var(--accent)] disabled:cursor-wait disabled:opacity-60" disabled={loading} onClick={onClick} type="button"><FolderOpen aria-hidden="true" className="shrink-0 text-[var(--accent-strong)]" size={18} /><span className="min-w-0"><span className="block text-xs font-semibold">{loading ? "Открываем…" : label}</span><span className="block truncate text-xs text-[var(--text-secondary)]">{fileName}</span></span></button>;
+function ExportFileButton({ fileName, label, loading, onClick, copy }: { fileName: string; label: string; loading: boolean; onClick: () => void; copy: PrintSetupCopy }) {
+  return <button aria-label={label} className="flex items-center gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-3 py-3 text-left transition hover:border-[var(--accent)] disabled:cursor-wait disabled:opacity-60" disabled={loading} onClick={onClick} type="button"><FolderOpen aria-hidden="true" className="shrink-0 text-[var(--accent-strong)]" size={18} /><span className="min-w-0"><span className="block text-xs font-semibold">{loading ? copy.opening : label}</span><span className="block truncate text-xs text-[var(--text-secondary)]">{fileName}</span></span></button>;
 }
 
 function SummaryCard({ icon, label, value, detail }: { icon: React.ReactNode; label: string; value: string; detail: string }) {
@@ -329,9 +336,9 @@ function printExportErrorKind(error: unknown): ExportErrorKind {
   return "unavailable";
 }
 
-function printExportErrorMessage(kind: ExportErrorKind): string {
-  if (kind === "token_invalid") return "Проверьте API-токен и право Marketplace выбранного магазина.";
-  if (kind === "rate_limited") return "Wildberries ограничил запросы. Подождите несколько минут и повторите.";
-  if (kind === "preflight_failed") return "Проверьте сопоставление GTIN и доступные KIZ перед печатью.";
-  return "Файлы не опубликованы. Проверьте соединение, доступ к папке и повторите.";
+function printExportErrorMessage(kind: ExportErrorKind, copy: PrintSetupCopy): string {
+  if (kind === "token_invalid") return copy.errors.tokenInvalid;
+  if (kind === "rate_limited") return copy.errors.rateLimited;
+  if (kind === "preflight_failed") return copy.errors.preflightFailed;
+  return copy.errors.unavailable;
 }

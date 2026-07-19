@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands } from "../../generated/commands";
 import { SupplyGtinInventory } from "./SupplyGtinInventory";
+import { getSupplyCopy, getSupplyLocale } from "./supplyI18n";
 
 vi.mock("../../generated/commands", () => ({
   commands: {
@@ -112,6 +113,19 @@ describe("SupplyGtinInventory", () => {
     const buy = await screen.findByRole("button", { name: `Купить КИЗ для ${gtin}` });
     expect(buy).toBeDisabled();
     expect(preparePurchase).not.toHaveBeenCalled();
+  });
+
+  it("localizes the guarded paid-purchase entry before any paid command", async () => {
+    const user = userEvent.setup();
+    render(<SupplyGtinInventory shopId={7} licenseAllowed copy={getSupplyCopy("en")} locale={getSupplyLocale("en")} />);
+
+    await user.click(await screen.findByRole("button", { name: `Buy KIZ for ${gtin}` }));
+
+    expect(await screen.findByRole("dialog", { name: "Prepare KIZ purchase" })).toBeVisible();
+    expect(screen.getByRole("spinbutton", { name: "KIZ quantity" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Prepare purchase" })).toBeVisible();
+    expect(preparePurchase).not.toHaveBeenCalled();
+    expect(startPurchase).not.toHaveBeenCalled();
   });
 
   it("fails closed instead of rendering malformed catalog data", async () => {

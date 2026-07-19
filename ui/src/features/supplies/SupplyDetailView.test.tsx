@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands } from "../../generated/commands";
 import type { MutationPreview, SupplyItem } from "../../generated/types";
 import { SupplyDetailView } from "./SupplyDetailView";
+import { getSupplyCopy, getSupplyLocale } from "./supplyI18n";
 
 vi.mock("../../generated/commands", () => ({
   commands: {
@@ -105,6 +106,27 @@ describe("SupplyDetailView delivery", () => {
     }));
     expect(await screen.findByRole("status")).toHaveTextContent("Поставка SUP-OPEN передана в доставку");
     expect(onSupplyRefreshed).toHaveBeenCalledTimes(1);
+  });
+
+  it("localizes the guarded delivery confirmation without changing its contract", async () => {
+    const user = userEvent.setup();
+    prepareDeliver.mockResolvedValue(preview());
+    render(<SupplyDetailView
+      shopId={7}
+      summary={openSupply}
+      onBack={vi.fn()}
+      onSupplyRefreshed={vi.fn()}
+      copy={getSupplyCopy("en")}
+      locale={getSupplyLocale("en")}
+    />);
+
+    await user.click(await screen.findByRole("button", { name: "Check delivery of Open supply" }));
+
+    const confirmation = await screen.findByRole("dialog", { name: "Confirm supply delivery" });
+    expect(within(confirmation).getByRole("button", { name: "Close" })).toHaveFocus();
+    expect(within(confirmation).getByRole("button", { name: "Deliver supply" })).toBeVisible();
+    expect(prepareDeliver).toHaveBeenCalledWith({ shopId: 7, supplyId: "SUP-OPEN" });
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it("shows delivery blockers and never exposes the execute action", async () => {
