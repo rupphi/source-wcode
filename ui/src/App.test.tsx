@@ -291,6 +291,24 @@ describe("App", () => {
     loadPreferences.mockResolvedValue({ language: "ru", theme: "dark" });
     setLanguage.mockImplementation(async ({ language }) => ({ language, theme: "dark" }));
     setTheme.mockImplementation(async ({ theme }) => ({ language: "ru", theme }));
+    loadKizMappingCatalog.mockImplementation(async (request) => ({
+      ...request,
+      hasMore: false,
+      availableCategories: [],
+      items: [],
+    }));
+    loadZnackSettings.mockImplementation(async ({ shopId }) => ({
+      shopId,
+      omsId: "",
+      omsConnection: "",
+      documentNumber: "",
+      documentDate: "",
+      autoIntroduction: false,
+      signatureStatus: "UNCONFIGURED",
+      certificateLabel: "",
+      certificateValidTo: "",
+      version: "a".repeat(64),
+    }));
   });
 
   it("opens and closes the application license settings from the header", async () => {

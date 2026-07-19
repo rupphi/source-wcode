@@ -18,7 +18,7 @@ type SupplyListState =
 const PAGE_SIZE = 25;
 const numberFormat = new Intl.NumberFormat("ru-RU");
 
-export function SupplyListView({ shopId }: { shopId: number }) {
+export function SupplyListView({ shopId, licenseAllowed = false }: { shopId: number; licenseAllowed?: boolean }) {
   const [draftQuery, setDraftQuery] = useState("");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SupplyStatus>("all");
@@ -86,6 +86,7 @@ export function SupplyListView({ shopId }: { shopId: number }) {
         summary={selectedSupply.item}
         onBack={() => setSelectedSupply(null)}
         onSupplyRefreshed={() => setRetryKey((key) => key + 1)}
+        licenseAllowed={licenseAllowed}
       />
     );
   }

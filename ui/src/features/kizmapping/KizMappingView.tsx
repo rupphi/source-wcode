@@ -26,6 +26,7 @@ import type {
   SelectionRequest,
   SubjectOption,
 } from "../../generated/types";
+import { matchesCatalogResponse } from "./kizCatalogContract";
 
 type CatalogState =
   | { status: "loading"; requestKey: string }
@@ -82,7 +83,7 @@ export function KizMappingView({ shopId }: { shopId: number }) {
     }).then(
       (response) => {
         if (!active || catalogSequence.current !== requestId) return;
-        if (!matchesCatalog(response, shopId, query, categories, page)) {
+        if (!matchesCatalogResponse(response, shopId, query, categories, page, PAGE_SIZE)) {
           setCatalog({ status: "error", requestKey });
           return;
         }
@@ -733,21 +734,8 @@ function EditorHint({ icon, text }: { icon: React.ReactNode; text: string }) {
   );
 }
 
-function matchesCatalog(response: CatalogResponse, shopId: number, query: string, categories: string[], page: number) {
-  return response.shopId === shopId
-    && response.query === query
-    && response.page === page
-    && response.pageSize === PAGE_SIZE
-    && response.items.length <= PAGE_SIZE
-    && sameStrings(response.categories, categories);
-}
-
 function matchesEditor(response: EditorResponse, shopId: number, gtin: string) {
   return response.shopId === shopId && response.gtin === gtin && response.subjects.length <= 500;
-}
-
-function sameStrings(left: string[], right: string[]) {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function draftFrom(response: EditorResponse) {

@@ -42,7 +42,7 @@ const dateTimeFormat = new Intl.DateTimeFormat("ru-RU", {
   timeStyle: "short",
 });
 
-export function PackingView({ shopId }: { shopId: number }) {
+export function PackingView({ shopId, licenseAllowed = false }: { shopId: number; licenseAllowed?: boolean }) {
   const [tab, setTab] = useState<PackingTab>("new");
   const [draftQuery, setDraftQuery] = useState("");
   const [query, setQuery] = useState("");
@@ -245,6 +245,7 @@ export function PackingView({ shopId }: { shopId: number }) {
         summary={selectedSupply}
         onBack={() => setSelectedSupply(null)}
         onSupplyRefreshed={() => setRetryKey((value) => value + 1)}
+        licenseAllowed={licenseAllowed}
       />
     );
   }

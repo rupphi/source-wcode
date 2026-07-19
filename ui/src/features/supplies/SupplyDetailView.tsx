@@ -8,6 +8,7 @@ import { PrintSetupDialog } from "../printing/PrintSetupDialog";
 import { OrderTable, OrderTableLoading } from "./OrderTable";
 import { ExcelImportPanel } from "./ExcelImportPanel";
 import { Pagination } from "./SupplyTable";
+import { SupplyGtinInventory } from "./SupplyGtinInventory";
 import { useSupplyRefresh, type SupplyRefreshState } from "./useSupplyRefresh";
 
 type DetailState =
@@ -28,11 +29,13 @@ export function SupplyDetailView({
   summary,
   onBack,
   onSupplyRefreshed,
+  licenseAllowed = false,
 }: {
   shopId: number;
   summary: SupplyItem;
   onBack: () => void;
   onSupplyRefreshed: () => void;
+  licenseAllowed?: boolean;
 }) {
   const [draftQuery, setDraftQuery] = useState("");
   const [query, setQuery] = useState("");
@@ -232,6 +235,8 @@ export function SupplyDetailView({
       )}
 
       <ExcelImportPanel key={shopId} shopId={shopId} onActiveChange={setShowImportedOrders} />
+
+      <SupplyGtinInventory shopId={shopId} licenseAllowed={licenseAllowed} />
 
       {!showImportedOrders && <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)] md:p-5">
         <form className="flex flex-col gap-3 sm:flex-row" onSubmit={submitSearch} role="search">

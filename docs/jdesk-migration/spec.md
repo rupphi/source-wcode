@@ -181,6 +181,11 @@ luồng hiện tại trong UI mới, nhanh, rõ trạng thái, dùng được b�
   hiển thị và dùng chung allowlisted response validator/dialog với packing board. Preview sai shop,
   action hoặc supply fail closed trước confirmation; receipt phải khớp action/supply/item count rồi
   mới publish success và reload local detail/list.
+- GTIN inventory trong supply detail chỉ đọc page nhỏ từ `kizMapping.catalog`, search bounded và
+  persisted `znack.settings`; mở supply không tự sync Znack hoặc gọi remote. Count/status/string phải
+  qua cùng catalog validator trước render. Buy chỉ mở shared `ZnackPurchaseDialog`, bị disable nếu
+  license/certificate/settings chưa ready và vẫn cần prepare + explicit paid confirmation; success
+  reload local inventory, còn mapping/editor và purchase recovery tiếp tục ở workspace chuyên biệt.
 - Mutation dùng capability riêng `packing:write`, giữ shared shop-activity lease, serialize packing
   writes, trả structured retryable error kind không chứa token/path/exception rồi reload board.
   Automated test chỉ inject runner; create/add/deliver thật là opt-in và cần shop/supply/order dùng

@@ -281,9 +281,9 @@ export function App() {
           ) : selectedShop === null ? (
             <EmptyWorkspace copy={copy.shop} />
           ) : activeView === "supplies" ? (
-            <SupplyListView shopId={selectedShop.id} />
+            <SupplyListView shopId={selectedShop.id} licenseAllowed={licenseAllowed} />
           ) : activeView === "packing" ? (
-            <PackingView key={selectedShop.id} shopId={selectedShop.id} />
+            <PackingView key={selectedShop.id} shopId={selectedShop.id} licenseAllowed={licenseAllowed} />
           ) : activeView === "fbo" ? (
             <FboPackingView key={selectedShop.id} shopId={selectedShop.id} />
           ) : activeView === "kizMapping" ? (

@@ -9,6 +9,8 @@ vi.mock("../../generated/commands", () => ({
   commands: {
     supplies: { detail: vi.fn() },
     packing: { execute: vi.fn(), prepareDeliver: vi.fn() },
+    kizMapping: { catalog: vi.fn() },
+    znack: { settings: vi.fn(), preparePurchase: vi.fn(), startPurchase: vi.fn() },
   },
 }));
 
@@ -31,6 +33,8 @@ vi.mock("./useSupplyRefresh", () => ({
 const detail = vi.mocked(commands.supplies.detail);
 const execute = vi.mocked(commands.packing.execute);
 const prepareDeliver = vi.mocked(commands.packing.prepareDeliver);
+const loadGtinCatalog = vi.mocked(commands.kizMapping.catalog);
+const loadZnackSettings = vi.mocked(commands.znack.settings);
 const openSupply: SupplyItem = {
   id: "SUP-OPEN",
   name: "Open supply",
@@ -52,6 +56,24 @@ describe("SupplyDetailView delivery", () => {
       totalPages: 1,
       sort: { bySubject: true, byArticle: true, byColor: true, bySize: true },
       items: [],
+    });
+    loadGtinCatalog.mockImplementation(async (request) => ({
+      ...request,
+      hasMore: false,
+      availableCategories: [],
+      items: [],
+    }));
+    loadZnackSettings.mockResolvedValue({
+      shopId: 7,
+      omsId: "",
+      omsConnection: "",
+      documentNumber: "",
+      documentDate: "",
+      autoIntroduction: false,
+      signatureStatus: "UNCONFIGURED",
+      certificateLabel: "",
+      certificateValidTo: "",
+      version: "a".repeat(64),
     });
   });
 

@@ -276,6 +276,8 @@ Vertical slices, each with contract → RED test → Java adapter → React UI �
 - [x] Supply detail and paginated order table with stable sorting/search.
 - [x] Cached product-image preview via asset route, never remote URL or oversized JSON.
 - [x] Refresh orders/status and restore selection.
+- [x] Show bounded local GTIN/KIZ inventory in supply detail and reuse the guarded paid-purchase
+      preview/confirmation without automatic sync or live mutation in tests.
 - [x] Excel order import through a native open dialog, bounded parser, opaque paged session and
       live sticker lookup.
 - [x] Sticker lookup and PDF save/open are handled as one bounded print transaction in
