@@ -10,11 +10,12 @@ import {
 } from "lucide-react";
 import { JDeskError } from "jdesk-client";
 import { useMemo, useRef, useState, type FormEvent } from "react";
+import { InfiniteLoadTrigger } from "../../components/InfiniteLoadTrigger";
+import type { InfinitePagesStatus } from "../../components/useBoundedInfinitePages";
 import { commands } from "../../generated/commands";
 import type { ImportedOrderItem, ImportedOrderPage } from "../../generated/types";
 import { interpolate } from "../../i18n";
 import { OrderThumbnail } from "./OrderTable";
-import { Pagination } from "./SupplyTable";
 import { defaultSupplyCopy, type SupplyCopy } from "./supplyI18n";
 
 const PAGE_SIZE = 25;
@@ -25,7 +26,7 @@ type ImportState =
   | { status: "idle" }
   | { status: "importing" }
   | { status: "error"; kind: ImportErrorKind }
-  | { status: "ready"; data: ImportedOrderPage; pageLoading: boolean; pageError: boolean; actionError: boolean };
+  | { status: "ready"; data: ImportedOrderPage; pageLoading: boolean; pageError: boolean; failedPage: number; addedCount: number; actionError: boolean };
 
 type ImportErrorKind = "invalid_file" | "token_invalid" | "rate_limited" | "unavailable";
 
@@ -64,7 +65,7 @@ export function ExcelImportPanel({
         return;
       }
       setDraftQuery("");
-      setState({ status: "ready", data: response, pageLoading: false, pageError: false, actionError: false });
+      setState({ status: "ready", data: response, pageLoading: false, pageError: false, failedPage: 0, addedCount: 0, actionError: false });
       onActiveChange(true);
     } catch (error) {
       if (requestSequence.current === requestId) {
@@ -80,7 +81,12 @@ export function ExcelImportPanel({
     if (state.status !== "ready") return;
     const sessionId = state.data.sessionId;
     const requestId = ++requestSequence.current;
-    setState({ ...state, pageLoading: true, pageError: false });
+    const reset = page === 1 || query !== state.data.query;
+    const baseItems = reset ? [] : state.data.items;
+    const visibleData = reset
+      ? { ...state.data, query, page: 0, totalItems: 0, totalPages: 0, items: [] }
+      : state.data;
+    setState({ ...state, data: visibleData, pageLoading: true, pageError: false, failedPage: 0, addedCount: 0 });
     try {
       const response = await commands.orders.importedPage({
         shopId,
@@ -91,13 +97,22 @@ export function ExcelImportPanel({
       });
       if (requestSequence.current !== requestId) return;
       if (!isSafePage(response) || response.sessionId !== sessionId || response.query !== query) {
-        setState({ ...state, pageLoading: false, pageError: true });
+        setState({ ...state, data: visibleData, pageLoading: false, pageError: true, failedPage: page, addedCount: 0 });
         return;
       }
-      setState({ status: "ready", data: response, pageLoading: false, pageError: false, actionError: false });
+      const items = appendImportedOrders(baseItems, response.items);
+      setState({
+        status: "ready",
+        data: { ...response, items },
+        pageLoading: false,
+        pageError: false,
+        failedPage: 0,
+        addedCount: reset ? 0 : items.length - baseItems.length,
+        actionError: false,
+      });
     } catch {
       if (requestSequence.current === requestId) {
-        setState({ ...state, pageLoading: false, pageError: true });
+        setState({ ...state, data: visibleData, pageLoading: false, pageError: true, failedPage: page, addedCount: 0 });
       }
     }
   };
@@ -154,8 +169,8 @@ export function ExcelImportPanel({
   const { data } = state;
   return (
     <div className="grid gap-4">
-      <section className="overflow-hidden rounded-2xl border border-emerald-200 bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
-        <div className="flex flex-col justify-between gap-4 bg-emerald-950 px-5 py-5 text-white sm:flex-row sm:items-start">
+      <section className="overflow-hidden rounded-xl border border-emerald-200 bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
+        <div className="flex flex-col justify-between gap-3 bg-emerald-950 px-4 py-4 text-white sm:flex-row sm:items-start">
           <div className="min-w-0">
             <p className="mb-1 inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-200">
               <ShieldCheck aria-hidden="true" size={14} />
@@ -194,14 +209,14 @@ export function ExcelImportPanel({
         )}
       </section>
 
-      <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-panel)]">
-        <form className="flex flex-col gap-3 sm:flex-row" onSubmit={submitSearch} role="search">
+      <section className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-3 shadow-[var(--shadow-panel)]">
+        <form className="flex flex-col gap-2 sm:flex-row" onSubmit={submitSearch} role="search">
           <label className="relative min-w-0 flex-1">
             <span className="sr-only">{copy.excel.searchLabel}</span>
             <Search className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden="true" size={18} />
             <input
               aria-label={copy.excel.searchLabel}
-              className="h-11 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--surface-elevated)] pr-4 pl-10 text-sm shadow-[var(--shadow-control)] outline-none transition focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]"
+              className="h-9 w-full rounded-lg border border-[var(--border-strong)] bg-[var(--surface-elevated)] pr-3 pl-10 text-xs shadow-[var(--shadow-control)] outline-none transition focus:border-[var(--accent)] focus:ring-3 focus:ring-[var(--accent-soft)]"
               maxLength={120}
               onChange={(event) => setDraftQuery(event.target.value)}
               placeholder={copy.excel.searchPlaceholder}
@@ -209,7 +224,7 @@ export function ExcelImportPanel({
               value={draftQuery}
             />
           </label>
-          <button className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--sidebar)] px-5 text-sm font-semibold text-white" type="submit">
+          <button className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-[var(--button-primary)] px-4 text-xs font-semibold text-white hover:brightness-110" type="submit">
             <Search aria-hidden="true" size={16} />
             {copy.excel.search}
           </button>
@@ -217,14 +232,14 @@ export function ExcelImportPanel({
         {state.pageError && (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-800" role="alert">
             {copy.excel.pageError}
-            <button className="font-semibold underline underline-offset-2" onClick={() => void loadPage(data.query, data.page)} type="button">
+            <button className="font-semibold underline underline-offset-2" onClick={() => void loadPage(data.query, state.failedPage || Math.max(1, data.page))} type="button">
               {copy.excel.retry}
             </button>
           </div>
         )}
       </section>
 
-      {state.pageLoading ? (
+      {state.pageLoading && data.items.length === 0 ? (
         <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-6 text-sm text-[var(--text-secondary)]" role="status">
           {copy.excel.loading}
         </section>
@@ -236,21 +251,37 @@ export function ExcelImportPanel({
         <ImportedOrdersTable items={data.items} copy={copy} />
       )}
 
-      {data.items.length > 0 && !state.pageLoading && (
-        <Pagination
-          ariaLabel={copy.excel.pagination}
-          nextLabel={copy.excel.nextPage}
-          onPage={(page) => void loadPage(data.query, page)}
-          page={data.page}
-          previousLabel={copy.excel.previousPage}
-          totalItems={data.totalItems}
-          totalPages={data.totalPages}
-          copy={copy}
-          locale={locale}
+      {data.items.length > 0 && (
+        <InfiniteLoadTrigger
+          status={importedPageStatus(state)}
+          hasMore={data.page < data.totalPages}
+          copy={{
+            loading: copy.excel.loadingMore,
+            loadMore: copy.excel.loadMore,
+            loadError: copy.excel.loadMoreError,
+            retry: copy.excel.retry,
+            end: copy.excel.allLoaded,
+          }}
+          announcement={state.addedCount > 0
+            ? interpolate(copy.excel.added, { count: numberFormat.format(state.addedCount) })
+            : ""}
+          onLoadMore={() => void loadPage(data.query, data.page + 1)}
+          onRetry={() => void loadPage(data.query, state.failedPage || data.page + 1)}
         />
       )}
     </div>
   );
+}
+
+function importedPageStatus(state: Extract<ImportState, { status: "ready" }>): InfinitePagesStatus {
+  if (state.pageLoading) return "loadingMore";
+  if (state.pageError) return "loadMoreError";
+  return "ready";
+}
+
+function appendImportedOrders(existing: readonly ImportedOrderItem[], incoming: readonly ImportedOrderItem[]) {
+  const seen = new Set(existing.map((item) => item.orderId));
+  return [...existing, ...incoming.filter((item) => !seen.has(item.orderId))];
 }
 
 function ImportMetric({ label, value }: { label: string; value: string }) {
@@ -264,24 +295,23 @@ function ImportMetric({ label, value }: { label: string; value: string }) {
 
 function ImportedOrdersTable({ items, copy }: { items: ImportedOrderItem[]; copy: SupplyCopy }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
+    <section className="overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[58rem] border-collapse text-left">
+        <table className="w-full table-fixed border-collapse text-left">
           <thead className="border-b border-[var(--border-subtle)] bg-[var(--surface-muted)]/70">
             <tr className="text-xs font-semibold tracking-[0.04em] text-[var(--text-secondary)] uppercase">
-              <th className="px-5 py-3.5" scope="col">{copy.excel.columns.order}</th>
-              <th className="px-4 py-3.5" scope="col">{copy.excel.columns.product}</th>
-              <th className="px-4 py-3.5" scope="col">{copy.excel.columns.articleBarcode}</th>
-              <th className="px-4 py-3.5" scope="col">{copy.excel.columns.variant}</th>
-              <th className="px-5 py-3.5" scope="col">{copy.excel.columns.sticker}</th>
+              <th className="w-36 px-3 py-2.5" scope="col">{copy.excel.columns.order}</th>
+              <th className="px-3 py-2.5" scope="col">{copy.excel.columns.product}</th>
+              <th className="hidden w-40 px-3 py-2.5 xl:table-cell" scope="col">{copy.excel.columns.articleBarcode}</th>
+              <th className="hidden w-32 px-3 py-2.5 2xl:table-cell" scope="col">{copy.excel.columns.variant}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border-subtle)]">
             {items.map((item) => (
               <tr className="transition hover:bg-[var(--surface-muted)]/55" key={item.orderId}>
-                <td className="px-5 py-4 align-top font-mono text-xs font-semibold">{item.orderId}</td>
-                <td className="px-4 py-4 align-top">
-                  <div className="flex min-w-0 items-start gap-3">
+                <td className="truncate px-3 py-3 align-top font-mono text-xs font-semibold">{item.orderId}</td>
+                <td className="min-w-0 px-3 py-3 align-top">
+                  <div className="flex min-w-0 items-start gap-2">
                     {SAFE_IMAGE_PATH.test(item.imagePath) ? (
                       <OrderThumbnail name={item.name} path={item.imagePath} copy={copy} />
                     ) : (
@@ -292,21 +322,19 @@ function ImportedOrdersTable({ items, copy }: { items: ImportedOrderItem[]; copy
                     <div className="min-w-0">
                       <p className="max-w-64 truncate text-sm font-semibold">{item.name || item.article || interpolate(copy.excel.fallbackOrder, { id: item.orderId })}</p>
                       <p className="mt-1 max-w-64 truncate text-xs text-[var(--text-secondary)]">{item.brand || "—"}</p>
+                      <span className={`mt-2 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[0.68rem] font-semibold ${item.stickerAvailable ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>
+                        {item.stickerAvailable ? <CheckCircle2 aria-hidden="true" size={12} /> : <AlertCircle aria-hidden="true" size={12} />}
+                        {item.stickerAvailable ? (item.sticker || copy.excel.received) : copy.excel.notFound}
+                      </span>
                     </div>
                   </div>
                 </td>
-                <td className="px-4 py-4 align-top text-sm">
+                <td className="hidden px-3 py-3 align-top text-xs xl:table-cell">
                   <p className="font-medium">{item.article || "—"}</p>
                   <p className="mt-1 font-mono text-xs text-[var(--text-muted)]">{item.barcode || "—"}</p>
                 </td>
-                <td className="px-4 py-4 align-top text-sm text-[var(--text-secondary)]">
+                <td className="hidden px-3 py-3 align-top text-xs text-[var(--text-secondary)] 2xl:table-cell">
                   {[item.color, item.size].filter(Boolean).join(" · ") || "—"}
-                </td>
-                <td className="px-5 py-4 align-top">
-                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${item.stickerAvailable ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>
-                    {item.stickerAvailable ? <CheckCircle2 aria-hidden="true" size={13} /> : <AlertCircle aria-hidden="true" size={13} />}
-                    {item.stickerAvailable ? (item.sticker || copy.excel.received) : copy.excel.notFound}
-                  </span>
                 </td>
               </tr>
             ))}

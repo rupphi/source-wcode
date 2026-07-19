@@ -75,7 +75,7 @@ const ru = {
   },
   excel: {
     title: "Заказы из Excel", description: "Выберите выгрузку Wildberries. WCode проверит XLSX и загрузит актуальные стикеры для выбранного магазина.",
-    reading: "Читаем Excel…", import: "Импортировать Excel", verified: "Файл проверен, путь остаётся только в Java",
+    reading: "Читаем Excel…", import: "Импортировать Excel", verified: "Файл проверен и готов к работе",
     ordersFrom: "Заказы из {file}", anotherFile: "Другой файл", close: "Вернуться к заказам поставки",
     fileOrders: "Заказов в файле", stickers: "Стикеры WB", found: "Найдено", countOf: "{count} из {total}",
     actionError: "Другой файл не импортирован. Текущая сессия сохранена — проверьте формат, токен и соединение.",
@@ -83,6 +83,7 @@ const ru = {
     pageError: "Сессия не обновилась. Она могла истечь — повторите запрос или импортируйте файл заново.", retry: "Повторить",
     loading: "Загружаем страницу импортированных заказов…", empty: "По этому запросу заказов нет.",
     pagination: "Пагинация импортированных заказов", previousPage: "Предыдущая страница импортированных заказов", nextPage: "Следующая страница импортированных заказов",
+    loadMore: "Показать ещё импортированных заказов", loadingMore: "Загружаем ещё заказы…", loadMoreError: "Не удалось загрузить ещё заказы", allLoaded: "Все импортированные заказы загружены", added: "Добавлено заказов: {count}",
     columns: { order: "Задание", product: "Товар", articleBarcode: "Артикул / штрихкод", variant: "Вариант", sticker: "Стикер WB" },
     fallbackOrder: "Заказ {id}", received: "Получен", notFound: "Не найден",
     errors: {
@@ -153,7 +154,7 @@ const en: SupplyCopy = {
   },
   excel: {
     title: "Orders from Excel", description: "Choose a Wildberries export. WCode validates the XLSX and loads current stickers for the selected shop.",
-    reading: "Reading Excel…", import: "Import Excel", verified: "File verified; its path stays in Java",
+    reading: "Reading Excel…", import: "Import Excel", verified: "File verified and ready",
     ordersFrom: "Orders from {file}", anotherFile: "Choose another file", close: "Back to supply orders",
     fileOrders: "Orders in file", stickers: "WB stickers", found: "Found", countOf: "{count} of {total}",
     actionError: "The other file was not imported. The current session is preserved — check its format, token, and connection.",
@@ -161,6 +162,7 @@ const en: SupplyCopy = {
     pageError: "The session did not refresh and may have expired. Retry or import the file again.", retry: "Retry",
     loading: "Loading imported orders…", empty: "No orders match this query.",
     pagination: "Imported order pagination", previousPage: "Previous imported order page", nextPage: "Next imported order page",
+    loadMore: "Show more imported orders", loadingMore: "Loading more orders…", loadMoreError: "Could not load more orders", allLoaded: "All imported orders loaded", added: "Orders added: {count}",
     columns: { order: "Order", product: "Product", articleBarcode: "Article / barcode", variant: "Variant", sticker: "WB sticker" },
     fallbackOrder: "Order {id}", received: "Received", notFound: "Not found",
     errors: { rateLimited: "Wildberries limited sticker requests. Wait and import again.", tokenInvalid: "The selected shop token cannot access Wildberries stickers.", invalidFile: "The file is not a supported Wildberries XLSX export.", unavailable: "Could not import the file. Check the connection and try again." },
@@ -235,7 +237,7 @@ const vi: SupplyCopy = {
   },
   excel: {
     title: "Đơn hàng từ Excel", description: "Chọn tệp xuất Wildberries. WCode sẽ kiểm tra XLSX và tải sticker mới nhất cho cửa hàng đã chọn.",
-    reading: "Đang đọc Excel…", import: "Nhập Excel", verified: "Tệp đã được kiểm tra; đường dẫn chỉ nằm trong Java",
+    reading: "Đang đọc Excel…", import: "Nhập Excel", verified: "Tệp đã được kiểm tra và sẵn sàng",
     ordersFrom: "Đơn hàng từ {file}", anotherFile: "Chọn tệp khác", close: "Quay lại đơn hàng trong lô",
     fileOrders: "Đơn trong tệp", stickers: "Sticker WB", found: "Tìm thấy", countOf: "{count} / {total}",
     actionError: "Không nhập được tệp khác. Phiên hiện tại vẫn được giữ — hãy kiểm tra định dạng, token và kết nối.",
@@ -243,6 +245,7 @@ const vi: SupplyCopy = {
     pageError: "Không thể cập nhật phiên và phiên có thể đã hết hạn. Hãy thử lại hoặc nhập lại tệp.", retry: "Thử lại",
     loading: "Đang tải đơn hàng đã nhập…", empty: "Không có đơn hàng phù hợp.",
     pagination: "Phân trang đơn đã nhập", previousPage: "Trang đơn đã nhập trước", nextPage: "Trang đơn đã nhập sau",
+    loadMore: "Hiện thêm đơn đã nhập", loadingMore: "Đang tải thêm đơn…", loadMoreError: "Không thể tải thêm đơn", allLoaded: "Đã tải tất cả đơn đã nhập", added: "Đã thêm {count} đơn",
     columns: { order: "Đơn hàng", product: "Sản phẩm", articleBarcode: "Mã sản phẩm / mã vạch", variant: "Biến thể", sticker: "Sticker WB" },
     fallbackOrder: "Đơn {id}", received: "Đã nhận", notFound: "Không tìm thấy",
     errors: { rateLimited: "Wildberries đang giới hạn yêu cầu sticker. Hãy chờ rồi nhập lại.", tokenInvalid: "Token của cửa hàng đã chọn không có quyền truy cập sticker Wildberries.", invalidFile: "Tệp không phải bản xuất Wildberries XLSX được hỗ trợ.", unavailable: "Không thể nhập tệp. Hãy kiểm tra kết nối và thử lại." },
@@ -317,7 +320,7 @@ const zh: SupplyCopy = {
   },
   excel: {
     title: "Excel 订单", description: "请选择 Wildberries 导出文件。WCode 将验证 XLSX，并为所选店铺加载最新贴纸。",
-    reading: "正在读取 Excel…", import: "导入 Excel", verified: "文件已验证；路径仅保留在 Java 中",
+    reading: "正在读取 Excel…", import: "导入 Excel", verified: "文件已验证并可使用",
     ordersFrom: "来自 {file} 的订单", anotherFile: "选择其他文件", close: "返回供货订单",
     fileOrders: "文件内订单", stickers: "WB 贴纸", found: "找到", countOf: "{count} / {total}",
     actionError: "未能导入其他文件。当前会话已保留——请检查格式、令牌和连接。",
@@ -325,6 +328,7 @@ const zh: SupplyCopy = {
     pageError: "会话未刷新，可能已过期。请重试或重新导入文件。", retry: "重试",
     loading: "正在加载已导入订单…", empty: "没有符合此搜索的订单。",
     pagination: "已导入订单分页", previousPage: "上一页已导入订单", nextPage: "下一页已导入订单",
+    loadMore: "显示更多已导入订单", loadingMore: "正在加载更多订单…", loadMoreError: "无法加载更多订单", allLoaded: "已加载全部导入订单", added: "已添加 {count} 个订单",
     columns: { order: "订单", product: "商品", articleBarcode: "商品编号 / 条码", variant: "规格", sticker: "WB 贴纸" },
     fallbackOrder: "订单 {id}", received: "已获取", notFound: "未找到",
     errors: { rateLimited: "Wildberries 限制了贴纸请求，请稍后重新导入。", tokenInvalid: "所选店铺令牌无权访问 Wildberries 贴纸。", invalidFile: "该文件不是受支持的 Wildberries XLSX 导出。", unavailable: "无法导入文件。请检查连接后重试。" },

@@ -1995,13 +1995,13 @@ describe("App", () => {
       query: request.query,
       page: request.page,
       pageSize: request.pageSize,
-      totalItems: 1,
-      totalPages: 1,
+      totalItems: request.query ? 1 : 30,
+      totalPages: request.query ? 1 : 2,
       importedItems: 30,
       stickerItems: 29,
       items: [{
-        orderId: "9007199254740993",
-        name: "Импортированный товар",
+        orderId: request.page === 1 ? "9007199254740993" : "9007199254740994",
+        name: `Импортированный товар ${request.page}`,
         brand: "Excel Brand",
         article: "ART-EXCEL",
         color: "Чёрный",
@@ -2036,6 +2036,11 @@ describe("App", () => {
       `jdesk://app/order-images/${"B".repeat(43)}.jpg`,
     );
 
+    expect(screen.queryByRole("button", { name: "Следующая страница импортированных заказов" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Показать ещё импортированных заказов" }));
+    expect(await screen.findByText("9007199254740994")).toBeVisible();
+    expect(screen.getByText("9007199254740993")).toBeVisible();
+
     await user.type(screen.getByRole("searchbox", { name: "Поиск импортированных заказов" }), "  ART-EXCEL  ");
     await user.click(screen.getByRole("button", { name: "Найти импортированный заказ" }));
     await waitFor(() => expect(loadImportedOrders).toHaveBeenCalledWith({
@@ -2045,6 +2050,7 @@ describe("App", () => {
       page: 1,
       pageSize: 25,
     }));
+    expect(screen.queryByText("9007199254740994")).not.toBeInTheDocument();
     expect(document.body).not.toHaveTextContent("/private/operator");
     expect(document.body).not.toHaveTextContent(secret);
 
