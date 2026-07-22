@@ -4,9 +4,12 @@ import com.google.gson.*;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels.Product;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.time.Instant;
 
 public class ZnackProductService {
@@ -33,7 +36,9 @@ public class ZnackProductService {
             if(total==null&&received<PAGE_SIZE)break;
             if(received==0)break;
         }while(total==null||fetched<total);
-        int failedCatalogBatches=enrichFromNationalCatalog(settings, token, byGtin);
+        Set<String> incompleteGtins=new HashSet<>();
+        for(Product persisted:repository.findProducts())if(needsCatalogMetadata(persisted))incompleteGtins.add(persisted.gtin());
+        int failedCatalogBatches=enrichFromNationalCatalog(settings, token, byGtin, incompleteGtins);
         List<Product> publishable=new ArrayList<>();List<String> unpublished=new ArrayList<>();
         for(Product p:byGtin.values()){if(ZnackCardStatus.isErrored(p.cardStatus(),p.cardDetailedStatus()))unpublished.add(p.gtin());else publishable.add(p);}
         repository.upsertProducts(publishable);
@@ -46,9 +51,11 @@ public class ZnackProductService {
         repository.log("GTIN_SYNC",null,failedCatalogBatches==0?"INFO":"WARN",message,200);
         return repository.findProducts();
     }
-    private int enrichFromNationalCatalog(ZnackModels.Settings settings,String token,Map<String,Product> byGtin){
+    private int enrichFromNationalCatalog(ZnackModels.Settings settings,String token,Map<String,Product> byGtin,
+                                          Set<String> incompleteGtins){
         int failedBatches=0;
-        List<String> gtins=List.copyOf(byGtin.keySet());
+        List<String> gtins=new ArrayList<>(byGtin.keySet());
+        gtins.sort(Comparator.comparing((String gtin)->!incompleteGtins.contains(gtin)));
         for(int start=0;start<gtins.size();start+=CATALOG_BATCH_SIZE){
             List<String> batch=gtins.subList(start,Math.min(start+CATALOG_BATCH_SIZE,gtins.size()));
             try{
@@ -91,6 +98,10 @@ public class ZnackProductService {
         }
         return failedBatches;
     }
+    private boolean needsCatalogMetadata(Product product){
+        return missing(product.productName())||missing(product.tnVed());
+    }
+    private boolean missing(String value){return value==null||value.isBlank()||"-".equals(value.trim());}
     /** Joins the {@code categories[].cat_name} values of a National Catalog card ("Обувь домашняя", ...). */
     private String categories(JsonObject card){
         JsonArray categories=array(card,"categories");

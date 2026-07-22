@@ -15,6 +15,7 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.ResourceBundle;
@@ -827,6 +828,57 @@ class ZnackModuleTest {
         assertEquals("WARN",syncLog.severity());
         assertTrue(syncLog.message().contains("partial"));
         assertTrue(syncLog.message().contains("1 catalog batch"));
+    }
+
+    @Test void productSyncPrioritizesPreviouslyIncompleteGtinsBeforeCatalogLimitIsExhausted() throws Exception {
+        ZnackRepository repository=repository(1,"Shop A");
+        String missingGtin="04601234560025";
+        List<Product> existing=new ArrayList<>();
+        for(int index=0;index<25;index++)existing.add(new Product(
+                String.format("0460123456%04d",index),"Existing "+index,"6202300000",null,null,null,null));
+        existing.add(new Product(missingGtin,"","",null,null,null,null));
+        repository.upsertProducts(existing);
+
+        AtomicInteger catalogRequests=new AtomicInteger();
+        ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonElement products(String base,String token){
+                JsonArray results=new JsonArray();
+                for(int index=0;index<26;index++){
+                    JsonObject product=new JsonObject();
+                    product.addProperty("gtin",String.format("0460123456%04d",index));
+                    product.addProperty("good_status","published");
+                    results.add(product);
+                }
+                JsonObject response=new JsonObject();
+                response.add("results",results);
+                return response;
+            }
+            @Override public JsonElement productCards(String base,String token,String gtins)throws java.io.IOException{
+                if(catalogRequests.incrementAndGet()>1){
+                    throw new ZnackApiClient.ZnackApiException("Znack API request failed",429,
+                            "{\"error_message\":\"Слишком много запросов\"}");
+                }
+                JsonArray result=new JsonArray();
+                if(List.of(gtins.split(";")).contains(missingGtin)){
+                    result.add(JsonParser.parseString("""
+                            {"good_name":"Recovered name","tnved":"6202300000",
+                             "identified_by":[{"type":"gtin","value":"%s"}]}
+                            """.formatted(missingGtin)));
+                }
+                JsonObject response=new JsonObject();
+                response.add("result",result);
+                return response;
+            }
+        };
+        ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+            @Override public String trueApiToken(Settings s){return "token";}
+        };
+
+        new ZnackProductService(api,auth,repository).sync(testedSettings("","","","connection",""));
+
+        Product recovered=repository.findProduct(missingGtin).orElseThrow();
+        assertEquals("Recovered name",recovered.productName());
+        assertEquals("6202300000",recovered.tnVed());
     }
 
     @Test void productSyncIgnoresTechnicalGtinsAndDeletesUnreferencedExistingOnes() throws Exception {

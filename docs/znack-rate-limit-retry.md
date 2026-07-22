@@ -26,6 +26,7 @@ Source: `znack_api/ZnackAPIDocument_md/api-v5.62-05.06.2026-at-13-03-26.md`, sec
 6. Never apply the 429 retry policy to order creation, document submission, or other state-changing requests.
 7. If catalog enrichment still exhausts retries, preserve successful batches but record the overall GTIN sync as `WARN`/partial rather than `INFO`/complete.
 8. Keep the documented 25-GTIN catalog batch size.
+9. Prioritize persisted active GTINs with a blank name or TN VED before already-complete GTINs so a repeated sync repairs missing metadata before consuming the catalog request budget.
 
 ## Testing strategy
 
