@@ -40,6 +40,9 @@ out/
 out-*/
 runtime/
 
+# Runtime data is created in the per-user WCode app-data directory.
+/app/database.db
+
 ### Downloaded JavaFX jmods (fetched by build scripts, not source) ###
 javafx-jmods-*/
 
