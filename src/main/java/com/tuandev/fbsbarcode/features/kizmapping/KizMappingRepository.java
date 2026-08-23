@@ -57,7 +57,8 @@ public class KizMappingRepository {
                   SUM(CASE WHEN c.status='AVAILABLE' THEN 1 ELSE 0 END) available_count,
                   SUM(CASE WHEN c.status='RESERVED' THEN 1 ELSE 0 END) reserved_count,
                   SUM(CASE WHEN c.status='CONSUMED' THEN 1 ELSE 0 END) consumed_count,
-                  (SELECT COUNT(*) FROM znack_gtin_mapping_rules r WHERE r.shop_id=p.shop_id AND r.gtin=p.gtin) rule_count,
+                  ((SELECT COUNT(*) FROM znack_gtin_mapping_rules r WHERE r.shop_id=p.shop_id AND r.gtin=p.gtin)
+                   + (SELECT COUNT(*) FROM ozon_product_gtin_mappings o WHERE o.shop_id=p.shop_id AND o.gtin=p.gtin)) rule_count,
                   (SELECT o.local_status FROM kiz_orders o WHERE o.shop_id=p.shop_id AND o.gtin=p.gtin ORDER BY o.updated_at DESC LIMIT 1) order_status,
                   (SELECT x.stage FROM znack_purchase_pipelines x WHERE x.shop_id=p.shop_id AND x.gtin=p.gtin ORDER BY x.updated_at DESC LIMIT 1) pipeline_stage,
                   COALESCE((SELECT x.error_message FROM znack_purchase_pipelines x WHERE x.shop_id=p.shop_id AND x.gtin=p.gtin ORDER BY x.updated_at DESC LIMIT 1),
@@ -301,7 +302,8 @@ public class KizMappingRepository {
                   SUM(CASE WHEN c.status='AVAILABLE' THEN 1 ELSE 0 END) available_count,
                   SUM(CASE WHEN c.status='RESERVED' THEN 1 ELSE 0 END) reserved_count,
                   SUM(CASE WHEN c.status='CONSUMED' THEN 1 ELSE 0 END) consumed_count,
-                  (SELECT COUNT(*) FROM znack_gtin_mapping_rules r WHERE r.shop_id=p.shop_id AND r.gtin=p.gtin) rule_count,
+                  ((SELECT COUNT(*) FROM znack_gtin_mapping_rules r WHERE r.shop_id=p.shop_id AND r.gtin=p.gtin)
+                   + (SELECT COUNT(*) FROM ozon_product_gtin_mappings o WHERE o.shop_id=p.shop_id AND o.gtin=p.gtin)) rule_count,
                   (SELECT o.local_status FROM kiz_orders o WHERE o.shop_id=p.shop_id AND o.gtin=p.gtin ORDER BY o.updated_at DESC LIMIT 1) order_status,
                   (SELECT x.stage FROM znack_purchase_pipelines x WHERE x.shop_id=p.shop_id AND x.gtin=p.gtin ORDER BY x.updated_at DESC LIMIT 1) pipeline_stage,
                   COALESCE((SELECT x.error_message FROM znack_purchase_pipelines x WHERE x.shop_id=p.shop_id AND x.gtin=p.gtin ORDER BY x.updated_at DESC LIMIT 1),

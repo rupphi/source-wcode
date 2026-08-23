@@ -1,6 +1,7 @@
 package com.tuandev.fbsbarcode.ui.kizmapping;
 
 import com.tuandev.fbsbarcode.features.kizmapping.KizMappingRepository;
+import com.tuandev.fbsbarcode.integration.marketplace.Marketplace;
 import com.tuandev.fbsbarcode.integration.znack.*;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels.*;
 import com.tuandev.fbsbarcode.integration.znack.signature.CryptoProErrorCode;
@@ -110,6 +111,7 @@ public class KizMappingController {
         znackRepository = selected == null ? null : new ZnackRepository(new ShopContext(selected.getId(), selected.getName()));
         setLoading(false);
         if (selected == null) refreshTimer.stop(); else refreshTimer.play();
+        applyTranslations();
         refresh();
         if (znackRepository != null) {
             ZnackRepository currentRepository = znackRepository;
@@ -129,14 +131,15 @@ public class KizMappingController {
     }
 
     public void applyTranslations() {
-        titleLabel.setText(tr("kiz_mapping.title"));
+        boolean ozon = shop != null && shop.getMarketplace() == Marketplace.OZON;
+        titleLabel.setText(tr(ozon ? "ozon.mapping.title" : "kiz_mapping.title"));
         searchField.setPromptText(tr("kiz_mapping.search_gtin"));
         categoryFilter.setTexts(tr("znack.filter.button"), tr("znack.filter.no_category"), tr("znack.filter.clear"));
         refreshButton.setTooltip(new Tooltip(tr("kiz_mapping.refresh")));
         refreshButton.setAccessibleText(tr("kiz_mapping.refresh"));
         gtinColumn.setText(tr("znack.field.gtin"));
         nameColumn.setText(tr("znack.field.name"));
-        mappingColumn.setText(tr("kiz_mapping.column.mapping"));
+        mappingColumn.setText(tr(ozon ? "ozon.mapping.column.mapping" : "kiz_mapping.column.mapping"));
         availableColumn.setText(tr("kiz_mapping.column.available"));
         pipelineColumn.setText(tr("kiz_mapping.column.pipeline"));
         errorColumn.setText(tr("kiz_mapping.column.error"));
@@ -222,7 +225,7 @@ public class KizMappingController {
         if (shop == null || summary == null) return;
         int shopId = shop.getId();
         long generation = shopGeneration;
-        new KizGtinMappingEditor().open(shopId, summary.gtin(), new KizGtinMappingEditor.Host() {
+        KizGtinMappingEditor.Host host = new KizGtinMappingEditor.Host() {
             @Override public boolean isCurrent() {
                 return generation == shopGeneration && shop != null && shop.getId() == shopId;
             }
@@ -238,7 +241,12 @@ public class KizMappingController {
             @Override public void error(Throwable error) {
                 if (generation == shopGeneration) AlertService.showError(friendlyError(error));
             }
-        });
+        };
+        if (shop.getMarketplace() == Marketplace.OZON) {
+            new OzonGtinMappingEditor().open(shopId, summary.gtin(), host);
+        } else {
+            new KizGtinMappingEditor().open(shopId, summary.gtin(), host);
+        }
     }
 
     private void showBuy(ZnackGtinInventorySummary summary) {

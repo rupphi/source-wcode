@@ -1,5 +1,6 @@
 package com.tuandev.fbsbarcode.integration.wb;
 
+import com.tuandev.fbsbarcode.integration.marketplace.MarketplaceGuard;
 import com.tuandev.fbsbarcode.models.Shop;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,10 +15,12 @@ public class WbSyncWorkflow {
     private final WbSyncStateRepository syncStateRepository = new WbSyncStateRepository();
 
     public int syncProducts(Shop shop) throws IOException {
+        MarketplaceGuard.requireWildberries(shop);
         return productSyncService.sync(shop);
     }
 
     public WbSyncReport syncOverview(Shop shop) throws IOException {
+        MarketplaceGuard.requireWildberries(shop);
         WbShopSyncState state = syncStateRepository.getShopSyncState(shop.getId());
         boolean needsInitialProductSync = state.productsLastSyncedAt() == null || state.productsLastSyncedAt().isBlank();
         boolean needsInitialSupplySync = state.suppliesLastSyncedAt() == null || state.suppliesLastSyncedAt().isBlank();
@@ -41,6 +44,7 @@ public class WbSyncWorkflow {
     }
 
     public WbSyncReport syncAll(Shop shop) throws IOException {
+        MarketplaceGuard.requireWildberries(shop);
         int products = syncProductsIfAvailable(shop);
         int supplies = supplySyncService.sync(shop);
         int newOrders = orderSyncService.syncNewOrders(shop);
@@ -50,6 +54,7 @@ public class WbSyncWorkflow {
     }
 
     public WbSyncReport refetchSupplies(Shop shop) throws IOException {
+        MarketplaceGuard.requireWildberries(shop);
         int supplies = supplySyncService.refreshOpenSuppliesFromStart(shop);
         int openSupplyDetails = supplySyncService.syncOpenSupplyDetails(shop);
         int openSupplyCounts = supplySyncService.syncOpenSupplyCounts(shop);
@@ -57,6 +62,7 @@ public class WbSyncWorkflow {
     }
 
     public int syncSupplyOrdersAndStatuses(Shop shop, String supplyId) throws IOException {
+        MarketplaceGuard.requireWildberries(shop);
         orderSyncService.syncOrdersWindow(shop);
         int supplyOrders = orderSyncService.syncSupplyOrders(shop, supplyId);
         int statuses = orderSyncService.syncOrderStatusesForSupply(shop, supplyId);

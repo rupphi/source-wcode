@@ -6,6 +6,7 @@ import com.tuandev.fbsbarcode.models.Shop;
 import com.tuandev.fbsbarcode.ui.history.PrintHistoryController;
 import com.tuandev.fbsbarcode.ui.dashboard.DashboardController;
 import com.tuandev.fbsbarcode.ui.kizmapping.KizMappingController;
+import com.tuandev.fbsbarcode.ui.ozon.OzonDashboardController;
 import com.tuandev.fbsbarcode.ui.packing.PackingController;
 import com.tuandev.fbsbarcode.ui.print.PrintTemplateDesignerController;
 import com.tuandev.fbsbarcode.ui.shop.ShopDialogController;
@@ -21,6 +22,8 @@ import javafx.scene.Parent;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.PasswordField;
+import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.VBox;
 import org.junit.jupiter.api.AfterAll;
@@ -81,6 +84,57 @@ class FxmlSmokeTest {
         assertLoads(ZnackAutomationController.class, "znack-automation-view.fxml");
         assertLoads(PrintTemplateDesignerController.class, "print-template-designer-view.fxml");
         assertLoads(ShopDialogController.class, "shop-dialog.fxml");
+        assertLoads(OzonDashboardController.class, "ozon-dashboard-view.fxml");
+    }
+
+    @Test
+    void editingOzonShopKeepsMarketplaceImmutableAndSecretWriteOnly() throws Exception {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicBoolean valid = new AtomicBoolean(false);
+        Platform.runLater(() -> {
+            try {
+                FXMLLoader loader = FxmlViewLoader.loader(ShopDialogController.class, "shop-dialog.fxml");
+                FxmlViewLoader.load(loader);
+                ShopDialogController controller = loader.getController();
+                controller.setShop(new Shop(
+                        7,
+                        "Ozon shop",
+                        com.tuandev.fbsbarcode.integration.marketplace.Marketplace.OZON,
+                        "client-7",
+                        "must-not-be-prefilled"));
+                ComboBox<?> marketplace = (ComboBox<?>) loader.getNamespace().get("marketplaceField");
+                TextField clientId = (TextField) loader.getNamespace().get("clientIdField");
+                PasswordField apiKey = (PasswordField) loader.getNamespace().get("apiKeyField");
+                valid.set(marketplace.isDisabled()
+                        && clientId.isVisible()
+                        && "client-7".equals(clientId.getText())
+                        && apiKey.getText().isEmpty()
+                        && controller.validate());
+            } finally {
+                latch.countDown();
+            }
+        });
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+        assertTrue(valid.get(), "Ozon edit must lock marketplace and never prefill its API key");
+    }
+
+    @Test
+    void createShopDialogPlacesMarketplaceBeforeShopName() throws Exception {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicBoolean valid = new AtomicBoolean(false);
+        Platform.runLater(() -> {
+            try {
+                FXMLLoader loader = FxmlViewLoader.loader(ShopDialogController.class, "shop-dialog.fxml");
+                VBox root = FxmlViewLoader.load(loader);
+                ComboBox<?> marketplace = (ComboBox<?>) loader.getNamespace().get("marketplaceField");
+                TextField name = (TextField) loader.getNamespace().get("nameField");
+                valid.set(root.getChildren().indexOf(marketplace) < root.getChildren().indexOf(name));
+            } finally {
+                latch.countDown();
+            }
+        });
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+        assertTrue(valid.get(), "Marketplace must be selected before the shop name is entered");
     }
 
     @Test
@@ -106,6 +160,30 @@ class FxmlSmokeTest {
     }
 
     @Test
+    void ozonSidebarKeepsPackingAndCatalogMappingAvailable() throws Exception {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicBoolean valid = new AtomicBoolean(false);
+        Platform.runLater(() -> {
+            try {
+                FXMLLoader loader = FxmlViewLoader.loader(ShopSidebarController.class, "shop-sidebar-view.fxml");
+                FxmlViewLoader.load(loader);
+                ShopSidebarController controller = loader.getController();
+                controller.setMarketplace(com.tuandev.fbsbarcode.integration.marketplace.Marketplace.OZON);
+                Button packing = (Button) loader.getNamespace().get("packingButton");
+                Button mapping = (Button) loader.getNamespace().get("kizMappingButton");
+                Button fbo = (Button) loader.getNamespace().get("fboPackingButton");
+                valid.set(packing.isVisible() && packing.isManaged() && !packing.isDisabled()
+                        && mapping.isVisible() && mapping.isManaged() && !mapping.isDisabled()
+                        && !fbo.isVisible() && !fbo.isManaged() && fbo.isDisabled());
+            } finally {
+                latch.countDown();
+            }
+        });
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+        assertTrue(valid.get(), "Ozon must expose its packing queue and SKU-to-GTIN catalog mapping");
+    }
+
+    @Test
     void supplyDetailShouldExposeZnackGtinInventoryPane() throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
         AtomicBoolean valid = new AtomicBoolean(false);
@@ -125,6 +203,67 @@ class FxmlSmokeTest {
 
         assertTrue(latch.await(5, TimeUnit.SECONDS));
         assertTrue(valid.get(), "Supply detail should expose the Znack GTIN inventory pane");
+    }
+
+    @Test
+    void ozonDashboardShouldExposePostingActionsAndSkuGtinMapping() throws Exception {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicBoolean valid = new AtomicBoolean(false);
+        Platform.runLater(() -> {
+            try {
+                FXMLLoader loader = FxmlViewLoader.loader(OzonDashboardController.class, "ozon-dashboard-view.fxml");
+                FxmlViewLoader.load(loader);
+                ComboBox<?> status = (ComboBox<?>) loader.getNamespace().get("statusFilter");
+                valid.set(loader.getNamespace().get("postingList") != null
+                        && loader.getNamespace().get("itemList") != null
+                        && loader.getNamespace().get("exemplarList") != null
+                        && loader.getNamespace().get("gtinField") != null
+                        && loader.getNamespace().get("saveMappingButton") != null
+                        && loader.getNamespace().get("prepareButton") != null
+                        && loader.getNamespace().get("shipButton") != null
+                        && loader.getNamespace().get("labelButton") != null
+                        && "ACTIVE".equals(status.getValue()));
+            } finally {
+                latch.countDown();
+            }
+        });
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+        assertTrue(valid.get(), "Ozon dashboard should expose mapping, prepare, ship and label controls");
+    }
+
+    @Test
+    void reopeningSameOzonDashboardWhileBusyPreservesTheActiveRequestToken() throws Exception {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicBoolean valid = new AtomicBoolean(false);
+        Platform.runLater(() -> {
+            try {
+                FXMLLoader loader = FxmlViewLoader.loader(OzonDashboardController.class, "ozon-dashboard-view.fxml");
+                FxmlViewLoader.load(loader);
+                OzonDashboardController controller = loader.getController();
+                Shop first = new Shop(7, "Ozon", com.tuandev.fbsbarcode.integration.marketplace.Marketplace.OZON,
+                        "client-7", "secret-7");
+                Shop sameContext = new Shop(7, "Ozon renamed",
+                        com.tuandev.fbsbarcode.integration.marketplace.Marketplace.OZON,
+                        "client-7", "secret-7");
+                controller.setShop(first, false);
+                var busyMethod = OzonDashboardController.class.getDeclaredMethod("setBusy", boolean.class);
+                busyMethod.setAccessible(true);
+                var tokenField = OzonDashboardController.class.getDeclaredField("requestToken");
+                tokenField.setAccessible(true);
+                busyMethod.invoke(controller, true);
+                long activeToken = tokenField.getLong(controller);
+                controller.setShop(sameContext, false);
+                ProgressIndicator indicator = (ProgressIndicator) loader.getNamespace().get("loadingIndicator");
+                valid.set(activeToken == tokenField.getLong(controller) && indicator.isVisible());
+                busyMethod.invoke(controller, false);
+            } catch (ReflectiveOperationException exception) {
+                throw new AssertionError(exception);
+            } finally {
+                latch.countDown();
+            }
+        });
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+        assertTrue(valid.get(), "Reopening the same shop must not orphan a running sync and leave its spinner stuck");
     }
 
     @Test

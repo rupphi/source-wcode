@@ -54,25 +54,33 @@ public final class LocalDataSnapshotService {
     private static final String BUNDLE_METADATA = "bundle.properties";
     private static final String PENDING_JOURNAL = ".wcode-pending-restore.properties";
     private static final String NONE = "none";
+    private static final long SNAPSHOT_MINIMUM_HEADROOM_BYTES = 64L * 1024 * 1024;
 
     private final RecoveryHooks hooks;
     private final InstantSource timeSource;
+    private final UsableSpaceProbe usableSpaceProbe;
 
     public LocalDataSnapshotService() {
-        this(point -> {}, InstantSource.system());
+        this(point -> {}, InstantSource.system(), path -> Files.getFileStore(path).getUsableSpace());
     }
 
     LocalDataSnapshotService(RecoveryHooks hooks) {
-        this(hooks, InstantSource.system());
+        this(hooks, InstantSource.system(), path -> Files.getFileStore(path).getUsableSpace());
     }
 
     LocalDataSnapshotService(InstantSource timeSource) {
-        this(point -> {}, timeSource);
+        this(point -> {}, timeSource, path -> Files.getFileStore(path).getUsableSpace());
     }
 
-    private LocalDataSnapshotService(RecoveryHooks hooks, InstantSource timeSource) {
+    LocalDataSnapshotService(UsableSpaceProbe usableSpaceProbe) {
+        this(point -> {}, InstantSource.system(), usableSpaceProbe);
+    }
+
+    private LocalDataSnapshotService(
+            RecoveryHooks hooks, InstantSource timeSource, UsableSpaceProbe usableSpaceProbe) {
         this.hooks = Objects.requireNonNull(hooks, "hooks");
         this.timeSource = Objects.requireNonNull(timeSource, "timeSource");
+        this.usableSpaceProbe = Objects.requireNonNull(usableSpaceProbe, "usableSpaceProbe");
     }
 
     public Snapshot create(AppDataLock ownership, String appVersion, int schemaVersion, String reason)
@@ -87,6 +95,7 @@ public final class LocalDataSnapshotService {
         Path appDataDir = ownership.requireOwnedAppDataDir();
         Path liveDatabase = appDataDir.resolve(DATABASE_NAME);
         requireRegularFileNoLinks(liveDatabase, "The live WCode database does not exist.");
+        requireSnapshotCapacity(appDataDir, liveDatabase);
 
         Instant createdAt = timeSource.instant();
         String snapshotId = newId(createdAt);
@@ -760,6 +769,32 @@ public final class LocalDataSnapshotService {
         }
     }
 
+    private void requireSnapshotCapacity(Path appDataDir, Path liveDatabase) throws IOException {
+        long sourceBytes = Files.size(liveDatabase);
+        Path wal = appDataDir.resolve(WAL_NAME);
+        if (Files.exists(wal, LinkOption.NOFOLLOW_LINKS)) {
+            requireRegularFileNoLinks(wal, "The WCode database WAL is unsafe.");
+            sourceBytes = saturatedAdd(sourceBytes, Files.size(wal));
+        }
+        long percentageHeadroom = sourceBytes / 10;
+        long headroomBytes = Math.max(SNAPSHOT_MINIMUM_HEADROOM_BYTES, percentageHeadroom);
+        long requiredBytes = saturatedAdd(sourceBytes, headroomBytes);
+        long availableBytes = usableSpaceProbe.usableBytes(appDataDir);
+        if (availableBytes < 0) {
+            throw new IOException("WCode could not determine the free disk space safely.");
+        }
+        if (availableBytes < requiredBytes) {
+            throw new InsufficientDiskSpaceException(requiredBytes, availableBytes);
+        }
+    }
+
+    private static long saturatedAdd(long left, long right) {
+        if (left < 0 || right < 0) {
+            throw new IllegalArgumentException("Byte counts must not be negative");
+        }
+        return Long.MAX_VALUE - left < right ? Long.MAX_VALUE : left + right;
+    }
+
     private static void removeLiveSidecar(Path sidecar) throws IOException {
         if (Files.isSymbolicLink(sidecar)) {
             throw new IOException("A WCode database sidecar path is unsafe.");
@@ -1040,6 +1075,44 @@ public final class LocalDataSnapshotService {
     @FunctionalInterface
     interface RecoveryHooks {
         void at(RecoveryPoint point) throws IOException;
+    }
+
+    @FunctionalInterface
+    interface UsableSpaceProbe {
+        long usableBytes(Path path) throws IOException;
+    }
+
+    public static final class InsufficientDiskSpaceException extends IOException {
+        private final long requiredBytes;
+        private final long availableBytes;
+
+        private InsufficientDiskSpaceException(long requiredBytes, long availableBytes) {
+            super("Not enough free disk space to protect WCode data before the upgrade. Required: "
+                    + roundedUpMiB(requiredBytes)
+                    + " MiB; available: "
+                    + roundedDownMiB(availableBytes)
+                    + " MiB. No data was changed. / Không đủ dung lượng trống để bảo vệ dữ liệu "
+                    + "WCode trước khi nâng cấp; chưa có dữ liệu nào bị thay đổi.");
+            this.requiredBytes = requiredBytes;
+            this.availableBytes = availableBytes;
+        }
+
+        public long requiredBytes() {
+            return requiredBytes;
+        }
+
+        public long availableBytes() {
+            return availableBytes;
+        }
+
+        private static long roundedUpMiB(long bytes) {
+            long unit = 1024L * 1024;
+            return bytes / unit + (bytes % unit == 0 ? 0 : 1);
+        }
+
+        private static long roundedDownMiB(long bytes) {
+            return bytes / (1024L * 1024);
+        }
     }
 
     public enum IntegrityStatus {

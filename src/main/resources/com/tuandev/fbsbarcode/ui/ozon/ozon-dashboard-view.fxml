@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.ComboBox?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ListView?>
+<?import javafx.scene.control.ProgressIndicator?>
+<?import javafx.scene.control.Separator?>
+<?import javafx.scene.control.SplitPane?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.FlowPane?>
+<?import javafx.scene.layout.Priority?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.VBox?>
+
+<VBox spacing="12.0" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.ui.ozon.OzonDashboardController">
+    <padding><Insets bottom="16.0" left="16.0" right="16.0" top="16.0" /></padding>
+    <children>
+        <HBox alignment="CENTER_LEFT" spacing="10.0">
+            <children>
+                <VBox spacing="3.0">
+                    <children>
+                        <Label fx:id="titleLabel" styleClass="h2" text="Ozon FBS" />
+                        <Label fx:id="accountLabel" styleClass="text-muted" />
+                    </children>
+                </VBox>
+                <Region HBox.hgrow="ALWAYS" />
+                <ProgressIndicator fx:id="loadingIndicator" managed="false" maxHeight="18.0" maxWidth="18.0" visible="false" />
+                <Label fx:id="statusLabel" styleClass="text-muted" />
+                <Button fx:id="refreshButton" mnemonicParsing="false" onAction="#onRefresh" text="Refresh" />
+            </children>
+        </HBox>
+        <HBox alignment="CENTER_LEFT" spacing="8.0">
+            <children>
+                <Label text="%ozon.dashboard.status" styleClass="text-muted" />
+                <ComboBox fx:id="statusFilter" prefWidth="220.0" />
+            </children>
+        </HBox>
+        <SplitPane dividerPositions="0.43" VBox.vgrow="ALWAYS">
+            <items>
+                <ListView fx:id="postingList" minWidth="300.0" />
+                <VBox fx:id="detailPane" spacing="10.0" styleClass="surface">
+                    <children>
+                        <Label fx:id="postingNumberLabel" styleClass="h2" />
+                        <Label fx:id="postingStatusLabel" />
+                        <Label fx:id="shipmentAtLabel" styleClass="text-muted" />
+                        <FlowPane hgap="8.0" vgap="8.0" prefWrapLength="560.0">
+                            <children>
+                                <Button fx:id="prepareButton" minWidth="135.0" mnemonicParsing="false" onAction="#onPrepare" text="Prepare order" />
+                                <Button fx:id="shipButton" minWidth="135.0" mnemonicParsing="false" onAction="#onShip" text="Ship" />
+                                <Button fx:id="labelButton" minWidth="210.0" mnemonicParsing="false" onAction="#onDownloadLabel" styleClass="btn-primary" text="Shipping label" />
+                            </children>
+                        </FlowPane>
+                        <Separator />
+                        <Label fx:id="requirementLabel" wrapText="true" />
+                        <Label fx:id="exemplarStageLabel" styleClass="text-muted" />
+                        <ListView fx:id="itemList" prefHeight="220.0" VBox.vgrow="ALWAYS" />
+                        <Label text="%ozon.dashboard.exemplars" styleClass="text-muted" />
+                        <ListView fx:id="exemplarList" prefHeight="110.0" />
+                        <HBox alignment="CENTER_LEFT" spacing="8.0">
+                            <children>
+                                <Label text="%ozon.dashboard.gtin" styleClass="text-muted" />
+                                <TextField fx:id="gtinField" HBox.hgrow="ALWAYS" />
+                                <Button fx:id="saveMappingButton" mnemonicParsing="false" onAction="#onSaveMapping" text="Save mapping" />
+                            </children>
+                        </HBox>
+                    </children>
+                    <padding><Insets bottom="12.0" left="12.0" right="12.0" top="12.0" /></padding>
+                </VBox>
+            </items>
+        </SplitPane>
+    </children>
+</VBox>

@@ -316,6 +316,144 @@ class ZnackModuleTest {
         } finally { server.stop(0); }
     }
 
+    @Test void retriesRateLimitedCatalogGetUsingRetryAfter() throws Exception {
+        AtomicInteger attempts=new AtomicInteger();
+        HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/api/v3/true-api/nk/feed-product",exchange->{
+            if(attempts.incrementAndGet()==1){
+                byte[] body="{\"error_message\":\"Слишком много запросов\"}".getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().add("Retry-After","0");
+                exchange.sendResponseHeaders(429,body.length);
+                exchange.getResponseBody().write(body);
+                exchange.close();
+            } else {
+                respond(exchange,"{\"result\":[]}");
+            }
+        });
+        server.start();
+        try {
+            String base="http://127.0.0.1:"+server.getAddress().getPort();
+
+            JsonElement response=new ZnackApiClient().productCards(base,"abc","04601234567890");
+
+            assertEquals(2,attempts.get());
+            assertTrue(response.getAsJsonObject().getAsJsonArray("result").isEmpty());
+        } finally { server.stop(0); }
+    }
+
+    @Test void interpretsRetryAfterAsSecondsWithoutSleepingInTests() throws Exception {
+        AtomicInteger attempts=new AtomicInteger();
+        java.util.ArrayList<Long> delays=new java.util.ArrayList<>();
+        HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/api/v3/true-api/nk/feed-product",exchange->{
+            if(attempts.incrementAndGet()==1){
+                exchange.getResponseHeaders().add("Retry-After","7");
+                exchange.sendResponseHeaders(429,-1);
+                exchange.close();
+            } else {
+                respond(exchange,"{\"result\":[]}");
+            }
+        });
+        server.start();
+        try {
+            String base="http://127.0.0.1:"+server.getAddress().getPort();
+
+            new ZnackApiClient(delays::add).productCards(base,"abc","04601234567890");
+
+            assertEquals(List.of(7_000L),delays);
+            assertEquals(2,attempts.get());
+        } finally { server.stop(0); }
+    }
+
+    @Test void usesBoundedFallbackWhenRetryAfterIsMalformed() throws Exception {
+        AtomicInteger attempts=new AtomicInteger();
+        java.util.ArrayList<Long> delays=new java.util.ArrayList<>();
+        HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/api/v3/true-api/nk/feed-product",exchange->{
+            if(attempts.incrementAndGet()==1){
+                exchange.getResponseHeaders().add("Retry-After","invalid");
+                exchange.sendResponseHeaders(429,-1);
+                exchange.close();
+            } else {
+                respond(exchange,"{\"result\":[]}");
+            }
+        });
+        server.start();
+        try {
+            String base="http://127.0.0.1:"+server.getAddress().getPort();
+
+            new ZnackApiClient(delays::add).productCards(base,"abc","04601234567890");
+
+            assertEquals(List.of(1_000L),delays);
+            assertEquals(2,attempts.get());
+        } finally { server.stop(0); }
+    }
+
+    @Test void stopsRetryingCatalogGetAfterBoundedAttempts() throws Exception {
+        AtomicInteger attempts=new AtomicInteger();
+        HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/api/v3/true-api/nk/feed-product",exchange->{
+            attempts.incrementAndGet();
+            exchange.getResponseHeaders().add("Retry-After","0");
+            exchange.sendResponseHeaders(429,-1);
+            exchange.close();
+        });
+        server.start();
+        try {
+            String base="http://127.0.0.1:"+server.getAddress().getPort();
+
+            ZnackApiClient.ZnackApiException error=assertThrows(ZnackApiClient.ZnackApiException.class,
+                    ()->new ZnackApiClient(ignored->{}).productCards(base,"abc","04601234567890"));
+
+            assertEquals(429,error.statusCode());
+            assertEquals(3,attempts.get());
+        } finally { server.stop(0); }
+    }
+
+    @Test void rejectsRetryAfterBeyondDocumentedLimitWindow() throws Exception {
+        AtomicInteger attempts=new AtomicInteger();
+        java.util.ArrayList<Long> delays=new java.util.ArrayList<>();
+        HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/api/v3/true-api/nk/feed-product",exchange->{
+            attempts.incrementAndGet();
+            exchange.getResponseHeaders().add("Retry-After","301");
+            exchange.sendResponseHeaders(429,-1);
+            exchange.close();
+        });
+        server.start();
+        try {
+            String base="http://127.0.0.1:"+server.getAddress().getPort();
+
+            ZnackApiClient.ZnackApiException error=assertThrows(ZnackApiClient.ZnackApiException.class,
+                    ()->new ZnackApiClient(delays::add).productCards(base,"abc","04601234567890"));
+
+            assertEquals(429,error.statusCode());
+            assertEquals(1,attempts.get());
+            assertTrue(delays.isEmpty());
+        } finally { server.stop(0); }
+    }
+
+    @Test void doesNotRetryRateLimitedDocumentPost() throws Exception {
+        AtomicInteger attempts=new AtomicInteger();
+        HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/api/v3/true-api/lk/documents/create",exchange->{
+            attempts.incrementAndGet();
+            exchange.getResponseHeaders().add("Retry-After","0");
+            exchange.sendResponseHeaders(429,-1);
+            exchange.close();
+        });
+        server.start();
+        try {
+            String base="http://127.0.0.1:"+server.getAddress().getPort();
+
+            ZnackApiClient.ZnackApiException error=assertThrows(ZnackApiClient.ZnackApiException.class,
+                    ()->new ZnackApiClient(ignored->{}).createDocument(base,"abc",new JsonObject()));
+
+            assertEquals(429,error.statusCode());
+            assertEquals(1,attempts.get());
+        } finally { server.stop(0); }
+    }
+
     @Test void suzOrderSendsExactSignedBodyAndDocumentedHeaders() throws Exception {
         AtomicReference<byte[]> signed=new AtomicReference<>(),sent=new AtomicReference<>();
         AtomicReference<String> signature=new AtomicReference<>(),clientToken=new AtomicReference<>(),authorization=new AtomicReference<>();
@@ -646,6 +784,49 @@ class ZnackModuleTest {
         assertEquals(List.of("04601234567890","04601234567891"),products.stream().map(Product::gtin).toList());
         assertEquals(List.of("6101000000","6202000000"),products.stream().map(Product::tnVed).toList());
         assertEquals(2,repository.findProducts().size());
+    }
+
+    @Test void productSyncPersistsSuccessfulCatalogBatchesAndReportsExhaustedOnesAsPartial() throws Exception {
+        ZnackRepository repository=repository(1,"Shop A");
+        AtomicInteger catalogRequests=new AtomicInteger();
+        ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonElement products(String base,String token){
+                JsonArray results=new JsonArray();
+                for(int index=0;index<26;index++){
+                    JsonObject product=new JsonObject();
+                    product.addProperty("gtin",String.format("0460123456%04d",index));
+                    product.addProperty("good_status","published");
+                    results.add(product);
+                }
+                JsonObject response=new JsonObject();
+                response.add("results",results);
+                return response;
+            }
+            @Override public JsonElement productCards(String base,String token,String gtins)throws java.io.IOException{
+                if(catalogRequests.incrementAndGet()>1){
+                    throw new ZnackApiClient.ZnackApiException("Znack API request failed",429,
+                            "{\"error_message\":\"Слишком много запросов\"}");
+                }
+                String gtin=gtins.split(";")[0];
+                return JsonParser.parseString("""
+                        {"result":[{"good_name":"Enriched product","good_attrs":[
+                        {"attr_id":13933,"attr_value":"6202 30 00 00"}],
+                        "identified_by":[{"type":"gtin","value":"%s"}]}]}
+                        """.formatted(gtin));
+            }
+        };
+        ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+            @Override public String trueApiToken(Settings s){return "token";}
+        };
+
+        new ZnackProductService(api,auth,repository).sync(testedSettings("","","","connection",""));
+
+        assertEquals("Enriched product",repository.findProduct("04601234560000").orElseThrow().productName());
+        OperationLog syncLog=repository.findLogs().stream()
+                .filter(log->"GTIN_SYNC".equals(log.action())).findFirst().orElseThrow();
+        assertEquals("WARN",syncLog.severity());
+        assertTrue(syncLog.message().contains("partial"));
+        assertTrue(syncLog.message().contains("1 catalog batch"));
     }
 
     @Test void productSyncIgnoresTechnicalGtinsAndDeletesUnreferencedExistingOnes() throws Exception {

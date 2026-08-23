@@ -1,5 +1,6 @@
 package com.tuandev.fbsbarcode.features.print;
 
+import com.tuandev.fbsbarcode.integration.marketplace.MarketplaceGuard;
 import com.tuandev.fbsbarcode.features.kiz.KizService;
 import com.tuandev.fbsbarcode.models.Kiz;
 import com.tuandev.fbsbarcode.models.Shop;
@@ -107,6 +108,7 @@ public final class KizAttachmentCoordinator {
         if (shop == null || assignments == null || assignments.isEmpty()) {
             return;
         }
+        MarketplaceGuard.requireWildberries(shop);
 
         String safeSupplyId = supplyId == null ? "" : supplyId;
         String safeSupplyName = supplyName == null ? "" : supplyName;

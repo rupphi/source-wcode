@@ -13,15 +13,29 @@ import java.time.Duration;
 public class ZnackApiClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(ZnackApiClient.class);
     private static final MediaType JSON = MediaType.parse("application/json");
+    // National Catalog API v5.62 sections 2.1/2.5: Retry-After is seconds and a limit window is at most five minutes.
+    private static final int RATE_LIMIT_MAX_ATTEMPTS = 3;
+    private static final long RATE_LIMIT_MAX_TOTAL_DELAY_MS = Duration.ofMinutes(5).toMillis();
+    private static final long RATE_LIMIT_FALLBACK_DELAY_MS = 1_000L;
     private final OkHttpClient client;
+    private final Sleeper sleeper;
     private final Gson gson = new Gson();
 
     public ZnackApiClient() {
-        this(new OkHttpClient.Builder().callTimeout(Duration.ofSeconds(40)).build());
+        this(defaultClient(), Thread::sleep);
     }
 
     ZnackApiClient(OkHttpClient client) {
+        this(client, Thread::sleep);
+    }
+
+    ZnackApiClient(Sleeper sleeper) {
+        this(defaultClient(), sleeper);
+    }
+
+    ZnackApiClient(OkHttpClient client, Sleeper sleeper) {
         this.client = client;
+        this.sleeper = sleeper;
     }
 
     public JsonObject authKey(String base) throws IOException { return get(authBase(base), "/auth/key", null).getAsJsonObject(); }
@@ -82,6 +96,7 @@ public class ZnackApiClient {
 
     private JsonElement execute(Request request)throws IOException{return execute(request,false);}
     private JsonElement execute(Request request,boolean allowNotFoundBody)throws IOException{
+        long rateLimitDelayUsed=0;
         for(int attempt=1;;attempt++){
             try(Response response=client.newCall(request).execute()){
                 String body=response.body()==null?"":response.body().string();
@@ -92,6 +107,16 @@ public class ZnackApiClient {
                                 attempt,UOT_CREDENTIAL_RETRY_ATTEMPTS-1,request.method(),request.url());
                         sleepBeforeRetry(attempt);
                         continue;
+                    }
+                    if(response.code()==429&&isIdempotent(request)&&attempt<RATE_LIMIT_MAX_ATTEMPTS){
+                        long delay=rateLimitDelay(response.header("Retry-After"),attempt);
+                        if(delay<=RATE_LIMIT_MAX_TOTAL_DELAY_MS-rateLimitDelayUsed){
+                            LOGGER.warn("Znack API rate limit reached; retrying safe request after {} ms. method={}, attempt={}/{}",
+                                    delay,request.method(),attempt,RATE_LIMIT_MAX_ATTEMPTS);
+                            sleepRateLimit(delay);
+                            rateLimitDelayUsed+=delay;
+                            continue;
+                        }
                     }
                     LOGGER.error("Znack API request failed. method={}, url={}, httpStatus={}, contentType={}, responseBody={}",
                             request.method(),request.url(),response.code(),response.header("Content-Type",""),
@@ -110,6 +135,19 @@ public class ZnackApiClient {
                 }
             }
         }
+    }
+    private static OkHttpClient defaultClient(){return new OkHttpClient.Builder().callTimeout(Duration.ofSeconds(40)).build();}
+    private static boolean isIdempotent(Request request){return "GET".equals(request.method())||"HEAD".equals(request.method());}
+    private static long rateLimitDelay(String retryAfter,int attempt){
+        if(retryAfter!=null)try{
+            long seconds=Long.parseLong(retryAfter.trim());
+            if(seconds>=0)return Math.multiplyExact(seconds,1_000L);
+        }catch(ArithmeticException|NumberFormatException ignored){}
+        return RATE_LIMIT_FALLBACK_DELAY_MS<<(attempt-1);
+    }
+    private void sleepRateLimit(long delay)throws IOException{
+        try{sleeper.sleep(delay);}
+        catch(InterruptedException e){Thread.currentThread().interrupt();throw new IOException("Interrupted while waiting for the Znack rate limit.",e);}
     }
     private static void sleepBeforeRetry(int attempt)throws IOException{
         try{Thread.sleep(UOT_CREDENTIAL_RETRY_BASE_DELAY_MS*attempt);}
@@ -138,4 +176,6 @@ public class ZnackApiClient {
         public ZnackApiException(String message,int statusCode,String body){super(message+" (HTTP "+statusCode+"): "+ZnackSanitizer.message(body));this.statusCode=statusCode;}
         public int statusCode(){return statusCode;}
     }
+
+    @FunctionalInterface interface Sleeper { void sleep(long millis)throws InterruptedException; }
 }

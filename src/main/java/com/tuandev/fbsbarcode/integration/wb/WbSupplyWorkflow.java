@@ -2,6 +2,7 @@ package com.tuandev.fbsbarcode.integration.wb;
 
 import com.tuandev.fbsbarcode.features.print.history.ImageCacheRepository;
 import com.tuandev.fbsbarcode.features.print.history.PrintHistoryService;
+import com.tuandev.fbsbarcode.integration.marketplace.MarketplaceGuard;
 import com.tuandev.fbsbarcode.models.Order;
 import com.tuandev.fbsbarcode.models.Shop;
 import com.tuandev.fbsbarcode.models.Sticker;
@@ -65,16 +66,19 @@ public class WbSupplyWorkflow {
     }
 
     public List<Order> loadOrdersForSupplyLocal(Shop shop, String supplyId) {
+        MarketplaceGuard.requireWildberries(shop);
         List<Order> orders = orderRepository.getOrdersForSupply(shop.getId(), supplyId);
         populateCachedOrderImages(orders);
         return orders;
     }
 
     public boolean hasMissingProducts(Shop shop, String supplyId) {
+        MarketplaceGuard.requireWildberries(shop);
         return orderRepository.hasMissingProductsForSupply(shop.getId(), supplyId);
     }
 
     public List<Order> loadOrdersForSupply(Shop shop, String supplyId) throws IOException {
+        MarketplaceGuard.requireWildberries(shop);
         List<Long> missingNmIds = orderRepository.findMissingProductNmIdsForSupply(shop.getId(), supplyId);
         if (!missingNmIds.isEmpty()) {
             try {
@@ -103,10 +107,12 @@ public class WbSupplyWorkflow {
     }
 
     public void enrichOrders(Shop shop, List<Order> orders) throws IOException {
+        MarketplaceGuard.requireWildberries(shop);
         enrichOrderKizMetadata(shop, orders);
     }
 
     public void enrichOrderStickers(Shop shop, List<Order> orders) throws IOException {
+        MarketplaceGuard.requireWildberries(shop);
         if (orders == null || orders.isEmpty()) {
             return;
         }
@@ -126,6 +132,7 @@ public class WbSupplyWorkflow {
     }
 
     public void enrichOrderKizMetadata(Shop shop, List<Order> orders) {
+        MarketplaceGuard.requireWildberries(shop);
         if (orders == null || orders.isEmpty()) {
             return;
         }

@@ -3,6 +3,7 @@ package com.tuandev.fbsbarcode;
 import com.tuandev.fbsbarcode.shared.AppPaths;
 import com.tuandev.fbsbarcode.shared.AppDataLock;
 import com.tuandev.fbsbarcode.shared.LocalDataMigrationGate;
+import com.tuandev.fbsbarcode.shared.LocalDataSnapshotService;
 import javafx.application.Application;
 
 import java.io.PrintWriter;
@@ -19,6 +20,9 @@ public class Launcher {
             Application.launch(MainApplication.class, args);
         } catch (AppDataLock.AlreadyRunningException exception) {
             System.err.println("WCode is already running for this app-data directory.");
+        } catch (LocalDataSnapshotService.InsufficientDiskSpaceException exception) {
+            writeStartupLog("main", exception);
+            System.err.println(exception.getMessage());
         } catch (Exception exception) {
             writeStartupLog("main", exception);
             System.err.println("WCode could not acquire its app-data directory.");

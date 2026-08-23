@@ -148,6 +148,153 @@ public final class ZnackWorkspaceRepository {
         }
     }
 
+    /**
+     * Permanently removes one already-hidden product and its local Znack graph.
+     *
+     * <p>The operation deliberately fails closed while a purchase pipeline is active or any matching
+     * KIZ is referenced by an Ozon exemplar. Callers must serialize this transaction with shop-level
+     * background work as an additional guard against starting new work concurrently.</p>
+     */
+    public void purgeHiddenProduct(int shopId, String shopName, String gtin) {
+        if (shopId <= 0 || shopName == null || shopName.isBlank()) {
+            throw new IllegalArgumentException("Invalid Znack purge target.");
+        }
+        String normalized = GtinNormalizer.requireProductionOrderable(gtin);
+        try (Connection connection = Database.getConnection(); Statement transaction = connection.createStatement()) {
+            transaction.execute("BEGIN IMMEDIATE");
+            try {
+                requireHiddenProduct(connection, shopId, normalized);
+                if (hasActivePurchase(connection, shopId, normalized)) {
+                    throw new PurgeConflictException(PurgeConflictKind.ACTIVE_PURCHASE);
+                }
+                if (hasOzonKizLink(connection, shopId, normalized)) {
+                    throw new PurgeConflictException(PurgeConflictKind.OZON_KIZ_LINKED);
+                }
+                deleteProductGraph(connection, shopId, normalized);
+                insertPurgeLog(connection, shopId, shopName, normalized);
+                transaction.execute("COMMIT");
+            } catch (Exception error) {
+                transaction.execute("ROLLBACK");
+                throw error;
+            }
+        } catch (PurgeConflictException error) {
+            throw error;
+        } catch (SQLException error) {
+            throw new RuntimeException(error);
+        }
+    }
+
+    private static void requireHiddenProduct(Connection connection, int shopId, String gtin)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT deleted_at IS NOT NULL FROM znack_products WHERE shop_id=? AND gtin=?")) {
+            statement.setInt(1, shopId);
+            statement.setString(2, gtin);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next() || result.getInt(1) == 0) {
+                    throw new PurgeConflictException(PurgeConflictKind.PRODUCT_CHANGED);
+                }
+            }
+        }
+    }
+
+    private static boolean hasActivePurchase(Connection connection, int shopId, String gtin)
+            throws SQLException {
+        String sql = """
+                SELECT 1 FROM znack_purchase_pipelines
+                WHERE shop_id=? AND gtin=?
+                  AND stage NOT IN ('COMPLETED','INTRODUCED','FAILED','INTRODUCTION_FAILED',
+                                    'INTRODUCTION_SKIPPED_MISSING_DOCUMENTS',
+                                    'INTRODUCTION_SKIPPED_MISSING_METADATA')
+                LIMIT 1
+                """;
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setInt(1, shopId);
+            statement.setString(2, gtin);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next();
+            }
+        }
+    }
+
+    private static boolean hasOzonKizLink(Connection connection, int shopId, String gtin)
+            throws SQLException {
+        String sql = """
+                SELECT 1
+                FROM ozon_exemplars exemplar
+                JOIN kiz_codes code ON code.id=exemplar.kiz_id AND code.shop_id=exemplar.shop_id
+                WHERE exemplar.shop_id=?
+                  AND (code.gtin=? OR code.order_id IN (
+                      SELECT id FROM kiz_orders WHERE shop_id=? AND gtin=?))
+                LIMIT 1
+                """;
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setInt(1, shopId);
+            statement.setString(2, gtin);
+            statement.setInt(3, shopId);
+            statement.setString(4, gtin);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next();
+            }
+        }
+    }
+
+    private static void deleteProductGraph(Connection connection, int shopId, String gtin)
+            throws SQLException {
+        try (PreparedStatement codesByOrder = connection.prepareStatement(
+                        "DELETE FROM kiz_codes WHERE shop_id=? AND order_id IN "
+                                + "(SELECT id FROM kiz_orders WHERE shop_id=? AND gtin=?)");
+                PreparedStatement codesByGtin = connection.prepareStatement(
+                        "DELETE FROM kiz_codes WHERE shop_id=? AND gtin=?");
+                PreparedStatement documents = connection.prepareStatement(
+                        "DELETE FROM znack_documents WHERE shop_id=? AND order_id IN "
+                                + "(SELECT id FROM kiz_orders WHERE shop_id=? AND gtin=?)");
+                PreparedStatement pipelines = connection.prepareStatement(
+                        "DELETE FROM znack_purchase_pipelines WHERE shop_id=? AND gtin=?");
+                PreparedStatement orders = connection.prepareStatement(
+                        "DELETE FROM kiz_orders WHERE shop_id=? AND gtin=?");
+                PreparedStatement product = connection.prepareStatement(
+                        "DELETE FROM znack_products WHERE shop_id=? AND gtin=? AND deleted_at IS NOT NULL")) {
+            codesByOrder.setInt(1, shopId);
+            codesByOrder.setInt(2, shopId);
+            codesByOrder.setString(3, gtin);
+            codesByOrder.executeUpdate();
+            codesByGtin.setInt(1, shopId);
+            codesByGtin.setString(2, gtin);
+            codesByGtin.executeUpdate();
+            documents.setInt(1, shopId);
+            documents.setInt(2, shopId);
+            documents.setString(3, gtin);
+            documents.executeUpdate();
+            pipelines.setInt(1, shopId);
+            pipelines.setString(2, gtin);
+            pipelines.executeUpdate();
+            orders.setInt(1, shopId);
+            orders.setString(2, gtin);
+            orders.executeUpdate();
+            product.setInt(1, shopId);
+            product.setString(2, gtin);
+            if (product.executeUpdate() != 1) {
+                throw new PurgeConflictException(PurgeConflictKind.PRODUCT_CHANGED);
+            }
+        }
+    }
+
+    private static void insertPurgeLog(Connection connection, int shopId, String shopName, String gtin)
+            throws SQLException {
+        try (PreparedStatement log = connection.prepareStatement("""
+                INSERT INTO znack_operation_logs
+                (shop_id,shop_name,action,entity_reference,severity,message,http_status,created_at)
+                VALUES(?,?, 'GTIN_PURGE', ?, 'INFO', 'PURGED', NULL, ?)
+                """)) {
+            log.setInt(1, shopId);
+            log.setString(2, shopName);
+            log.setString(3, gtin);
+            log.setString(4, Instant.now().toString());
+            log.executeUpdate();
+        }
+    }
+
     private static ProductSummary product(ResultSet result) throws SQLException {
         return new ProductSummary(
                 result.getString("gtin"),
@@ -189,6 +336,25 @@ public final class ZnackWorkspaceRepository {
     public static final class VisibilityConflictException extends RuntimeException {
         public VisibilityConflictException() {
             super("Znack product visibility changed concurrently.");
+        }
+    }
+
+    public enum PurgeConflictKind {
+        PRODUCT_CHANGED,
+        ACTIVE_PURCHASE,
+        OZON_KIZ_LINKED
+    }
+
+    public static final class PurgeConflictException extends RuntimeException {
+        private final PurgeConflictKind kind;
+
+        public PurgeConflictException(PurgeConflictKind kind) {
+            super("Znack product cannot be purged: " + kind.name().toLowerCase(java.util.Locale.ROOT));
+            this.kind = kind;
+        }
+
+        public PurgeConflictKind kind() {
+            return kind;
         }
     }
 }

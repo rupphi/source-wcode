@@ -1,5 +1,6 @@
 package com.tuandev.fbsbarcode.ui.workspace;
 
+import com.tuandev.fbsbarcode.integration.marketplace.Marketplace;
 import com.tuandev.fbsbarcode.shared.I18nService;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
@@ -34,6 +35,7 @@ public class WorkspaceHeaderController {
     private Runnable onEditShop;
     private Runnable onDeleteShop;
     private Consumer<Shop> onShopSelected;
+    private Marketplace marketplace = Marketplace.WILDBERRIES;
 
     @FXML
     public void initialize() {
@@ -41,7 +43,7 @@ public class WorkspaceHeaderController {
             @Override
             protected void updateItem(Shop item, boolean empty) {
                 super.updateItem(item, empty);
-                setText(empty || item == null ? null : item.getName());
+                setText(empty || item == null ? null : "[" + item.getMarketplace().badge() + "] " + item.getName());
                 if (lv != null) {
                     getStyleClass().remove("shop-combo-button-cell");
                 }
@@ -121,10 +123,15 @@ public class WorkspaceHeaderController {
         deleteShopButton.setDisable(!hasShop || busy || !tokenValid);
     }
 
+    public void setMarketplace(Marketplace marketplace) {
+        this.marketplace = marketplace == null ? Marketplace.WILDBERRIES : marketplace;
+        applyTranslations();
+    }
+
     public void applyTranslations() {
         I18nService i18n = I18nService.getInstance();
         shopComboBox.setPromptText(i18n.tr("header.shop_prompt"));
-        syncButton.setText(" " + i18n.tr("header.sync"));
+        syncButton.setText(" " + i18n.tr(marketplace == Marketplace.OZON ? "ozon.dashboard.refresh" : "header.sync"));
         syncLoadingLabel.setText(i18n.tr("header.sync_products_kiz"));
     }
 }

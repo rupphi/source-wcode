@@ -91,6 +91,11 @@ public class ZnackPurchaseCoordinator {
         }
     }
 
+    /** True only while a persisted purchase pipeline is inside a local/remote mutation step. */
+    public static boolean hasRunningMutation() {
+        return !RUNNING.isEmpty();
+    }
+
     public long start(Settings settings, String gtin, int quantity) throws Exception {
         return start(settings, gtin, quantity, null);
     }
@@ -114,7 +119,7 @@ public class ZnackPurchaseCoordinator {
         return pipelineId;
     }
 
-    /** Persists an idempotent jDesk purchase before any remote mutation, then advances it off-command. */
+    /** Persists an idempotent purchase before any remote mutation, then advances it asynchronously. */
     public long enqueue(Settings settings, String gtin, int quantity, String requestKey) throws Exception {
         requireRequestKey(requestKey);
         ZnackPurchasePipelineState replay = replay(requestKey, gtin, quantity);

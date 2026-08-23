@@ -3,7 +3,6 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 .kotlin
-.gradle/
 
 ### IntelliJ IDEA ###
 .idea/modules.xml
@@ -28,7 +27,6 @@ target/
 /nbbuild/
 /dist/
 /nbdist/
-/.nb-gradle/
 build/
 !**/src/main/**/build/
 !**/src/test/**/build/
@@ -36,17 +34,15 @@ build/
 ### VS Code ###
 .vscode/
 
+### Local environment / secrets ###
+.env
+.env.*
+!.env.example
+
 ### jpackage / jlink output ###
 out/
 out-*/
 runtime/
-ui/node_modules/
-ui/dist/
-ui/src/generated/
-
-### Downloaded JavaFX jmods (fetched by build scripts, not source) ###
-javafx-jmods-*/
-
 ### Mac OS ###
 .DS_Store
 # License/admin backend — sống trong repo riêng tuanworlddev/wcode-admin

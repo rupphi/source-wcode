@@ -19,15 +19,14 @@ Hiện trạng WCode: `LicenseService` xác thực với `license-server` (Ed255
 chống lùi đồng hồ) và gate hai nút mua KIZ. Bước củng cố tiếp theo (khuyến nghị): cho pipeline
 mua KIZ đi qua server của mình thay vì gọi Znack trực tiếp từ client.
 
-## Obfuscation (đã cấu hình, opt-in)
+## Obfuscation
 
-- `proguard.conf` + profile `-Pobfuscate` trong `pom.xml` đã sẵn sàng: chỉ **rename** phần nội bộ
-  (`-dontshrink -dontoptimize`), giữ nguyên FXML controller, DTO Gson, model, enum, `layout_json`.
-- Chạy: `./mvnw clean package -Pobfuscate` (đừng quên lưu `target/proguard-mapping.txt` mỗi release
-  để giải mã stack trace bằng `retrace`).
-- ⚠️ **Chặn hiện tại**: ProGuard bản mới nhất (7.9.1) **chưa hỗ trợ bytecode Java 25** (class file
-  69), kể cả jmods runtime JDK 25. Nên profile này **chưa** được wire vào `build.sh`/CI (sẽ làm hỏng
-  release Windows chạy JDK 25). Bật lại khi ProGuard hỗ trợ Java 25 — xem hướng dẫn trong `proguard.conf`.
+Maven/JavaFX là production build. Profile `-Pobfuscate` dùng cấu hình bảo thủ: không shrink hoặc
+optimize và giữ controller FXML, DTO Gson, record/enum cùng model được lưu trong SQLite. Profile này
+không được đưa vào release cho tới khi ProGuard được smoke-test đầy đủ với Java 25 và toàn bộ flow
+FXML, WB, Ozon, Znack, license, PDF.
+
+Obfuscation không thay thế ký artifact, kiểm tra marketplace boundary hoặc server-side license gate.
 - Muốn có string encryption + control-flow obfuscation (ProGuard free không có): cần công cụ trả phí
   **Zelix KlassMaster** hoặc **Allatori** (~vài trăm USD/dev). Chỉ đáng đầu tư nếu quan sát thấy bị crack.
 

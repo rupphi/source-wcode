@@ -20,7 +20,7 @@ test("builds a canonical envelope whose signed MSI fields verify independently",
       version: "1.2.3",
       publishedAt: "2026-07-19T00:00:00.000Z",
       mandatory: false,
-      notes: ["Signed jDesk release"],
+      notes: ["Signed JavaFX release"],
       privateKey,
       publicKey,
     });
@@ -30,7 +30,7 @@ test("builds a canonical envelope whose signed MSI fields verify independently",
 
     assert.equal(envelope.format, "wcode-update-envelope-v1");
     assert.equal(payload.version, "1.2.3");
-    assert.deepEqual(payload.notes, ["Signed jDesk release"]);
+    assert.deepEqual(payload.notes, ["Signed JavaFX release"]);
     assert.equal(payload.assets[0].fileName, "WCode.msi");
     assert.equal(payload.assets[0].size, 1024 * 1024);
     assert.match(payload.assets[0].sha256, /^[0-9a-f]{64}$/);
@@ -59,7 +59,7 @@ test("fails closed for mismatched keys, unsafe notes, versions, and installer si
       version: "1.2.3",
       publishedAt: "2026-07-19T00:00:00.000Z",
       mandatory: false,
-      notes: ["Signed jDesk release"],
+      notes: ["Signed JavaFX release"],
       privateKey,
       publicKey,
     };

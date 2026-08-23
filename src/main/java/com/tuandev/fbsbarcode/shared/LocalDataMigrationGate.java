@@ -20,7 +20,7 @@ import java.util.regex.Pattern;
 public final class LocalDataMigrationGate {
     private static final Pattern VERSION_PATTERN = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,31}");
     private static final Pattern WRITER_PATTERN = Pattern.compile("[a-z][a-z0-9-]{0,15}");
-    private static final String DATA_MIGRATION = "wcode-schema-v1";
+    private static final String DATA_MIGRATION = "wcode-schema-v2";
 
     private LocalDataMigrationGate() {
     }

@@ -1,0 +1,175 @@
+package com.tuandev.fbsbarcode.integration.ozon;
+
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.Statement;
+
+/** Additive Ozon FBS schema. It deliberately stores no buyer PII and no raw API responses. */
+public final class OzonSchemaSupport {
+    private OzonSchemaSupport() {
+    }
+
+    public static void initialize(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS ozon_sync_state(
+                        shop_id INTEGER PRIMARY KEY,
+                        products_last_id TEXT,
+                        products_last_synced_at TEXT,
+                        postings_changed_since TEXT,
+                        postings_last_synced_at TEXT,
+                        last_error TEXT,
+                        FOREIGN KEY(shop_id) REFERENCES shops(id) ON DELETE CASCADE
+                    )
+                    """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS ozon_products(
+                        shop_id INTEGER NOT NULL,
+                        product_id TEXT NOT NULL,
+                        offer_id TEXT,
+                        sku TEXT,
+                        name TEXT,
+                        primary_image_url TEXT,
+                        archived INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0,1)),
+                        updated_at TEXT,
+                        synced_at TEXT NOT NULL,
+                        PRIMARY KEY(shop_id,product_id),
+                        FOREIGN KEY(shop_id) REFERENCES shops(id) ON DELETE CASCADE
+                    )
+                    """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS ozon_product_barcodes(
+                        shop_id INTEGER NOT NULL,
+                        product_id TEXT NOT NULL,
+                        barcode TEXT NOT NULL,
+                        PRIMARY KEY(shop_id,product_id,barcode),
+                        FOREIGN KEY(shop_id,product_id) REFERENCES ozon_products(shop_id,product_id) ON DELETE CASCADE
+                    )
+                    """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS ozon_product_gtin_mappings(
+                        shop_id INTEGER NOT NULL,
+                        sku TEXT NOT NULL,
+                        gtin TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY(shop_id,sku),
+                        FOREIGN KEY(shop_id,gtin) REFERENCES znack_products(shop_id,gtin) ON DELETE CASCADE,
+                        FOREIGN KEY(shop_id) REFERENCES shops(id) ON DELETE CASCADE
+                    )
+                    """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS ozon_postings(
+                        shop_id INTEGER NOT NULL,
+                        posting_number TEXT NOT NULL,
+                        order_id TEXT,
+                        order_number TEXT,
+                        status TEXT NOT NULL,
+                        substatus TEXT,
+                        warehouse_id TEXT,
+                        shipment_at TEXT,
+                        in_process_at TEXT,
+                        lower_barcode TEXT,
+                        upper_barcode TEXT,
+                        mandatory_mark_product_ids TEXT NOT NULL DEFAULT '[]',
+                        optional_mark_product_ids TEXT NOT NULL DEFAULT '[]',
+                        unsupported_requirements TEXT NOT NULL DEFAULT '[]',
+                        available_actions TEXT NOT NULL DEFAULT '[]',
+                        ship_available INTEGER NOT NULL DEFAULT 0 CHECK(ship_available IN (0,1)),
+                        synced_at TEXT NOT NULL,
+                        PRIMARY KEY(shop_id,posting_number),
+                        FOREIGN KEY(shop_id) REFERENCES shops(id) ON DELETE CASCADE
+                    )
+                    """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS ozon_posting_items(
+                        shop_id INTEGER NOT NULL,
+                        posting_number TEXT NOT NULL,
+                        item_index INTEGER NOT NULL CHECK(item_index >= 0),
+                        product_id TEXT,
+                        sku TEXT,
+                        offer_id TEXT,
+                        name TEXT,
+                        quantity INTEGER NOT NULL CHECK(quantity > 0),
+                        currency_code TEXT,
+                        price TEXT,
+                        PRIMARY KEY(shop_id,posting_number,item_index),
+                        FOREIGN KEY(shop_id,posting_number) REFERENCES ozon_postings(shop_id,posting_number) ON DELETE CASCADE
+                    )
+                    """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS ozon_exemplar_jobs(
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        shop_id INTEGER NOT NULL,
+                        posting_number TEXT NOT NULL,
+                        stage TEXT NOT NULL CHECK(stage IN (
+                            'CREATED','RESERVED','VALIDATED','SET_PENDING','VERIFYING','ACCEPTED','REJECTED','RECONCILE_REQUIRED')),
+                        request_fingerprint TEXT,
+                        safe_error_code TEXT,
+                        mutation_attempted_at TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        UNIQUE(shop_id,posting_number),
+                        FOREIGN KEY(shop_id,posting_number) REFERENCES ozon_postings(shop_id,posting_number) ON DELETE CASCADE
+                    )
+                    """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS ozon_exemplars(
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        job_id INTEGER NOT NULL,
+                        shop_id INTEGER NOT NULL,
+                        posting_number TEXT NOT NULL,
+                        item_index INTEGER NOT NULL,
+                        product_id TEXT,
+                        exemplar_id TEXT,
+                        exemplar_index INTEGER NOT NULL CHECK(exemplar_index >= 0),
+                        kiz_id INTEGER,
+                        check_status TEXT,
+                        weight TEXT,
+                        updated_at TEXT NOT NULL,
+                        UNIQUE(job_id,item_index,exemplar_index),
+                        UNIQUE(kiz_id),
+                        FOREIGN KEY(job_id) REFERENCES ozon_exemplar_jobs(id) ON DELETE CASCADE,
+                        FOREIGN KEY(shop_id,posting_number,item_index)
+                            REFERENCES ozon_posting_items(shop_id,posting_number,item_index) ON DELETE CASCADE,
+                        FOREIGN KEY(kiz_id) REFERENCES kiz_codes(id)
+                    )
+                    """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS ozon_action_log(
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        shop_id INTEGER NOT NULL,
+                        action_type TEXT NOT NULL,
+                        posting_number TEXT,
+                        status TEXT NOT NULL,
+                        safe_error_code TEXT,
+                        request_fingerprint TEXT,
+                        created_at TEXT NOT NULL,
+                        FOREIGN KEY(shop_id) REFERENCES shops(id) ON DELETE CASCADE
+                    )
+                    """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS ozon_label_jobs(
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        shop_id INTEGER NOT NULL,
+                        posting_number TEXT NOT NULL,
+                        task_id TEXT,
+                        status TEXT NOT NULL,
+                        output_path TEXT,
+                        safe_error_code TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        UNIQUE(shop_id,posting_number),
+                        FOREIGN KEY(shop_id,posting_number) REFERENCES ozon_postings(shop_id,posting_number) ON DELETE CASCADE
+                    )
+                    """);
+
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_shops_marketplace ON shops(marketplace,id)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_ozon_products_shop_sku ON ozon_products(shop_id,sku)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_ozon_postings_shop_status ON ozon_postings(shop_id,status,shipment_at)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_ozon_posting_items_shop_sku ON ozon_posting_items(shop_id,sku)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_ozon_exemplar_jobs_stage ON ozon_exemplar_jobs(shop_id,stage,updated_at)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_ozon_action_log_shop_created ON ozon_action_log(shop_id,created_at DESC)");
+        }
+    }
+}

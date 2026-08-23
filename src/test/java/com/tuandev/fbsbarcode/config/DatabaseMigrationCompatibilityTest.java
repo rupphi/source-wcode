@@ -3,6 +3,7 @@ package com.tuandev.fbsbarcode.config;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels.Product;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels.ShopContext;
 import com.tuandev.fbsbarcode.integration.znack.ZnackRepository;
+import com.tuandev.fbsbarcode.shared.LocalDataMigrationGate;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -15,12 +16,49 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DatabaseMigrationCompatibilityTest {
     @TempDir Path temp;
 
     @AfterEach void clear() {
         System.clearProperty("wcode.appdata.dir");
+    }
+
+    @Test
+    void migratesV119SchemaZeroDatabaseWithoutChangingIdsOrCredentials() throws Exception {
+        assertV119Migration(0);
+    }
+
+    @Test
+    void migratesV119SchemaOneDatabaseWithoutChangingIdsOrCredentials() throws Exception {
+        assertV119Migration(1);
+    }
+
+    private void assertV119Migration(int legacySchemaVersion) throws Exception {
+        System.setProperty("wcode.appdata.dir", temp.toString());
+        try (Connection c = Database.getConnection(); Statement st = c.createStatement()) {
+            st.execute("CREATE TABLE shops(id INTEGER PRIMARY KEY,name TEXT NOT NULL,api_key TEXT NOT NULL)");
+            st.execute("CREATE TABLE legacy_orders(id INTEGER PRIMARY KEY,shop_id INTEGER NOT NULL "
+                    + "REFERENCES shops(id),external_id TEXT NOT NULL)");
+            st.execute("INSERT INTO shops VALUES(41,'Existing WB','preserve-token')");
+            st.execute("INSERT INTO legacy_orders VALUES(7,41,'90071992547409931234')");
+            st.execute("PRAGMA user_version=" + legacySchemaVersion);
+        }
+
+        try (LocalDataMigrationGate.Session ignored =
+                LocalDataMigrationGate.prepare(temp, "1.1.10", "javafx")) {
+            assertEquals(2, scalarInt("PRAGMA user_version"));
+            assertEquals("WILDBERRIES", scalarText("SELECT marketplace FROM shops WHERE id=41"));
+            assertEquals("preserve-token", scalarText("SELECT api_key FROM shops WHERE id=41"));
+            assertEquals("90071992547409931234", scalarText("SELECT external_id FROM legacy_orders WHERE id=7"));
+            assertEquals("ok", scalarText("PRAGMA integrity_check"));
+            assertEquals(0, resultRowCount("PRAGMA foreign_key_check"));
+            assertTrue(tableExists("ozon_postings"));
+        }
+        try (var paths = java.nio.file.Files.walk(temp.resolve("snapshots"))) {
+            assertTrue(paths.anyMatch(path -> path.getFileName().toString().equals("database.db")));
+        }
     }
 
     @Test
@@ -107,6 +145,26 @@ class DatabaseMigrationCompatibilityTest {
     private int count(String sql) throws Exception {
         try (Connection c = Database.getConnection(); ResultSet rs = c.createStatement().executeQuery(sql)) {
             return rs.next() ? rs.getInt(1) : 0;
+        }
+    }
+
+    private int scalarInt(String sql) throws Exception {
+        try (Connection c = Database.getConnection(); ResultSet rs = c.createStatement().executeQuery(sql)) {
+            return rs.next() ? rs.getInt(1) : 0;
+        }
+    }
+
+    private String scalarText(String sql) throws Exception {
+        try (Connection c = Database.getConnection(); ResultSet rs = c.createStatement().executeQuery(sql)) {
+            return rs.next() ? rs.getString(1) : null;
+        }
+    }
+
+    private int resultRowCount(String sql) throws Exception {
+        try (Connection c = Database.getConnection(); ResultSet rs = c.createStatement().executeQuery(sql)) {
+            int rows = 0;
+            while (rs.next()) rows++;
+            return rows;
         }
     }
 }
