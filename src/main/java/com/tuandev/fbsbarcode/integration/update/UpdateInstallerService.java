@@ -78,8 +78,19 @@ public class UpdateInstallerService {
 
     public void launchInstallerAfterExit(Path installerFile) throws IOException {
         AppDataRecoveryService.prepareBackupForUpdate();
+        String command = buildWindowsInstallCommand(installerFile);
+        new ProcessBuilder(
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy", "Bypass",
+                "-WindowStyle", "Hidden",
+                "-Command", command
+        ).start();
+    }
+
+    String buildWindowsInstallCommand(Path installerFile) {
         String escapedInstaller = escapePowerShellSingleQuoted(installerFile.toAbsolutePath().toString());
-        String command = """
+        return """
                 $ErrorActionPreference = 'SilentlyContinue';
                 Start-Sleep -Seconds 2;
                 $installer = '%s';
@@ -92,6 +103,7 @@ public class UpdateInstallerService {
                 if ($null -eq $process -or $process.ExitCode -eq 0) {
                     Start-Sleep -Seconds 1;
                     $candidates = @(
+                        (Join-Path $env:LOCALAPPDATA 'WCodeApp\\%s'),
                         (Join-Path $env:LOCALAPPDATA 'Programs\\%s\\%s'),
                         (Join-Path $env:ProgramFiles '%s\\%s'),
                         (Join-Path ${env:ProgramFiles(x86)} '%s\\%s')
@@ -105,17 +117,11 @@ public class UpdateInstallerService {
                 }
                 """.formatted(
                 escapedInstaller,
+                APP_EXECUTABLE,
                 APP_NAME, APP_EXECUTABLE,
                 APP_NAME, APP_EXECUTABLE,
                 APP_NAME, APP_EXECUTABLE
         );
-        new ProcessBuilder(
-                "powershell.exe",
-                "-NoProfile",
-                "-ExecutionPolicy", "Bypass",
-                "-WindowStyle", "Hidden",
-                "-Command", command
-        ).start();
     }
 
     private String escapePowerShellSingleQuoted(String value) {

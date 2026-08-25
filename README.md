@@ -62,8 +62,10 @@ build.bat msi         # Windows MSI chưa ký
 ```
 
 Artifact gửi người dùng phải lấy từ workflow [release.yml](.github/workflows/release.yml). Workflow
-ký Authenticode cho EXE/MSI, giữ nguyên Windows Upgrade UUID của 1.1.8/1.1.9 và tạo signed update
-manifest. Version duy nhất nằm trong `pom.xml`; tag phát hành phải khớp `vMAJOR.MINOR.PATCH`.
+giữ nguyên Windows Upgrade UUID của 1.1.8/1.1.9 và kiểm tra cài đè bằng MSI thật. Authenticode và
+signed update manifest được bật khi các secret tương ứng đã cấu hình đầy đủ; thiếu cả nhóm secret
+không chặn build, nhưng cấu hình dở dang sẽ bị từ chối. Version duy nhất nằm trong `pom.xml`; tag
+phát hành phải khớp `vMAJOR.MINOR.PATCH`.
 
 Xem [runbook phát hành JavaFX](docs/javafx-release-runbook.md) và
 [báo cáo triển khai Ozon](docs/ozon-marketplace-expansion-report.md).

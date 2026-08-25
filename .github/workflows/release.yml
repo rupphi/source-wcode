@@ -1,4 +1,4 @@
-name: Create signed WCode JavaFX release
+name: Create WCode JavaFX release
 
 on:
   push:
@@ -72,10 +72,13 @@ jobs:
         run: node tools/release-version.mjs
 
   windows:
-    name: Build signed Windows x64 JavaFX release
+    name: Build Windows x64 JavaFX release
     needs: validate
     runs-on: windows-latest
     environment: release
+    outputs:
+      windows_signing_enabled: ${{ steps.signing.outputs.windows_signing_enabled }}
+      update_manifest_enabled: ${{ steps.signing.outputs.update_manifest_enabled }}
     env:
       APP_VERSION: ${{ needs.validate.outputs.version }}
     steps:
@@ -91,7 +94,8 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Validate release secrets
+      - name: Resolve optional signing configuration
+        id: signing
         shell: pwsh
         env:
           WINDOWS_SIGNING_CERTIFICATE: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE }}
@@ -100,17 +104,33 @@ jobs:
           UPDATE_MANIFEST_PUBLIC_KEY: ${{ secrets.UPDATE_MANIFEST_PUBLIC_KEY }}
           UPDATE_SIGNING_PUBLISHER: ${{ secrets.UPDATE_SIGNING_PUBLISHER }}
         run: |
-          foreach ($name in @(
+          function Resolve-OptionalGroup([string] $label, [string[]] $names) {
+            $configured = @($names | Where-Object {
+              -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_))
+            })
+            if ($configured.Count -ne 0 -and $configured.Count -ne $names.Count) {
+              throw "$label configuration is incomplete. Configure all values or none of them."
+            }
+            return $configured.Count -eq $names.Count
+          }
+
+          $windowsSigning = Resolve-OptionalGroup 'Windows Authenticode signing' @(
             'WINDOWS_SIGNING_CERTIFICATE',
             'WINDOWS_SIGNING_PASSWORD',
-            'UPDATE_MANIFEST_PRIVATE_KEY',
-            'UPDATE_MANIFEST_PUBLIC_KEY',
             'UPDATE_SIGNING_PUBLISHER'
-          )) {
-            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
-              throw "Required release configuration is missing: $name"
-            }
-          }
+          )
+          $manifestSigning = Resolve-OptionalGroup 'Update manifest signing' @(
+            'UPDATE_MANIFEST_PRIVATE_KEY',
+            'UPDATE_MANIFEST_PUBLIC_KEY'
+          )
+          "WINDOWS_SIGNING_ENABLED=$($windowsSigning.ToString().ToLowerInvariant())" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "UPDATE_MANIFEST_ENABLED=$($manifestSigning.ToString().ToLowerInvariant())" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "windows_signing_enabled=$($windowsSigning.ToString().ToLowerInvariant())" |
+            Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "update_manifest_enabled=$($manifestSigning.ToString().ToLowerInvariant())" |
+            Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "RELEASE_PUBLISHED_AT=$((Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ'))" |
             Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
@@ -151,21 +171,29 @@ jobs:
             throw 'The app-image does not launch JavaFX.'
           }
 
-      - name: Sign app-image and build signed installers
+      - name: Build installers and apply optional Authenticode signing
         shell: pwsh
         env:
           WINDOWS_SIGNING_CERTIFICATE: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE }}
           WINDOWS_SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
           UPDATE_SIGNING_PUBLISHER: ${{ secrets.UPDATE_SIGNING_PUBLISHER }}
         run: |
-          $certificate = Join-Path $env:RUNNER_TEMP 'wcode-release-signing.pfx'
+          $certificate = $null
           try {
-            [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERTIFICATE))
-            $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
-              Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
-            if ([string]::IsNullOrWhiteSpace($signTool)) { throw 'SignTool was not found.' }
+            $signingEnabled = $env:WINDOWS_SIGNING_ENABLED -ceq 'true'
+            $signTool = $null
+            if ($signingEnabled) {
+              $certificate = Join-Path $env:RUNNER_TEMP 'wcode-release-signing.pfx'
+              [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERTIFICATE))
+              $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
+                Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+              if ([string]::IsNullOrWhiteSpace($signTool)) { throw 'SignTool was not found.' }
+            } else {
+              Write-Host 'Authenticode secrets are not configured; producing unsigned Windows packages.'
+            }
 
             function Sign-And-Verify([string] $file) {
+              if (-not $signingEnabled) { return }
               & $signTool sign /fd SHA256 /td SHA256 /tr $env:TIMESTAMP_URL /f $certificate /p $env:WINDOWS_SIGNING_PASSWORD $file
               if ($LASTEXITCODE -ne 0) { throw "SignTool failed for $file" }
               & $signTool verify /pa /v $file
@@ -210,7 +238,7 @@ jobs:
             Sign-And-Verify (Join-Path $PWD 'release\WCode.msi')
             Sign-And-Verify (Join-Path $PWD 'release\WCode.exe')
           } finally {
-            if (Test-Path $certificate) { Remove-Item $certificate -Force }
+            if ($certificate -and (Test-Path $certificate)) { Remove-Item $certificate -Force }
           }
 
       - name: Verify install-over upgrade from WCode 1.1.9
@@ -272,24 +300,28 @@ jobs:
             throw "Unexpected installed WCode version: $($registrations[0].DisplayVersion)"
           }
 
-      - name: Create signed update manifest and checksums
+      - name: Create optional signed update manifest and checksums
         shell: pwsh
         env:
           UPDATE_MANIFEST_PRIVATE_KEY: ${{ secrets.UPDATE_MANIFEST_PRIVATE_KEY }}
           UPDATE_MANIFEST_PUBLIC_KEY: ${{ secrets.UPDATE_MANIFEST_PUBLIC_KEY }}
         run: |
-          $env:RELEASE_NOTES_JSON = ConvertTo-Json -Compress -InputObject @(
-            "WCode $env:APP_VERSION JavaFX with Wildberries and Ozon FBS",
-            'Snapshot-first database migration preserves existing user data'
-          )
-          node tools/update-manifest.mjs release/WCode.msi release/update-manifest.json $env:APP_VERSION
+          if ($env:UPDATE_MANIFEST_ENABLED -ceq 'true') {
+            $env:RELEASE_NOTES_JSON = ConvertTo-Json -Compress -InputObject @(
+              "WCode $env:APP_VERSION JavaFX with Wildberries and Ozon FBS",
+              'Snapshot-first database migration preserves existing user data'
+            )
+            node tools/update-manifest.mjs release/WCode.msi release/update-manifest.json $env:APP_VERSION
+          } else {
+            Write-Host 'Update signing keys are not configured; omitting update-manifest.json.'
+          }
           node --test tools/update-manifest.test.mjs
           $lines = Get-ChildItem release -File | Where-Object Name -ne 'checksums.sha256' | Sort-Object Name | ForEach-Object {
             "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)"
           }
           $lines | Set-Content release\checksums.sha256 -Encoding ascii
 
-      - name: Preserve signed Windows release
+      - name: Preserve Windows release
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: WCode-${{ needs.validate.outputs.tag }}-windows-x64
@@ -424,8 +456,10 @@ jobs:
     env:
       RELEASE_TAG: ${{ needs.validate.outputs.tag }}
       APP_VERSION: ${{ needs.validate.outputs.version }}
+      WINDOWS_SIGNING_ENABLED: ${{ needs.windows.outputs.windows_signing_enabled }}
+      UPDATE_MANIFEST_ENABLED: ${{ needs.windows.outputs.update_manifest_enabled }}
     steps:
-      - name: Download signed assets
+      - name: Download Windows assets
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: WCode-${{ needs.validate.outputs.tag }}-windows-x64
@@ -443,7 +477,7 @@ jobs:
         run: |
           set -euo pipefail
           for file in \
-            WCode.msi WCode.exe WCode-portable.zip update-manifest.json \
+            WCode.msi WCode.exe WCode-portable.zip \
             WCode-macos-x64.dmg WCode-macos-x64.zip \
             WCode-macos-arm64.dmg WCode-macos-arm64.zip; do
             test -s "release/$file"
@@ -451,7 +485,12 @@ jobs:
           (cd release && find . -maxdepth 1 -type f ! -name checksums.sha256 -print0 \
             | sort -z | xargs -0 sha256sum > checksums.sha256)
           (cd release && sha256sum --check checksums.sha256)
-          test "$(jq -r '.format' release/update-manifest.json)" = 'wcode-update-envelope-v1'
+          if [[ "$UPDATE_MANIFEST_ENABLED" == 'true' ]]; then
+            test -s release/update-manifest.json
+            test "$(jq -r '.format' release/update-manifest.json)" = 'wcode-update-envelope-v1'
+          else
+            test ! -e release/update-manifest.json
+          fi
 
       - name: Publish release assets
         shell: bash
@@ -459,7 +498,11 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -euo pipefail
-          notes="WCode ${APP_VERSION} JavaFX — Wildberries và Ozon FBS, dashboard tài chính WB/Ozon và quy trình KIZ. Dữ liệu người dùng được snapshot trước migration. Có bản macOS riêng cho Intel và Apple Silicon; các gói Mac hiện chưa được Apple notarize."
+          windows_trust_note=''
+          if [[ "$WINDOWS_SIGNING_ENABLED" != 'true' ]]; then
+            windows_trust_note=' Bộ cài Windows hiện chưa có chữ ký Authenticode.'
+          fi
+          notes="WCode ${APP_VERSION} JavaFX — Wildberries và Ozon FBS, dashboard tài chính WB/Ozon và quy trình KIZ. Dữ liệu người dùng được snapshot trước migration. Có bản macOS riêng cho Intel và Apple Silicon; các gói Mac hiện chưa được Apple notarize.${windows_trust_note}"
           if gh release view "$RELEASE_TAG" --repo "$RELEASE_REPO" >/dev/null 2>&1; then
             gh release edit "$RELEASE_TAG" --repo "$RELEASE_REPO" --title "WCode $APP_VERSION" --notes "$notes" --latest
           else
