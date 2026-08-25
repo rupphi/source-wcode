@@ -13,6 +13,8 @@ public final class OzonPostingSyncService {
     private static final int MAX_PAGES = 20_000;
     private static final Duration INITIAL_WINDOW = Duration.ofDays(30);
     private static final Duration OVERLAP = Duration.ofDays(3);
+    private static final Duration ACTIVE_CUTOFF_PAST = Duration.ofDays(180);
+    private static final Duration ACTIVE_CUTOFF_FUTURE = Duration.ofDays(180);
 
     private final int shopId;
     private final OzonApiClient api;
@@ -58,6 +60,40 @@ public final class OzonPostingSyncService {
                 cursor = page.cursor();
             }
             throw new IOException("Ozon postings exceeded the safe pagination bound.");
+        } catch (OzonApiException exception) {
+            state.recordSafeError(shopId, exception.kind());
+            throw exception;
+        } catch (IOException exception) {
+            state.recordSafeError(shopId, "invalid_response");
+            throw exception;
+        } catch (RuntimeException exception) {
+            state.recordSafeError(shopId, "local_storage");
+            throw exception;
+        }
+    }
+
+    /** Refreshes Ozon's current actionable FBS queue, including changes made outside WCode. */
+    public int syncUnfulfilled() throws IOException {
+        Instant now = Instant.now();
+        String cutoffFrom = now.minus(ACTIVE_CUTOFF_PAST).toString();
+        String cutoffTo = now.plus(ACTIVE_CUTOFF_FUTURE).toString();
+        int postingCount = 0;
+        String cursor = "";
+        try {
+            for (int pageNumber = 0; pageNumber < MAX_PAGES; pageNumber++) {
+                OzonJson.PostingPage page = OzonJson.parsePostingPage(api.listUnfulfilledPostings(
+                        cutoffFrom, cutoffTo, cursor, PAGE_SIZE));
+                postings.upsertPage(shopId, page.postings());
+                postingCount += page.postings().size();
+                if (!page.hasNext()) {
+                    return postingCount;
+                }
+                if (page.postings().isEmpty() || page.cursor().isBlank() || page.cursor().equals(cursor)) {
+                    throw new IOException("Ozon returned an invalid unfulfilled posting cursor.");
+                }
+                cursor = page.cursor();
+            }
+            throw new IOException("Ozon unfulfilled postings exceeded the safe pagination bound.");
         } catch (OzonApiException exception) {
             state.recordSafeError(shopId, exception.kind());
             throw exception;

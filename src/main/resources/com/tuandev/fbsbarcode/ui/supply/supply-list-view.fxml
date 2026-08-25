@@ -8,6 +8,7 @@
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.VBox?>
 <?import javafx.scene.text.Font?>
+<?import org.kordamp.ikonli.javafx.FontIcon?>
 
 <VBox spacing="8.0" styleClass="card" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.tuandev.fbsbarcode.ui.supply.SupplyListController">
     <children>
@@ -18,7 +19,14 @@
                 <Button fx:id="refetchButton" mnemonicParsing="false" onAction="#onRefetch" text="%supply_list.refetch" />
             </children>
         </HBox>
-        <ComboBox fx:id="supplyComboBox" prefWidth="460.0" maxWidth="1.7976931348623157E308" promptText="Выберите поставку" />
+        <HBox alignment="CENTER_LEFT" spacing="8.0">
+            <children>
+                <ComboBox fx:id="supplyComboBox" prefWidth="460.0" maxWidth="1.7976931348623157E308" promptText="Выберите поставку" HBox.hgrow="ALWAYS" />
+                <Button fx:id="deleteSupplyButton" accessibleText="%supply_list.delete.tooltip" disable="true" mnemonicParsing="false" onAction="#onDeleteSupply" prefHeight="32.0" prefWidth="32.0" styleClass="btn-icon">
+                    <graphic><FontIcon iconColor="#da373c" iconLiteral="fth-trash-2" iconSize="16" /></graphic>
+                </Button>
+            </children>
+        </HBox>
         <Label fx:id="emptyStateLabel" managed="false" styleClass="text-muted" text="%supply_list.empty" visible="false" wrapText="true" />
     </children>
     <padding>

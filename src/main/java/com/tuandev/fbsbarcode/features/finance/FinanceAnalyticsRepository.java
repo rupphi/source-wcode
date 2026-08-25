@@ -338,9 +338,12 @@ public class FinanceAnalyticsRepository {
                     SELECT COALESCE(NULLIF(MAX(currency), ''), 'RUB') AS currency,
                            COALESCE(SUM(CASE WHEN is_return=0 THEN ABS(retail_amount) ELSE 0 END), 0) AS gross_sales,
                            COALESCE(SUM(CASE WHEN is_return=1 THEN ABS(retail_amount) ELSE 0 END), 0) AS returns_amount,
-                           COALESCE(SUM(for_pay), 0) AS net_payout,
-                           COALESCE(SUM(ABS(commission_cost)), 0) AS commission_cost,
-                           COALESCE(SUM(ABS(acquiring_cost)), 0) AS acquiring_cost,
+                           COALESCE(SUM(CASE WHEN is_return=1 THEN -ABS(for_pay)
+                                ELSE for_pay END), 0) AS net_payout,
+                           COALESCE(SUM(CASE WHEN is_return=1 THEN -ABS(commission_cost)
+                                ELSE commission_cost END), 0) AS commission_cost,
+                           COALESCE(SUM(CASE WHEN is_return=1 THEN -ABS(acquiring_cost)
+                                ELSE acquiring_cost END), 0) AS acquiring_cost,
                            COALESCE(SUM(ABS(logistics_cost)), 0) AS logistics_cost,
                            COALESCE(SUM(ABS(storage_cost)), 0) AS storage_cost,
                            COALESCE(SUM(ABS(acceptance_cost)), 0) AS acceptance_cost,

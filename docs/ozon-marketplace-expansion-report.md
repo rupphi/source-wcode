@@ -338,7 +338,10 @@ Khi edit, marketplace disabled; API key để trống nghĩa là giữ key cũ. 
 9. Refresh đến awaiting_deliver hoặc status cho phép label.
 10. Tạo/poll label job, publish PDF atomically, rồi tạo trang WCode product/KIZ riêng nếu được chọn.
 
-Khác WB, không có background job “gắn KIZ sau khi in”. Ozon ship và label phải phụ thuộc persisted exemplar state.
+Khác WB, WCode phải tạo/lấy và validate exemplar trước khi in. Theo yêu cầu UX cập nhật, file có
+thể được publish/mở khi durable job ở `VALIDATED`, sau đó `set` và poll `status` chạy nền. Lệnh ship
+vẫn bắt buộc phụ thuộc persisted exemplar state `ACCEPTED`; job nền không được cấp thêm KIZ hoặc
+retry mutation mù.
 
 ### 8.4 In ấn
 

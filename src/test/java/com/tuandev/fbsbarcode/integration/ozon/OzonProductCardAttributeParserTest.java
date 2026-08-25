@@ -17,6 +17,7 @@ class OzonProductCardAttributeParserTest {
                     {"id":4295,"values":[{"value":"176"}]},
                     {"id":9533,"values":[{"value":"XXL"}]},
                     {"id":4508,"values":[{"value":"170"}]},
+                    {"id":9163,"values":[{"value":"Женский"}]},
                     {"id":9024,"values":[{"value":"seller-article"}]}
                   ]}]}
                 """).getAsJsonObject();
@@ -27,6 +28,7 @@ class OzonProductCardAttributeParserTest {
                   {"id":4295,"name":"Российский размер"},
                   {"id":9533,"name":"Размер производителя"},
                   {"id":4508,"name":"Размер на модели"},
+                  {"id":9163,"name":"Пол"},
                   {"id":9024,"name":"Код продавца"}
                 ]}
                 """).getAsJsonObject();
@@ -34,11 +36,13 @@ class OzonProductCardAttributeParserTest {
         OzonProductCardAttributeParser.Card card =
                 OzonProductCardAttributeParser.parseCards(cardsResponse).getFirst();
         OzonProductCardAttributeParser.Resolved result = OzonProductCardAttributeParser.resolve(
-                card, OzonProductCardAttributeParser.parseDefinitionNames(definitionsResponse));
+                card, OzonProductCardAttributeParser.parseDefinitionNames(definitionsResponse), "Sportswear");
 
         assertEquals("seller-article", result.article());
         assertEquals("глубокий черный", result.color());
         assertEquals("176", result.size());
+        assertEquals("Sportswear", result.category());
+        assertEquals("Женский", result.gender());
     }
 
     @Test
@@ -58,5 +62,20 @@ class OzonProductCardAttributeParserTest {
 
         assertEquals("L", result.size());
         assertEquals("article-102", result.article());
+    }
+
+
+    @Test
+    void categoryTreeMapsProductTypeToVisibleCategoryName() {
+        var tree = JsonParser.parseString("""
+                {"result":[{"description_category_id":17000001,"category_name":"Clothing","children":[
+                  {"description_category_id":17000002,"category_name":"Apparel","children":[
+                    {"type_id":90001,"type_name":"Sportswear","children":[]}
+                  ]}
+                ]}]}
+                """).getAsJsonObject();
+
+        assertEquals("Sportswear", OzonProductCategoryTree.parse(tree).get(
+                new OzonProductCardAttributeParser.CategoryKey("17000001", "90001")));
     }
 }

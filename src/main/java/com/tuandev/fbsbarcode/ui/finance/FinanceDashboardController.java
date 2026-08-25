@@ -17,6 +17,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
+import javafx.scene.control.Tooltip;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,9 +41,13 @@ public class FinanceDashboardController {
     @FXML private Button ninetyDaysButton;
     @FXML private Button refreshButton;
     @FXML private Button syncButton;
+    @FXML private Label fromDateLabel;
+    @FXML private Label toDateLabel;
     @FXML private Label grossTitleLabel;
     @FXML private Label returnsTitleLabel;
     @FXML private Label payoutTitleLabel;
+    @FXML private Label payoutHelpLabel;
+    @FXML private Label commissionTitleLabel;
     @FXML private Label advertisingTitleLabel;
     @FXML private Label penaltyTitleLabel;
     @FXML private Label logisticsTitleLabel;
@@ -52,18 +57,31 @@ public class FinanceDashboardController {
     @FXML private Label grossValueLabel;
     @FXML private Label returnsValueLabel;
     @FXML private Label payoutValueLabel;
+    @FXML private Label commissionValueLabel;
     @FXML private Label advertisingValueLabel;
     @FXML private Label penaltyValueLabel;
     @FXML private Label logisticsValueLabel;
     @FXML private Label storageValueLabel;
     @FXML private Label otherCostValueLabel;
     @FXML private Label netValueLabel;
+    @FXML private Label netHelpLabel;
+    @FXML private Label grossRatioLabel;
+    @FXML private Label payoutRatioLabel;
+    @FXML private Label commissionRatioLabel;
+    @FXML private Label returnsRatioLabel;
+    @FXML private Label logisticsRatioLabel;
+    @FXML private Label advertisingRatioLabel;
+    @FXML private Label storageRatioLabel;
+    @FXML private Label penaltyRatioLabel;
+    @FXML private Label otherCostRatioLabel;
+    @FXML private Label netRatioLabel;
     @FXML private Label emptyLabel;
     @FXML private TableView<FinanceDaily> dailyTable;
     @FXML private TableColumn<FinanceDaily, String> dateColumn;
     @FXML private TableColumn<FinanceDaily, String> salesColumn;
     @FXML private TableColumn<FinanceDaily, String> returnsColumn;
     @FXML private TableColumn<FinanceDaily, String> payoutColumn;
+    @FXML private TableColumn<FinanceDaily, String> commissionColumn;
     @FXML private TableColumn<FinanceDaily, String> advertisingColumn;
     @FXML private TableColumn<FinanceDaily, String> penaltyColumn;
     @FXML private TableColumn<FinanceDaily, String> logisticsColumn;
@@ -73,6 +91,7 @@ public class FinanceDashboardController {
 
     private Shop shop;
     private long requestToken;
+    private FinanceDashboardSnapshot currentSnapshot;
 
     @FXML
     private void initialize() {
@@ -100,29 +119,47 @@ public class FinanceDashboardController {
         sevenDaysButton.setText(i18n.tr("finance.range.7"));
         thirtyDaysButton.setText(i18n.tr("finance.range.30"));
         ninetyDaysButton.setText(i18n.tr("finance.range.90"));
+        fromDateLabel.setText(i18n.tr("finance.range.from"));
+        toDateLabel.setText(i18n.tr("finance.range.to"));
         refreshButton.setText(i18n.tr("finance.refresh"));
         syncButton.setText(i18n.tr("finance.sync"));
         grossTitleLabel.setText(i18n.tr("finance.kpi.sales"));
         returnsTitleLabel.setText(i18n.tr("finance.kpi.returns"));
         payoutTitleLabel.setText(i18n.tr("finance.kpi.payout"));
+        payoutHelpLabel.setText(i18n.tr("finance.kpi.payout.help"));
+        commissionTitleLabel.setText(i18n.tr("finance.kpi.commission"));
         advertisingTitleLabel.setText(i18n.tr("finance.kpi.advertising"));
         penaltyTitleLabel.setText(i18n.tr("finance.kpi.penalty"));
         logisticsTitleLabel.setText(i18n.tr("finance.kpi.logistics"));
         storageTitleLabel.setText(i18n.tr("finance.kpi.storage"));
         otherCostTitleLabel.setText(i18n.tr("finance.kpi.other_cost"));
         netTitleLabel.setText(i18n.tr("finance.kpi.net"));
+        netHelpLabel.setText(i18n.tr("finance.kpi.net.help"));
         emptyLabel.setText(i18n.tr("finance.empty"));
         dateColumn.setText(i18n.tr("finance.col.date"));
         salesColumn.setText(i18n.tr("finance.col.sales"));
         returnsColumn.setText(i18n.tr("finance.col.returns"));
         payoutColumn.setText(i18n.tr("finance.col.payout"));
+        commissionColumn.setText(i18n.tr("finance.col.commission"));
         advertisingColumn.setText(i18n.tr("finance.col.advertising"));
         penaltyColumn.setText(i18n.tr("finance.col.penalty"));
         logisticsColumn.setText(i18n.tr("finance.col.logistics"));
         storageColumn.setText(i18n.tr("finance.col.storage"));
         otherCostColumn.setText(i18n.tr("finance.col.other_cost"));
         netColumn.setText(i18n.tr("finance.col.net"));
+        String payoutHelp = i18n.tr("finance.kpi.payout.help");
+        Tooltip payoutTooltip = new Tooltip(payoutHelp);
+        payoutTooltip.setWrapText(true);
+        payoutTooltip.setMaxWidth(360);
+        payoutTitleLabel.setTooltip(payoutTooltip);
+        payoutValueLabel.setTooltip(payoutTooltip);
+        payoutTitleLabel.setAccessibleHelp(payoutHelp);
         updateMarketplaceTexts();
+        if (currentSnapshot != null) {
+            showData(currentSnapshot);
+        } else {
+            resetRatios();
+        }
         dailyTable.refresh();
     }
 
@@ -147,6 +184,11 @@ public class FinanceDashboardController {
     }
 
     @FXML
+    private void onDateRangeChanged() {
+        load();
+    }
+
+    @FXML
     private void onSync() {
         if (shop == null) return;
         FinanceSyncScheduler.getInstance().requestRecentSync(shop.getId());
@@ -162,14 +204,15 @@ public class FinanceDashboardController {
 
     private void load() {
         if (shop == null) return;
+        long token = ++requestToken;
         LocalDate from = fromDatePicker.getValue();
         LocalDate to = toDatePicker.getValue();
         if (from == null || to == null || from.isAfter(to)) {
+            setLoading(false);
             statusLabel.setText(I18nService.getInstance().tr("finance.invalid_range"));
             return;
         }
         Shop currentShop = shop;
-        long token = ++requestToken;
         Task<FinanceDashboardSnapshot> task = new Task<>() {
             @Override
             protected FinanceDashboardSnapshot call() {
@@ -193,19 +236,45 @@ public class FinanceDashboardController {
     }
 
     private void showData(FinanceDashboardSnapshot snapshot) {
+        currentSnapshot = snapshot;
         dailyTable.setItems(FXCollections.observableArrayList(snapshot.days()));
         String currency = snapshot.days().isEmpty() ? "RUB" : snapshot.days().get(0).currency();
-        grossValueLabel.setText(money(snapshot.grossSales(), currency));
-        returnsValueLabel.setText(money(snapshot.returnsAmount(), currency));
-        payoutValueLabel.setText(money(snapshot.netPayout(), currency));
-        advertisingValueLabel.setText(money(snapshot.advertisingCost(), currency));
-        penaltyValueLabel.setText(money(snapshot.penaltyCost(), currency));
-        logisticsValueLabel.setText(money(snapshot.logisticsCost(), currency));
-        storageValueLabel.setText(money(snapshot.storageCost(), currency));
-        otherCostValueLabel.setText(money(snapshot.otherCost(), currency));
-        netValueLabel.setText(money(snapshot.netProfit(), currency));
+        setKpi(grossValueLabel, grossRatioLabel, snapshot.grossSales(), snapshot, currency);
+        setKpi(payoutValueLabel, payoutRatioLabel, snapshot.netPayout(), snapshot, currency);
+        setKpi(commissionValueLabel, commissionRatioLabel, snapshot.commissionCost(), snapshot, currency);
+        setKpi(returnsValueLabel, returnsRatioLabel, snapshot.returnsAmount(), snapshot, currency);
+        setKpi(logisticsValueLabel, logisticsRatioLabel, snapshot.logisticsCost(), snapshot, currency);
+        setKpi(advertisingValueLabel, advertisingRatioLabel, snapshot.advertisingCost(), snapshot, currency);
+        setKpi(storageValueLabel, storageRatioLabel, snapshot.storageCost(), snapshot, currency);
+        setKpi(penaltyValueLabel, penaltyRatioLabel, snapshot.penaltyCost(), snapshot, currency);
+        setKpi(otherCostValueLabel, otherCostRatioLabel, snapshot.otherCost(), snapshot, currency);
+        setKpi(netValueLabel, netRatioLabel, snapshot.netProfit(), snapshot, currency);
+        netValueLabel.getStyleClass().removeAll("finance-kpi-value-positive", "finance-kpi-value-negative");
+        netRatioLabel.getStyleClass().removeAll("finance-kpi-ratio-positive", "finance-kpi-ratio-negative");
+        if (snapshot.netProfit() >= 0) {
+            netValueLabel.getStyleClass().add("finance-kpi-value-positive");
+            netRatioLabel.getStyleClass().add("finance-kpi-ratio-positive");
+        } else {
+            netValueLabel.getStyleClass().add("finance-kpi-value-negative");
+            netRatioLabel.getStyleClass().add("finance-kpi-ratio-negative");
+        }
         emptyLabel.setVisible(snapshot.days().isEmpty());
         emptyLabel.setManaged(snapshot.days().isEmpty());
+    }
+
+    private void setKpi(Label valueLabel, Label ratioLabel, double amount,
+                        FinanceDashboardSnapshot snapshot, String currency) {
+        valueLabel.setText(money(amount, currency));
+        ratioLabel.setText(revenueRatio(snapshot.percentageOfRevenue(amount)));
+    }
+
+    private String revenueRatio(double percentage) {
+        if (Double.isNaN(percentage) || Double.isInfinite(percentage)) return "· —";
+        NumberFormat format = NumberFormat.getNumberInstance(locale());
+        format.setMinimumFractionDigits(0);
+        format.setMaximumFractionDigits(1);
+        return "· " + format.format(percentage) + "% "
+                + I18nService.getInstance().tr("finance.ratio.of_sales");
     }
 
     private void configureColumns() {
@@ -214,6 +283,7 @@ public class FinanceDashboardController {
         salesColumn.setCellValueFactory(cell -> moneyProperty(cell.getValue().grossSales(), cell.getValue().currency()));
         returnsColumn.setCellValueFactory(cell -> moneyProperty(cell.getValue().returnsAmount(), cell.getValue().currency()));
         payoutColumn.setCellValueFactory(cell -> moneyProperty(cell.getValue().netPayout(), cell.getValue().currency()));
+        commissionColumn.setCellValueFactory(cell -> moneyProperty(cell.getValue().commissionCost(), cell.getValue().currency()));
         advertisingColumn.setCellValueFactory(cell -> moneyProperty(cell.getValue().advertisingCost(), cell.getValue().currency()));
         penaltyColumn.setCellValueFactory(cell -> moneyProperty(cell.getValue().penaltyCost(), cell.getValue().currency()));
         logisticsColumn.setCellValueFactory(cell -> moneyProperty(cell.getValue().logisticsCost(), cell.getValue().currency()));
@@ -245,16 +315,26 @@ public class FinanceDashboardController {
 
     private void clearData() {
         ++requestToken;
+        currentSnapshot = null;
         dailyTable.getItems().clear();
         for (Label label : new Label[]{grossValueLabel, returnsValueLabel, payoutValueLabel,
-                advertisingValueLabel, penaltyValueLabel, logisticsValueLabel, storageValueLabel,
+                commissionValueLabel, advertisingValueLabel, penaltyValueLabel, logisticsValueLabel, storageValueLabel,
                 otherCostValueLabel, netValueLabel}) {
             label.setText("0");
         }
+        resetRatios();
         statusLabel.setText("");
         emptyLabel.setVisible(true);
         emptyLabel.setManaged(true);
         setLoading(false);
+    }
+
+    private void resetRatios() {
+        for (Label label : new Label[]{grossRatioLabel, payoutRatioLabel, commissionRatioLabel,
+                returnsRatioLabel, logisticsRatioLabel, advertisingRatioLabel, storageRatioLabel,
+                penaltyRatioLabel, otherCostRatioLabel, netRatioLabel}) {
+            label.setText("· —");
+        }
     }
 
     private void updateMarketplaceTexts() {

@@ -60,9 +60,35 @@ public class WbSupplyWorkflow {
     private final WbProductSyncService productSyncService = new WbProductSyncService();
     private final WbStickerService stickerService = new WbStickerService();
     private final ImageCacheRepository imageCacheRepository = new ImageCacheRepository();
+    private final WbApiClient api;
+
+    public WbSupplyWorkflow() {
+        this(new WbApiClient());
+    }
+
+    WbSupplyWorkflow(WbApiClient api) {
+        this.api = java.util.Objects.requireNonNull(api, "api");
+    }
 
     public List<WbSupplySummary> getSupplies(int shopId) {
         return supplyRepository.getSupplySummaries(shopId);
+    }
+
+    public void deleteEmptySupply(Shop shop, String supplyId) throws IOException {
+        MarketplaceGuard.requireWildberries(shop);
+        if (supplyId == null || !supplyId.matches("[A-Za-z0-9-]{1,128}")) {
+            throw new IllegalArgumentException("Invalid Wildberries supply ID");
+        }
+        WbSupplyOrderIdsResponse remote = api.getSupplyOrderIds(shop.getApiKey(), supplyId);
+        if (remote == null || remote.getOrderIds() == null) {
+            throw new IOException("Wildberries returned an invalid supply order list");
+        }
+        List<Long> remoteOrderIds = remote.getOrderIds();
+        if (!remoteOrderIds.isEmpty()) {
+            throw new WbSupplyNotEmptyException();
+        }
+        api.deleteSupply(shop.getApiKey(), supplyId);
+        supplyRepository.deleteSupply(shop.getId(), supplyId);
     }
 
     public List<Order> loadOrdersForSupplyLocal(Shop shop, String supplyId) {

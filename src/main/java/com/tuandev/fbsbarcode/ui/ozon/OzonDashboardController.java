@@ -190,6 +190,9 @@ public final class OzonDashboardController {
         setupSorting();
         setupGtinInventory();
         orderStatusTabs.getSelectionModel().select(newOrdersTab);
+        orderStatusTabs.getSelectionModel().selectedItemProperty().addListener((ignored, oldTab, selectedTab) -> {
+            if (selectedTab == packingOrdersTab) refreshPostings();
+        });
         applyTranslations();
         clear();
     }
@@ -249,6 +252,27 @@ public final class OzonDashboardController {
     public void showPackingQueue() {
         orderStatusTabs.getSelectionModel().select(newOrdersTab);
         loadLocal();
+        refreshPostings();
+    }
+
+    private void refreshPostings() {
+        Shop selected = shop;
+        if (selected == null || busy) return;
+        long token = ++requestToken;
+        Task<Integer> task = new Task<>() {
+            @Override protected Integer call() throws Exception {
+                return ShopOperationCoordinator.withActiveShop(
+                        selected.getId(), () -> syncWorkflow.syncCurrentPostings(selected));
+            }
+        };
+        setBusy(true);
+        task.setOnSucceeded(event -> {
+            if (token != requestToken || !isCurrent(selected)) return;
+            setBusy(false);
+            loadLocal();
+        });
+        task.setOnFailed(event -> finishFailure(token, selected, task.getException()));
+        AppTaskExecutor.execute(task);
     }
 
     public void applyTranslations() {
@@ -418,7 +442,7 @@ public final class OzonDashboardController {
             @Override protected PrintOutput call() throws Exception {
                 printBundleService.export(selected, posting.postingNumber(), target, picking);
                 return new PrintOutput(I18nService.getInstance().tr("ozon.dashboard.print_one_done"),
-                        List.of(target, picking));
+                        List.of(target, picking), List.of(posting.postingNumber()));
             }
         });
     }
@@ -433,7 +457,7 @@ public final class OzonDashboardController {
                         selected, postingNumbers, target, picking);
                 return new PrintOutput(MessageFormat.format(
                         I18nService.getInstance().tr("ozon.dashboard.print_all_done"), result.postingCount()),
-                        List.of(target, picking));
+                        List.of(target, picking), postingNumbers);
             }
         });
     }
@@ -467,9 +491,44 @@ public final class OzonDashboardController {
                         I18nService.getInstance().tr("ozon.dashboard.open_files.failed"),
                         exception.getMessage());
             }
+            pushValidatedKizInBackground(selected, output.postingNumbers());
         });
         task.setOnFailed(event -> finishFailure(token, selected, task.getException()));
         AppTaskExecutor.execute(task);
+    }
+
+    /** Opens printable files first; the remote Ozon mutation then continues without blocking FX. */
+    private void pushValidatedKizInBackground(Shop selected, List<String> postingNumbers) {
+        if (postingNumbers == null || postingNumbers.isEmpty()) return;
+        statusLabel.setText(I18nService.getInstance().tr("ozon.dashboard.kiz_push.background"));
+        Task<List<OzonPreparationResult>> pushTask = new Task<>() {
+            @Override protected List<OzonPreparationResult> call() throws Exception {
+                return ShopOperationCoordinator.withActiveShop(selected.getId(), () -> {
+                    List<OzonPreparationResult> results = new ArrayList<>();
+                    for (String postingNumber : postingNumbers.stream().distinct().toList()) {
+                        results.add(exemplarService.prepare(selected, postingNumber));
+                    }
+                    return List.copyOf(results);
+                });
+            }
+        };
+        pushTask.setOnSucceeded(event -> {
+            if (!isCurrent(selected)) return;
+            long failed = pushTask.getValue().stream().filter(result ->
+                    !"ACCEPTED".equals(result.stage()) && !"NOT_REQUIRED".equals(result.stage())).count();
+            statusLabel.setText(failed == 0
+                    ? I18nService.getInstance().tr("ozon.dashboard.kiz_push.complete")
+                    : MessageFormat.format(I18nService.getInstance().tr("ozon.dashboard.kiz_push.pending"), failed));
+            loadLocal();
+            refreshGtinInventory();
+        });
+        pushTask.setOnFailed(event -> {
+            if (!isCurrent(selected)) return;
+            statusLabel.setText(I18nService.getInstance().tr("ozon.dashboard.kiz_push.pending_generic"));
+            loadLocal();
+            refreshGtinInventory();
+        });
+        AppTaskExecutor.execute(pushTask);
     }
 
     private void finishFailure(long token, Shop selected, Throwable failure) {
@@ -1365,10 +1424,11 @@ public final class OzonDashboardController {
 
     private record SyncResult(OzonConnectionCheck connection, OzonSyncReport report) { }
     private record BatchTransitionResult(int requested, List<String> completed, List<String> failed) { }
-    private record PrintOutput(String message, List<File> files) {
+    private record PrintOutput(String message, List<File> files, List<String> postingNumbers) {
         private PrintOutput {
             message = message == null ? "" : message;
             files = files == null ? List.of() : List.copyOf(files);
+            postingNumbers = postingNumbers == null ? List.of() : List.copyOf(postingNumbers);
         }
     }
 }

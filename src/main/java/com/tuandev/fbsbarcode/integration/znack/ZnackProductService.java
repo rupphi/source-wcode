@@ -45,13 +45,19 @@ public class ZnackProductService {
                 settings,token,byGtin,incompleteGtins,permitDocumentSnapshots);
         List<Product> publishable=new ArrayList<>();List<String> unpublished=new ArrayList<>();
         for(Product p:byGtin.values()){if(ZnackCardStatus.isErrored(p.cardStatus(),p.cardDetailedStatus()))unpublished.add(p.gtin());else publishable.add(p);}
-        repository.upsertProducts(publishable);
-        for(Product product:publishable){
+        List<Product> catalogVerified=publishable.stream()
+                .filter(product->permitDocumentSnapshots.containsKey(product.gtin())).toList();
+        repository.upsertProducts(catalogVerified);
+        List<String> missingDocuments=new ArrayList<>();
+        for(Product product:catalogVerified){
             List<GoodsDocument> documents=permitDocumentSnapshots.get(product.gtin());
-            if(documents!=null)repository.updateProductDocuments(product.gtin(),documents);
+            repository.updateProductDocuments(product.gtin(),documents);
+            if(documents.isEmpty())missingDocuments.add(product.gtin());
         }
+        repository.softDeleteProducts(missingDocuments);
         int removed=repository.pruneTechnicalProducts();int unpublishedRemoved=repository.deleteUnpublishedProducts(unpublished);
-        String message="Synced "+publishable.size()+" orderable GTINs; ignored "+technical+
+        String message="Verified "+catalogVerified.size()+" catalog GTINs; moved "+missingDocuments.size()+
+                " GTINs without goods documents to trash; ignored "+technical+
                 " technical GTINs; skipped "+unpublished.size()+" non-published cards; removed "+removed+
                 " unreferenced technical GTINs and "+unpublishedRemoved+" unreferenced non-published GTINs";
         if(failedCatalogBatches>0)message+="; partial catalog enrichment: "+failedCatalogBatches+
@@ -70,7 +76,7 @@ public class ZnackProductService {
             try{
                 JsonElement response=api.productCards(settings.resolvedTrueApiBaseUrl(),token,String.join(";",batch));
                 JsonArray cards=array(response,"result");
-                if(cards==null)continue;
+                if(cards==null)throw new IllegalStateException("National Catalog response is missing result");
                 for(JsonElement element:cards){
                     if(!element.isJsonObject())continue;
                     JsonObject card=element.getAsJsonObject();

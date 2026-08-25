@@ -105,6 +105,19 @@ class OzonExemplarStateMachineTest {
     }
 
     @Test
+    void ozonPayloadRemovesOnlyLeadingGroupSeparatorAndKeepsTheGs1Data() {
+        String rawCode = "\u001d010460123456789021SERIAL\u001d91ABCD\u001d92SIGNATURE";
+        var binding = new OzonExemplarJobRepository.KizBinding(0, "101", "7001", 0, 9L, rawCode);
+
+        String mark = OzonExemplarService.exemplarPayload("POST-1", List.of(binding), true)
+                .getAsJsonArray("products").get(0).getAsJsonObject()
+                .getAsJsonArray("exemplars").get(0).getAsJsonObject()
+                .getAsJsonArray("marks").get(0).getAsJsonObject().get("mark").getAsString();
+
+        assertEquals("010460123456789021SERIAL\u001d91ABCD\u001d92SIGNATURE", mark);
+    }
+
+    @Test
     void matchesRemoteExemplarIdsByProductInsteadOfResponseOrder() {
         OzonRequirementGuard.PreparationPlan plan = new OzonRequirementGuard.PreparationPlan(
                 "POST-1",

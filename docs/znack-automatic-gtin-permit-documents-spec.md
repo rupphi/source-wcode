@@ -92,6 +92,9 @@ public record GoodsDocument(String type, String number, String date) {
    required after the National Catalog card is corrected.
 8. The settings UI no longer displays the default document number/date fields. Legacy database
    columns remain readable for backward-compatible migration but are not used for new submissions.
+9. A successfully fetched GTIN card without any complete permit document is synchronized into the
+   existing trash view instead of the operational catalog. A failed catalog batch does not change
+   the eligibility of previously synchronized GTINs and does not activate new unverified GTINs.
 
 ## Persistence
 
@@ -143,6 +146,8 @@ public record GoodsDocument(String type, String number, String date) {
 - A stale shop default cannot appear in an introduction payload.
 - A GTIN with no active registered document is blocked before submission with an actionable,
   retryable status; purchased codes are retained.
+- A GTIN card with no complete permit document is visible in Trash and absent from operational
+  mapping and purchase lists after synchronization.
 - Correcting the GTIN card and retrying succeeds without editing WCode settings.
 - Existing databases migrate additively and pass SQLite integrity/foreign-key checks.
 - Focused tests, FXML smoke tests and `./mvnw -B clean verify` pass.

@@ -24,10 +24,12 @@ import com.tuandev.fbsbarcode.ui.workspace.WorkspaceHeaderController;
 import com.tuandev.fbsbarcode.ui.znack.ZnackAutomationController;
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
+import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.DatePicker;
 import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.ProgressIndicator;
@@ -35,6 +37,7 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
+import javafx.scene.layout.GridPane;
 import javafx.scene.layout.VBox;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -96,6 +99,77 @@ class FxmlSmokeTest {
         assertLoads(PrintTemplateDesignerController.class, "print-template-designer-view.fxml");
         assertLoads(ShopDialogController.class, "shop-dialog.fxml");
         assertLoads(OzonDashboardController.class, "ozon-dashboard-view.fxml");
+    }
+
+    @Test
+    void financeDashboardReloadsChangedDatesAndKeepsAccountingKpiOrder() throws Exception {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicBoolean valid = new AtomicBoolean(false);
+        Platform.runLater(() -> {
+            try {
+                FXMLLoader loader = FxmlViewLoader.loader(
+                        FinanceDashboardController.class, "finance-dashboard-view.fxml");
+                FxmlViewLoader.load(loader);
+                DatePicker from = (DatePicker) loader.getNamespace().get("fromDatePicker");
+                DatePicker to = (DatePicker) loader.getNamespace().get("toDatePicker");
+                GridPane grid = (GridPane) loader.getNamespace().get("kpiGrid");
+                Label help = (Label) loader.getNamespace().get("payoutHelpLabel");
+                valid.set(from.getOnAction() != null
+                        && to.getOnAction() != null
+                        && grid != null
+                        && help != null
+                        && !help.getText().isBlank()
+                        && isAt(loader, "grossTitleLabel", 0, 0)
+                        && isAt(loader, "payoutTitleLabel", 1, 0)
+                        && isAt(loader, "commissionTitleLabel", 2, 0)
+                        && isAt(loader, "returnsTitleLabel", 0, 1)
+                        && isAt(loader, "logisticsTitleLabel", 1, 1)
+                        && isAt(loader, "advertisingTitleLabel", 2, 1)
+                        && isAt(loader, "storageTitleLabel", 0, 2)
+                        && isAt(loader, "penaltyTitleLabel", 1, 2)
+                        && isAt(loader, "otherCostTitleLabel", 2, 2)
+                        && isAt(loader, "netTitleLabel", 0, 3)
+                        && loader.getNamespace().get("commissionColumn") != null
+                        && loader.getNamespace().get("netRatioLabel") != null);
+            } finally {
+                latch.countDown();
+            }
+        });
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+        assertTrue(valid.get(), "Finance dates must reload and KPIs must follow the accounting order");
+    }
+
+    private static boolean isAt(FXMLLoader loader, String labelId, int column, int row) {
+        Label label = (Label) loader.getNamespace().get(labelId);
+        if (label == null) return false;
+        Node card = label.getParent();
+        return gridIndex(GridPane.getColumnIndex(card)) == column
+                && gridIndex(GridPane.getRowIndex(card)) == row;
+    }
+
+    private static int gridIndex(Integer index) {
+        return index == null ? 0 : index;
+    }
+
+    @Test
+    void supplyListExposesAccessibleIconOnlyDeleteForEmptySupplies() throws Exception {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicBoolean valid = new AtomicBoolean(false);
+        Platform.runLater(() -> {
+            try {
+                FXMLLoader loader = FxmlViewLoader.loader(SupplyListController.class, "supply-list-view.fxml");
+                FxmlViewLoader.load(loader);
+                Button delete = (Button) loader.getNamespace().get("deleteSupplyButton");
+                valid.set(delete != null
+                        && (delete.getText() == null || delete.getText().isBlank())
+                        && delete.getAccessibleText() != null
+                        && !delete.getAccessibleText().isBlank());
+            } finally {
+                latch.countDown();
+            }
+        });
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+        assertTrue(valid.get(), "Empty WB supplies need an accessible icon-only delete action");
     }
 
     @Test

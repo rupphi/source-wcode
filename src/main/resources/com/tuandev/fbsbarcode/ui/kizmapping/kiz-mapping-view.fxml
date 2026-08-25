@@ -22,7 +22,7 @@
    <TableView fx:constant="CONSTRAINED_RESIZE_POLICY" />
   </columnResizePolicy>
   <columns>
-   <TableColumn fx:id="gtinColumn" prefWidth="145" text="%znack.field.gtin"/>
+   <TableColumn fx:id="gtinColumn" minWidth="185" prefWidth="195" text="%znack.field.gtin"/>
    <TableColumn fx:id="nameColumn" prefWidth="220" text="%znack.field.name"/>
    <TableColumn fx:id="mappingColumn" prefWidth="100" text="%kiz_mapping.column.mapping"/>
    <TableColumn fx:id="availableColumn" prefWidth="90" text="%kiz_mapping.column.available"/>

@@ -68,7 +68,7 @@ public final class OzonShipService {
             throw new OzonApiException("reconcile_required", 0, false, true, null);
         }
         OzonRequirementGuard.PreparationPlan plan = OzonRequirementGuard.plan(
-                posting, mappings.findAll(shop.getId()), policies.findExemptSkus(shop.getId()));
+                posting, mappings.findResolvedBySku(shop.getId()), policies.findExemptSkus(shop.getId()));
         if (plan.exemplarCount() > 0) {
             OzonExemplarJob job = jobs.find(shop.getId(), posting.postingNumber());
             if (job == null || job.stage() != OzonExemplarJobStage.ACCEPTED) {

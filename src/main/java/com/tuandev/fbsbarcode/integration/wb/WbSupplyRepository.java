@@ -15,6 +15,21 @@ import static com.tuandev.fbsbarcode.integration.wb.WbRepositorySupport.setNulla
 import static com.tuandev.fbsbarcode.integration.wb.WbRepositorySupport.setNullableInteger;
 
 public class WbSupplyRepository {
+    public int deleteSupply(int shopId, String supplyId) {
+        if (shopId <= 0 || supplyId == null || supplyId.isBlank()) {
+            throw new IllegalArgumentException("Invalid supply delete");
+        }
+        String sql = "DELETE FROM wb_supplies WHERE shop_id = ? AND supply_id = ?";
+        try (Connection connection = Database.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setInt(1, shopId);
+            statement.setString(2, supplyId);
+            return statement.executeUpdate();
+        } catch (SQLException exception) {
+            throw new RuntimeException(exception);
+        }
+    }
+
     public void saveSupplies(int shopId, List<WbSupplyDto> supplies) {
         if (supplies == null || supplies.isEmpty()) {
             return;

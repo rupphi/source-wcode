@@ -8,6 +8,7 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressIndicator;
+import javafx.scene.control.Tooltip;
 
 import java.util.List;
 import java.util.function.Consumer;
@@ -26,10 +27,14 @@ public class SupplyListController {
     private Button refetchButton;
 
     @FXML
+    private Button deleteSupplyButton;
+
+    @FXML
     private Label emptyStateLabel;
 
     private Consumer<WbSupplySummary> onSupplySelected;
     private Runnable onRefetchRequested;
+    private Consumer<WbSupplySummary> onDeleteRequested;
     private boolean suppressSelectionCallback;
 
     @FXML
@@ -46,6 +51,7 @@ public class SupplyListController {
             if (!suppressSelectionCallback && newValue != null) {
                 notifySelection(newValue);
             }
+            updateDeleteState();
         });
         applyTranslations();
         setSupplies(List.of());
@@ -57,6 +63,7 @@ public class SupplyListController {
         supplyComboBox.getSelectionModel().clearSelection();
         suppressSelectionCallback = false;
         updateEmptyState();
+        updateDeleteState();
     }
 
     public void refreshSupplies(List<WbSupplySummary> supplies, String selectedSupplyId) {
@@ -80,6 +87,7 @@ public class SupplyListController {
         }
         suppressSelectionCallback = false;
         updateEmptyState();
+        updateDeleteState();
     }
 
     public void selectSupply(String supplyId) {
@@ -99,6 +107,7 @@ public class SupplyListController {
         if (selected != null) {
             notifySelection(selected);
         }
+        updateDeleteState();
     }
 
     public void updateSupplySummary(WbSupplySummary updatedSupply) {
@@ -117,6 +126,7 @@ public class SupplyListController {
                 supplyComboBox.getSelectionModel().select(i);
                 suppressSelectionCallback = false;
             }
+            updateDeleteState();
             return;
         }
     }
@@ -130,6 +140,7 @@ public class SupplyListController {
         supplyComboBox.setDisable(loading);
         refetchButton.setDisable(loading);
         updateEmptyState();
+        updateDeleteState();
     }
 
     public void setRefetchEnabled(boolean enabled) {
@@ -146,10 +157,22 @@ public class SupplyListController {
         this.onRefetchRequested = onRefetchRequested;
     }
 
+    public void setOnDeleteRequested(Consumer<WbSupplySummary> onDeleteRequested) {
+        this.onDeleteRequested = onDeleteRequested;
+    }
+
     @FXML
     private void onRefetch() {
         if (onRefetchRequested != null) {
             onRefetchRequested.run();
+        }
+    }
+
+    @FXML
+    private void onDeleteSupply() {
+        WbSupplySummary selected = getSelectedSupply();
+        if (isDeleteEligible(selected) && onDeleteRequested != null) {
+            onDeleteRequested.accept(selected);
         }
     }
 
@@ -170,11 +193,25 @@ public class SupplyListController {
         emptyStateLabel.setManaged(show);
     }
 
+    private void updateDeleteState() {
+        if (deleteSupplyButton != null) {
+            deleteSupplyButton.setDisable(supplyLoading.isVisible() || !isDeleteEligible(getSelectedSupply()));
+        }
+    }
+
+    private static boolean isDeleteEligible(WbSupplySummary supply) {
+        return supply != null && !supply.isDone() && supply.getItemCount() == 0;
+    }
+
     public void applyTranslations() {
         I18nService i18n = I18nService.getInstance();
         titleLabel.setText(i18n.tr("supply_list.title"));
         refetchButton.setText(i18n.tr("supply_list.refetch"));
         supplyComboBox.setPromptText(i18n.tr("supply_list.prompt"));
         emptyStateLabel.setText(i18n.tr("supply_list.empty"));
+        String deleteTooltip = i18n.tr("supply_list.delete.tooltip");
+        deleteSupplyButton.setText(null);
+        deleteSupplyButton.setAccessibleText(deleteTooltip);
+        deleteSupplyButton.setTooltip(new Tooltip(deleteTooltip));
     }
 }

@@ -65,7 +65,7 @@ public final class OzonPrintReadinessService {
             return result(safePosting, true, true, accepted, List.of(), List.of(), List.of(), job.stage().name());
         }
 
-        Map<String, String> skuMappings = mappings.findAll(shop.getId());
+        Map<String, String> skuMappings = mappings.findResolvedBySku(shop.getId());
         Set<String> exemptSkus = policies.findExemptSkus(shop.getId());
         Set<String> mandatory = Set.copyOf(posting.requirements().mandatoryMarkProductIds());
         Set<String> coveredMandatory = new LinkedHashSet<>();

@@ -38,6 +38,7 @@ public final class OzonCatalogSyncService {
         String cursor = state.find(shopId).productsLastId();
         int synced = 0;
         Map<OzonProductCardAttributeParser.CategoryKey, Map<String, String>> definitionCache = new LinkedHashMap<>();
+        Map<OzonProductCardAttributeParser.CategoryKey, String> categoryNames = null;
         try {
             for (int pageNumber = 0; pageNumber < MAX_PAGES; pageNumber++) {
                 JsonObject response = api.listProducts(cursor, PAGE_SIZE);
@@ -54,6 +55,9 @@ public final class OzonCatalogSyncService {
                 List<OzonProductDto> detailed = OzonJson.parseProductInfo(api.productInfo(ids));
                 List<OzonProductCardAttributeParser.Card> cards =
                         OzonProductCardAttributeParser.parseCards(api.productAttributes(ids));
+                if (categoryNames == null && !cards.isEmpty()) {
+                    categoryNames = OzonProductCategoryTree.parse(api.descriptionCategoryTree());
+                }
                 for (OzonProductCardAttributeParser.Card card : cards) {
                     if (definitionCache.containsKey(card.category())) continue;
                     JsonObject definitions = api.descriptionCategoryAttributes(
@@ -64,7 +68,8 @@ public final class OzonCatalogSyncService {
                 Map<String, OzonProductCardAttributeParser.Resolved> attributesById = new LinkedHashMap<>();
                 for (OzonProductCardAttributeParser.Card card : cards) {
                     OzonProductCardAttributeParser.Resolved attributes = OzonProductCardAttributeParser.resolve(
-                            card, definitionCache.getOrDefault(card.category(), Map.of()));
+                            card, definitionCache.getOrDefault(card.category(), Map.of()),
+                            categoryNames == null ? "" : categoryNames.getOrDefault(card.category(), ""));
                     attributesById.put(attributes.productId(), attributes);
                 }
                 Map<String, OzonProductDto> byId = new LinkedHashMap<>();
@@ -76,7 +81,8 @@ public final class OzonCatalogSyncService {
                     OzonProductCardAttributeParser.Resolved attributes = attributesById.get(reference.productId());
                     if (attributes != null) {
                         product = product.withCardAttributes(
-                                attributes.article(), attributes.color(), attributes.size());
+                                attributes.article(), attributes.color(), attributes.size(),
+                                attributes.category(), attributes.gender());
                     }
                     complete.add(product);
                 }

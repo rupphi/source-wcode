@@ -54,11 +54,17 @@ final class OzonProductCardAttributeParser {
     }
 
     static Resolved resolve(Card card, Map<String, String> definitionNames) {
+        return resolve(card, definitionNames, "");
+    }
+
+    static Resolved resolve(Card card, Map<String, String> definitionNames, String category) {
         Map<String, String> names = definitionNames == null ? Map.of() : definitionNames;
         String article = best(card, names, OzonProductCardAttributeParser::articleScore);
         String color = best(card, names, OzonProductCardAttributeParser::colorScore);
         String size = best(card, names, OzonProductCardAttributeParser::sizeScore);
-        return new Resolved(card.productId(), first(article, card.offerId()), color, size);
+        String gender = best(card, names, OzonProductCardAttributeParser::genderScore);
+        return new Resolved(card.productId(), first(article, card.offerId()), color, size,
+                category == null ? "" : category.strip(), gender);
     }
 
     private static String best(Card card, Map<String, String> names, Scorer scorer) {
@@ -103,6 +109,13 @@ final class OzonProductCardAttributeParser {
         return name.contains("размер") || name.contains("size") ? 50 : 0;
     }
 
+    private static int genderScore(String name) {
+        if (name.equals("пол") || name.equals("gender") || name.equals("sex")) return 100;
+        if (name.equals("пол ребенка") || name.equals("child gender")) return 90;
+        if (name.contains("пол") && !name.contains("полимер") && !name.contains("получ")) return 60;
+        return 0;
+    }
+
     private static void collectAttributes(JsonArray attributes, Map<String, List<String>> destination) {
         for (JsonElement element : attributes) {
             if (!element.isJsonObject()) continue;
@@ -134,7 +147,7 @@ final class OzonProductCardAttributeParser {
     record Card(String productId, String offerId, CategoryKey category, Map<String, List<String>> attributeValues) {
     }
 
-    record Resolved(String productId, String article, String color, String size) {
+    record Resolved(String productId, String article, String color, String size, String category, String gender) {
     }
 
     @FunctionalInterface

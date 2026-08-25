@@ -128,6 +128,12 @@ public final class OzonApiClient {
         return postJson("v1/description-category/attribute", request, "catalog");
     }
 
+    public JsonObject descriptionCategoryTree() throws IOException {
+        JsonObject request = new JsonObject();
+        request.addProperty("language", "DEFAULT");
+        return postJson("v1/description-category/tree", request, "catalog");
+    }
+
     public JsonObject listPostings(String since, String to, String cursor, int limit) throws IOException {
         if (since == null || since.isBlank() || to == null || to.isBlank()) {
             throw new IllegalArgumentException("A bounded Ozon posting window is required");
@@ -150,6 +156,32 @@ public final class OzonApiClient {
         request.addProperty("cursor", cursor == null ? "" : cursor);
         request.addProperty("limit", limit);
         return postJson("v4/posting/fbs/list", request, "postings");
+    }
+
+    public JsonObject listUnfulfilledPostings(
+            String cutoffFrom, String cutoffTo, String cursor, int limit) throws IOException {
+        if (cutoffFrom == null || cutoffFrom.isBlank() || cutoffTo == null || cutoffTo.isBlank()) {
+            throw new IllegalArgumentException("A bounded Ozon cutoff window is required");
+        }
+        if (limit < 1 || limit > 100) {
+            throw new IllegalArgumentException("Invalid Ozon posting pagination");
+        }
+        JsonObject filter = new JsonObject();
+        filter.addProperty("cutoff_from", cutoffFrom);
+        filter.addProperty("cutoff_to", cutoffTo);
+        JsonObject with = new JsonObject();
+        with.addProperty("analytics_data", false);
+        with.addProperty("barcodes", false);
+        with.addProperty("financial_data", false);
+        with.addProperty("legal_info", false);
+        JsonObject request = new JsonObject();
+        request.add("filter", filter);
+        request.add("with", with);
+        request.addProperty("sort_dir", "asc");
+        request.addProperty("translit", false);
+        request.addProperty("cursor", cursor == null ? "" : cursor);
+        request.addProperty("limit", limit);
+        return postJson("v4/posting/fbs/unfulfilled/list", request, "postings");
     }
 
     public JsonObject getPosting(String postingNumber, boolean withExemplars) throws IOException {
