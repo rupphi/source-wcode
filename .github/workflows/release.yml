@@ -334,9 +334,20 @@ jobs:
         run: |
           set -euo pipefail
           node --test tools/javafx-production-entrypoint.test.mjs tools/release-version.test.mjs tools/update-manifest.test.mjs
+          set +e
           ./mvnw -B "-Dapp.version=$APP_VERSION" \
             "-Dapp.update.public-key=$UPDATE_MANIFEST_PUBLIC_KEY" \
             "-Dapp.update.publisher=$UPDATE_SIGNING_PUBLISHER" clean verify
+          test_status=$?
+          set -e
+          if [[ "$test_status" -ne 0 ]]; then
+            for reports in "$HOME/Library/Logs/DiagnosticReports" /Library/Logs/DiagnosticReports; do
+              if [[ -d "$reports" ]]; then
+                find "$reports" -maxdepth 1 -type f -print -exec tail -n 400 {} \; || true
+              fi
+            done
+            exit "$test_status"
+          fi
           test -s "target/FBSBarcode-$APP_VERSION.jar"
 
       - name: Build and verify native macOS packages

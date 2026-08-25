@@ -103,7 +103,19 @@ jobs:
           tools/update-manifest.test.mjs
 
       - name: Run Java and FXML test suite
-        run: ./mvnw -B clean verify
+        run: |
+          set +e
+          ./mvnw -B clean verify
+          test_status=$?
+          set -e
+          if [[ "$test_status" -ne 0 ]]; then
+            for reports in "$HOME/Library/Logs/DiagnosticReports" /Library/Logs/DiagnosticReports; do
+              if [[ -d "$reports" ]]; then
+                find "$reports" -maxdepth 1 -type f -print -exec tail -n 400 {} \; || true
+              fi
+            done
+            exit "$test_status"
+          fi
 
       - name: Build and verify native macOS test packages
         run: |

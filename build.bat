@@ -49,7 +49,7 @@ if /I "%PACKAGE_TYPE%"=="exe" set "INSTALLER_OPTIONS=--install-dir Programs\WCod
 if /I "%PACKAGE_TYPE%"=="msi" set "INSTALLER_OPTIONS=--install-dir Programs\WCode --win-upgrade-uuid %WINDOWS_UPGRADE_UUID% --win-menu --win-shortcut --win-per-user-install"
 
 echo Packaging JavaFX application as %PACKAGE_TYPE%...
-jpackage --type %PACKAGE_TYPE% --name %APP_NAME% --input "%JPACKAGE_INPUT%" --main-jar "%MAIN_JAR%" --main-class %MAIN_CLASS% --dest out --app-version %APP_VERSION% --vendor "%APP_VENDOR%" --icon src\main\resources\com\tuandev\fbsbarcode\assets\images\logo.ico %INSTALLER_OPTIONS% --java-options "--enable-native-access=ALL-UNNAMED" --jlink-options "--strip-native-commands --strip-debug --no-man-pages --no-header-files --bind-services"
+jpackage --verbose --type %PACKAGE_TYPE% --name %APP_NAME% --input "%JPACKAGE_INPUT%" --main-jar "%MAIN_JAR%" --main-class %MAIN_CLASS% --dest out --app-version %APP_VERSION% --vendor "%APP_VENDOR%" --icon src\main\resources\com\tuandev\fbsbarcode\assets\images\logo.ico %INSTALLER_OPTIONS% --java-options "--enable-native-access=ALL-UNNAMED" --jlink-options "--strip-native-commands --strip-debug --no-man-pages --no-header-files --bind-services"
 if errorlevel 1 exit /b 1
 
 if /I "%PACKAGE_TYPE%"=="app-image" if exist check-portable.bat copy /y check-portable.bat out\WCode\check-portable.bat >nul
