@@ -278,7 +278,7 @@ public final class FboSupplyRepository {
                 setString(insert, 7, string(item, "offer_id"));
                 setString(insert, 8, string(item, "barcode"));
                 setString(insert, 9, string(item, "name"));
-                setString(insert, 10, string(item, "icon_path"));
+                setString(insert, 10, normalizeImageUrl(string(item, "icon_path")));
                 insert.setInt(11, integerValue(item, "quantity"));
                 setInteger(insert, 12, integer(item, "quant"));
                 setDouble(insert, 13, decimal(item, "volume_in_litres"));
@@ -368,7 +368,9 @@ public final class FboSupplyRepository {
                 SELECT i.item_key,i.barcode,i.vendor_code,i.nm_id,i.need_kiz,i.tech_size,i.color,
                        i.quantity,i.accepted_quantity,
                        COALESCE(c.title,i.vendor_code) product_name,
-                       (SELECT p.c246x328_url FROM wb_product_photos p
+                       (SELECT COALESCE(NULLIF(p.c246x328_url,''),NULLIF(p.big_url,''),
+                                        NULLIF(p.c516x688_url,''),NULLIF(p.square_url,''),NULLIF(p.tm_url,''))
+                        FROM wb_product_photos p
                         WHERE p.shop_id=i.shop_id AND CAST(p.nm_id AS TEXT)=i.nm_id
                         ORDER BY p.photo_index LIMIT 1) image_url
                 FROM wb_fbw_order_items i
@@ -397,7 +399,7 @@ public final class FboSupplyRepository {
 
     private List<FboSupplyItem> findOzonItems(int shopId, String orderId) {
         String sql = """
-                SELECT i.item_key,COALESCE(p.primary_image_url,i.image_url) image_url,
+                SELECT i.item_key,COALESCE(NULLIF(p.primary_image_url,''),NULLIF(i.image_url,'')) image_url,
                        COALESCE(p.name,i.name) name,COALESCE(NULLIF(p.article,''),i.offer_id) article,
                        i.sku,i.barcode,p.size,p.color,i.quantity
                 FROM ozon_fbo_supply_items i
@@ -529,6 +531,11 @@ public final class FboSupplyRepository {
         }
         text = text == null ? null : text.strip();
         return text == null || text.isEmpty() || text.length() > 4096 ? null : text;
+    }
+
+    private static String normalizeImageUrl(String value) {
+        if (value == null) return null;
+        return value.startsWith("//") ? "https:" + value : value;
     }
 
     private static Integer integer(JsonObject object, String key) {

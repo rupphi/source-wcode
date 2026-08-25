@@ -41,6 +41,16 @@ class FboSupplyRepositoryTest {
 
     @Test
     void storesWbStatusAndGoodsWithoutPhoneOrRawJson() throws Exception {
+        try (Connection connection = Database.getConnection(); Statement statement = connection.createStatement()) {
+            statement.execute("""
+                    INSERT INTO wb_product_cards(shop_id,nm_id,vendor_code,title,synced_at)
+                    VALUES(1,123,'ART-1','WB product','2026-08-01T00:00:00Z')
+                    """);
+            statement.execute("""
+                    INSERT INTO wb_product_photos(shop_id,nm_id,photo_index,big_url)
+                    VALUES(1,123,1,'https://example.test/wb-big.webp')
+                    """);
+        }
         repository.upsertWbSummaries(1, JsonParser.parseString("""
                 [{"phone":"+7 secret","preorderID":77,"supplyID":88,"statusID":2,"boxTypeID":5,
                   "createDate":"2026-08-01T10:00:00+03:00","supplyDate":"2026-08-20T00:00:00+03:00"}]
@@ -58,6 +68,7 @@ class FboSupplyRepositoryTest {
         assertEquals(FboSupplyStatusGroup.COMPLETED, repository.findOrders(shop).getFirst().statusGroup());
         assertEquals(1, repository.findItems(shop, "77").size());
         assertEquals("ART-1", repository.findItems(shop, "77").getFirst().article());
+        assertEquals("https://example.test/wb-big.webp", repository.findItems(shop, "77").getFirst().imageUrl());
 
         try (Connection connection = Database.getConnection()) {
             assertFalse(hasColumn(connection, "wb_fbw_orders", "phone"));

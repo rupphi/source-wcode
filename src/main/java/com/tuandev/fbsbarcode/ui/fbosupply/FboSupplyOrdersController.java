@@ -5,7 +5,9 @@ import com.tuandev.fbsbarcode.features.fbosupply.FboSupplyItem;
 import com.tuandev.fbsbarcode.features.fbosupply.FboSupplyOrder;
 import com.tuandev.fbsbarcode.features.fbosupply.FboSupplyStatusGroup;
 import com.tuandev.fbsbarcode.features.fbosupply.FboSupplySyncService;
+import com.tuandev.fbsbarcode.features.fbo.FboProductImageService;
 import com.tuandev.fbsbarcode.integration.marketplace.Marketplace;
+import javafx.application.Platform;
 import com.tuandev.fbsbarcode.models.Shop;
 import com.tuandev.fbsbarcode.shared.I18nService;
 import javafx.beans.property.ReadOnlyObjectWrapper;
@@ -24,7 +26,10 @@ import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 
+import java.io.ByteArrayInputStream;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -33,6 +38,7 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 
 public final class FboSupplyOrdersController {
     private static final DateTimeFormatter DISPLAY_DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
@@ -76,6 +82,7 @@ public final class FboSupplyOrdersController {
 
     private final I18nService i18n = I18nService.getInstance();
     private final FboSupplySyncService syncService = new FboSupplySyncService();
+    private final FboProductImageService imageService = new FboProductImageService();
     private final List<FboSupplyOrder> allOrders = new ArrayList<>();
     private final ToggleGroup statusGroup = new ToggleGroup();
     private Shop shop;
@@ -146,20 +153,41 @@ public final class FboSupplyOrdersController {
         imageColumn.setCellValueFactory(cell -> new ReadOnlyStringWrapper(cell.getValue().imageUrl()));
         imageColumn.setCellFactory(column -> new TableCell<>() {
             private final ImageView imageView = new ImageView();
+            private final Region placeholder = new Region();
+            private final StackPane container = new StackPane(placeholder, imageView);
+            private String currentUrl;
             {
                 imageView.setFitWidth(42);
                 imageView.setFitHeight(52);
                 imageView.setPreserveRatio(true);
+                imageView.setSmooth(true);
+                placeholder.setMinSize(42, 52);
+                placeholder.setPrefSize(42, 52);
+                placeholder.setMaxSize(42, 52);
+                placeholder.getStyleClass().add("fbo-image-placeholder");
+                container.setPrefSize(46, 56);
             }
             @Override protected void updateItem(String url, boolean empty) {
                 super.updateItem(url, empty);
-                if (empty || url == null || !url.startsWith("https://")) {
+                if (empty) {
+                    currentUrl = null;
                     imageView.setImage(null);
                     setGraphic(null);
-                } else {
-                    imageView.setImage(new Image(url, 42, 52, true, true, true));
-                    setGraphic(imageView);
+                    return;
                 }
+                currentUrl = url == null ? "" : url.strip();
+                imageView.setImage(null);
+                imageView.setVisible(false);
+                placeholder.setVisible(true);
+                setGraphic(container);
+                if (currentUrl.isBlank()) return;
+                String requestedUrl = currentUrl;
+                imageService.loadImage(requestedUrl).whenComplete((bytes, error) -> Platform.runLater(() -> {
+                    if (!Objects.equals(currentUrl, requestedUrl) || bytes == null || bytes.length == 0) return;
+                    imageView.setImage(new Image(new ByteArrayInputStream(bytes)));
+                    imageView.setVisible(true);
+                    placeholder.setVisible(false);
+                }));
             }
         });
         itemNameColumn.setCellValueFactory(cell -> new ReadOnlyStringWrapper(orDash(cell.getValue().name())));
