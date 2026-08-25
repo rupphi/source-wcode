@@ -27,7 +27,7 @@ if "%APP_VENDOR%"=="" set "APP_VENDOR=TuanDev"
 set "MAIN_JAR=FBSBarcode-%APP_VERSION%.jar"
 set "MAIN_CLASS=com.tuandev.fbsbarcode.Launcher"
 set "JPACKAGE_INPUT=target\jpackage-input"
-set "WINDOWS_UPGRADE_UUID=D0FC7057-DA6C-3181-ADF9-C21DB2C9152A"
+set "WINDOWS_UPGRADE_UUID=0356BE08-487C-4E04-A2C2-353AF93DB2DE"
 
 echo Building JavaFX WCode %APP_VERSION% with Maven...
 call mvnw.cmd -q clean verify

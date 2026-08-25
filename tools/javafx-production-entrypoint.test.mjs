@@ -121,6 +121,8 @@ test("local build scripts invoke Maven and package the JavaFX launcher", async (
   }
   assert.match(scripts[1], /--install-dir WCodeApp/,
     "Windows installers must not share the LocalAppData WCode data directory");
+  assert.match(scripts[1], /0356BE08-487C-4E04-A2C2-353AF93DB2DE/,
+    "local Windows packages must use the data-safe 1.1.10+ installer identity");
 });
 
 test("Windows CI builds a downloadable JavaFX 1.1.10 EXE without publishing a release", async () => {

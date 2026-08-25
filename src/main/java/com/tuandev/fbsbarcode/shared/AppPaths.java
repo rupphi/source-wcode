@@ -13,6 +13,7 @@ import java.util.stream.Stream;
 
 public final class AppPaths {
     private static final String APP_DIR_NAME = "WCode";
+    private static final String WINDOWS_DATA_DIR_NAME = "WCodeData";
 
     private AppPaths() {
     }
@@ -24,7 +25,7 @@ public final class AppPaths {
         }
         Path base = windowsLocalAppData()
                 .orElseGet(() -> Paths.get(System.getProperty("user.home", ".")));
-        return base.resolve(APP_DIR_NAME);
+        return base.resolve(isWindows() ? WINDOWS_DATA_DIR_NAME : APP_DIR_NAME);
     }
 
     public static List<Path> legacyAppDataDirs() {
@@ -35,8 +36,10 @@ public final class AppPaths {
         Path base = windowsLocalAppData()
                 .orElseGet(() -> Paths.get(System.getProperty("user.home", ".")));
         return Stream.of(
+                        isWindows() ? base.resolve(APP_DIR_NAME) : null,
                         base.resolve("FBSBarcode")
                 )
+                .filter(java.util.Objects::nonNull)
                 .filter(path -> !path.equals(appDataDir()))
                 .toList();
     }
@@ -131,8 +134,7 @@ public final class AppPaths {
     }
 
     private static Optional<Path> windowsLocalAppData() {
-        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        if (!os.contains("win")) {
+        if (!isWindows()) {
             return Optional.empty();
         }
 
@@ -149,8 +151,7 @@ public final class AppPaths {
     }
 
     private static Optional<Path> windowsProgramData() {
-        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        if (!os.contains("win")) {
+        if (!isWindows()) {
             return Optional.empty();
         }
         String programData = System.getenv("ProgramData");
@@ -161,8 +162,7 @@ public final class AppPaths {
     }
 
     private static Optional<Path> windowsUserProfile() {
-        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        if (!os.contains("win")) {
+        if (!isWindows()) {
             return Optional.empty();
         }
         String userProfile = System.getenv("USERPROFILE");
@@ -173,8 +173,7 @@ public final class AppPaths {
     }
 
     private static Optional<Path> windowsTemp() {
-        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        if (!os.contains("win")) {
+        if (!isWindows()) {
             return Optional.empty();
         }
         String systemRoot = System.getenv("SystemRoot");
@@ -190,5 +189,9 @@ public final class AppPaths {
                 .orElseGet(() -> windowsTemp()
                         .map(path -> path.resolve(APP_DIR_NAME))
                         .orElseGet(() -> Paths.get(System.getProperty("java.io.tmpdir", "."), APP_DIR_NAME)));
+    }
+
+    private static boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
     }
 }

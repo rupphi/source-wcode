@@ -23,12 +23,17 @@ Protected GitHub environment `release` cần `RELEASE_TOKEN` có `contents:write
 Nếu chưa có chứng thư/khóa, workflow vẫn build và kiểm tra bộ cài như các release hiện tại, nhưng
 không được mô tả artifact là đã ký. Khi có secret, workflow tự ký và verify trước khi upload.
 
-Windows Upgrade UUID `D0FC7057-DA6C-3181-ADF9-C21DB2C9152A` là identity vĩnh viễn đã dùng cho
-1.1.8/1.1.9. Không đổi UUID này ở `build.bat`, workflow hay installer tương lai.
+Windows Upgrade UUID `D0FC7057-DA6C-3181-ADF9-C21DB2C9152A` là identity legacy của 1.1.8/1.1.9;
+không được dùng lại vì uninstaller đó xóa thư mục `%LOCALAPPDATA%\WCode` chứa cả dữ liệu. Từ
+1.1.10, identity vĩnh viễn là `0356BE08-487C-4E04-A2C2-353AF93DB2DE` trong cả `build.bat` và
+workflow.
 
-Từ 1.1.10, chương trình Windows được cài tại `%LOCALAPPDATA%\WCodeApp`, còn dữ liệu tiếp tục
-ở `%LOCALAPPDATA%\WCode`. Không đưa executable trở lại thư mục dữ liệu. Workflow phải cài thật MSI
-1.1.9 rồi cài đè MSI mới, kiểm tra sentinel dữ liệu, đường dẫn executable và chỉ còn một registration.
+Từ 1.1.10, chương trình Windows được cài tại `%LOCALAPPDATA%\WCodeApp`, dữ liệu hoạt động ở
+`%LOCALAPPDATA%\WCodeData`. Lần mở đầu tiên sao chép dữ liệu người dùng từ thư mục legacy
+`%LOCALAPPDATA%\WCode`, bỏ qua `WCode.exe`, `app` và `runtime`. Workflow phải cài thật MSI 1.1.9,
+seed dữ liệu, cài MSI mới song song, mở app đóng gói và xác minh SQLite/schema/shop/sentinel đã
+migrate. Registration legacy được giữ tạm thời để Windows Installer không xóa dữ liệu trước khi app
+mới sao chép xong.
 
 macOS phát hành hai kiến trúc độc lập:
 
@@ -43,7 +48,8 @@ và chưa Apple notarize, vì vậy phải ghi rõ trạng thái này trong rele
 1. Nếu đã cấu hình chứng thư, verify Authenticode của `WCode.exe` và `WCode.msi`.
 2. Verify `checksums.sha256` bao phủ toàn bộ Windows/macOS assets; nếu có
    `update-manifest.json`, verify signed manifest khớp MSI cuối cùng.
-3. Cài đè từ 1.1.9, xác nhận chỉ có một registration WCode và dữ liệu shop/history còn nguyên.
+3. Cài từ 1.1.9, xác nhận registration 1.1.9 không bị uninstall trước migration, app 1.1.10 mở được
+   và dữ liệu shop/history đã chuyển sang `WCodeData` còn nguyên.
 4. Mở app, kiểm tra Wildberries regression và Ozon read-only trước khi live mutation.
 5. Chỉ đánh dấu release `latest` sau khi canary operator hoàn tất một flow đóng gói thực.
 

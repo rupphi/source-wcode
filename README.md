@@ -62,17 +62,19 @@ build.bat msi         # Windows MSI chưa ký
 ```
 
 Artifact gửi người dùng phải lấy từ workflow [release.yml](.github/workflows/release.yml). Workflow
-giữ nguyên Windows Upgrade UUID của 1.1.8/1.1.9 và kiểm tra cài đè bằng MSI thật. Authenticode và
-signed update manifest được bật khi các secret tương ứng đã cấu hình đầy đủ; thiếu cả nhóm secret
-không chặn build, nhưng cấu hình dở dang sẽ bị từ chối. Version duy nhất nằm trong `pom.xml`; tag
-phát hành phải khớp `vMAJOR.MINOR.PATCH`.
+dùng installer identity mới cho `1.1.10+` để không gọi uninstaller legacy vốn chứa binary chung với
+dữ liệu, rồi kiểm tra migration bằng MSI `1.1.9` thật. Authenticode và signed update manifest được
+bật khi các secret tương ứng đã cấu hình đầy đủ; thiếu cả nhóm secret không chặn build, nhưng cấu
+hình dở dang sẽ bị từ chối. Version duy nhất nằm trong `pom.xml`; tag phát hành phải khớp
+`vMAJOR.MINOR.PATCH`.
 
 Xem [runbook phát hành JavaFX](docs/javafx-release-runbook.md) và
 [báo cáo triển khai Ozon](docs/ozon-marketplace-expansion-report.md).
 
 ## An toàn dữ liệu khi nâng cấp
 
-- App vẫn dùng thư mục dữ liệu WCode hiện tại; cài 1.1.10 không tạo database mới.
+- Trên Windows, `1.1.10` sao chép/migrate dữ liệu legacy từ `%LOCALAPPDATA%\WCode` sang thư mục
+  dữ liệu riêng `%LOCALAPPDATA%\WCodeData`; binary nằm tại `%LOCALAPPDATA%\WCodeApp`.
 - Migration schema chạy tăng dần và snapshot SQLite được tạo, verify trước khi ghi.
 - Binary cũ fail closed khi gặp schema mới hơn; không tự hạ schema hoặc xóa dữ liệu.
 - Marketplace của shop là bất biến; credential Ozon không bao giờ được gửi tới endpoint WB và ngược lại.
