@@ -8,6 +8,9 @@ public record OzonProductDto(
         String sku,
         String name,
         String primaryImageUrl,
+        String article,
+        String color,
+        String size,
         boolean archived,
         String updatedAt,
         List<String> barcodes) {
@@ -17,6 +20,9 @@ public record OzonProductDto(
         sku = safe(sku);
         name = bounded(name, 1000);
         primaryImageUrl = bounded(primaryImageUrl, 4096);
+        article = safe(article);
+        color = safe(color);
+        size = safe(size);
         updatedAt = bounded(updatedAt, 80);
         barcodes = barcodes == null ? List.of() : barcodes.stream()
                 .map(OzonProductDto::safe)
@@ -24,6 +30,25 @@ public record OzonProductDto(
                 .distinct()
                 .limit(100)
                 .toList();
+    }
+
+    public OzonProductDto(
+            String productId,
+            String offerId,
+            String sku,
+            String name,
+            String primaryImageUrl,
+            boolean archived,
+            String updatedAt,
+            List<String> barcodes) {
+        this(productId, offerId, sku, name, primaryImageUrl, offerId, "", "", archived, updatedAt, barcodes);
+    }
+
+    public OzonProductDto withCardAttributes(String article, String color, String size) {
+        return new OzonProductDto(
+                productId, offerId, sku, name, primaryImageUrl,
+                article == null || article.isBlank() ? offerId : article,
+                color, size, archived, updatedAt, barcodes);
     }
 
     private static String safe(String value) {

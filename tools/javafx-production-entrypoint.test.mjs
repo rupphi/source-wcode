@@ -119,6 +119,8 @@ test("local build scripts invoke Maven and package the JavaFX launcher", async (
     assert.doesNotMatch(script.toLowerCase(), new RegExp(removedFrameworkName));
     assert.doesNotMatch(script, /gradlew/);
   }
+  assert.match(scripts[1], /--install-dir Programs\\WCode/,
+    "Windows installers must not share the LocalAppData WCode data directory");
 });
 
 test("Windows CI builds a downloadable JavaFX 1.1.10 EXE without publishing a release", async () => {
@@ -128,4 +130,34 @@ test("Windows CI builds a downloadable JavaFX 1.1.10 EXE without publishing a re
   assert.match(workflow, /WCode-1\.1\.10-Ozon-Test\.exe/);
   assert.match(workflow, /actions\/upload-artifact/);
   assert.doesNotMatch(workflow, /gh release|RELEASE_TOKEN/);
+});
+
+test("CI builds downloadable macOS test packages for Intel and Apple Silicon", async () => {
+  const workflow = await readFile(new URL(".github/workflows/build-java.yml", root), "utf8");
+
+  assert.match(workflow, /runner:\s*macos-15-intel\s*\n\s*architecture:\s*x64/);
+  assert.match(workflow, /runner:\s*macos-15\s*\n\s*architecture:\s*arm64/);
+  assert.match(workflow, /jpackage --type dmg/);
+  assert.match(workflow, /WCode-1\.1\.10-Ozon-Test-macos-\$architecture\.dmg/);
+  assert.match(workflow, /WCode-1\.1\.10-Ozon-Test-macos-\$architecture\.zip/);
+  assert.doesNotMatch(workflow, /gh release|RELEASE_TOKEN/);
+});
+
+test("tagged releases publish native macOS packages for Intel and Apple Silicon", async () => {
+  const workflow = await readFile(new URL(".github/workflows/release.yml", root), "utf8");
+
+  assert.match(workflow, /runner:\s*macos-15-intel\s*\n\s*architecture:\s*x64/);
+  assert.match(workflow, /runner:\s*macos-15\s*\n\s*architecture:\s*arm64/);
+  assert.match(workflow, /jpackage --type dmg/);
+  assert.match(workflow, /WCode-macos-\$architecture\.dmg/);
+  assert.match(workflow, /WCode-macos-\$architecture\.zip/);
+  assert.match(workflow, /needs:\s*\[validate, windows, macos\]/);
+  for (const artifact of [
+    "WCode-macos-x64.dmg",
+    "WCode-macos-x64.zip",
+    "WCode-macos-arm64.dmg",
+    "WCode-macos-arm64.zip",
+  ]) {
+    assert.match(workflow, new RegExp(artifact.replaceAll(".", "\\.")));
+  }
 });

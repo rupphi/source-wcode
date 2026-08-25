@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class OzonRequirementAndPackageTest {
@@ -42,7 +43,7 @@ class OzonRequirementAndPackageTest {
     }
 
     @Test
-    void mandatoryMarkRequiresSkuMappingButOptionalMarkWithoutMappingIsSkipped() {
+    void everyProductRequiresMappingUnlessExplicitlyExemptAndOzonMandatoryWins() {
         OzonPostingDto mandatory = posting(
                 new OzonRequirements(List.of("101"), List.of(), List.of()),
                 List.of(item(0, "101", "sku-a", 2)));
@@ -52,14 +53,21 @@ class OzonRequirementAndPackageTest {
         OzonPostingDto optional = posting(
                 new OzonRequirements(List.of(), List.of("101"), List.of()),
                 List.of(item(0, "101", "sku-a", 2)));
-        assertEquals(0, OzonRequirementGuard.plan(optional, Map.of()).exemplarCount());
+        assertThrows(OzonRequirementGuard.MissingMappingException.class,
+                () -> OzonRequirementGuard.plan(optional, Map.of()));
         assertEquals(2, OzonRequirementGuard.plan(optional, Map.of("sku-a", "04600000000001")).exemplarCount());
 
         OzonPostingDto notMarkedByOzon = posting(
                 new OzonRequirements(List.of(), List.of(), List.of()),
                 List.of(item(0, "101", "sku-a", 2)));
-        assertEquals(0, OzonRequirementGuard.plan(
+        assertThrows(OzonRequirementGuard.MissingMappingException.class,
+                () -> OzonRequirementGuard.plan(notMarkedByOzon, Map.of()));
+        assertEquals(2, OzonRequirementGuard.plan(
                 notMarkedByOzon, Map.of("sku-a", "04600000000001")).exemplarCount());
+        assertEquals(0, OzonRequirementGuard.plan(
+                notMarkedByOzon, Map.of(), Set.of("sku-a")).exemplarCount());
+        assertThrows(OzonRequirementGuard.MissingMappingException.class,
+                () -> OzonRequirementGuard.plan(mandatory, Map.of(), Set.of("sku-a")));
     }
 
     @Test

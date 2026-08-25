@@ -13,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -25,6 +26,7 @@ import java.util.regex.Pattern;
 
 public class ZnackPurchaseCoordinator {
     private static final Logger LOGGER = LoggerFactory.getLogger(ZnackPurchaseCoordinator.class);
+    private static final Duration ORDER_RECONCILIATION_GRACE = Duration.ofMinutes(5);
     private static final Pattern LEGACY_DOCUMENT_ID = Pattern.compile(
             "(?i)Not a JSON Object:\\s*[\"']?([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})[\"']?");
     private static final Object CREATE_LOCK = new Object();
@@ -108,13 +110,10 @@ public class ZnackPurchaseCoordinator {
         synchronized (CREATE_LOCK) {
             replay = replay(requestKey, gtin, quantity);
             if (replay != null) return replay.id();
-            ZnackPurchasePipelineState active = repository.findActivePipeline(gtin).orElse(null);
-            if (active != null) {
-                throw new IllegalStateException("A KIZ purchase pipeline is already active for GTIN " + active.gtin());
-            }
-            pipelineId = repository.createPipeline(gtin, quantity, requestKey);
+            pipelineId = repository.enqueuePipeline(gtin, quantity, requestKey);
         }
-        advance(settings, pipelineId);
+        ZnackPurchasePipelineState persisted = repository.findPipeline(pipelineId).orElseThrow();
+        if (persisted.stage() != PurchaseStage.QUEUED) advance(settings, pipelineId);
         schedule(pipelineId);
         return pipelineId;
     }
@@ -129,27 +128,18 @@ public class ZnackPurchaseCoordinator {
         synchronized (CREATE_LOCK) {
             replay = replay(requestKey, gtin, quantity);
             if (replay != null) return replay.id();
-            ZnackPurchasePipelineState active = repository.findActivePipeline(gtin).orElse(null);
-            if (active != null) {
-                throw new IllegalStateException("A KIZ purchase pipeline is already active for GTIN " + active.gtin());
-            }
-            pipelineId = repository.createPipeline(gtin, quantity, requestKey);
+            pipelineId = repository.enqueuePipeline(gtin, quantity, requestKey);
         }
         Thread.ofVirtual().name("wcode-znack-purchase-" + repository.shop().shopId() + "-" + pipelineId)
-                .start(() -> advanceEnqueued(pipelineId, settings));
+                .start(() -> advanceEnqueued(pipelineId));
         return pipelineId;
     }
 
-    private void advanceEnqueued(long pipelineId, Settings expectedSettings) {
+    private void advanceEnqueued(long pipelineId) {
         ZnackPurchaseCoordinator latestCoordinator = this;
         try {
-            ZnackPurchasePipelineState pipeline = repository.findPipeline(pipelineId).orElseThrow();
             Settings latest = repository.getSettings();
-            if (!latest.equals(expectedSettings)) {
-                throw new IllegalStateException("Znack settings changed before the purchase started.");
-            }
             latestCoordinator = create(repository, latest);
-            latestCoordinator.validatePrerequisites(latest, pipeline.gtin(), pipeline.quantity());
             latestCoordinator.advance(latest, pipelineId);
         } catch (Exception error) {
             ZnackPurchasePipelineState current = repository.findPipeline(pipelineId).orElse(null);
@@ -201,9 +191,6 @@ public class ZnackPurchaseCoordinator {
             throw new IllegalStateException("The failed introduction has no downloaded codes to retry.");
         }
         synchronized (CREATE_LOCK) {
-            if (repository.findActivePipeline(pipeline.gtin()).isPresent()) {
-                throw new IllegalStateException("A KIZ purchase pipeline is already active for GTIN " + pipeline.gtin());
-            }
             repository.updatePipeline(pipeline.id(), pipeline.orderId(),
                     PurchaseStage.WAITING_INTRODUCTION_READINESS, null);
         }
@@ -242,11 +229,10 @@ public class ZnackPurchaseCoordinator {
         for (ZnackPurchasePipelineState pipeline : candidates) {
             Product product = repository.findProduct(pipeline.gtin()).orElse(null);
             if (product == null || pipeline.orderId() == null || repository.findCodes(pipeline.orderId()).isEmpty()
-                    || !hasGoodsDocument(settings, product) || product.tnVed() == null || product.tnVed().isBlank()) {
+                    || product.tnVed() == null || product.tnVed().isBlank()) {
                 continue;
             }
             synchronized (CREATE_LOCK) {
-                if (repository.findActivePipeline(pipeline.gtin()).isPresent()) continue;
                 repository.updatePipeline(pipeline.id(), pipeline.orderId(), PurchaseStage.WAITING_INTRODUCTION_READINESS, null);
             }
             try {
@@ -268,35 +254,63 @@ public class ZnackPurchaseCoordinator {
     public void advance(Settings settings, long pipelineId) throws Exception {
         String key = pipelineKey(pipelineId);
         if (!RUNNING.add(key)) return;
+        String gtin = null;
         try {
             ZnackPurchasePipelineState pipeline = repository.findPipeline(pipelineId).orElseThrow();
+            gtin = pipeline.gtin();
             try {
                 switch (pipeline.stage()) {
-                    case VALIDATING -> createOrder(settings, pipeline);
+                    case QUEUED -> {
+                        // Activation is handled in finally after checking that no purchase mutation
+                        // is currently active for this GTIN.
+                    }
+                    case VALIDATING -> {
+                        validatePrerequisites(settings, pipeline.gtin(), pipeline.quantity());
+                        createOrder(settings, pipeline);
+                    }
                     case POLLING_ORDER -> pollOrder(settings, pipeline);
                     case DOWNLOADING_CODES -> downloadCodes(settings, pipeline);
                     case WAITING_INTRODUCTION_READINESS -> checkIntroductionReadiness(settings, pipeline);
                     case SUBMITTING_INTRODUCTION -> submitIntroduction(settings, pipeline);
                     case POLLING_INTRODUCTION -> pollIntroduction(settings, pipeline);
-                    case CREATING_ORDER -> throw new ZnackOrderCreationAmbiguousException(
-                            "Order creation result is ambiguous; automatic retry is blocked to avoid duplicate charges.", null);
+                    case CREATING_ORDER -> {
+                        Long localOrderId = pipeline.orderId() != null ? pipeline.orderId()
+                                : repository.findLatestUnlinkedOrder(pipeline.gtin(), pipeline.quantity(),
+                                        pipeline.updatedAt().minusSeconds(30)).map(KizOrder::id).orElse(null);
+                        repository.updatePipeline(pipeline.id(), localOrderId,
+                                PurchaseStage.RECONCILING_ORDER, pipeline.errorMessage());
+                        reconcileOrder(settings, repository.findPipeline(pipeline.id()).orElseThrow());
+                    }
+                    case RECONCILING_ORDER -> reconcileOrder(settings, pipeline);
                     default -> {
                     }
                 }
             } catch (Exception e) {
                 PurchaseStage current = repository.findPipeline(pipelineId).map(ZnackPurchasePipelineState::stage)
                         .orElse(PurchaseStage.FAILED);
-                if (current == PurchaseStage.POLLING_ORDER || current == PurchaseStage.DOWNLOADING_CODES
+                if (current == PurchaseStage.RECONCILING_ORDER
+                        || current == PurchaseStage.POLLING_ORDER || current == PurchaseStage.DOWNLOADING_CODES
                         || current == PurchaseStage.WAITING_INTRODUCTION_READINESS
                         || current == PurchaseStage.POLLING_INTRODUCTION) {
                     repository.updatePipeline(pipelineId, null, current, e.getMessage());
                 } else if (current == PurchaseStage.SUBMITTING_INTRODUCTION) {
-                    // Codes are already bought; keep the pipeline retryable so the user can fix
-                    // the signature or goods documents and re-run the introduction.
-                    repository.updatePipeline(pipelineId, null, PurchaseStage.INTRODUCTION_FAILED, e.getMessage());
+                    if (e instanceof ZnackIntroductionService.PermitDocumentsUnavailableException) {
+                        Long orderId=repository.findPipeline(pipelineId).map(ZnackPurchasePipelineState::orderId).orElse(null);
+                        if(orderId!=null)repository.updateOrder(orderId,null,null,
+                                OrderStatus.WAITING_INTRODUCTION_READINESS,e.getMessage());
+                        repository.updatePipeline(pipelineId, orderId,
+                                PurchaseStage.WAITING_INTRODUCTION_READINESS, e.getMessage());
+                    } else {
+                        // Codes are already bought; keep a definitive local/signature failure available
+                        // for an explicit retry without risking a duplicate introduction document.
+                        repository.updatePipeline(pipelineId, null, PurchaseStage.INTRODUCTION_FAILED, e.getMessage());
+                    }
                 } else if (current == PurchaseStage.CREATING_ORDER
                         && !(e instanceof ZnackOrderCreationAmbiguousException)) {
-                    repository.updatePipeline(pipelineId, null, PurchaseStage.FAILED, e.getMessage());
+                    Long failedOrderId = repository.findLatestUnlinkedOrder(pipeline.gtin(), pipeline.quantity(),
+                                    repository.findPipeline(pipelineId).orElseThrow().updatedAt().minusSeconds(30))
+                            .map(KizOrder::id).orElse(null);
+                    repository.updatePipeline(pipelineId, failedOrderId, PurchaseStage.FAILED, e.getMessage());
                 } else if (current != PurchaseStage.CREATING_ORDER && current != PurchaseStage.FAILED) {
                     repository.updatePipeline(pipelineId, null, PurchaseStage.FAILED, e.getMessage());
                 }
@@ -307,6 +321,7 @@ public class ZnackPurchaseCoordinator {
             }
         } finally {
             RUNNING.remove(key);
+            if (gtin != null) activateNextQueued(gtin);
         }
     }
 
@@ -325,9 +340,58 @@ public class ZnackPurchaseCoordinator {
     }
 
     private void createOrder(Settings settings, ZnackPurchasePipelineState pipeline) throws Exception {
+        Instant attemptStarted = Instant.now();
         repository.updatePipeline(pipeline.id(), null, PurchaseStage.CREATING_ORDER, null);
-        KizOrder order = orders.buy(settings, pipeline.gtin(), pipeline.quantity());
-        repository.updatePipeline(pipeline.id(), order.id(), PurchaseStage.POLLING_ORDER, null);
+        try {
+            KizOrder order = orders.buy(settings, pipeline.gtin(), pipeline.quantity());
+            repository.updatePipeline(pipeline.id(), order.id(), PurchaseStage.POLLING_ORDER, null);
+        } catch (ZnackOrderCreationAmbiguousException ambiguous) {
+            Long localOrderId = repository.findLatestUnlinkedOrder(pipeline.gtin(), pipeline.quantity(),
+                            attemptStarted.minusSeconds(30))
+                    .map(KizOrder::id).orElse(null);
+            repository.updatePipeline(pipeline.id(), localOrderId,
+                    PurchaseStage.RECONCILING_ORDER, ambiguous.getMessage());
+            throw ambiguous;
+        }
+    }
+
+    private void reconcileOrder(Settings settings, ZnackPurchasePipelineState pipeline) throws Exception {
+        KizOrder local = pipeline.orderId() == null
+                ? repository.findLatestUnlinkedOrder(pipeline.gtin(), pipeline.quantity(),
+                        pipeline.updatedAt().minusSeconds(30)).orElse(null)
+                : repository.findOrder(pipeline.orderId()).orElse(null);
+        if (local == null) {
+            String message = "The interrupted purchase did not start a remote order; the next queued request can continue.";
+            repository.updatePipeline(pipeline.id(), null, PurchaseStage.FAILED, message);
+            repository.log("PURCHASE_RECONCILIATION", pipeline.gtin(), "WARN", "NO_LOCAL_ATTEMPT", null);
+            return;
+        }
+        if (pipeline.orderId() == null) {
+            repository.updatePipeline(pipeline.id(), local.id(), PurchaseStage.RECONCILING_ORDER,
+                    pipeline.errorMessage());
+        }
+        ZnackKizOrderService.OrderReconciliation result = orders.reconcile(settings, local);
+        if (result.status() == ZnackKizOrderService.ReconciliationStatus.MATCHED) {
+            ZnackKizOrderService.RemoteOrder remote = result.order();
+            repository.updateOrder(local.id(), remote.externalOrderId(), remote.remoteStatus(),
+                    OrderStatus.SUBMITTED, null);
+            repository.updatePipeline(pipeline.id(), local.id(), PurchaseStage.POLLING_ORDER, null);
+            repository.log("PURCHASE_RECONCILIATION", pipeline.gtin(), "INFO", "REMOTE_ORDER_RECOVERED", 200);
+            pollOrder(settings, repository.findPipeline(pipeline.id()).orElseThrow());
+            return;
+        }
+        if (result.status() == ZnackKizOrderService.ReconciliationStatus.NOT_FOUND
+                && !Instant.now().isBefore(local.createdAt().plus(ORDER_RECONCILIATION_GRACE))) {
+            String message = "Znack confirmed no matching order after the reconciliation window; the queue was released.";
+            repository.updateOrder(local.id(), null, "NOT_FOUND", OrderStatus.FAILED, message);
+            repository.updatePipeline(pipeline.id(), local.id(), PurchaseStage.FAILED, message);
+            repository.log("PURCHASE_RECONCILIATION", pipeline.gtin(), "WARN", "REMOTE_ORDER_NOT_FOUND", 200);
+            return;
+        }
+        String pending = result.status() == ZnackKizOrderService.ReconciliationStatus.CONFLICT
+                ? "Several matching Znack orders were found; WCode will keep reconciling without buying again."
+                : "Waiting for the interrupted order to become visible in Znack; WCode will retry automatically.";
+        repository.updatePipeline(pipeline.id(), local.id(), PurchaseStage.RECONCILING_ORDER, pending);
     }
 
     private void pollOrder(Settings settings, ZnackPurchasePipelineState pipeline) throws Exception {
@@ -356,13 +420,6 @@ public class ZnackPurchaseCoordinator {
             return;
         }
         Product product = product(pipeline.gtin());
-        if (!hasGoodsDocument(settings, product)) {
-            String error = missingGoodsDocument(product, settings);
-            repository.updateOrder(orderId, null, null, OrderStatus.INTRODUCTION_SKIPPED_MISSING_DOCUMENTS, error);
-            repository.updatePipeline(pipeline.id(), orderId,
-                    PurchaseStage.INTRODUCTION_SKIPPED_MISSING_DOCUMENTS, error);
-            return;
-        }
         if (product.tnVed() == null || product.tnVed().isBlank()) {
             String error = "Missing TN VED.";
             repository.updateOrder(orderId, null, null, OrderStatus.INTRODUCTION_SKIPPED_MISSING_METADATA, error);
@@ -466,20 +523,13 @@ public class ZnackPurchaseCoordinator {
         return pipeline.orderId();
     }
 
-    private boolean hasGoodsDocument(Settings settings, Product product) {
-        return product.resolvedGoodsDocument(settings).complete();
-    }
-
-    private String missingGoodsDocument(Product product, Settings settings) {
-        return "Missing " + product.resolvedGoodsDocument(settings).missingFields() + ".";
-    }
-
     void schedule(long pipelineId) {
         ZnackPurchasePipelineState pipeline = repository.findPipeline(pipelineId).orElse(null);
         if (pipeline == null || !pipeline.active() || pipeline.stage() == PurchaseStage.CREATING_ORDER) return;
         String key = pipelineKey(pipelineId);
         if (!SCHEDULED.add(key)) return;
         long delaySeconds = pipeline.stage() == PurchaseStage.WAITING_INTRODUCTION_READINESS
+                || pipeline.stage() == PurchaseStage.RECONCILING_ORDER
                 ? 30 : pipeline.errorMessage() == null || pipeline.errorMessage().isBlank() ? 5 : 30;
         PENDING_POLLS.removeIf(java.util.concurrent.Future::isDone);
         PENDING_POLLS.add(POLLER.schedule(() -> {
@@ -493,6 +543,15 @@ public class ZnackPurchaseCoordinator {
                 schedule(pipelineId);
             }
         }, delaySeconds, TimeUnit.SECONDS));
+    }
+
+    private void activateNextQueued(String gtin) {
+        try {
+            repository.activateNextQueuedPipeline(gtin).ifPresent(next -> schedule(next.id()));
+        } catch (RuntimeException error) {
+            LOGGER.error("Could not activate the next queued KIZ purchase. shopId={}, gtin={}",
+                    repository.shop().shopId(), gtin, error);
+        }
     }
 
     /**

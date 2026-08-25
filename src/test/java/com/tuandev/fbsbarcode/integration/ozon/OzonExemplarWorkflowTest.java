@@ -96,6 +96,27 @@ class OzonExemplarWorkflowTest {
     }
 
     @Test
+    void automaticallyPushesKizForEveryMappedProductEvenWithoutOzonRequirementFlag() throws Exception {
+        server.enqueue(json(postingWithoutRequirements("awaiting_packaging")));
+        server.enqueue(json(createResponse()));
+        server.enqueue(json(validateResponse()));
+        server.enqueue(json("{}"));
+        server.enqueue(json(statusAccepted()));
+
+        OzonPreparationResult result = service().prepare(shop, "POST-1");
+
+        assertEquals("ACCEPTED", result.stage());
+        assertEquals(1, result.exemplarCount());
+        List<String> paths = takeRequests(5).stream().map(RecordedRequest::getPath).toList();
+        assertEquals(List.of(
+                "/v3/posting/fbs/get",
+                "/v6/fbs/posting/product/exemplar/create-or-get",
+                "/v5/fbs/posting/product/exemplar/validate",
+                "/v6/fbs/posting/product/exemplar/set",
+                "/v5/fbs/posting/product/exemplar/status"), paths);
+    }
+
+    @Test
     void concurrentDoubleClickIsSerializedAndReservesOnlyOneKiz() throws Exception {
         enqueueHappyPath();
         server.enqueue(json(posting("awaiting_packaging")));
@@ -274,6 +295,12 @@ class OzonExemplarWorkflowTest {
                 + "\",\"products\":[{\"sku\":101,\"offer_id\":\"sku-a\",\"name\":\"Item\",\"quantity\":1}],"
                 + "\"requirements\":{\"products_requiring_mandatory_mark\":[\"101\"]},"
                 + "\"available_actions\":[\"ship\"]}}";
+    }
+
+    private static String postingWithoutRequirements(String status) {
+        return "{\"result\":{\"posting_number\":\"POST-1\",\"status\":\"" + status
+                + "\",\"products\":[{\"sku\":101,\"offer_id\":\"sku-a\",\"name\":\"Item\",\"quantity\":1}],"
+                + "\"requirements\":{},\"available_actions\":[\"ship\"]}}";
     }
 
     private static String createResponse() {

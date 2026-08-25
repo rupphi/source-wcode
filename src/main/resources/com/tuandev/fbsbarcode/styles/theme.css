@@ -762,14 +762,20 @@
     -fx-cell-size: 76px;
 }
 
-/* 2. FBS packing tables (displays 36x48 images) -> 60px height */
+/* 2. FBS packing tables (image plus product/article/color/size details) -> 76px height */
 #newOrdersTable .table-row-cell,
+#packingOrdersTable .table-row-cell,
+#deliveringOrdersTable .table-row-cell {
+    -fx-cell-size: 76px;
+}
+
+/* 3. Compact FBS preparation/dispatch tables -> 60px height */
 #preparationTable .table-row-cell,
 #dispatchTable .table-row-cell {
     -fx-cell-size: 60px;
 }
 
-/* 3. Print History table (text-only) -> 44px height */
+/* 4. Print History table (text-only) -> 44px height */
 #jobsTable .table-row-cell {
     -fx-cell-size: 44px;
 }

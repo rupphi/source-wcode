@@ -98,19 +98,57 @@ class OzonSyncServiceTest {
     }
 
     @Test
+    void activePostingDetailsReplaceListRequirementsBeforeKizReadinessChecks() throws Exception {
+        server.enqueue(json("{\"postings\":[" + posting()
+                + "],\"cursor\":\"\",\"has_next\":false}"));
+        server.enqueue(json("{\"result\":{\"posting_number\":\"POST-TEXT-1\","
+                + "\"status\":\"awaiting_packaging\","
+                + "\"products\":[{\"sku\":\"101\",\"offer_id\":\"offer-1\",\"quantity\":2}],"
+                + "\"requirements\":{\"products_requiring_mandatory_mark\":[\"101\"]},"
+                + "\"available_actions\":[]}}"));
+        OzonPostingSyncService service = new OzonPostingSyncService(1, api);
+
+        service.sync();
+        assertEquals(1, service.refreshActiveDetails());
+
+        OzonPostingDto stored = new OzonPostingRepository().find(1, "POST-TEXT-1");
+        assertEquals(java.util.List.of("101"), stored.requirements().mandatoryMarkProductIds());
+        server.takeRequest(1, TimeUnit.SECONDS);
+        assertEquals("/v3/posting/fbs/get", server.takeRequest(1, TimeUnit.SECONDS).getPath());
+    }
+
+    @Test
     void successfulCatalogPageKeepsExternalIdsAsTextAndAdvancesCursorAtomically() throws Exception {
         String externalId = "90071992547409931234";
         server.enqueue(json("{\"result\":{\"items\":[{\"product_id\":\"" + externalId
                 + "\",\"offer_id\":\"offer-1\"}],\"last_id\":\"cursor-2\"}}"));
         server.enqueue(json("{\"items\":[{\"id\":\"" + externalId
-                + "\",\"offer_id\":\"offer-1\",\"sku\":\"sku-1\",\"name\":\"Item\"}]}"));
+                + "\",\"offer_id\":\"offer-1\",\"sku\":\"sku-1\",\"name\":\"Item\","
+                + "\"primary_image\":\"https://cdn.example/item.jpg\"}]}"));
+        server.enqueue(json("{\"result\":[{\"id\":\"" + externalId
+                + "\",\"offer_id\":\"offer-card\",\"description_category_id\":\"17000001\","
+                + "\"type_id\":\"90001\",\"attributes\":["
+                + "{\"id\":10096,\"values\":[{\"value\":\"deep black\"}]},"
+                + "{\"id\":4295,\"values\":[{\"value\":\"176\"}]},"
+                + "{\"id\":9024,\"values\":[{\"value\":\"seller-article\"}]}]}]}"));
+        server.enqueue(json("{\"result\":["
+                + "{\"id\":10096,\"name\":\"Цвет товара\"},"
+                + "{\"id\":4295,\"name\":\"Российский размер\"},"
+                + "{\"id\":9024,\"name\":\"Код продавца\"}]}"));
 
         assertEquals(1, new OzonCatalogSyncService(1, api).sync());
 
         assertEquals(externalId, scalar("SELECT product_id FROM ozon_products"));
+        assertEquals("https://cdn.example/item.jpg", scalar("SELECT primary_image_url FROM ozon_products"));
+        assertEquals("seller-article", scalar("SELECT article FROM ozon_products"));
+        assertEquals("deep black", scalar("SELECT color FROM ozon_products"));
+        assertEquals("176", scalar("SELECT size FROM ozon_products"));
         assertEquals("cursor-2", new OzonSyncStateRepository().find(1).productsLastId());
         assertTrue(server.takeRequest(1, TimeUnit.SECONDS).getPath().endsWith("/v3/product/list"));
         assertTrue(server.takeRequest(1, TimeUnit.SECONDS).getPath().endsWith("/v3/product/info/list"));
+        assertTrue(server.takeRequest(1, TimeUnit.SECONDS).getPath().endsWith("/v4/product/info/attributes"));
+        assertTrue(server.takeRequest(1, TimeUnit.SECONDS).getPath()
+                .endsWith("/v1/description-category/attribute"));
     }
 
     @Test

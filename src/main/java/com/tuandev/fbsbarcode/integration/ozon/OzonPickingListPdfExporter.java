@@ -17,6 +17,7 @@ import com.itextpdf.layout.properties.VerticalAlignment;
 import com.tuandev.fbsbarcode.features.fbo.FboProductImageService;
 import com.tuandev.fbsbarcode.features.print.GenerateBarcode;
 import com.tuandev.fbsbarcode.models.Shop;
+import com.tuandev.fbsbarcode.shared.I18nService;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
@@ -27,45 +28,59 @@ final class OzonPickingListPdfExporter {
     private final FboProductImageService images = new FboProductImageService();
 
     void export(File target, Shop shop, OzonPostingDto posting) throws IOException {
+        export(target, shop, List.of(posting));
+    }
+
+    void exportBatch(File target, Shop shop, List<OzonPostingDto> postings) throws IOException {
+        export(target, shop, postings);
+    }
+
+    private void export(File target, Shop shop, List<OzonPostingDto> postings) throws IOException {
+        List<OzonPostingDto> safePostings = postings == null ? List.of() : postings.stream()
+                .filter(java.util.Objects::nonNull)
+                .toList();
         try (PdfWriter writer = new PdfWriter(target);
                 PdfDocument pdf = new PdfDocument(writer);
                 Document document = new Document(pdf, PageSize.A4)) {
             document.setMargins(24, 24, 24, 24);
             document.setFont(GenerateBarcode.getArialFont());
             List<OzonProductDto> products = catalog.findAll(shop.getId());
-            Table table = new Table(new float[]{28, 72, 180, 86, 100, 42});
+            float[] widths = new float[]{32, 76, 270, 118, 48};
+            Table table = new Table(widths);
             table.setWidth(UnitValue.createPercentValue(100));
-            header(table, "#");
-            header(table, "Image");
-            header(table, "Product");
-            header(table, "SKU");
-            header(table, "Offer ID");
-            header(table, "Qty");
-            for (OzonPostingItemDto item : posting.items()) {
-                table.addCell(cell(String.valueOf(item.itemIndex() + 1), TextAlignment.CENTER));
-                table.addCell(imageCell(imageBytes(products, item)));
-                table.addCell(cell(item.name(), TextAlignment.LEFT));
-                table.addCell(cell(item.sku(), TextAlignment.LEFT));
-                table.addCell(cell(item.offerId(), TextAlignment.LEFT));
-                table.addCell(cell(String.valueOf(item.quantity()), TextAlignment.CENTER));
+            header(table, tr("ozon.picking.column.index"));
+            header(table, tr("ozon.dashboard.col.image"));
+            header(table, tr("ozon.picking.column.name"));
+            header(table, tr("ozon.dashboard.item.article"));
+            header(table, tr("fbo.column.quantity"));
+            int rowNumber = 0;
+            for (OzonPostingDto posting : safePostings) {
+                for (OzonPostingItemDto item : posting.items()) {
+                    OzonProductDto product = findProduct(products, item);
+                    table.addCell(cell(String.valueOf(++rowNumber), TextAlignment.CENTER));
+                    table.addCell(imageCell(imageBytes(product)));
+                    table.addCell(cell(first(item.name(), product == null ? "" : product.name()), TextAlignment.LEFT));
+                    table.addCell(cell(first(
+                            product == null ? "" : product.article(), item.offerId()), TextAlignment.LEFT));
+                    table.addCell(cell(String.valueOf(item.quantity()), TextAlignment.CENTER, true));
+                }
             }
             document.add(table);
         }
     }
 
-    private byte[] imageBytes(List<OzonProductDto> products, OzonPostingItemDto item) {
-        String imageUrl = products.stream()
-                .filter(product -> matches(product, item))
-                .map(OzonProductDto::primaryImageUrl)
-                .filter(value -> !value.isBlank())
-                .findFirst()
-                .orElse("");
+    private byte[] imageBytes(OzonProductDto product) {
+        String imageUrl = product == null ? "" : product.primaryImageUrl();
         if (imageUrl.isBlank()) return null;
         try {
             return images.loadImage(imageUrl).join();
         } catch (RuntimeException exception) {
             return null;
         }
+    }
+
+    private static OzonProductDto findProduct(List<OzonProductDto> products, OzonPostingItemDto item) {
+        return products.stream().filter(product -> matches(product, item)).findFirst().orElse(null);
     }
 
     private static boolean matches(OzonProductDto product, OzonPostingItemDto item) {
@@ -75,7 +90,8 @@ final class OzonPickingListPdfExporter {
     }
 
     private static Cell imageCell(byte[] imageBytes) {
-        Cell cell = new Cell().setHeight(68)
+        Cell cell = new Cell().setHeight(46)
+                .setKeepTogether(true)
                 .setTextAlignment(TextAlignment.CENTER)
                 .setVerticalAlignment(VerticalAlignment.MIDDLE)
                 .setPadding(4);
@@ -84,7 +100,7 @@ final class OzonPickingListPdfExporter {
         }
         try {
             Image image = new Image(ImageDataFactory.create(imageBytes));
-            image.scaleToFit(58, 58).setHorizontalAlignment(HorizontalAlignment.CENTER);
+            image.scaleToFit(38, 38).setHorizontalAlignment(HorizontalAlignment.CENTER);
             return cell.add(image);
         } catch (RuntimeException exception) {
             return cell.add(new Paragraph("-").setFontSize(9));
@@ -93,17 +109,34 @@ final class OzonPickingListPdfExporter {
 
     private static void header(Table table, String value) {
         table.addHeaderCell(new Cell().add(new Paragraph(value).setBold().setFontSize(9))
+                .setKeepTogether(true)
                 .setTextAlignment(TextAlignment.CENTER)
                 .setVerticalAlignment(VerticalAlignment.MIDDLE)
                 .setBackgroundColor(ColorConstants.LIGHT_GRAY));
     }
 
     private static Cell cell(String value, TextAlignment alignment) {
-        return new Cell().add(new Paragraph(safe(value)).setFontSize(9))
+        return cell(value, alignment, false);
+    }
+
+    private static Cell cell(String value, TextAlignment alignment, boolean bold) {
+        Paragraph paragraph = new Paragraph(safe(value)).setFontSize(bold ? 11 : 9);
+        if (bold) paragraph.setBold();
+        return new Cell().add(paragraph)
+                .setKeepTogether(true)
                 .setTextAlignment(alignment).setVerticalAlignment(VerticalAlignment.MIDDLE);
     }
 
     private static String safe(String value) {
         return value == null ? "" : value.replaceAll("\\p{Cntrl}", " ").strip();
+    }
+
+    private static String first(String preferred, String fallback) {
+        String safe = safe(preferred);
+        return safe.isBlank() ? safe(fallback) : safe;
+    }
+
+    private static String tr(String key) {
+        return I18nService.getInstance().tr(key);
     }
 }

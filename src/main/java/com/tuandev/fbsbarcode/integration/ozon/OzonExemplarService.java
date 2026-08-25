@@ -27,6 +27,7 @@ public final class OzonExemplarService {
 
     private final OzonPostingRepository postings;
     private final OzonProductGtinMappingRepository mappings;
+    private final OzonProductKizPolicyRepository policies;
     private final OzonExemplarJobRepository jobs;
     private final BiFunction<Integer, OzonCredentials, OzonApiClient> apiClients;
 
@@ -34,6 +35,7 @@ public final class OzonExemplarService {
         this(
                 new OzonPostingRepository(),
                 new OzonProductGtinMappingRepository(),
+                new OzonProductKizPolicyRepository(),
                 new OzonExemplarJobRepository(),
                 OzonApiClient::new);
     }
@@ -42,7 +44,7 @@ public final class OzonExemplarService {
             OzonPostingRepository postings,
             OzonProductGtinMappingRepository mappings,
             OzonExemplarJobRepository jobs) {
-        this(postings, mappings, jobs, OzonApiClient::new);
+        this(postings, mappings, new OzonProductKizPolicyRepository(), jobs, OzonApiClient::new);
     }
 
     OzonExemplarService(
@@ -50,8 +52,18 @@ public final class OzonExemplarService {
             OzonProductGtinMappingRepository mappings,
             OzonExemplarJobRepository jobs,
             BiFunction<Integer, OzonCredentials, OzonApiClient> apiClients) {
+        this(postings, mappings, new OzonProductKizPolicyRepository(), jobs, apiClients);
+    }
+
+    OzonExemplarService(
+            OzonPostingRepository postings,
+            OzonProductGtinMappingRepository mappings,
+            OzonProductKizPolicyRepository policies,
+            OzonExemplarJobRepository jobs,
+            BiFunction<Integer, OzonCredentials, OzonApiClient> apiClients) {
         this.postings = Objects.requireNonNull(postings, "postings");
         this.mappings = Objects.requireNonNull(mappings, "mappings");
+        this.policies = Objects.requireNonNull(policies, "policies");
         this.jobs = Objects.requireNonNull(jobs, "jobs");
         this.apiClients = Objects.requireNonNull(apiClients, "apiClients");
     }
@@ -84,7 +96,8 @@ public final class OzonExemplarService {
         OzonPostingDto posting = OzonJson.parsePostingDetail(api.getPosting(postingNumber, true));
         postings.upsertDetail(shop.getId(), posting);
         Map<String, String> skuMappings = mappings.findAll(shop.getId());
-        OzonRequirementGuard.PreparationPlan plan = OzonRequirementGuard.plan(posting, skuMappings);
+        OzonRequirementGuard.PreparationPlan plan = OzonRequirementGuard.plan(
+                posting, skuMappings, policies.findExemptSkus(shop.getId()));
         if (plan.exemplarCount() == 0) {
             return new OzonPreparationResult(postingNumber, "NOT_REQUIRED", 0,
                     posting.shipAvailable(), false, "");

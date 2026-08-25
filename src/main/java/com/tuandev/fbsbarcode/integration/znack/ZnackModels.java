@@ -10,6 +10,9 @@ import java.util.List;
 public final class ZnackModels {
     public static final String PRODUCTION_TRUE_API = "https://markirovka.crpt.ru/api/v3/true-api";
     public static final String PRODUCTION_SUZ = "https://suzgrid.crpt.ru";
+    public static final String PRODUCTION_NATIONAL_CATALOG =
+            "https://xn--80aqu.xn----7sbabas4ajkhfocclk9d3cvfsa.xn--p1ai";
+    public static final String SANDBOX_NATIONAL_CATALOG = "https://api.nk.sandbox.crptech.ru";
 
     private ZnackModels() {
     }
@@ -29,7 +32,7 @@ public final class ZnackModels {
     }
 
     public enum PurchaseStage {
-        VALIDATING, CREATING_ORDER, POLLING_ORDER, DOWNLOADING_CODES,
+        QUEUED, VALIDATING, CREATING_ORDER, RECONCILING_ORDER, POLLING_ORDER, DOWNLOADING_CODES,
         INTRODUCTION_SKIPPED_MISSING_DOCUMENTS, INTRODUCTION_SKIPPED_MISSING_METADATA,
         WAITING_INTRODUCTION_READINESS, SUBMITTING_INTRODUCTION, POLLING_INTRODUCTION,
         INTRODUCTION_FAILED, INTRODUCED, COMPLETED, FAILED
@@ -166,17 +169,18 @@ public final class ZnackModels {
                           String certificateNumber, String certificateDate, String productionDate,
                           Boolean goodMarkFlag, Boolean goodTurnFlag, String cardStatus,
                           String cardDetailedStatus, String category, Instant readinessCheckedAt,
-                          String cisType) {
+                          String cisType, List<GoodsDocument> permitDocuments) {
         public Product {
             cisType = cisType == null || cisType.isBlank()
                     ? null
                     : cisType.trim().toUpperCase(java.util.Locale.ROOT);
+            permitDocuments = permitDocuments == null ? List.of() : List.copyOf(permitDocuments);
         }
 
         public Product(String gtin, String productName, String tnVed, String certificateType,
                        String certificateNumber, String certificateDate, String productionDate) {
             this(gtin, productName, tnVed, certificateType, certificateNumber, certificateDate, productionDate,
-                    null, null, "", "", "", null, null);
+                    null, null, "", "", "", null, null, List.of());
         }
 
         public Product(String gtin, String productName, String tnVed, String certificateType,
@@ -184,15 +188,18 @@ public final class ZnackModels {
                        Boolean goodMarkFlag, Boolean goodTurnFlag, String cardStatus,
                        String cardDetailedStatus, String category, Instant readinessCheckedAt) {
             this(gtin, productName, tnVed, certificateType, certificateNumber, certificateDate, productionDate,
-                    goodMarkFlag, goodTurnFlag, cardStatus, cardDetailedStatus, category, readinessCheckedAt, null);
+                    goodMarkFlag, goodTurnFlag, cardStatus, cardDetailedStatus, category, readinessCheckedAt, null,
+                    List.of());
         }
 
-        public boolean hasDocumentOverride() {
-            return !blank(certificateType) || !blank(certificateNumber) || !blank(certificateDate);
-        }
-
-        public GoodsDocument resolvedGoodsDocument(Settings settings) {
-            return settings.defaultGoodsDocument();
+        public Product(String gtin, String productName, String tnVed, String certificateType,
+                       String certificateNumber, String certificateDate, String productionDate,
+                       Boolean goodMarkFlag, Boolean goodTurnFlag, String cardStatus,
+                       String cardDetailedStatus, String category, Instant readinessCheckedAt,
+                       String cisType) {
+            this(gtin, productName, tnVed, certificateType, certificateNumber, certificateDate, productionDate,
+                    goodMarkFlag, goodTurnFlag, cardStatus, cardDetailedStatus, category, readinessCheckedAt,
+                    cisType, List.of());
         }
 
         public boolean cardReadyForIntroduction() {

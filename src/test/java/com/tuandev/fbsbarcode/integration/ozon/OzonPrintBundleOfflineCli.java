@@ -103,7 +103,10 @@ public final class OzonPrintBundleOfflineCli {
             List<OzonExemplarJobRepository.KizBinding> bindings) throws Exception {
         try (PDDocument document = Loader.loadPDF(bundle)) {
             for (int index = 0; index < bindings.size(); index++) {
-                String decoded = KizService.scannerSafeCode(decodeDataMatrix(document, officialPages + index));
+                int pageIndex = index < officialPages
+                        ? index * 2 + 1
+                        : officialPages * 2 + index - officialPages;
+                String decoded = KizService.scannerSafeCode(decodeDataMatrix(document, pageIndex));
                 String expected = KizService.scannerSafeCode(bindings.get(index).rawCode());
                 if (!expected.equals(decoded)) return false;
             }

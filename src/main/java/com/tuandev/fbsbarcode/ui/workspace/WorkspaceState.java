@@ -107,11 +107,19 @@ final class WorkspaceState {
         this.displayedOrders = this.loadedOrdersRaw;
     }
 
-    void removeShopFromState(int shopId) {
-        shops.removeIf(s -> s.getId() == shopId);
-        if (selectedShop != null && selectedShop.getId() == shopId) {
-            selectedShop = null;
+    Shop removeShopAndChooseFallback(int shopId) {
+        int removedIndex = -1;
+        for (int index = 0; index < shops.size(); index++) {
+            if (shops.get(index).getId() == shopId) {
+                removedIndex = index;
+                break;
+            }
         }
+        if (removedIndex >= 0) shops.remove(removedIndex);
+        if (selectedShop == null || selectedShop.getId() != shopId) return selectedShop;
+        selectedShop = null;
+        if (shops.isEmpty()) return null;
+        return shops.get(Math.min(Math.max(0, removedIndex), shops.size() - 1));
     }
 
     void clearWorkspace() {

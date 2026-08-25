@@ -30,6 +30,9 @@ public final class OzonSchemaSupport {
                         sku TEXT,
                         name TEXT,
                         primary_image_url TEXT,
+                        article TEXT,
+                        color TEXT,
+                        size TEXT,
                         archived INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0,1)),
                         updated_at TEXT,
                         synced_at TEXT NOT NULL,
@@ -37,6 +40,23 @@ public final class OzonSchemaSupport {
                         FOREIGN KEY(shop_id) REFERENCES shops(id) ON DELETE CASCADE
                     )
                     """);
+            boolean hasArticle = columnExists(connection, "ozon_products", "article");
+            boolean hasColor = columnExists(connection, "ozon_products", "color");
+            boolean hasSize = columnExists(connection, "ozon_products", "size");
+            if (!hasArticle || !hasColor || !hasSize) {
+                // Reset before altering so an interrupted migration still forces a complete card refresh.
+                statement.execute("UPDATE ozon_sync_state "
+                        + "SET products_last_id=NULL, products_last_synced_at=NULL");
+            }
+            if (!hasArticle) {
+                statement.execute("ALTER TABLE ozon_products ADD COLUMN article TEXT");
+            }
+            if (!hasColor) {
+                statement.execute("ALTER TABLE ozon_products ADD COLUMN color TEXT");
+            }
+            if (!hasSize) {
+                statement.execute("ALTER TABLE ozon_products ADD COLUMN size TEXT");
+            }
             statement.execute("""
                     CREATE TABLE IF NOT EXISTS ozon_product_barcodes(
                         shop_id INTEGER NOT NULL,
@@ -55,6 +75,16 @@ public final class OzonSchemaSupport {
                         updated_at TEXT NOT NULL,
                         PRIMARY KEY(shop_id,sku),
                         FOREIGN KEY(shop_id,gtin) REFERENCES znack_products(shop_id,gtin) ON DELETE CASCADE,
+                        FOREIGN KEY(shop_id) REFERENCES shops(id) ON DELETE CASCADE
+                    )
+                    """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS ozon_product_kiz_policies(
+                        shop_id INTEGER NOT NULL,
+                        sku TEXT NOT NULL,
+                        requires_kiz INTEGER NOT NULL DEFAULT 1 CHECK(requires_kiz IN (0,1)),
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY(shop_id,sku),
                         FOREIGN KEY(shop_id) REFERENCES shops(id) ON DELETE CASCADE
                     )
                     """);
@@ -170,6 +200,16 @@ public final class OzonSchemaSupport {
             statement.execute("CREATE INDEX IF NOT EXISTS idx_ozon_posting_items_shop_sku ON ozon_posting_items(shop_id,sku)");
             statement.execute("CREATE INDEX IF NOT EXISTS idx_ozon_exemplar_jobs_stage ON ozon_exemplar_jobs(shop_id,stage,updated_at)");
             statement.execute("CREATE INDEX IF NOT EXISTS idx_ozon_action_log_shop_created ON ozon_action_log(shop_id,created_at DESC)");
+        }
+    }
+
+    private static boolean columnExists(Connection connection, String table, String column) throws SQLException {
+        try (var statement = connection.prepareStatement("PRAGMA table_info(" + table + ")");
+                var result = statement.executeQuery()) {
+            while (result.next()) {
+                if (column.equalsIgnoreCase(result.getString("name"))) return true;
+            }
+            return false;
         }
     }
 }

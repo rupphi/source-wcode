@@ -62,7 +62,7 @@ import java.util.function.Consumer;
 
 public class SupplyDetailController {
     private static final Set<String> ACTIVE_PURCHASE_STAGES = Set.of(
-            "VALIDATING", "CREATING_ORDER", "POLLING_ORDER", "DOWNLOADING_CODES",
+            "QUEUED", "VALIDATING", "CREATING_ORDER", "RECONCILING_ORDER", "POLLING_ORDER", "DOWNLOADING_CODES",
             "WAITING_INTRODUCTION_READINESS", "SUBMITTING_INTRODUCTION", "POLLING_INTRODUCTION"
     );
 
@@ -622,8 +622,9 @@ public class SupplyDetailController {
         buy.setTooltip(new Tooltip(technicalGtin
                 ? tr("supply.gtin_inventory.error.technical_gtin") : tr("supply.gtin_inventory.buy")));
         buy.setAccessibleText(tr("supply.gtin_inventory.buy"));
-        buy.setDisable(technicalGtin || isActivePipeline(summary.latestPipelineStage())
-                || purchasesStarting.contains(summary.gtin()));
+        // An existing pipeline no longer blocks a new purchase: the coordinator persists it in a
+        // FIFO queue. Only suppress a rapid double-click while this request is being persisted.
+        buy.setDisable(technicalGtin || purchasesStarting.contains(summary.gtin()));
         buy.setOnAction(event -> showBuy(summary));
 
         HBox header = new HBox(8, identity, mapping, buy);
@@ -742,7 +743,7 @@ public class SupplyDetailController {
         Task<Long> task = new Task<>() {
             @Override
             protected Long call() throws Exception {
-                return coordinator.start(settings, gtin, quantity);
+                return coordinator.enqueue(settings, gtin, quantity, java.util.UUID.randomUUID().toString());
             }
         };
         task.setOnSucceeded(event -> {

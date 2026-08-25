@@ -21,20 +21,23 @@ final class OzonKizLabelAppender {
     private static final float WIDTH = (float) PrintTemplateService.PAGE_WIDTH;
     private static final float HEIGHT = (float) PrintTemplateService.PAGE_HEIGHT;
     private static final PageSize PAGE_SIZE = new PageSize(WIDTH, HEIGHT);
+    private final OzonCatalogRepository catalog = new OzonCatalogRepository();
 
     int append(
             PdfDocument document,
             Shop shop,
             OzonPostingDto posting,
             List<OzonExemplarJobRepository.KizBinding> bindings) throws IOException {
+        List<OzonProductDto> products = catalog.findAll(shop.getId());
         int appended = 0;
         for (OzonExemplarJobRepository.KizBinding binding : bindings) {
             OzonPostingItemDto item = item(posting, binding.itemIndex());
+            OzonProductDto product = findProduct(products, item);
             String code = KizService.scannerSafeCode(binding.rawCode());
             if (code == null || code.isBlank()) {
                 throw new IOException("An accepted Ozon exemplar has no printable KIZ.");
             }
-            appendPage(document, item, code);
+            appendPage(document, item, product, code);
             appended++;
         }
         return appended;
@@ -43,16 +46,26 @@ final class OzonKizLabelAppender {
     private static void appendPage(
             PdfDocument document,
             OzonPostingItemDto item,
+            OzonProductDto product,
             String code) throws IOException {
         PdfPage page = document.addNewPage(PAGE_SIZE);
         drawDataMatrix(page, code);
 
         try (Canvas canvas = new Canvas(page, PAGE_SIZE)) {
             canvas.setFont(GenerateBarcode.getArialFont());
-            canvas.add(text(compact(item.name(), 54), 72, 68, WIDTH - 78, 8, true));
-            canvas.add(text("SKU: " + compact(item.sku(), 24), 72, 52, WIDTH - 78, 7, false));
-            canvas.add(text("Offer: " + compact(item.offerId(), 22), 72, 39, WIDTH - 78, 7, false));
+            String name = first(product == null ? "" : product.name(), item.name());
+            String article = first(product == null ? "" : product.article(), item.offerId());
+            canvas.add(text(compact(name, 56), 72, 62, WIDTH - 78, 8, true));
+            canvas.add(text("Article: " + compact(article, 30), 72, 38, WIDTH - 78, 7, true));
         }
+    }
+
+    private static OzonProductDto findProduct(List<OzonProductDto> products, OzonPostingItemDto item) {
+        return products.stream().filter(product ->
+                (!item.productId().isBlank() && item.productId().equals(product.productId()))
+                        || (!item.sku().isBlank() && item.sku().equals(product.sku()))
+                        || (!item.offerId().isBlank() && item.offerId().equals(product.offerId())))
+                .findFirst().orElse(null);
     }
 
     private static Paragraph text(
@@ -94,5 +107,9 @@ final class OzonKizLabelAppender {
         String safe = value == null ? "" : value.replaceAll("\\p{Cntrl}", " ").strip();
         if (safe.length() <= maximum) return safe;
         return safe.substring(0, Math.max(0, maximum - 3)).stripTrailing() + "...";
+    }
+
+    private static String first(String preferred, String fallback) {
+        return preferred == null || preferred.isBlank() ? (fallback == null ? "" : fallback) : preferred;
     }
 }

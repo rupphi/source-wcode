@@ -28,10 +28,11 @@ public final class OzonCatalogRepository {
                 String now = Instant.now().toString();
                 try (PreparedStatement product = connection.prepareStatement("""
                                 INSERT INTO ozon_products(shop_id,product_id,offer_id,sku,name,primary_image_url,
-                                    archived,updated_at,synced_at)
-                                VALUES(?,?,?,?,?,?,?,?,?)
+                                    article,color,size,archived,updated_at,synced_at)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
                                 ON CONFLICT(shop_id,product_id) DO UPDATE SET offer_id=excluded.offer_id,
                                     sku=excluded.sku,name=excluded.name,primary_image_url=excluded.primary_image_url,
+                                    article=excluded.article,color=excluded.color,size=excluded.size,
                                     archived=excluded.archived,updated_at=excluded.updated_at,synced_at=excluded.synced_at
                                 """);
                         PreparedStatement clearBarcodes = connection.prepareStatement(
@@ -46,9 +47,12 @@ public final class OzonCatalogRepository {
                         product.setString(4, item.sku());
                         product.setString(5, item.name());
                         product.setString(6, item.primaryImageUrl());
-                        product.setInt(7, item.archived() ? 1 : 0);
-                        product.setString(8, item.updatedAt());
-                        product.setString(9, now);
+                        product.setString(7, item.article());
+                        product.setString(8, item.color());
+                        product.setString(9, item.size());
+                        product.setInt(10, item.archived() ? 1 : 0);
+                        product.setString(11, item.updatedAt());
+                        product.setString(12, now);
                         product.addBatch();
                     }
                     product.executeBatch();
@@ -82,7 +86,7 @@ public final class OzonCatalogRepository {
     public List<OzonProductDto> findAll(int shopId) {
         try (Connection connection = Database.getConnection();
                 PreparedStatement statement = connection.prepareStatement("""
-                        SELECT product_id,offer_id,sku,name,primary_image_url,archived,updated_at
+                        SELECT product_id,offer_id,sku,name,primary_image_url,article,color,size,archived,updated_at
                         FROM ozon_products WHERE shop_id=? ORDER BY name,product_id
                         """)) {
             statement.setInt(1, shopId);
@@ -91,7 +95,8 @@ public final class OzonCatalogRepository {
                 while (result.next()) {
                     String productId = result.getString(1);
                     products.add(new OzonProductDto(productId, result.getString(2), result.getString(3),
-                            result.getString(4), result.getString(5), result.getBoolean(6), result.getString(7),
+                            result.getString(4), result.getString(5), result.getString(6), result.getString(7),
+                            result.getString(8), result.getBoolean(9), result.getString(10),
                             barcodes(connection, shopId, productId)));
                 }
                 return List.copyOf(products);

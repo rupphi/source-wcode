@@ -14,8 +14,16 @@ public final class OzonSyncWorkflow {
         MarketplaceGuard.requireOzon(shop);
         OzonApiClient api = client(shop);
         int products = new OzonCatalogSyncService(shop.getId(), api).sync();
-        OzonSyncReport postings = new OzonPostingSyncService(shop.getId(), api).sync();
+        OzonPostingSyncService postingSync = new OzonPostingSyncService(shop.getId(), api);
+        OzonSyncReport postings = postingSync.sync();
+        postingSync.refreshActiveDetails();
         return new OzonSyncReport(products, postings.postings(), postings.items());
+    }
+
+    /** Refreshes one posting before a print decision so stale list data cannot omit a KIZ rule. */
+    public OzonPostingDto refreshPosting(Shop shop, String postingNumber) throws IOException {
+        MarketplaceGuard.requireOzon(shop);
+        return new OzonPostingSyncService(shop.getId(), client(shop)).refresh(postingNumber, false);
     }
 
     private static OzonApiClient client(Shop shop) {

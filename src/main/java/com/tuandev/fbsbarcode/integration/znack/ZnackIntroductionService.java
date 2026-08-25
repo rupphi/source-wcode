@@ -14,25 +14,37 @@ public class ZnackIntroductionService {
     public ZnackIntroductionService(ZnackApiClient api,ZnackAuthService auth,ZnackSignatureProvider signer,ZnackRepository repository){this.api=api;this.auth=auth;this.signer=signer;this.repository=repository;}
     public long submit(Settings s,KizOrder order,Product product,List<KizCode> codes)throws Exception{
         ZnackSafety.requireSigned(s,true);
-        s.validateGoodsDocumentDates();
         if(product.tnVed()==null||product.tnVed().isBlank())throw new IllegalStateException("TN VED is required before introduction.");
         String participant=required(auth.resolvedParticipantInn(s),"Participant INN is required for introduction.");
         String producer=valueOr(s.producerInn(),participant),owner=valueOr(s.ownerInn(),participant);
-        GoodsDocument goodsDocument=product.resolvedGoodsDocument(s);
-        if(!goodsDocument.complete())throw new IllegalStateException("Missing "+goodsDocument.missingFields()+".");
-        Settings.validateGoodsDocumentDate(goodsDocument.date(),"Document issue date");
+        String token=auth.trueApiToken(s);
+        List<GoodsDocument> goodsDocuments;
+        try{
+            JsonElement registry=api.permitDocuments(s.resolvedTrueApiBaseUrl(),token,product.gtin(),owner);
+            goodsDocuments=ZnackPermitDocumentParser.activeFromRegistry(registry);
+        }catch(Exception error){
+            throw new PermitDocumentsUnavailableException(
+                    "Could not verify active National Catalog documents for GTIN "+product.gtin()+". The introduction will retry automatically.",error);
+        }
+        repository.updateProductDocuments(product.gtin(),goodsDocuments);
+        if(goodsDocuments.isEmpty())throw new PermitDocumentsUnavailableException(
+                "GTIN "+product.gtin()+" has no active National Catalog declaration or certificate. Publish or reactivate the GTIN document; the introduction will retry automatically.");
         JsonObject payload=new JsonObject();payload.addProperty("participant_inn",participant);payload.addProperty("producer_inn",producer);payload.addProperty("owner_inn",owner);payload.addProperty("production_type","OWN_PRODUCTION");
         if(product.productionDate()!=null&&!product.productionDate().isBlank())payload.addProperty("production_date",product.productionDate());
         JsonArray items=new JsonArray();for(KizCode code:codes){JsonObject item=new JsonObject();item.addProperty("uit_code",ZnackCisNormalizer.forTrueApi(code.rawCode()));item.addProperty("tnved_code",product.tnVed());
-            if(goodsDocument.complete()){JsonObject certificate=new JsonObject();certificate.addProperty("certificate_type",goodsDocument.type().trim());certificate.addProperty("certificate_number",goodsDocument.number().trim());certificate.addProperty("certificate_date",goodsDocument.date().trim());
-                JsonArray certificates=new JsonArray();certificates.add(certificate);item.add("certificate_document_data",certificates);}items.add(item);}
+            JsonArray certificates=new JsonArray();for(GoodsDocument goodsDocument:goodsDocuments){JsonObject certificate=new JsonObject();certificate.addProperty("certificate_type",goodsDocument.type().trim());certificate.addProperty("certificate_number",goodsDocument.number().trim());certificate.addProperty("certificate_date",goodsDocument.date().trim());certificates.add(certificate);}
+            item.add("certificate_document_data",certificates);items.add(item);}
         payload.add("products",items);byte[] documentBytes=payload.toString().getBytes(StandardCharsets.UTF_8);
-        byte[] sig=signer.sign(documentBytes, ZnackSignatureContext.TRUE_API_DOCUMENT).cms();String token=auth.trueApiToken(s);
+        byte[] sig=signer.sign(documentBytes, ZnackSignatureContext.TRUE_API_DOCUMENT).cms();
         JsonObject request=new JsonObject();request.addProperty("document_format","MANUAL");request.addProperty("type","LP_INTRODUCE_GOODS");request.addProperty("product_document",Base64.getEncoder().encodeToString(documentBytes));request.addProperty("signature",Base64.getEncoder().encodeToString(sig));
         long documentId=repository.createDocument(order.id(),payload.toString());
         try{String external=required(api.createDocument(s.resolvedTrueApiBaseUrl(),token,request),"Znack document response did not contain a document ID.");
             repository.updateDocument(documentId,external,"SUBMITTED",null);repository.markCodes(order.id(),KizLegalStatus.INTRO_SENT,null,documentId);repository.updateOrder(order.id(),null,null,OrderStatus.INTRO_SENT,null);return documentId;
         }catch(Exception e){repository.updateDocument(documentId,null,e instanceof ZnackApiClient.ZnackApiException?"REJECTED":"FAILED",e.getMessage());throw e;}
+    }
+    public static final class PermitDocumentsUnavailableException extends Exception{
+        public PermitDocumentsUnavailableException(String message){super(message);}
+        public PermitDocumentsUnavailableException(String message,Throwable cause){super(message,cause);}
     }
     /** Outcome of a document confirmation poll. */
     public enum ConfirmStatus{INTRODUCED,PENDING,FAILED}

@@ -49,15 +49,7 @@
        <Label fx:id="signatureSummaryLabel" styleClass="text-muted"/>
       </VBox>
       <VBox spacing="9" styleClass="surface">
-       <Label fx:id="defaultGoodsDocumentLabel" styleClass="h3" text="%znack.default_goods_document"/>
-       <GridPane hgap="12" vgap="9">
-        <Label fx:id="documentNumberLabel" text="%znack.document_number" GridPane.rowIndex="0"/><TextField fx:id="documentNumberField" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
-        <Label fx:id="documentIssueDateLabel" text="%znack.document_issue_date" GridPane.rowIndex="1"/><TextField fx:id="documentIssueDateField" promptText="%znack.date_prompt" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
-        <columnConstraints><ColumnConstraints minWidth="170"/><ColumnConstraints hgrow="ALWAYS"/></columnConstraints>
-       </GridPane>
-       <CheckBox fx:id="autoIntroductionCheck" text="%znack.auto_introduction">
-        <tooltip><Tooltip text="%znack.default_goods_document_help"/></tooltip>
-       </CheckBox>
+       <CheckBox fx:id="autoIntroductionCheck" text="%znack.auto_introduction"/>
       </VBox>
       <HBox alignment="CENTER_RIGHT"><Button fx:id="saveButton" defaultButton="true" onAction="#save" styleClass="btn-primary" text="%znack.save"/></HBox>
      </VBox>

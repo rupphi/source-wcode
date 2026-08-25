@@ -1,10 +1,16 @@
 package com.tuandev.fbsbarcode.ui;
 
 import com.tuandev.fbsbarcode.shared.FxmlViewLoader;
+import com.tuandev.fbsbarcode.shared.I18nService;
 import com.tuandev.fbsbarcode.config.Database;
 import com.tuandev.fbsbarcode.models.Shop;
+import com.tuandev.fbsbarcode.integration.ozon.OzonPostingDto;
+import com.tuandev.fbsbarcode.integration.ozon.OzonPostingItemDto;
+import com.tuandev.fbsbarcode.integration.ozon.OzonRequirements;
 import com.tuandev.fbsbarcode.ui.history.PrintHistoryController;
 import com.tuandev.fbsbarcode.ui.dashboard.DashboardController;
+import com.tuandev.fbsbarcode.ui.fbo.FboPackingController;
+import com.tuandev.fbsbarcode.ui.finance.FinanceDashboardController;
 import com.tuandev.fbsbarcode.ui.kizmapping.KizMappingController;
 import com.tuandev.fbsbarcode.ui.ozon.OzonDashboardController;
 import com.tuandev.fbsbarcode.ui.packing.PackingController;
@@ -20,10 +26,14 @@ import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.ProgressIndicator;
+import javafx.scene.control.ScrollPane;
+import javafx.scene.control.TabPane;
+import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.VBox;
 import org.junit.jupiter.api.AfterAll;
@@ -74,6 +84,7 @@ class FxmlSmokeTest {
     void shouldLoadAllPrimaryViews() throws Exception {
         assertLoads(HomeController.class, "home-view.fxml");
         assertLoads(DashboardController.class, "dashboard-view.fxml");
+        assertLoads(FinanceDashboardController.class, "finance-dashboard-view.fxml");
         assertLoads(ShopSidebarController.class, "shop-sidebar-view.fxml");
         assertLoads(WorkspaceHeaderController.class, "workspace-header-view.fxml");
         assertLoads(SupplyListController.class, "supply-list-view.fxml");
@@ -119,22 +130,27 @@ class FxmlSmokeTest {
     }
 
     @Test
-    void createShopDialogPlacesMarketplaceBeforeShopName() throws Exception {
+    void createShopDialogKeepsFormScrollableAndPlacesMarketplaceBeforeShopName() throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
         AtomicBoolean valid = new AtomicBoolean(false);
         Platform.runLater(() -> {
             try {
                 FXMLLoader loader = FxmlViewLoader.loader(ShopDialogController.class, "shop-dialog.fxml");
-                VBox root = FxmlViewLoader.load(loader);
+                ScrollPane root = FxmlViewLoader.load(loader);
+                VBox form = (VBox) loader.getNamespace().get("shopFormContent");
                 ComboBox<?> marketplace = (ComboBox<?>) loader.getNamespace().get("marketplaceField");
                 TextField name = (TextField) loader.getNamespace().get("nameField");
-                valid.set(root.getChildren().indexOf(marketplace) < root.getChildren().indexOf(name));
+                valid.set(root.isFitToWidth()
+                        && root.getHbarPolicy() == ScrollPane.ScrollBarPolicy.NEVER
+                        && root.getVbarPolicy() == ScrollPane.ScrollBarPolicy.AS_NEEDED
+                        && root.getMaxHeight() <= 420
+                        && form.getChildren().indexOf(marketplace) < form.getChildren().indexOf(name));
             } finally {
                 latch.countDown();
             }
         });
         assertTrue(latch.await(5, TimeUnit.SECONDS));
-        assertTrue(valid.get(), "Marketplace must be selected before the shop name is entered");
+        assertTrue(valid.get(), "The shop form must scroll while dialog buttons remain outside the content");
     }
 
     @Test
@@ -173,14 +189,42 @@ class FxmlSmokeTest {
                 Button mapping = (Button) loader.getNamespace().get("kizMappingButton");
                 Button fbo = (Button) loader.getNamespace().get("fboPackingButton");
                 valid.set(packing.isVisible() && packing.isManaged() && !packing.isDisabled()
+                        && (" " + I18nService.getInstance().tr("sidebar.ozon_packing")).equals(packing.getText())
                         && mapping.isVisible() && mapping.isManaged() && !mapping.isDisabled()
-                        && !fbo.isVisible() && !fbo.isManaged() && fbo.isDisabled());
+                        && fbo.isVisible() && fbo.isManaged() && !fbo.isDisabled()
+                        && (" " + I18nService.getInstance().tr("sidebar.ozon_fbo_packing")).equals(fbo.getText()));
             } finally {
                 latch.countDown();
             }
         });
         assertTrue(latch.await(5, TimeUnit.SECONDS));
-        assertTrue(valid.get(), "Ozon must expose its packing queue and SKU-to-GTIN catalog mapping");
+        assertTrue(valid.get(), "Ozon must expose FBS orders, FBO packing, and SKU-to-GTIN catalog mapping");
+    }
+
+    @Test
+    void ozonFboPackingShowsCatalogSkuAndHidesWbCategoryFilter() throws Exception {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicBoolean valid = new AtomicBoolean(false);
+        Platform.runLater(() -> {
+            try {
+                FXMLLoader loader = FxmlViewLoader.loader(FboPackingController.class, "fbo-packing-view.fxml");
+                FxmlViewLoader.load(loader);
+                FboPackingController controller = loader.getController();
+                controller.setMarketplace(com.tuandev.fbsbarcode.integration.marketplace.Marketplace.OZON);
+                javafx.scene.control.MenuButton categories =
+                        (javafx.scene.control.MenuButton) loader.getNamespace().get("categoryMenuButton");
+                javafx.scene.control.TableColumn<?, ?> catalogSku =
+                        (javafx.scene.control.TableColumn<?, ?>) loader.getNamespace().get("catalogSkuColumn");
+                Label title = (Label) loader.getNamespace().get("titleLabel");
+                valid.set(!categories.isVisible() && !categories.isManaged()
+                        && catalogSku.isVisible()
+                        && I18nService.getInstance().tr("ozon.fbo.title").equals(title.getText()));
+            } finally {
+                latch.countDown();
+            }
+        });
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+        assertTrue(valid.get(), "Ozon FBO must show synchronized SKUs without WB-only subject filters");
     }
 
     @Test
@@ -206,29 +250,74 @@ class FxmlSmokeTest {
     }
 
     @Test
-    void ozonDashboardShouldExposePostingActionsAndSkuGtinMapping() throws Exception {
+    void ozonDashboardShouldExposeFbsOrderGroupsSelectionAndPackingLabels() throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
         AtomicBoolean valid = new AtomicBoolean(false);
         Platform.runLater(() -> {
             try {
                 FXMLLoader loader = FxmlViewLoader.loader(OzonDashboardController.class, "ozon-dashboard-view.fxml");
                 FxmlViewLoader.load(loader);
-                ComboBox<?> status = (ComboBox<?>) loader.getNamespace().get("statusFilter");
-                valid.set(loader.getNamespace().get("postingList") != null
-                        && loader.getNamespace().get("itemList") != null
-                        && loader.getNamespace().get("exemplarList") != null
-                        && loader.getNamespace().get("gtinField") != null
-                        && loader.getNamespace().get("saveMappingButton") != null
-                        && loader.getNamespace().get("prepareButton") != null
-                        && loader.getNamespace().get("shipButton") != null
-                        && loader.getNamespace().get("labelButton") != null
-                        && "ACTIVE".equals(status.getValue()));
+                TabPane tabs = (TabPane) loader.getNamespace().get("orderStatusTabs");
+                @SuppressWarnings("unchecked")
+                TableView<OzonPostingDto> newOrders =
+                        (TableView<OzonPostingDto>) loader.getNamespace().get("newOrdersTable");
+                TableView<?> packingOrders = (TableView<?>) loader.getNamespace().get("packingOrdersTable");
+                Button moveToPacking = (Button) loader.getNamespace().get("moveToPackingButton");
+                javafx.scene.control.Tab newOrdersTab =
+                        (javafx.scene.control.Tab) loader.getNamespace().get("newOrdersTab");
+                javafx.scene.control.Tab packingOrdersTab =
+                        (javafx.scene.control.Tab) loader.getNamespace().get("packingOrdersTab");
+                javafx.scene.control.Tab deliveringOrdersTab =
+                        (javafx.scene.control.Tab) loader.getNamespace().get("deliveringOrdersTab");
+                OzonDashboardController controller = loader.getController();
+                controller.setShop(new Shop(909, "Ozon test",
+                        com.tuandev.fbsbarcode.integration.marketplace.Marketplace.OZON,
+                        "client-909", "secret-909"), false);
+                newOrders.getItems().add(new OzonPostingDto(
+                        "POST-909", "ORDER-909", "ORDER-909", "awaiting_packaging", "", "warehouse",
+                        "2026-08-25T08:30:00Z", "", "", "",
+                        new OzonRequirements(java.util.List.of(), java.util.List.of(), java.util.List.of()),
+                        java.util.List.of("ship"), true,
+                        java.util.List.of(new OzonPostingItemDto(
+                                0, "101", "SKU-101", "offer-101", "Item", 1, "RUB", "100"))));
+                javafx.scene.control.TableColumn<?, ?> selectColumn =
+                        (javafx.scene.control.TableColumn<?, ?>) loader.getNamespace().get("newOrderSelectTC");
+                CheckBox selectAll = (CheckBox) selectColumn.getGraphic();
+                selectAll.fire();
+                valid.set(tabs != null
+                        && tabs.getTabs().size() == 3
+                        && tabs.getSelectionModel().getSelectedItem() == loader.getNamespace().get("newOrdersTab")
+                        && newOrdersTab.getText().endsWith("(0)")
+                        && packingOrdersTab.getText().endsWith("(0)")
+                        && deliveringOrdersTab.getText().endsWith("(0)")
+                        && newOrders != null
+                        && loader.getNamespace().get("newOrderImageTC") != null
+                        && loader.getNamespace().get("newOrderSelectTC") != null
+                        && loader.getNamespace().get("selectionActionBar") != null
+                        && moveToPacking != null
+                        && !moveToPacking.isDisabled()
+                        && moveToPacking.isVisible()
+                        && ((javafx.scene.layout.HBox) loader.getNamespace().get("selectionActionBar")).isVisible()
+                        && packingOrders != null
+                        && loader.getNamespace().get("packingOrderImageTC") != null
+                        && loader.getNamespace().get("packingLabelTC") != null
+                        && loader.getNamespace().get("deliveringOrdersTable") != null
+                        && loader.getNamespace().get("deliveringOrderImageTC") != null
+                        && loader.getNamespace().get("printAllButton") != null
+                        && loader.getNamespace().get("sortByProductCheckBox") != null
+                        && loader.getNamespace().get("sortByArticleCheckBox") != null
+                        && loader.getNamespace().get("sortByColorCheckBox") != null
+                        && loader.getNamespace().get("sortBySizeCheckBox") != null
+                        && loader.getNamespace().get("gtinInventoryTitleLabel") != null
+                        && loader.getNamespace().get("gtinSearchField") != null
+                        && loader.getNamespace().get("gtinInventoryList") != null
+                        && loader.getNamespace().get("gtinInventoryRefreshButton") != null);
             } finally {
                 latch.countDown();
             }
         });
         assertTrue(latch.await(5, TimeUnit.SECONDS));
-        assertTrue(valid.get(), "Ozon dashboard should expose mapping, prepare, ship and label controls");
+        assertTrue(valid.get(), "Ozon FBS orders should expose three states, bulk selection and packing labels");
     }
 
     @Test
@@ -302,7 +391,7 @@ class FxmlSmokeTest {
                         && signatureCertificate.getOnShowing() != null
                         && loader.getNamespace().get("refreshCertificatesButton") == null
                         && loader.getNamespace().get("testSignatureButton") != null
-                        && loader.getNamespace().get("documentNumberField") != null
+                        && loader.getNamespace().get("documentNumberField") == null
                         && loader.getNamespace().get("trueApiUrlField") == null
                         && loader.getNamespace().get("omsIdField") != null
                         && helpInitiallyHidden && omsIdHelpShown && omsConnectionHelpShown && helpClosed

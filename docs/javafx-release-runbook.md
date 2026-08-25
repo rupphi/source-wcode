@@ -7,6 +7,8 @@
 3. Kiểm tra migration bằng database fixture 1.1.9; không dùng database thật của operator.
 4. Kiểm tra không có secret/KIZ/database/WAL trong diff hoặc artifact.
 5. Tạo tag đúng dạng `vMAJOR.MINOR.PATCH` từ nhánh mặc định.
+6. Chạy workflow thủ công từ nhánh mặc định trước khi tag. Lần chạy thử phải build đủ Windows,
+   macOS Intel và macOS Apple Silicon nhưng không được publish release.
 
 ## Release trust
 
@@ -20,10 +22,23 @@ Protected GitHub environment `release` cần:
 Windows Upgrade UUID `D0FC7057-DA6C-3181-ADF9-C21DB2C9152A` là identity vĩnh viễn đã dùng cho
 1.1.8/1.1.9. Không đổi UUID này ở `build.bat`, workflow hay installer tương lai.
 
+Từ 1.1.10, chương trình Windows được cài tại `%LOCALAPPDATA%\Programs\WCode`, còn dữ liệu tiếp tục
+ở `%LOCALAPPDATA%\WCode`. Không đưa executable trở lại thư mục dữ liệu. Workflow phải cài thật MSI
+1.1.9 rồi cài đè MSI mới, kiểm tra sentinel dữ liệu, đường dẫn executable và chỉ còn một registration.
+
+macOS phát hành hai kiến trúc độc lập:
+
+- `WCode-macos-x64.dmg` và `.zip` cho Mac Intel;
+- `WCode-macos-arm64.dmg` và `.zip` cho Apple Silicon.
+
+Launcher trong mỗi app-image phải đúng kiến trúc runner. Các gói macOS hiện chưa ký Developer ID
+và chưa Apple notarize, vì vậy phải ghi rõ trạng thái này trong release notes.
+
 ## Sau khi workflow hoàn tất
 
 1. Verify Authenticode của `WCode.exe` và `WCode.msi`.
-2. Verify `checksums.sha256` và signed `update-manifest.json` khớp MSI cuối cùng.
+2. Verify `checksums.sha256` bao phủ toàn bộ Windows/macOS assets và signed
+   `update-manifest.json` khớp MSI cuối cùng.
 3. Cài đè từ 1.1.9, xác nhận chỉ có một registration WCode và dữ liệu shop/history còn nguyên.
 4. Mở app, kiểm tra Wildberries regression và Ozon read-only trước khi live mutation.
 5. Chỉ đánh dấu release `latest` sau khi canary operator hoàn tất một flow đóng gói thực.

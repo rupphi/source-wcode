@@ -1,5 +1,6 @@
 package com.tuandev.fbsbarcode.ui.kizmapping;
 
+import com.tuandev.fbsbarcode.features.fbo.FboProductImageService;
 import com.tuandev.fbsbarcode.integration.ozon.OzonCatalogRepository;
 import com.tuandev.fbsbarcode.integration.ozon.OzonProductDto;
 import com.tuandev.fbsbarcode.integration.ozon.OzonProductGtinMappingRepository;
@@ -7,12 +8,14 @@ import com.tuandev.fbsbarcode.shared.AlertService;
 import com.tuandev.fbsbarcode.shared.AppTaskExecutor;
 import com.tuandev.fbsbarcode.shared.I18nService;
 import java.text.MessageFormat;
+import java.io.ByteArrayInputStream;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import javafx.concurrent.Task;
+import javafx.application.Platform;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
@@ -20,17 +23,21 @@ import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 /** Maps Ozon catalog SKUs to a Znack GTIN without applying Wildberries category rules. */
-final class OzonGtinMappingEditor {
+public final class OzonGtinMappingEditor {
     private final OzonCatalogRepository catalog = new OzonCatalogRepository();
     private final OzonProductGtinMappingRepository mappings = new OzonProductGtinMappingRepository();
+    private final FboProductImageService images = new FboProductImageService();
 
-    void open(int shopId, String gtin, KizGtinMappingEditor.Host host) {
+    public void open(int shopId, String gtin, KizGtinMappingEditor.Host host) {
         Task<Data> task = new Task<>() {
             @Override
             protected Data call() {
@@ -118,7 +125,7 @@ final class OzonGtinMappingEditor {
             details.getStyleClass().add("text-muted");
             details.setWrapText(true);
             VBox labels = new VBox(3, name, details);
-            HBox row = new HBox(10, check, labels, new Pane());
+            HBox row = new HBox(10, check, productImage(product), labels, new Pane());
             HBox.setHgrow(labels, Priority.ALWAYS);
             row.getStyleClass().add("surface");
             labels.setOnMouseClicked(event -> {
@@ -136,6 +143,30 @@ final class OzonGtinMappingEditor {
             rows.getChildren().add(empty);
         }
         selectedLabel.setText(MessageFormat.format(tr("ozon.mapping.selected"), selected.size()));
+    }
+
+    private StackPane productImage(OzonProductDto product) {
+        ImageView imageView = new ImageView();
+        imageView.setFitWidth(48);
+        imageView.setFitHeight(58);
+        imageView.setPreserveRatio(true);
+        imageView.setSmooth(true);
+        StackPane placeholder = new StackPane();
+        placeholder.setPrefSize(48, 58);
+        placeholder.setMaxSize(48, 58);
+        placeholder.getStyleClass().add("image-placeholder");
+        StackPane container = new StackPane(placeholder, imageView);
+        container.setMinSize(52, 62);
+        container.setMaxSize(52, 62);
+        if (!product.primaryImageUrl().isBlank()) {
+            String requestedUrl = product.primaryImageUrl();
+            images.loadImage(requestedUrl).whenComplete((bytes, error) -> Platform.runLater(() -> {
+                if (bytes == null || bytes.length == 0) return;
+                imageView.setImage(new Image(new ByteArrayInputStream(bytes)));
+                placeholder.setVisible(false);
+            }));
+        }
+        return container;
     }
 
     private void save(int shopId, String gtin, List<String> skus, KizGtinMappingEditor.Host host) {

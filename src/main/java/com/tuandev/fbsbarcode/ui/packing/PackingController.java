@@ -1,6 +1,7 @@
 package com.tuandev.fbsbarcode.ui.packing;
 
 import com.tuandev.fbsbarcode.features.packing.PackingWorkflow;
+import com.tuandev.fbsbarcode.features.shop.ShopOperationCoordinator;
 import com.tuandev.fbsbarcode.integration.wb.WbSupplySummary;
 import com.tuandev.fbsbarcode.models.Order;
 import com.tuandev.fbsbarcode.models.Shop;
@@ -105,6 +106,7 @@ public class PackingController {
     private boolean tokenValid;
     private Consumer<WbSupplySummary> onPrintSupply;
     private PauseTransition delayTransition;
+    private long shopGeneration;
 
     @FXML
     private void initialize() {
@@ -124,9 +126,11 @@ public class PackingController {
     }
 
     public void setShop(Shop shop, boolean tokenValid) {
+        shopGeneration++;
         this.shop = shop;
         this.tokenValid = tokenValid;
         selectedOrderIds.clear();
+        setLoading(false);
         if (delayTransition != null) {
             delayTransition.stop();
         }
@@ -175,7 +179,11 @@ public class PackingController {
         Optional<String> result = dialog.showAndWait();
         result.map(String::trim)
                 .filter(name -> !name.isBlank())
-                .ifPresent(name -> runWriteTask(() -> packingWorkflow.createShipment(shop, name, orderIds)));
+                .ifPresent(name -> {
+                    Shop selectedShop = shop;
+                    runWriteTask(selectedShop,
+                            () -> packingWorkflow.createShipment(selectedShop, name, orderIds));
+                });
     }
 
     @FXML
@@ -195,23 +203,34 @@ public class PackingController {
         dialog.setTitle(i18n.tr("packing.dialog.add_to_shipment.title"));
         dialog.setHeaderText(i18n.tr("packing.dialog.add_to_shipment.header"));
         dialog.setContentText(i18n.tr("packing.dialog.add_to_shipment.content"));
-        dialog.showAndWait().ifPresent(supply -> runWriteTask(() ->
-                packingWorkflow.addOrdersToSupply(shop, supply.getSupplyId(), selectedOrderIds.stream().toList())));
+        dialog.showAndWait().ifPresent(supply -> {
+            Shop selectedShop = shop;
+            List<Long> orderIds = selectedOrderIds.stream().toList();
+            runWriteTask(selectedShop, () -> packingWorkflow.addOrdersToSupply(
+                    selectedShop, supply.getSupplyId(), orderIds));
+        });
     }
 
     private void refresh() {
         if (shop == null) {
             return;
         }
+        Shop selectedShop = shop;
+        long generation = shopGeneration;
         Task<PackingWorkflow.PackingBoard> task = new Task<>() {
             @Override
             protected PackingWorkflow.PackingBoard call() {
-                return packingWorkflow.loadBoard(shop);
+                return packingWorkflow.loadBoard(selectedShop);
             }
         };
-        task.setOnSucceeded(e -> setBoard(task.getValue()));
+        task.setOnSucceeded(e -> {
+            if (!isCurrent(selectedShop, generation)) return;
+            setBoard(task.getValue());
+        });
         task.setOnFailed(e -> {
-            LOGGER.error("Не удалось загрузить упаковку для shop {}", shop.getId(), task.getException());
+            if (!isCurrent(selectedShop, generation)
+                    || ShopOperationCoordinator.isShopUnavailable(task.getException())) return;
+            LOGGER.error("Не удалось загрузить упаковку для shop {}", selectedShop.getId(), task.getException());
             AlertService.showError(task.getException().getMessage());
         });
         AppTaskExecutor.execute(task);
@@ -221,22 +240,29 @@ public class PackingController {
         if (shop == null || !tokenValid) {
             return;
         }
+        Shop selectedShop = shop;
+        long generation = shopGeneration;
         Task<PackingWorkflow.PackingBoard> task = new Task<>() {
             @Override
             protected PackingWorkflow.PackingBoard call() throws Exception {
-                packingWorkflow.refreshBoardData(shop);
-                return packingWorkflow.loadBoard(shop);
+                return ShopOperationCoordinator.withActiveShop(selectedShop.getId(), () -> {
+                    packingWorkflow.refreshBoardData(selectedShop);
+                    return packingWorkflow.loadBoard(selectedShop);
+                });
             }
         };
         setLoading(true);
         task.setOnSucceeded(e -> {
+            if (!isCurrent(selectedShop, generation)) return;
             setLoading(false);
             setBoard(task.getValue());
         });
         task.setOnFailed(e -> {
+            if (!isCurrent(selectedShop, generation)) return;
             setLoading(false);
             Throwable failure = task.getException();
-            LOGGER.error("Не удалось обновить упаковку для shop {}", shop.getId(), failure);
+            if (ShopOperationCoordinator.isShopUnavailable(failure)) return;
+            LOGGER.error("Не удалось обновить упаковку для shop {}", selectedShop.getId(), failure);
             if (isTimeoutFailure(failure)) {
                 refresh();
                 return;
@@ -261,22 +287,29 @@ public class PackingController {
         return false;
     }
 
-    private void runWriteTask(WriteAction action) {
+    private void runWriteTask(Shop selectedShop, WriteAction action) {
+        if (selectedShop == null) return;
+        long generation = shopGeneration;
         Task<Void> task = new Task<>() {
             @Override
             protected Void call() throws Exception {
-                action.run();
-                return null;
+                return ShopOperationCoordinator.withActiveShop(selectedShop.getId(), () -> {
+                    action.run();
+                    return null;
+                });
             }
         };
         setLoading(true);
         task.setOnSucceeded(e -> {
+            if (!isCurrent(selectedShop, generation)) return;
             setLoading(false);
             selectedOrderIds.clear();
             refreshFromWb();
         });
         task.setOnFailed(e -> {
+            if (!isCurrent(selectedShop, generation)) return;
             setLoading(false);
+            if (ShopOperationCoordinator.isShopUnavailable(task.getException())) return;
             LOGGER.error("WB write action failed", task.getException());
             AlertService.showError(task.getException().getMessage());
         });
@@ -597,6 +630,8 @@ public class PackingController {
         if (shop == null || !tokenValid) {
             return;
         }
+        Shop selectedShop = shop;
+        long generation = shopGeneration;
         FileChooser chooser = new FileChooser();
         chooser.setTitle(I18nService.getInstance().tr("packing.save_qr.title"));
         chooser.setInitialFileName("SUPPLY-" + supply.getSupplyId() + ".pdf");
@@ -612,10 +647,12 @@ public class PackingController {
         Task<byte[]> task = new Task<>() {
             @Override
             protected byte[] call() throws Exception {
-                return packingWorkflow.getSupplyBarcodePdf(shop, supply);
+                return ShopOperationCoordinator.withActiveShop(selectedShop.getId(),
+                        () -> packingWorkflow.getSupplyBarcodePdf(selectedShop, supply));
             }
         };
         task.setOnSucceeded(e -> {
+            if (!isCurrent(selectedShop, generation)) return;
             try (FileOutputStream output = new FileOutputStream(file)) {
                 output.write(task.getValue());
                 if (Desktop.isDesktopSupported()) {
@@ -625,8 +662,17 @@ public class PackingController {
                 AlertService.showError(ex.getMessage());
             }
         });
-        task.setOnFailed(e -> AlertService.showError(task.getException().getMessage()));
+        task.setOnFailed(e -> {
+            if (!isCurrent(selectedShop, generation)
+                    || ShopOperationCoordinator.isShopUnavailable(task.getException())) return;
+            AlertService.showError(task.getException().getMessage());
+        });
         AppTaskExecutor.execute(task);
+    }
+
+    private boolean isCurrent(Shop expectedShop, long generation) {
+        return generation == shopGeneration && shop != null && expectedShop != null
+                && shop.getId() == expectedShop.getId();
     }
 
 

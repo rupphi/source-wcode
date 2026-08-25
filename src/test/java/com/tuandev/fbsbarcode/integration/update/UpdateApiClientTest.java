@@ -75,16 +75,47 @@ class UpdateApiClientTest {
         assertWithOs("Mac OS X", "https://example.com/releases/latest", info);
     }
 
+    @Test
+    void githubReleaseKeepsSeparateMacDownloadsForIntelAndAppleSilicon() {
+        String body = """
+                {
+                  "tag_name": "v1.1.10",
+                  "html_url": "https://example.com/releases/v1.1.10",
+                  "assets": [
+                    {"name":"WCode-macos-x64.dmg","browser_download_url":"https://example.com/x64.dmg"},
+                    {"name":"WCode-macos-arm64.dmg","browser_download_url":"https://example.com/arm64.dmg"}
+                  ]
+                }
+                """;
+
+        UpdateInfo info = UpdateApiClient.parseGitHubRelease(body);
+
+        assertNotNull(info);
+        assertWithPlatform("Mac OS X", "x86_64", "https://example.com/x64.dmg", info);
+        assertWithPlatform("Mac OS X", "aarch64", "https://example.com/arm64.dmg", info);
+    }
+
     private static void assertWithOs(String osName, String expectedUrl, UpdateInfo info) {
+        assertWithPlatform(osName, System.getProperty("os.arch"), expectedUrl, info);
+    }
+
+    private static void assertWithPlatform(String osName, String osArch, String expectedUrl, UpdateInfo info) {
         String originalOs = System.getProperty("os.name");
+        String originalArch = System.getProperty("os.arch");
         try {
             System.setProperty("os.name", osName);
+            System.setProperty("os.arch", osArch);
             assertEquals(expectedUrl, info.getBestDownloadUrl());
         } finally {
             if (originalOs == null) {
                 System.clearProperty("os.name");
             } else {
                 System.setProperty("os.name", originalOs);
+            }
+            if (originalArch == null) {
+                System.clearProperty("os.arch");
+            } else {
+                System.setProperty("os.arch", originalArch);
             }
         }
     }

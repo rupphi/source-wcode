@@ -172,9 +172,8 @@ public class ShopSidebarController {
 
     public void setMarketplace(Marketplace marketplace) {
         this.marketplace = marketplace == null ? Marketplace.WILDBERRIES : marketplace;
-        boolean wildberries = this.marketplace == Marketplace.WILDBERRIES;
         setAvailable(packingButton, true);
-        setAvailable(fboPackingButton, wildberries);
+        setAvailable(fboPackingButton, true);
         setAvailable(kizMappingButton, true);
         applyMarketplaceTexts();
     }
@@ -212,6 +211,7 @@ public class ShopSidebarController {
         I18nService i18n = I18nService.getInstance();
         boolean ozon = marketplace == Marketplace.OZON;
         packingButton.setText(" " + i18n.tr(ozon ? "sidebar.ozon_packing" : "sidebar.packing"));
+        fboPackingButton.setText(" " + i18n.tr(ozon ? "sidebar.ozon_fbo_packing" : "sidebar.fbo_packing"));
         kizMappingButton.setText(" " + i18n.tr(ozon ? "ozon.mapping.sidebar" : "sidebar.kiz_mapping"));
     }
 

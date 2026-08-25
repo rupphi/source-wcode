@@ -37,6 +37,7 @@ public final class OzonCatalogSyncService {
     public int sync() throws IOException {
         String cursor = state.find(shopId).productsLastId();
         int synced = 0;
+        Map<OzonProductCardAttributeParser.CategoryKey, Map<String, String>> definitionCache = new LinkedHashMap<>();
         try {
             for (int pageNumber = 0; pageNumber < MAX_PAGES; pageNumber++) {
                 JsonObject response = api.listProducts(cursor, PAGE_SIZE);
@@ -51,12 +52,33 @@ public final class OzonCatalogSyncService {
                 }
                 List<String> ids = page.items().stream().map(OzonJson.ProductReference::productId).toList();
                 List<OzonProductDto> detailed = OzonJson.parseProductInfo(api.productInfo(ids));
+                List<OzonProductCardAttributeParser.Card> cards =
+                        OzonProductCardAttributeParser.parseCards(api.productAttributes(ids));
+                for (OzonProductCardAttributeParser.Card card : cards) {
+                    if (definitionCache.containsKey(card.category())) continue;
+                    JsonObject definitions = api.descriptionCategoryAttributes(
+                            card.category().descriptionCategoryId(), card.category().typeId());
+                    definitionCache.put(card.category(),
+                            OzonProductCardAttributeParser.parseDefinitionNames(definitions));
+                }
+                Map<String, OzonProductCardAttributeParser.Resolved> attributesById = new LinkedHashMap<>();
+                for (OzonProductCardAttributeParser.Card card : cards) {
+                    OzonProductCardAttributeParser.Resolved attributes = OzonProductCardAttributeParser.resolve(
+                            card, definitionCache.getOrDefault(card.category(), Map.of()));
+                    attributesById.put(attributes.productId(), attributes);
+                }
                 Map<String, OzonProductDto> byId = new LinkedHashMap<>();
                 for (OzonProductDto product : detailed) byId.put(product.productId(), product);
                 List<OzonProductDto> complete = new ArrayList<>();
                 for (OzonJson.ProductReference reference : page.items()) {
-                    complete.add(byId.getOrDefault(reference.productId(), new OzonProductDto(
-                            reference.productId(), reference.offerId(), "", "", "", false, "", List.of())));
+                    OzonProductDto product = byId.getOrDefault(reference.productId(), new OzonProductDto(
+                            reference.productId(), reference.offerId(), "", "", "", false, "", List.of()));
+                    OzonProductCardAttributeParser.Resolved attributes = attributesById.get(reference.productId());
+                    if (attributes != null) {
+                        product = product.withCardAttributes(
+                                attributes.article(), attributes.color(), attributes.size());
+                    }
+                    complete.add(product);
                 }
                 synced += products.upsertPage(shopId, complete, next);
                 if (page.items().size() < PAGE_SIZE) return synced;

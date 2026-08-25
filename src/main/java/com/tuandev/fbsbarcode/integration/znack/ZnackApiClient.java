@@ -53,10 +53,18 @@ public class ZnackApiClient {
     public JsonElement productCards(String base, String token, String gtins) throws IOException {
         return get(trueApiBase(base, 3), "/nk/feed-product?gtins=" + url(gtins), token);
     }
+    public JsonElement permitDocuments(String base,String token,String gtin,String inn)throws IOException{
+        JsonObject body=new JsonObject();body.addProperty("gtin",gtin);
+        if(inn!=null&&!inn.isBlank())body.addProperty("inn",inn.trim());
+        return post(nationalCatalogBase(base),"/v4/rd-info-by-gtin",token,body);
+    }
     public JsonObject createOrder(String base,String token,String omsId,byte[] body,String signature)throws IOException{
         Request request=new Request.Builder().url(join(base,"/api/v3/order?omsId="+url(omsId))).headers(suzHeaders(token).newBuilder().add("X-Signature",signature).build())
                 .post(RequestBody.create(body,JSON)).build();
         return execute(request).getAsJsonObject();
+    }
+    public JsonObject orderList(String base,String token,String omsId)throws IOException{
+        return suzGet(base,"/api/v3/order/list?omsId="+url(omsId),token).getAsJsonObject();
     }
     public JsonArray orderStatus(String base,String token,String omsId,String orderId)throws IOException{return suzGet(base,"/api/v3/order/status?omsId="+url(omsId)+"&orderId="+url(orderId),token).getAsJsonArray();}
     public JsonElement codes(String base,String token,String omsId,String orderId,int quantity,String gtin)throws IOException{
@@ -170,6 +178,12 @@ public class ZnackApiClient {
     }
     static String authBase(String base) { return trueApiBase(base, 3); }
     static String trueApiBase(String base, int version) { return apiRoot(base) + "/api/v" + version + "/true-api"; }
+    static String nationalCatalogBase(String trueApiBase) {
+        String normalized=trueApiBase==null?"":trueApiBase.trim().toLowerCase(java.util.Locale.ROOT);
+        if(normalized.contains("sandbox"))return ZnackModels.SANDBOX_NATIONAL_CATALOG;
+        if(normalized.isBlank()||normalized.contains("markirovka.crpt.ru"))return ZnackModels.PRODUCTION_NATIONAL_CATALOG;
+        return apiRoot(trueApiBase);
+    }
 
     public static class ZnackApiException extends IOException {
         private final int statusCode;

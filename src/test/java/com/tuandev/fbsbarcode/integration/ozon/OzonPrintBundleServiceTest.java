@@ -21,6 +21,7 @@ import com.tuandev.fbsbarcode.features.print.history.ImageCacheRepository;
 import com.tuandev.fbsbarcode.features.print.history.PrintHistoryService;
 import com.tuandev.fbsbarcode.integration.marketplace.Marketplace;
 import com.tuandev.fbsbarcode.models.Shop;
+import com.tuandev.fbsbarcode.shared.I18nService;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
@@ -106,36 +107,42 @@ class OzonPrintBundleServiceTest {
             assertPageMillimeters(document, 0, 58, 40);
             assertPageMillimeters(document, 1, 58, 40);
             assertPageMillimeters(document, 2, 58, 40);
-            Result matrix = decodeRenderedDataMatrixResult(document, 2, 300);
+            Result matrix = decodeRenderedDataMatrixResult(document, 1, 300);
             assertEquals(KizService.scannerSafeCode(RAW_KIZ), KizService.scannerSafeCode(matrix.getText()));
             assertEquals("]d2", matrix.getResultMetadata().get(ResultMetadataType.SYMBOLOGY_IDENTIFIER));
-            String kizText = pageText(document, 2);
+            String kizText = pageText(document, 1);
+            assertTrue(kizText.contains("Men's sports suit"));
+            assertTrue(kizText.contains("Article: seller-article"));
             assertFalse(kizText.contains(shop.getName()), "The KIZ label must not print a shop/brand heading");
             assertFalse(kizText.contains("OZON - KIZ"));
             assertFalse(kizText.contains("KIZ accepted by Ozon"));
             assertFalse(kizText.contains("Item "), "The KIZ label must not print item counters");
             assertFalse(kizText.contains("Unit "), "The KIZ label must not print unit counters");
-            assertFalse(pageOperators(document, 2).contains("S"), "The KIZ page must not stroke an outer border");
-            assertEquals(0, imageCount(document, 2), "The DataMatrix must be vector content, not a bitmap image");
+            assertFalse(pageOperators(document, 1).contains("S"), "The KIZ page must not stroke an outer border");
+            assertEquals(0, imageCount(document, 1), "The DataMatrix must be vector content, not a bitmap image");
         }
         try (PDDocument document = Loader.loadPDF(picking.toFile())) {
             assertEquals(1, document.getNumberOfPages());
             String text = new PDFTextStripper().getText(document);
             assertFalse(text.contains("OZON FBS - PICKING LIST"));
             assertFalse(text.contains("POST-1"));
-            assertFalse(text.contains("ORDER-1"));
+            assertFalse(text.contains("100001"));
             assertFalse(text.contains("Posting:"));
             assertFalse(text.contains("Shop:"));
             assertFalse(text.contains("Shipment:"));
             assertFalse(text.contains("Printed:"));
             assertFalse(text.contains("Raw KIZ values are intentionally omitted"));
             assertFalse(text.contains("KIZ"));
-            assertTrue(text.indexOf("Image") < text.indexOf("Product"));
-            assertTrue(text.contains("SKU-3583"));
-            assertTrue(text.contains("offer-black-176"));
+            assertPickingColumnOrder(text);
+            assertTrue(text.contains("Men's sports suit"));
+            assertTrue(text.contains("seller-article"));
+            assertFalse(text.contains("deep black"));
+            assertFalse(text.contains("XL"));
+            assertFalse(text.contains("SKU-3583"));
             assertTrue(text.contains("1"));
             assertFalse(text.contains(RAW_KIZ), "The picking list must not expose raw KIZ");
             assertTrue(imageCount(document, 0) >= 1, "The picking list must embed the catalog product image");
+            assertPageMillimeters(document, 0, 210, 297);
         }
     }
 
@@ -154,7 +161,7 @@ class OzonPrintBundleServiceTest {
         assertEquals(2, result.kizPages());
         try (PDDocument document = Loader.loadPDF(labels.toFile())) {
             assertEquals(KizService.scannerSafeCode(RAW_KIZ),
-                    KizService.scannerSafeCode(decodeRenderedDataMatrixResult(document, 2, 300).getText()));
+                    KizService.scannerSafeCode(decodeRenderedDataMatrixResult(document, 1, 300).getText()));
             assertEquals(KizService.scannerSafeCode(secondKiz),
                     KizService.scannerSafeCode(decodeRenderedDataMatrixResult(document, 3, 300).getText()));
         }
@@ -202,9 +209,63 @@ class OzonPrintBundleServiceTest {
         IOException failure = assertThrows(IOException.class, () ->
                 service.export(shop, "POST-1", labels.toFile(), picking.toFile()));
 
-        assertTrue(failure.getMessage().contains("mandatory"));
+        assertTrue(failure.getMessage().contains("requiring KIZ"));
         assertFalse(Files.exists(labels));
         assertFalse(Files.exists(picking));
+    }
+
+    @Test
+    void printAllMergesEveryPostingIntoOneLabelFileAndOnePickingFile() throws Exception {
+        seedUnmarkedPosting("POST-1", "SKU-1", "offer-black-64");
+        seedUnmarkedPosting("POST-2", "SKU-2", "offer-blue-68");
+        OzonProductKizPolicyRepository policies = new OzonProductKizPolicyRepository();
+        policies.setRequired(1, "SKU-1", false);
+        policies.setRequired(1, "SKU-2", false);
+        Path labels = temporaryDirectory.resolve("all-labels.pdf");
+        Path picking = temporaryDirectory.resolve("all-picking.pdf");
+
+        OzonPrintBundleService.BatchExportResult result = service(new AtomicBoolean()).exportAll(
+                shop, List.of("POST-1", "POST-2"), labels.toFile(), picking.toFile());
+
+        assertEquals(2, result.postingCount());
+        assertEquals(4, result.totalPages());
+        try (PDDocument document = Loader.loadPDF(labels.toFile())) {
+            assertEquals(4, document.getNumberOfPages());
+        }
+        try (PDDocument document = Loader.loadPDF(picking.toFile())) {
+            assertEquals(1, document.getNumberOfPages());
+            String text = new PDFTextStripper().getText(document);
+            assertTrue(text.contains("offer-black-64"));
+            assertTrue(text.contains("offer-blue-68"));
+            assertPickingColumnOrder(text);
+            assertPageMillimeters(document, 0, 210, 297);
+        }
+    }
+
+    @Test
+    void batchPickingListContainsAllFortyOneItemsInTheFiveRequestedColumns() throws Exception {
+        for (int index = 1; index <= 41; index++) {
+            seedUnmarkedPosting("POST-" + index, "SKU-" + index, "article-black-" + (40 + index));
+        }
+        List<OzonPostingDto> postings = java.util.stream.IntStream.rangeClosed(1, 41)
+                .mapToObj(index -> new OzonPostingRepository().find(1, "POST-" + index))
+                .toList();
+        Path picking = temporaryDirectory.resolve("forty-one-orders-picking.pdf");
+
+        new OzonPickingListPdfExporter().exportBatch(picking.toFile(), shop, postings);
+
+        try (PDDocument document = Loader.loadPDF(picking.toFile())) {
+            String text = new PDFTextStripper().getText(document);
+            assertTrue(document.getNumberOfPages() > 1);
+            assertFalse(text.contains("POST-1"));
+            assertFalse(text.contains("POST-41"));
+            assertTrue(text.contains("Product SKU-41"));
+            assertTrue(text.contains("article-black-81"));
+            assertPickingColumnOrder(text);
+            for (int page = 0; page < document.getNumberOfPages(); page++) {
+                assertPageMillimeters(document, page, 210, 297);
+            }
+        }
     }
 
     private OzonPrintBundleService service(AtomicBoolean prepared) {
@@ -239,9 +300,39 @@ class OzonPrintBundleServiceTest {
         String imageUrl = "https://example.invalid/ozon-product.png";
         new OzonCatalogRepository().upsertPage(1, List.of(new OzonProductDto(
                 "1001", "offer-black-176", "SKU-3583", "Men's sports suit", imageUrl,
+                "seller-article", "deep black", "XL",
                 false, "2026-08-19T00:00:00Z", List.of())), "");
         new ImageCacheRepository().saveImage(
                 PrintHistoryService.imageCacheKey(imageUrl), imageUrl, sampleProductPng(), "image/png");
+    }
+
+    private void seedUnmarkedPosting(String postingNumber, String sku, String offerId) {
+        String productId = postingNumber + "-PRODUCT";
+        new OzonPostingRepository().upsertDetail(1, new OzonPostingDto(
+                postingNumber, postingNumber + "-ORDER", postingNumber + "-ORDER", "awaiting_deliver", "", "",
+                "", "", "", "", new OzonRequirements(List.of(), List.of(), List.of()), List.of(), false,
+                List.of(new OzonPostingItemDto(0, productId, sku, offerId, "Product " + sku, 1, "RUB", "1"))));
+        String[] variant = offerId.split("-");
+        String color = variant.length >= 2 ? variant[variant.length - 2] : "";
+        String size = variant.length >= 1 ? variant[variant.length - 1] : "";
+        new OzonCatalogRepository().upsertPage(1, List.of(new OzonProductDto(
+                productId, offerId, sku, "Product " + sku, "", offerId, color, size,
+                false, "", List.of())), postingNumber);
+    }
+
+    private static void assertPickingColumnOrder(String text) {
+        List<String> headers = List.of(
+                I18nService.getInstance().tr("ozon.picking.column.index"),
+                I18nService.getInstance().tr("ozon.dashboard.col.image"),
+                I18nService.getInstance().tr("ozon.picking.column.name"),
+                I18nService.getInstance().tr("ozon.dashboard.item.article"),
+                I18nService.getInstance().tr("fbo.column.quantity"));
+        int previous = -1;
+        for (String header : headers) {
+            int position = text.indexOf(header, previous + 1);
+            assertTrue(position > previous, "Picking column is missing or out of order: " + header);
+            previous = position;
+        }
     }
 
     private void seedAcceptedExemplars(List<String> rawCodes) throws Exception {

@@ -153,6 +153,11 @@ public class UpdateApiClient {
 
     private static String resolveAssetKey(String assetName) {
         String name = assetName.toLowerCase();
+        if (name.endsWith(".dmg")) {
+            if (name.contains("arm64") || name.contains("aarch64")) return "dmg-arm64";
+            if (name.contains("x64") || name.contains("x86_64") || name.contains("intel")) return "dmg-x64";
+            return "dmg";
+        }
         if (name.endsWith(".tar.gz")) return "tar.gz";
         int lastDot = name.lastIndexOf('.');
         if (lastDot > 0 && lastDot < name.length() - 1) {

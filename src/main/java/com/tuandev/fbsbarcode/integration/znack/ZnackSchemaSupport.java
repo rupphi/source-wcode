@@ -156,7 +156,7 @@ public final class ZnackSchemaSupport {
                     shop_id INTEGER NOT NULL,gtin TEXT NOT NULL,product_name TEXT,tn_ved TEXT,certificate_type TEXT,
                     certificate_number TEXT,certificate_date TEXT,production_date TEXT,good_mark_flag INTEGER,
                     good_turn_flag INTEGER,card_status TEXT,card_detailed_status TEXT,category TEXT,
-                    readiness_checked_at TEXT,deleted_at TEXT,cis_type TEXT,synced_at TEXT NOT NULL,
+                    readiness_checked_at TEXT,deleted_at TEXT,cis_type TEXT,permit_documents_json TEXT,synced_at TEXT NOT NULL,
                     PRIMARY KEY(shop_id,gtin),FOREIGN KEY(shop_id) REFERENCES shops(id) ON DELETE CASCADE)
                     """);
             st.execute("""
@@ -214,25 +214,23 @@ public final class ZnackSchemaSupport {
             st.execute("CREATE INDEX IF NOT EXISTS idx_znack_logs_shop_created ON znack_operation_logs(shop_id,created_at DESC)");
             st.execute("CREATE INDEX IF NOT EXISTS idx_znack_gtin_mapping_rules_shop_gtin ON znack_gtin_mapping_rules(shop_id,gtin)");
             st.execute("CREATE INDEX IF NOT EXISTS idx_znack_purchase_pipelines_shop_gtin ON znack_purchase_pipelines(shop_id,gtin,updated_at DESC)");
+            // Only a remote-purchase mutation is serialized per GTIN. Later requests remain
+            // durably QUEUED, while introduction jobs may continue independently after all codes
+            // have been downloaded.
             st.execute("""
-                    UPDATE znack_purchase_pipelines SET stage='FAILED',error_message='SUPERSEDED_DUPLICATE_PIPELINE'
-                    WHERE stage NOT IN ('COMPLETED','INTRODUCED','FAILED','INTRODUCTION_FAILED',
-                                        'INTRODUCTION_SKIPPED_MISSING_DOCUMENTS','INTRODUCTION_SKIPPED_MISSING_METADATA')
+                    UPDATE znack_purchase_pipelines SET stage='QUEUED',error_message=NULL
+                    WHERE stage IN ('VALIDATING','CREATING_ORDER','RECONCILING_ORDER','POLLING_ORDER','DOWNLOADING_CODES')
                       AND id NOT IN (
-                        SELECT MAX(id) FROM znack_purchase_pipelines
-                        WHERE stage NOT IN ('COMPLETED','INTRODUCED','FAILED','INTRODUCTION_FAILED',
-                                            'INTRODUCTION_SKIPPED_MISSING_DOCUMENTS','INTRODUCTION_SKIPPED_MISSING_METADATA')
+                        SELECT MIN(id) FROM znack_purchase_pipelines
+                        WHERE stage IN ('VALIDATING','CREATING_ORDER','RECONCILING_ORDER','POLLING_ORDER','DOWNLOADING_CODES')
                         GROUP BY shop_id,gtin
                       )
                     """);
-            // The partial-index predicate must match the terminal-stage list above; drop and
-            // re-create so existing databases pick up newly added terminal stages.
             st.execute("DROP INDEX IF EXISTS uq_znack_purchase_pipeline_active");
             st.execute("""
                     CREATE UNIQUE INDEX uq_znack_purchase_pipeline_active
                     ON znack_purchase_pipelines(shop_id,gtin)
-                    WHERE stage NOT IN ('COMPLETED','INTRODUCED','FAILED','INTRODUCTION_FAILED',
-                                        'INTRODUCTION_SKIPPED_MISSING_DOCUMENTS','INTRODUCTION_SKIPPED_MISSING_METADATA')
+                    WHERE stage IN ('VALIDATING','CREATING_ORDER','RECONCILING_ORDER','POLLING_ORDER','DOWNLOADING_CODES')
                     """);
         }
     }
@@ -315,6 +313,9 @@ public final class ZnackSchemaSupport {
             }
             if (!hasColumn(c, "znack_products", "cis_type")) {
                 st.execute("ALTER TABLE znack_products ADD COLUMN cis_type TEXT");
+            }
+            if (!hasColumn(c, "znack_products", "permit_documents_json")) {
+                st.execute("ALTER TABLE znack_products ADD COLUMN permit_documents_json TEXT");
             }
         }
     }
@@ -401,13 +402,11 @@ public final class ZnackSchemaSupport {
             st.execute("PRAGMA foreign_keys=OFF");
             c.setAutoCommit(false);
             st.execute("""
-                    UPDATE znack_purchase_pipelines SET stage='FAILED',error_message='SUPERSEDED_DUPLICATE_PIPELINE'
-                    WHERE stage NOT IN ('COMPLETED','INTRODUCED','FAILED','INTRODUCTION_FAILED',
-                                        'INTRODUCTION_SKIPPED_MISSING_DOCUMENTS','INTRODUCTION_SKIPPED_MISSING_METADATA')
+                    UPDATE znack_purchase_pipelines SET stage='QUEUED',error_message=NULL
+                    WHERE stage IN ('VALIDATING','CREATING_ORDER','RECONCILING_ORDER','POLLING_ORDER','DOWNLOADING_CODES')
                       AND id NOT IN (
-                        SELECT MAX(id) FROM znack_purchase_pipelines
-                        WHERE stage NOT IN ('COMPLETED','INTRODUCED','FAILED','INTRODUCTION_FAILED',
-                                            'INTRODUCTION_SKIPPED_MISSING_DOCUMENTS','INTRODUCTION_SKIPPED_MISSING_METADATA')
+                        SELECT MIN(id) FROM znack_purchase_pipelines
+                        WHERE stage IN ('VALIDATING','CREATING_ORDER','RECONCILING_ORDER','POLLING_ORDER','DOWNLOADING_CODES')
                         GROUP BY shop_id,CASE
                           WHEN length(gtin)<14 AND gtin NOT GLOB '*[^0-9]*'
                           THEN substr('00000000000000'||gtin,-14,14) ELSE gtin END

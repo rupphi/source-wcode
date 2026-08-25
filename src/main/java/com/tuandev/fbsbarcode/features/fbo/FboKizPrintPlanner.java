@@ -67,8 +67,11 @@ public class FboKizPrintPlanner {
                     String gtin = mappings.get(item.product().nmId());
                     code = reservedByGtin.get(gtin).get(nextIndex.merge(gtin, 1, Integer::sum) - 1).getCode();
                 }
-                pages.add(FboPrintPage.barcodeWithKiz(item.product(), code, pairNumber));
-                pages.add(FboPrintPage.barcodeWithKiz(item.product(), code, pairNumber));
+                pages.add(FboPrintPage.barcode(item.product(), pairNumber));
+                pages.add(FboPrintPage.barcode(item.product(), pairNumber));
+                if (code != null && !code.isBlank()) {
+                    pages.add(FboPrintPage.kiz(item.product(), code, pairNumber));
+                }
                 pairNumber++;
             }
         }

@@ -14,6 +14,7 @@ import java.util.function.BiFunction;
 public final class OzonShipService {
     private final OzonPostingRepository postings;
     private final OzonProductGtinMappingRepository mappings;
+    private final OzonProductKizPolicyRepository policies;
     private final OzonExemplarJobRepository jobs;
     private final BiFunction<Integer, OzonCredentials, OzonApiClient> apiClients;
 
@@ -21,6 +22,7 @@ public final class OzonShipService {
         this(
                 new OzonPostingRepository(),
                 new OzonProductGtinMappingRepository(),
+                new OzonProductKizPolicyRepository(),
                 new OzonExemplarJobRepository(),
                 OzonApiClient::new);
     }
@@ -30,8 +32,18 @@ public final class OzonShipService {
             OzonProductGtinMappingRepository mappings,
             OzonExemplarJobRepository jobs,
             BiFunction<Integer, OzonCredentials, OzonApiClient> apiClients) {
+        this(postings, mappings, new OzonProductKizPolicyRepository(), jobs, apiClients);
+    }
+
+    OzonShipService(
+            OzonPostingRepository postings,
+            OzonProductGtinMappingRepository mappings,
+            OzonProductKizPolicyRepository policies,
+            OzonExemplarJobRepository jobs,
+            BiFunction<Integer, OzonCredentials, OzonApiClient> apiClients) {
         this.postings = Objects.requireNonNull(postings, "postings");
         this.mappings = Objects.requireNonNull(mappings, "mappings");
+        this.policies = Objects.requireNonNull(policies, "policies");
         this.jobs = Objects.requireNonNull(jobs, "jobs");
         this.apiClients = Objects.requireNonNull(apiClients, "apiClients");
     }
@@ -56,7 +68,7 @@ public final class OzonShipService {
             throw new OzonApiException("reconcile_required", 0, false, true, null);
         }
         OzonRequirementGuard.PreparationPlan plan = OzonRequirementGuard.plan(
-                posting, mappings.findAll(shop.getId()));
+                posting, mappings.findAll(shop.getId()), policies.findExemptSkus(shop.getId()));
         if (plan.exemplarCount() > 0) {
             OzonExemplarJob job = jobs.find(shop.getId(), posting.postingNumber());
             if (job == null || job.stage() != OzonExemplarJobStage.ACCEPTED) {

@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
+import java.util.List;
 import java.util.Objects;
 
 /** Rolling-overlap posting sync so remote status changes are observed without a fragile offset cursor. */
@@ -73,6 +74,20 @@ public final class OzonPostingSyncService {
         OzonPostingDto posting = OzonJson.parsePostingDetail(api.getPosting(postingNumber, withExemplars));
         postings.upsertDetail(shopId, posting);
         return posting;
+    }
+
+    /**
+     * Refreshes actionable postings through the detail endpoint. The list endpoint is useful for
+     * queue discovery, but the detail response is the authority used for KIZ requirements.
+     */
+    public int refreshActiveDetails() throws IOException {
+        List<OzonPostingDto> active = postings.findActive(shopId, 1000, 0);
+        int refreshed = 0;
+        for (OzonPostingDto posting : active) {
+            refresh(posting.postingNumber(), false);
+            refreshed++;
+        }
+        return refreshed;
     }
 
     private static Instant startFor(OzonSyncState state, Instant end) {

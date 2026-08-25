@@ -1,6 +1,7 @@
 package com.tuandev.fbsbarcode;
 
 import com.tuandev.fbsbarcode.features.print.KizAttachmentCoordinator;
+import com.tuandev.fbsbarcode.features.finance.FinanceExecutor;
 import com.tuandev.fbsbarcode.integration.wb.WbSupplyWorkflow;
 import com.tuandev.fbsbarcode.shared.AlertService;
 import com.tuandev.fbsbarcode.shared.AppTaskExecutor;
@@ -54,5 +55,6 @@ public class MainApplication extends Application {
         }
         WbSupplyWorkflow.shutdownImageLoader();
         AppTaskExecutor.shutdown();
+        FinanceExecutor.shutdown();
     }
 }

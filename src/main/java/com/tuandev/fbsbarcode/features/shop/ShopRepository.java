@@ -107,6 +107,10 @@ public class ShopRepository {
     }
 
     public int delete(int id) {
+        return ShopOperationCoordinator.withExclusiveShop(id, () -> deleteExclusive(id));
+    }
+
+    private int deleteExclusive(int id) {
         String sql = "DELETE FROM shops WHERE id = ?";
         try (Connection conn = Database.getConnection()) {
             conn.setAutoCommit(false);

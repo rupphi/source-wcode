@@ -43,6 +43,7 @@ class OzonShipServiceTest {
                     + "VALUES(1,'Ozon','OZON','client-1','secret')");
         }
         shop = new Shop(1, "Ozon", Marketplace.OZON, "client-1", "secret");
+        new OzonProductKizPolicyRepository().setRequired(1, "101", false);
     }
 
     @AfterEach

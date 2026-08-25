@@ -40,10 +40,9 @@ public class ZnackAutomationController {
     @FXML private Label settingsTitleLabel, omsIdLabel, omsConnectionLabel;
     @FXML private Label omsHelpTitleLabel, omsHelpDescriptionLabel, omsHelpStepsTitleLabel, omsHelpStepsLabel;
     @FXML private Label omsHelpRecognizeTitleLabel, omsHelpRecognizeLabel, omsHelpWarningLabel;
-    @FXML private Label signatureTitleLabel, defaultGoodsDocumentLabel;
-    @FXML private Label documentNumberLabel, documentIssueDateLabel;
+    @FXML private Label signatureTitleLabel;
     @FXML private Tab settingsTab, productsTab, deletedTab, ordersTab, logsTab;
-    @FXML private TextField omsIdField, omsConnectionField, documentNumberField, documentIssueDateField;
+    @FXML private TextField omsIdField, omsConnectionField;
     @FXML private TextField productSearchField, deletedSearchField;
     @FXML private ComboBox<CryptoProCertificateInfo> signatureCertificateCombo;
     @FXML private CheckBox autoIntroductionCheck;
@@ -147,7 +146,7 @@ public class ZnackAutomationController {
                 requestProductSyncOnOpen();
             }
         });
-        for (TextField field : List.of(omsIdField, omsConnectionField, documentNumberField, documentIssueDateField)) {
+        for (TextField field : List.of(omsIdField, omsConnectionField)) {
             field.textProperty().addListener((o, old, value) -> updateSaveState());
         }
         autoIntroductionCheck.selectedProperty().addListener((o, old, value) -> updateSaveState());
@@ -220,10 +219,6 @@ public class ZnackAutomationController {
         signatureTitleLabel.setText(tr("znack.digital_signature"));
         testSignatureButton.setText(tr("znack.signature.test"));
         testSignatureButton.setTooltip(new Tooltip(tr("znack.signature.help")));
-        defaultGoodsDocumentLabel.setText(tr("znack.default_goods_document"));
-        autoIntroductionCheck.setTooltip(new Tooltip(tr("znack.default_goods_document_help")));
-        documentNumberLabel.setText(tr("znack.document_number"));
-        documentIssueDateLabel.setText(tr("znack.document_issue_date"));
         autoIntroductionCheck.setText(tr("znack.auto_introduction"));
         saveButton.setText(tr("znack.save"));
         productGtinColumn.setText(tr("znack.field.gtin"));
@@ -280,7 +275,6 @@ public class ZnackAutomationController {
             return;
         }
         try {
-            settings.validateDefaultGoodsDocument();
             repository.saveSettings(settings);
             repository.log("SETTINGS_SAVE", null, "INFO", "SAVED", null);
             loaded = settings;
@@ -443,8 +437,6 @@ public class ZnackAutomationController {
         signerTestedAt = loaded.signerTestedAt();
         omsIdField.setText(value(loaded.omsId()));
         omsConnectionField.setText(value(loaded.omsConnection()));
-        documentNumberField.setText(value(loaded.documentNumber()));
-        documentIssueDateField.setText(value(loaded.documentDate()));
         autoIntroductionCheck.setSelected(loaded.autoIntroduction());
         signatureCertificateCombo.getItems().clear();
         if (!signerCertificate.isBlank()) {
@@ -750,17 +742,17 @@ public class ZnackAutomationController {
     private Settings settings() {
         return new Settings(loaded.trueApiBaseUrl(), loaded.suzBaseUrl(), omsIdField.getText(), omsConnectionField.getText(),
                 loaded.participantInn(), loaded.producerInn(), loaded.ownerInn(), loaded.signerExecutable(),
-                selectedCertificate(), loaded.signerArgumentsJson(), documentNumberField.getText(),
-                documentIssueDateField.getText(), loaded.pdfFolder(), autoIntroductionCheck.isSelected(),
+                selectedCertificate(), loaded.signerArgumentsJson(), loaded.documentNumber(),
+                loaded.documentDate(), loaded.pdfFolder(), autoIntroductionCheck.isSelected(),
                 loaded.certificateListExecutable(), loaded.certificateListArgumentsJson(), certificateMetadata,
                 signerTestedAt, loaded.certmgrPath(), loaded.cryptcpPath(), loaded.csptestPath(),
-                loaded.resolvedCryptoProTimeoutSeconds(), loaded.documentExpiryDate(), Settings.DEFAULT_DOCUMENT_TYPE);
+                loaded.resolvedCryptoProTimeoutSeconds(), loaded.documentExpiryDate(), loaded.documentType());
     }
 
     private void clear() {
         loading = true;
         loaded = Settings.empty();
-        for (TextField field : List.of(omsIdField, omsConnectionField, documentNumberField, documentIssueDateField)) field.clear();
+        for (TextField field : List.of(omsIdField, omsConnectionField)) field.clear();
         signatureCertificateCombo.getItems().clear();
         allProducts = List.of();
         allDeletedProducts = List.of();
@@ -802,7 +794,6 @@ public class ZnackAutomationController {
 
     private String fingerprint() {
         return String.join("\u001f", value(omsIdField.getText()), value(omsConnectionField.getText()), selectedCertificate(),
-                value(documentNumberField.getText()), value(documentIssueDateField.getText()),
                 String.valueOf(autoIntroductionCheck.isSelected()),
                 value(certificateMetadata), signerTestedAt == null ? "" : signerTestedAt.toString());
     }

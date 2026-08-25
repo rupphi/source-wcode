@@ -8,6 +8,7 @@ import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 import java.io.IOException;
 import java.io.InterruptedIOException;
+import java.math.BigInteger;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
@@ -106,6 +107,25 @@ public final class OzonApiClient {
         JsonObject request = new JsonObject();
         request.add("product_id", ids);
         return postJson("v3/product/info/list", request, "catalog");
+    }
+
+    public JsonObject productAttributes(List<String> productIds) throws IOException {
+        JsonArray ids = boundedStrings(productIds, 1000, "product id");
+        JsonObject filter = new JsonObject();
+        filter.add("product_id", ids);
+        JsonObject request = new JsonObject();
+        request.add("filter", filter);
+        request.addProperty("limit", ids.size());
+        return postJson("v4/product/info/attributes", request, "catalog");
+    }
+
+    public JsonObject descriptionCategoryAttributes(String descriptionCategoryId, String typeId)
+            throws IOException {
+        JsonObject request = new JsonObject();
+        request.addProperty("description_category_id", numericId(descriptionCategoryId, "description category id"));
+        request.addProperty("type_id", numericId(typeId, "product type id"));
+        request.addProperty("language", "DEFAULT");
+        return postJson("v1/description-category/attribute", request, "catalog");
     }
 
     public JsonObject listPostings(String since, String to, String cursor, int limit) throws IOException {
@@ -429,6 +449,14 @@ public final class OzonApiClient {
             throw new IllegalArgumentException("A valid Ozon " + label + " is required");
         }
         return normalized;
+    }
+
+    private static BigInteger numericId(String value, String label) {
+        String normalized = requireExternalId(value, label);
+        if (!normalized.matches("[1-9][0-9]{0,38}")) {
+            throw new IllegalArgumentException("Ozon " + label + " must be a positive numeric identifier");
+        }
+        return new BigInteger(normalized);
     }
 
     private static JsonArray boundedStrings(List<String> values, int maximum, String label) {

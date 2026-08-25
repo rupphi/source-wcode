@@ -15,6 +15,7 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.ResourceBundle;
@@ -120,6 +121,26 @@ class ZnackModuleTest {
         assertEquals("Shop B",b.findLogs().getFirst().shopName());
     }
 
+    @Test void permitDocumentsAreStoredAsACompleteShopScopedGtinSnapshot() {
+        ZnackRepository a=repository(1,"Shop A"), b=repository(2,"Shop B");
+        Product product=new Product("04601234567890","Product",null,null,null,null,null);
+        a.upsertProducts(List.of(product));
+        b.upsertProducts(List.of(product));
+        List<GoodsDocument> documents=List.of(
+                new GoodsDocument("CONFORMITY_DECLARATION","DECLARATION-1","2026-01-10"),
+                new GoodsDocument("CONFORMITY_CERTIFICATE","CERTIFICATE-2","2026-02-11"));
+
+        a.updateProductDocuments(product.gtin(),documents);
+
+        assertEquals(documents,a.findProduct(product.gtin()).orElseThrow().permitDocuments());
+        assertTrue(b.findProduct(product.gtin()).orElseThrow().permitDocuments().isEmpty());
+        assertEquals("DECLARATION-1",a.findProduct(product.gtin()).orElseThrow().certificateNumber());
+
+        a.updateProductDocuments(product.gtin(),List.of());
+        assertTrue(a.findProduct(product.gtin()).orElseThrow().permitDocuments().isEmpty());
+        assertNull(a.findProduct(product.gtin()).orElseThrow().certificateNumber());
+    }
+
     @Test void signatureSelectionAndVerifiedStateAreShopSpecific() {
         ZnackRepository a=repository(1,"Shop A"), b=repository(2,"Shop B");
         Settings verifiedA=testedSettings("","","","connection","");
@@ -138,8 +159,9 @@ class ZnackModuleTest {
         assertFalse(fxml.contains("refreshCertificatesButton"));
         assertTrue(fxml.contains("testSignatureButton"));
         assertTrue(fxml.contains("omsConnectionField"));
-        assertTrue(fxml.contains("documentNumberField"));
-        assertTrue(fxml.contains("documentIssueDateField"));
+        assertFalse(fxml.contains("documentNumberField"));
+        assertFalse(fxml.contains("documentIssueDateField"));
+        assertTrue(fxml.contains("autoIntroductionCheck"));
         assertFalse(fxml.contains("documentTypeCombo"));
         assertFalse(fxml.contains("documentExpiryDateField"));
         assertFalse(fxml.contains("advancedSettingsPane"));
@@ -532,6 +554,44 @@ class ZnackModuleTest {
         } finally { server.stop(0); }
     }
 
+    @Test void ambiguousOrderReconciliationUsesRecoveryListAndExactPurchaseFingerprint() throws Exception {
+        AtomicReference<String> path=new AtomicReference<>(),clientToken=new AtomicReference<>();
+        HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/api/v3/order/list",exchange->{
+            path.set(exchange.getRequestURI().toString());
+            clientToken.set(exchange.getRequestHeaders().getFirst("clientToken"));
+            respond(exchange,"""
+                    {"omsId":"oms","orderInfos":[
+                      {"orderId":"wrong-quantity","orderStatus":"READY","createdTimestamp":%d,
+                       "buffers":[{"gtin":"04601234567890","totalCodes":1}]},
+                      {"orderId":"recovered-order","orderStatus":"READY","createdTimestamp":%d,
+                       "buffers":[{"gtin":"04601234567890","totalCodes":2}]}
+                    ]}
+                    """.formatted(System.currentTimeMillis(),System.currentTimeMillis()));
+        });
+        server.start();
+        try {
+            ZnackRepository repository=repository(1,"Shop A");
+            repository.upsertProducts(List.of(new Product("04601234567890","Product",null,null,null,null,null)));
+            long localId=repository.createDraft("04601234567890",2);
+            KizOrder local=repository.findOrder(localId).orElseThrow();
+            String base="http://127.0.0.1:"+server.getAddress().getPort();
+            ZnackSignatureProvider signer=(input,context)->new CryptoProSigningResult(new byte[]{0x30,0x02,0x01,0x00},"");
+            ZnackAuthService auth=new ZnackAuthService(new ZnackApiClient(),signer){
+                @Override public String suzToken(Settings ignored){return "dynamic-client-token";}
+            };
+
+            ZnackKizOrderService.OrderReconciliation result=
+                    new ZnackKizOrderService(new ZnackApiClient(),auth,signer,repository)
+                            .reconcile(testedSettings("",base,"oms","connection",""),local);
+
+            assertEquals(ZnackKizOrderService.ReconciliationStatus.MATCHED,result.status());
+            assertEquals("recovered-order",result.order().externalOrderId());
+            assertEquals("/api/v3/order/list?omsId=oms",path.get());
+            assertEquals("dynamic-client-token",clientToken.get());
+        } finally { server.stop(0); }
+    }
+
     @Test void suzCodeDownloadUsesDocumentedClientTokenAndQueryParameters() throws Exception {
         AtomicReference<String> path=new AtomicReference<>(),clientToken=new AtomicReference<>(),authorization=new AtomicReference<>();
         HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
@@ -713,7 +773,7 @@ class ZnackModuleTest {
             @Override public JsonElement products(String base,String token){
                 return JsonParser.parseString("""
                         {"results":[{"gtin":"04601234567890","productName":"Product","isKit":true,
-                        "certificate_type":"DECLARATION","certificate_number":"DOC-1",
+                        "certificate_type":"UNTRUSTED-FLAT-VALUE","certificate_number":"UNTRUSTED-DOC",
                         "certificate_date":"20.06.2024","production_date":"21.06.2024"}]}
                         """);
             }
@@ -726,7 +786,9 @@ class ZnackModuleTest {
                         ],
                         "good_attrs":[
                           {"attr_id":3959,"attr_name":"Группа ТНВЭД","attr_value":"6202"},
-                          {"attr_id":13933,"attr_name":"Код ТНВЭД","attr_value":"6202 30 00 00"}
+                          {"attr_id":13933,"attr_name":"Код ТНВЭД","attr_value":"6202 30 00 00"},
+                          {"attr_id":23557,"certificate_number":"DECLARATION-1","certificate_issued_date":"2026-01-10"},
+                          {"attr_id":23561,"certificate_number":"CERTIFICATE-2","certificate_issued_date":"2026-02-11"}
                         ],
                         "identified_by":[{"type":"gtin","value":"04601234567890"}]}]}
                         """);
@@ -742,7 +804,11 @@ class ZnackModuleTest {
         assertEquals("National Catalog Product",synced.productName());
         assertEquals("6202300000",synced.tnVed());
         assertEquals("Обувь домашняя, Обувь детская",synced.category());
-        assertEquals("DOC-1",synced.certificateNumber());
+        assertEquals("DECLARATION-1",synced.certificateNumber());
+        assertEquals(List.of(
+                new GoodsDocument("CONFORMITY_DECLARATION","DECLARATION-1","2026-01-10"),
+                new GoodsDocument("CONFORMITY_CERTIFICATE","CERTIFICATE-2","2026-02-11")),
+                synced.permitDocuments());
         assertEquals("21.06.2024",synced.productionDate());
         assertEquals("BUNDLE",synced.cisType());
 
@@ -827,6 +893,57 @@ class ZnackModuleTest {
         assertEquals("WARN",syncLog.severity());
         assertTrue(syncLog.message().contains("partial"));
         assertTrue(syncLog.message().contains("1 catalog batch"));
+    }
+
+    @Test void productSyncKeepsV119PriorityForPreviouslyIncompleteGtins() throws Exception {
+        ZnackRepository repository=repository(1,"Shop A");
+        String missingGtin="04601234560025";
+        List<Product> existing=new ArrayList<>();
+        for(int index=0;index<25;index++)existing.add(new Product(
+                String.format("0460123456%04d",index),"Existing "+index,"6202300000",null,null,null,null));
+        existing.add(new Product(missingGtin,"","",null,null,null,null));
+        repository.upsertProducts(existing);
+
+        AtomicInteger catalogRequests=new AtomicInteger();
+        ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonElement products(String base,String token){
+                JsonArray results=new JsonArray();
+                for(int index=0;index<26;index++){
+                    JsonObject product=new JsonObject();
+                    product.addProperty("gtin",String.format("0460123456%04d",index));
+                    product.addProperty("good_status","published");
+                    results.add(product);
+                }
+                JsonObject response=new JsonObject();
+                response.add("results",results);
+                return response;
+            }
+            @Override public JsonElement productCards(String base,String token,String gtins)throws java.io.IOException{
+                if(catalogRequests.incrementAndGet()>1){
+                    throw new ZnackApiClient.ZnackApiException("Znack API request failed",429,
+                            "{\"error_message\":\"Слишком много запросов\"}");
+                }
+                JsonArray result=new JsonArray();
+                if(List.of(gtins.split(";")).contains(missingGtin)){
+                    result.add(JsonParser.parseString("""
+                            {"good_name":"Recovered name","tnved":"6202300000",
+                             "identified_by":[{"type":"gtin","value":"%s"}]}
+                            """.formatted(missingGtin)));
+                }
+                JsonObject response=new JsonObject();
+                response.add("result",result);
+                return response;
+            }
+        };
+        ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+            @Override public String trueApiToken(Settings s){return "token";}
+        };
+
+        new ZnackProductService(api,auth,repository).sync(testedSettings("","","","connection",""));
+
+        Product recovered=repository.findProduct(missingGtin).orElseThrow();
+        assertEquals("Recovered name",recovered.productName());
+        assertEquals("6202300000",recovered.tnVed());
     }
 
     @Test void productSyncIgnoresTechnicalGtinsAndDeletesUnreferencedExistingOnes() throws Exception {
@@ -932,6 +1049,28 @@ class ZnackModuleTest {
         assertEquals("https://markirovka.crpt.ru",ZnackApiClient.apiRoot(base));
         assertEquals("https://markirovka.crpt.ru/api/v3/true-api",ZnackApiClient.authBase(base));
         assertEquals("https://markirovka.crpt.ru/api/v4/true-api",ZnackApiClient.trueApiBase(base,4));
+        assertEquals(ZnackModels.PRODUCTION_NATIONAL_CATALOG,ZnackApiClient.nationalCatalogBase(base));
+        assertEquals(ZnackModels.SANDBOX_NATIONAL_CATALOG,
+                ZnackApiClient.nationalCatalogBase("https://markirovka.sandbox.crptech.ru/api/v3/true-api"));
+    }
+
+    @Test void permitLookupUsesNationalCatalogContractAndBearerToken() throws Exception {
+        AtomicReference<String> body=new AtomicReference<>(),authorization=new AtomicReference<>();
+        HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/v4/rd-info-by-gtin",exchange->{
+            body.set(new String(exchange.getRequestBody().readAllBytes(),StandardCharsets.UTF_8));
+            authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            respond(exchange,"{\"result\":{\"documents\":[]}}");
+        });
+        server.start();
+        try{
+            String base="http://127.0.0.1:"+server.getAddress().getPort();
+            new ZnackApiClient().permitDocuments(base,"true-api-token","04601234567890","7701234567");
+            assertEquals("Bearer true-api-token",authorization.get());
+            JsonObject request=JsonParser.parseString(body.get()).getAsJsonObject();
+            assertEquals("04601234567890",request.get("gtin").getAsString());
+            assertEquals("7701234567",request.get("inn").getAsString());
+        }finally{server.stop(0);}
     }
 
     @Test void trueAndSuzAuthenticationUseTrueApiHostOmitBlankInnAndDeriveParticipant() throws Exception {
@@ -957,7 +1096,7 @@ class ZnackModuleTest {
         } finally { server.stop(0); }
     }
 
-    @Test void ownProductionIntroductionUsesSnakeCaseAndParticipantFallbacks() throws Exception {
+    @Test void ownProductionIntroductionUsesEveryActiveGtinDocumentAndParticipantFallbacks() throws Exception {
         ZnackRepository repository=repository(1, "Shop A");
         Product product=new Product("04601234567890","Product","6201000000",null,null,null,null);
         repository.upsertProducts(List.of(product));
@@ -966,12 +1105,25 @@ class ZnackModuleTest {
         repository.insertCodes(orderId,"04601234567890",new DownloadedCodes(
                 List.of(normalizedCis+"\u001D91ABCD\u001D92signature"),"block"));
         AtomicReference<JsonObject> request=new AtomicReference<>();
-        ZnackApiClient api=new ZnackApiClient(){@Override public String createDocument(String base,String token,JsonObject body){request.set(body);return "doc";}};
+        AtomicReference<String> registryGtin=new AtomicReference<>(),registryInn=new AtomicReference<>();
+        ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonElement permitDocuments(String base,String token,String gtin,String inn){
+                registryGtin.set(gtin);registryInn.set(inn);
+                return JsonParser.parseString("""
+                        {"result":{"documents":[
+                          {"attr_id":23557,"number":"DECLARATION-1","from_date":"2026-01-10","status_group":1},
+                          {"attr_id":23561,"number":"CERTIFICATE-2","from_date":"2026-02-11","status":"Действует"},
+                          {"attr_id":23557,"number":"SUSPENDED","from_date":"2025-01-01","status_group":2}
+                        ]}}
+                        """);
+            }
+            @Override public String createDocument(String base,String token,JsonObject body){request.set(body);return "doc";}
+        };
         ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
             @Override public String trueApiToken(Settings s){return "token";}
             @Override public String resolvedParticipantInn(Settings s){return "7701234567";}
         };
-        Settings settings=settingsWithDocument("",false,"ЕАЭС N RU Д-TR.РА05.В.15176/24","20.06.2024","16.06.2029");
+        Settings settings=settingsWithDocument("",false,"DEFAULT-MUST-NOT-BE-USED","20.06.2024","16.06.2029");
         new ZnackIntroductionService(api,auth,testSigner(),repository).submit(settings,repository.findOrder(orderId).orElseThrow(),product,repository.findCodes(orderId));
         String encoded=request.get().get("product_document").getAsString();
         JsonObject payload=JsonParser.parseString(new String(java.util.Base64.getDecoder().decode(encoded),StandardCharsets.UTF_8)).getAsJsonObject();
@@ -981,18 +1133,64 @@ class ZnackModuleTest {
         assertEquals("OWN_PRODUCTION",payload.get("production_type").getAsString());
         assertEquals(normalizedCis,payload.getAsJsonArray("products").get(0).getAsJsonObject().get("uit_code").getAsString());
         assertTrue(payload.getAsJsonArray("products").get(0).getAsJsonObject().has("tnved_code"));
-        JsonObject certificate=payload.getAsJsonArray("products").get(0).getAsJsonObject().getAsJsonArray("certificate_document_data").get(0).getAsJsonObject();
-        assertEquals("ЕАЭС N RU Д-TR.РА05.В.15176/24",certificate.get("certificate_number").getAsString());
-        assertEquals("20.06.2024",certificate.get("certificate_date").getAsString());
-        assertEquals("CONFORMITY_DECLARATION",certificate.get("certificate_type").getAsString());
-        assertFalse(certificate.has("certificate_expiration_date"));
+        JsonArray certificates=payload.getAsJsonArray("products").get(0).getAsJsonObject().getAsJsonArray("certificate_document_data");
+        assertEquals(List.of("DECLARATION-1","CERTIFICATE-2"),certificates.asList().stream()
+                .map(JsonElement::getAsJsonObject).map(c->c.get("certificate_number").getAsString()).toList());
+        assertEquals(List.of("CONFORMITY_DECLARATION","CONFORMITY_CERTIFICATE"),certificates.asList().stream()
+                .map(JsonElement::getAsJsonObject).map(c->c.get("certificate_type").getAsString()).toList());
+        assertTrue(certificates.asList().stream().noneMatch(c->c.getAsJsonObject().has("certificate_expiration_date")));
+        assertEquals("04601234567890",registryGtin.get());
+        assertEquals("7701234567",registryInn.get());
+        assertEquals(List.of("DECLARATION-1","CERTIFICATE-2"),repository.findProduct(product.gtin()).orElseThrow()
+                .permitDocuments().stream().map(GoodsDocument::number).toList());
         assertEquals("doc",repository.findLatestDocument(orderId).orElseThrow().externalDocumentId());
+    }
+
+    @Test void inactiveGtinDocumentsBlockSubmissionClearStaleSnapshotAndIgnoreLegacyDefault() {
+        ZnackRepository repository=repository(1,"Shop A");
+        Product product=new Product("04601234567890","Product","6201000000",null,null,null,null);
+        repository.upsertProducts(List.of(product));
+        repository.updateProductDocuments(product.gtin(),List.of(
+                new GoodsDocument("CONFORMITY_DECLARATION","STALE","2025-01-01")));
+        long orderId=repository.createDraft(product.gtin(),1);
+        repository.insertCodes(orderId,product.gtin(),new DownloadedCodes(List.of("inactive-document-code"),"block"));
+        AtomicInteger createCalls=new AtomicInteger();
+        ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonElement permitDocuments(String base,String token,String gtin,String inn){
+                return JsonParser.parseString("""
+                        {"result":{"documents":[{"attr_id":23557,"number":"SUSPENDED",
+                        "from_date":"2025-01-01","status_group":2}]}}
+                        """);
+            }
+            @Override public String createDocument(String base,String token,JsonObject body){
+                createCalls.incrementAndGet();return "must-not-submit";
+            }
+        };
+        ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+            @Override public String trueApiToken(Settings s){return "token";}
+            @Override public String resolvedParticipantInn(Settings s){return "7701234567";}
+        };
+
+        assertThrows(ZnackIntroductionService.PermitDocumentsUnavailableException.class,
+                ()->new ZnackIntroductionService(api,auth,testSigner(),repository).submit(
+                        settingsWithDocument("",true,"LEGACY-DEFAULT","20.06.2024","20.06.2029"),
+                        repository.findOrder(orderId).orElseThrow(),product,repository.findCodes(orderId)));
+
+        assertEquals(0,createCalls.get());
+        assertTrue(repository.findLatestDocument(orderId).isEmpty());
+        assertTrue(repository.findProduct(product.gtin()).orElseThrow().permitDocuments().isEmpty());
     }
 
     @Test void definitiveIntroductionApiRejectionIsNotMarkedAsAmbiguous() {
         ZnackRepository repository=repository(1,"Shop A");
         long orderId=orderWithCodes(repository);
         ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonElement permitDocuments(String base,String token,String gtin,String inn){
+                return JsonParser.parseString("""
+                        {"result":{"documents":[{"attr_id":23557,"number":"DOC-1",
+                        "from_date":"2026-01-10","status_group":1}]}}
+                        """);
+            }
             @Override public String createDocument(String base,String token,JsonObject body)throws java.io.IOException{
                 throw new ZnackApiClient.ZnackApiException("Znack API request failed",422,
                         "{\"error\":\"document unavailable\"}");
@@ -1090,17 +1288,17 @@ class ZnackModuleTest {
         assertDoesNotThrow(()->settingsWithDocument("",true,"doc","20.06.2029","not-used").validateGoodsDocumentDates());
     }
 
-    @Test void introductionAlwaysUsesShopDefaultDocumentAndIgnoresLegacyGtinOverrides() {
+    @Test void legacySettingsAndFlatGtinFieldsAreNeverPromotedToRegistryDocuments() {
         Settings defaults=settingsWithDocument("",true,"DEFAULT","20.06.2024","");
         Product inherited=new Product("04601234567890","Product","6201000000",null,null,null,null);
         Product overridden=new Product("04601234567890","Product","6201000000","CONFORMITY_CERTIFICATE",
                 "OVERRIDE","21.06.2024",null);
         Product partial=new Product("04601234567890","Product","6201000000",null,"PARTIAL",null,null);
 
-        assertEquals("DEFAULT",inherited.resolvedGoodsDocument(defaults).number());
-        assertEquals("DEFAULT",overridden.resolvedGoodsDocument(defaults).number());
-        assertEquals("DEFAULT",partial.resolvedGoodsDocument(defaults).number());
-        assertTrue(partial.resolvedGoodsDocument(defaults).complete());
+        assertTrue(defaults.hasDefaultGoodsDocument());
+        assertTrue(inherited.permitDocuments().isEmpty());
+        assertTrue(overridden.permitDocuments().isEmpty());
+        assertTrue(partial.permitDocuments().isEmpty());
     }
 
     @Test void introductionColumnsAreAddedIdempotentlyWithoutRemovingExistingData() throws Exception {
@@ -1116,6 +1314,7 @@ class ZnackModuleTest {
             assertTrue(hasColumn(st,"znack_products","good_turn_flag"));
             assertTrue(hasColumn(st,"znack_products","readiness_checked_at"));
             assertTrue(hasColumn(st,"znack_products","cis_type"));
+            assertTrue(hasColumn(st,"znack_products","permit_documents_json"));
         }
         assertEquals("Product",repository.findProducts().getFirst().productName());
     }
