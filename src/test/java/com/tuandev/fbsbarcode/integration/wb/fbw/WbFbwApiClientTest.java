@@ -11,6 +11,7 @@ import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WbFbwApiClientTest {
@@ -49,5 +50,19 @@ class WbFbwApiClientTest {
         assertEquals("GET", detail.getMethod());
         assertTrue(goods.getPath().contains("/api/v1/supplies/123/goods"));
         assertEquals("wb-secret", goods.getHeader("Authorization"));
+    }
+
+    @Test
+    void stopsPassOnRateLimitWithoutAnImmediateRetry() {
+        server.enqueue(new MockResponse().setResponseCode(429).setHeader("Retry-After", "60"));
+        WbFbwApiClient client = new WbFbwApiClient(
+                7, "wb-secret", server.url("/"),
+                new OkHttpClient.Builder().retryOnConnectionFailure(false).build(),
+                new WbFbwRateLimiter(Duration.ZERO));
+
+        assertThrows(com.tuandev.fbsbarcode.integration.wb.WbApiException.class,
+                () -> client.listSupplies(1000, 0));
+
+        assertEquals(1, server.getRequestCount());
     }
 }

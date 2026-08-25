@@ -48,6 +48,7 @@ public final class OzonApiClient {
                         .readTimeout(25, TimeUnit.SECONDS)
                         .writeTimeout(25, TimeUnit.SECONDS)
                         .callTimeout(40, TimeUnit.SECONDS)
+                        .retryOnConnectionFailure(false)
                         .build(),
                 SHARED_LIMITER,
                 new OzonRetryPolicy());

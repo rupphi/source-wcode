@@ -1,7 +1,7 @@
 # FBO/FBW Supply Order Tracking
 
-Status: approved for implementation  
-Date: 2026-08-25  
+Status: approved for implementation
+Date: 2026-08-25
 Owner: WCode desktop
 
 ## Objective
@@ -21,8 +21,8 @@ The contracts below were checked against official marketplace documentation and,
 
 ### Wildberries FBW
 
-Base URL: `https://supplies-api.wildberries.ru`  
-Authorization: `Authorization: <WB token>`  
+Base URL: `https://supplies-api.wildberries.ru`
+Authorization: `Authorization: <WB token>`
 Required token category: **Supplies**.
 
 Official reference: [Wildberries FBW supplies API](https://dev.wildberries.ru/docs/openapi/orders-fbw).
@@ -77,8 +77,8 @@ The list endpoint is the only supported discovery endpoint. An [official WB deve
 
 ### Ozon FBO
 
-Base URL: `https://api-seller.ozon.ru`  
-Authorization headers: `Client-Id` and `Api-Key`  
+Base URL: `https://api-seller.ozon.ru`
+Authorization headers: `Client-Id` and `Api-Key`
 Official reference: [Ozon Seller API](https://docs.ozon.ru/api/seller/).
 
 The old `/v2/supply-order/list` and `/v2/supply-order/get` endpoints were retired. Ozon announced migration to v3 in [October 2025](https://t.me/s/OzonSellerAPI?before=581), removed v2 from documentation in [January 2026](https://t.me/s/OzonSellerAPI/592), and both v2 endpoints returned HTTP 404 during the live verification. WCode must use v3 only.
@@ -317,14 +317,15 @@ No new framework or remote service is introduced.
 Primary verification commands:
 
 ```bash
-mvn -q test
-mvn -q -DskipTests package
+node --test tools/*.test.mjs
+./mvnw -B clean verify
+./mvnw -B -DskipTests package
 ```
 
 Manual JavaFX acceptance after automated tests:
 
 ```bash
-mvn -q javafx:run
+./mvnw -q javafx:run
 ```
 
 ## Testing strategy

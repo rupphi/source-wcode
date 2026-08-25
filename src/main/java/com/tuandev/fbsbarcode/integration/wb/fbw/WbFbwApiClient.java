@@ -36,6 +36,7 @@ public final class WbFbwApiClient {
                         .connectTimeout(10, TimeUnit.SECONDS)
                         .readTimeout(30, TimeUnit.SECONDS)
                         .callTimeout(45, TimeUnit.SECONDS)
+                        .retryOnConnectionFailure(false)
                         .build(), SHARED_LIMITER);
     }
 

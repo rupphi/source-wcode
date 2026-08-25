@@ -14,6 +14,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OzonFboApiClientTest {
@@ -65,13 +66,27 @@ class OzonFboApiClientTest {
         assertTrue(body.contains("\"limit\":100"));
     }
 
+    @Test
+    void stopsFboPassOnRateLimitInsteadOfRetryingContinuously() {
+        server.enqueue(new MockResponse().setResponseCode(429).setHeader("Retry-After", "60"));
+
+        assertThrows(OzonApiException.class,
+                () -> client(4).listFboSupplyOrders(List.of("READY_TO_SUPPLY"), "", 100));
+
+        assertEquals(1, server.getRequestCount());
+    }
+
     private OzonApiClient client() {
+        return client(1);
+    }
+
+    private OzonApiClient client(int attempts) {
         return new OzonApiClient(
                 42,
                 new OzonCredentials("client-42", "secret"),
                 server.url("/"),
-                new OkHttpClient(),
+                new OkHttpClient.Builder().retryOnConnectionFailure(false).build(),
                 new OzonApiRateLimiter(Duration.ZERO),
-                new OzonRetryPolicy(1, Duration.ofMillis(1), Duration.ofMillis(1)));
+                new OzonRetryPolicy(attempts, Duration.ofMillis(1), Duration.ofMillis(1)));
     }
 }

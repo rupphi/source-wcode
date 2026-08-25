@@ -184,6 +184,13 @@ class DatabaseMigrationCompatibilityTest {
             assertEquals("ok", scalarText("PRAGMA integrity_check"));
             assertEquals(0, resultRowCount("PRAGMA foreign_key_check"));
             assertTrue(tableExists("ozon_postings"));
+            assertTrue(tableExists("wb_fbw_orders"));
+            assertTrue(tableExists("wb_fbw_order_items"));
+            assertTrue(tableExists("wb_fbw_sync_state"));
+            assertTrue(tableExists("ozon_fbo_orders"));
+            assertTrue(tableExists("ozon_fbo_supplies"));
+            assertTrue(tableExists("ozon_fbo_supply_items"));
+            assertTrue(tableExists("ozon_fbo_sync_state"));
             assertTrue(columnExists("znack_products", "permit_documents_json"));
         }
     }
@@ -208,6 +215,8 @@ class DatabaseMigrationCompatibilityTest {
             assertEquals("ok", scalarText("PRAGMA integrity_check"));
             assertEquals(0, resultRowCount("PRAGMA foreign_key_check"));
             assertTrue(tableExists("ozon_postings"));
+            assertTrue(tableExists("wb_fbw_orders"));
+            assertTrue(tableExists("ozon_fbo_orders"));
         }
         try (var paths = java.nio.file.Files.walk(temp.resolve("snapshots"))) {
             assertTrue(paths.anyMatch(path -> path.getFileName().toString().equals("database.db")));

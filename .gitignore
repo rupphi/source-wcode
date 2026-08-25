@@ -42,6 +42,12 @@ build/
 kiz.txt
 
 ### Local development databases ###
+/database.db
+/database.db-shm
+/database.db-wal
+/wcode_analytics.db
+/wcode_analytics.db-shm
+/wcode_analytics.db-wal
 app/*.db
 app/*.db-shm
 app/*.db-wal

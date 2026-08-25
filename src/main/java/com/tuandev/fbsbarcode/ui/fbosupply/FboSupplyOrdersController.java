@@ -365,6 +365,7 @@ public final class FboSupplyOrdersController {
         if (titleLabel == null) return;
         titleLabel.setText(i18n.tr("fbo.orders.title"));
         searchField.setPromptText(i18n.tr("fbo.orders.search"));
+        searchField.setAccessibleText(i18n.tr("fbo.orders.search"));
         refreshButton.setText("");
         refreshButton.setAccessibleText(i18n.tr("fbo.orders.refresh"));
         refreshTooltip.setText(i18n.tr("fbo.orders.refresh"));
