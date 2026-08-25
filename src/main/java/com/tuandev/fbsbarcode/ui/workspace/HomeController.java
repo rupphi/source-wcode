@@ -13,6 +13,7 @@ import com.tuandev.fbsbarcode.features.finance.FinanceSyncScheduler;
 import com.tuandev.fbsbarcode.features.packing.PackingWorkflow;
 import com.tuandev.fbsbarcode.integration.wb.WbSupplySummary;
 import com.tuandev.fbsbarcode.integration.wb.WbSupplyWorkflow;
+import com.tuandev.fbsbarcode.integration.wb.WbSupplyNotEmptyException;
 import com.tuandev.fbsbarcode.integration.license.LicenseService;
 import com.tuandev.fbsbarcode.integration.license.LicenseState;
 import com.tuandev.fbsbarcode.integration.znack.ZnackPurchaseCoordinator;
@@ -779,6 +780,12 @@ public class HomeController implements Initializable {
                                 state.setShops(loadedShops);
                                 renderShops();
                                 selectShopById(createdShop.getId());
+                                // A newly-created Ozon shop must populate products/images even if
+                                // the user created it while a shared dashboard remains visible.
+                                if (createdShop.getMarketplace() == Marketplace.OZON
+                                        && !isOzonDashboardVisible()) {
+                                    ozonDashboardController.setShop(createdShop, true);
+                                }
                             });
                     updateHeaderState();
                 });
@@ -1400,6 +1407,7 @@ public class HomeController implements Initializable {
         supplyListController = supplyListLoader.getController();
         supplyListController.setOnSupplySelected(this::loadSupply);
         supplyListController.setOnRefetchRequested(this::onRefetchSupplies);
+        supplyListController.setOnDeleteRequested(this::deleteEmptySupply);
         supplyListController.applyTranslations();
         supplyManagementController.supplyListContainer.getChildren().setAll(supplyListRoot);
 
@@ -1545,6 +1553,52 @@ public class HomeController implements Initializable {
             return;
         }
         startSupplyListRefetch(shop);
+    }
+
+    private void deleteEmptySupply(WbSupplySummary supply) {
+        Shop shop = requireSelectedShop();
+        if (shop == null || shop.getMarketplace() != Marketplace.WILDBERRIES || supply == null
+                || supply.isDone() || supply.getItemCount() != 0 || isShopBusy(shop.getId())) {
+            return;
+        }
+        Optional<ButtonType> confirmation = AlertService.showConfirmation(
+                i18nService.tr("supply_list.delete.confirm.title"),
+                i18nService.tr("supply_list.delete.confirm.header"),
+                MessageFormat.format(i18nService.tr("supply_list.delete.confirm.content"), supply.getSupplyId()));
+        if (confirmation.isEmpty() || confirmation.get() != ButtonType.OK) {
+            return;
+        }
+        Task<Void> task = new Task<>() {
+            @Override protected Void call() throws Exception {
+                return ShopOperationCoordinator.withActiveShop(shop.getId(), () -> {
+                    wbSupplyWorkflow.deleteEmptySupply(shop, supply.getSupplyId());
+                    return null;
+                });
+            }
+        };
+        task.setOnRunning(event -> {
+            markShopRunning(shop.getId(), true);
+            if (isCurrentShop(shop.getId())) supplyListController.setLoading(true);
+        });
+        task.setOnSucceeded(event -> {
+            markShopRunning(shop.getId(), false);
+            if (isCurrentShop(shop.getId())) {
+                refreshSupplyList();
+                if (isPackingVisible()) refreshPackingView();
+            }
+        });
+        task.setOnFailed(event -> {
+            markShopRunning(shop.getId(), false);
+            Throwable failure = task.getException();
+            LOGGER.error("Không thể xoá supply rỗng {}", supply.getSupplyId(), failure);
+            if (isCurrentShop(shop.getId())) {
+                refreshSupplyList(supply.getSupplyId());
+                AlertService.showError(failure instanceof WbSupplyNotEmptyException
+                        ? i18nService.tr("supply_list.delete.not_empty")
+                        : i18nService.tr("supply_list.delete.failed"));
+            }
+        });
+        AppTaskExecutor.execute(task);
     }
 
     private void startSupplyListRefetch(Shop shop) {

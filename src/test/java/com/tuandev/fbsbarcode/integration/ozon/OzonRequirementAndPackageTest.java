@@ -71,6 +71,19 @@ class OzonRequirementAndPackageTest {
     }
 
     @Test
+    void onePhysicalUnitProducesOneKizEvenIfOzonListsItInMultipleRequirementGroups() {
+        OzonPostingDto posting = posting(
+                new OzonRequirements(List.of("101"), List.of("101"), List.of()),
+                List.of(item(0, "101", "sku-a", 1)));
+
+        OzonRequirementGuard.PreparationPlan plan = OzonRequirementGuard.plan(
+                posting, Map.of("sku-a", "04600000000001"));
+
+        assertEquals(1, plan.items().size());
+        assertEquals(1, plan.exemplarCount());
+    }
+
+    @Test
     void unsupportedRequirementBlocksPreparationAndShipping() {
         OzonPostingDto posting = posting(
                 new OzonRequirements(List.of(), List.of(), List.of("multibox_package")),

@@ -32,7 +32,7 @@ public final class OzonPrintBundleService {
         this(
                 new OzonPostingRepository(),
                 new OzonExemplarJobRepository(),
-                new OzonExemplarService()::prepare,
+                new OzonExemplarService()::stageForPrint,
                 new OzonLabelService()::downloadOfficialPdf);
     }
 
@@ -98,26 +98,27 @@ public final class OzonPrintBundleService {
         OzonExemplarJob job = jobs.find(shop.getId(), safePosting);
         boolean requiresKiz = OzonRequirementGuard.requiresAny(
                 posting, policies.findExemptSkus(shop.getId()));
-        if (requiresKiz && !accepted(job)) {
+        if (requiresKiz && !printable(job)) {
             OzonPreparationResult result = preparation.prepare(shop, safePosting);
             if ("NOT_REQUIRED".equals(result.stage())) {
                 throw new IOException("An Ozon item requiring KIZ cannot be omitted from the print bundle.");
             }
-            if (!"ACCEPTED".equals(result.stage()) && !"NOT_REQUIRED".equals(result.stage())) {
+            if (!"ACCEPTED".equals(result.stage()) && !"VALIDATED".equals(result.stage())
+                    && !"NOT_REQUIRED".equals(result.stage())) {
                 throw new IOException("Ozon KIZ is not accepted yet (stage " + safeStage(result.stage()) + ").");
             }
             posting = Objects.requireNonNullElse(postings.find(shop.getId(), safePosting), posting);
             job = jobs.find(shop.getId(), safePosting);
-            if ("ACCEPTED".equals(result.stage()) && !accepted(job)) {
-                throw new IOException("Ozon reported accepted KIZ but the durable local job is incomplete.");
+            if (("ACCEPTED".equals(result.stage()) || "VALIDATED".equals(result.stage())) && !printable(job)) {
+                throw new IOException("Ozon reported printable KIZ but the durable local job is incomplete.");
             }
         }
 
-        List<OzonExemplarJobRepository.KizBinding> bindings = accepted(job)
+        List<OzonExemplarJobRepository.KizBinding> bindings = printable(job)
                 ? jobs.bindings(job.id()) : List.of();
-        List<OzonExemplarJobRepository.ExemplarSummary> summaries = accepted(job)
+        List<OzonExemplarJobRepository.ExemplarSummary> summaries = printable(job)
                 ? jobs.summaries(job.id()) : List.of();
-        validateAcceptedJob(job, bindings, summaries);
+        validatePrintableJob(job, bindings, summaries);
 
         File officialStaging = null;
         File labelStaging = null;
@@ -263,21 +264,29 @@ public final class OzonPrintBundleService {
         }
     }
 
-    private static void validateAcceptedJob(
+    private static void validatePrintableJob(
             OzonExemplarJob job,
             List<OzonExemplarJobRepository.KizBinding> bindings,
             List<OzonExemplarJobRepository.ExemplarSummary> summaries) throws IOException {
-        if (!accepted(job)) return;
+        if (!printable(job)) return;
         if (bindings.isEmpty() || summaries.size() != bindings.size()) {
-            throw new IOException("The accepted Ozon KIZ job is incomplete and cannot be printed.");
+            throw new IOException("The validated Ozon KIZ job is incomplete and cannot be printed.");
         }
-        boolean allPassed = summaries.stream().allMatch(value ->
-                value.kizId() != null && "passed".equalsIgnoreCase(value.checkStatus()));
-        if (!allPassed) throw new IOException("Only Ozon KIZ exemplars with passed status can be printed.");
+        boolean allBound = summaries.stream().allMatch(value -> value.kizId() != null);
+        if (!allBound) throw new IOException("Only locally bound Ozon KIZ exemplars can be printed.");
+        if (accepted(job)) {
+            boolean allPassed = summaries.stream()
+                    .allMatch(value -> "passed".equalsIgnoreCase(value.checkStatus()));
+            if (!allPassed) throw new IOException("Only accepted Ozon KIZ exemplars can be reprinted.");
+        }
     }
 
     private static boolean accepted(OzonExemplarJob job) {
         return job != null && job.stage() == OzonExemplarJobStage.ACCEPTED;
+    }
+
+    private static boolean printable(OzonExemplarJob job) {
+        return job != null && (job.stage() == OzonExemplarJobStage.VALIDATED || accepted(job));
     }
 
     private static void requirePdfTarget(File target, String label) {

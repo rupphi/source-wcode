@@ -16,7 +16,7 @@ import java.sql.Statement;
 /** A physically separate SQLite database for low-priority analytics data. */
 public final class AnalyticsDatabase {
     public static final String FILE_NAME = "wcode_analytics.db";
-    private static final int SCHEMA_VERSION = 4;
+    private static final int SCHEMA_VERSION = 5;
     private static final Logger LOGGER = LoggerFactory.getLogger(AnalyticsDatabase.class);
     private static Path initializedPath;
 
@@ -203,6 +203,34 @@ public final class AnalyticsDatabase {
                                 WHERE raw.shop_id=finance_daily.shop_id
                                   AND raw.business_date=finance_daily.business_date
                             ), 0)
+                        """);
+            }
+            if (existingVersion < 5) {
+                // WB exposes return forPay/commission/acquiring as positive amounts in detailed rows.
+                // Apply their accounting sign only in the daily read model and preserve source raw rows.
+                statement.execute("""
+                        WITH recalculated AS (
+                            SELECT shop_id, business_date,
+                                   SUM(CASE WHEN is_return=1 THEN -ABS(for_pay) ELSE for_pay END) AS net_payout,
+                                   SUM(CASE WHEN is_return=1 THEN -ABS(commission_cost)
+                                            ELSE commission_cost END) AS commission_cost,
+                                   SUM(CASE WHEN is_return=1 THEN -ABS(acquiring_cost)
+                                            ELSE acquiring_cost END) AS acquiring_cost
+                            FROM finance_raw
+                            GROUP BY shop_id, business_date
+                        )
+                        UPDATE finance_daily
+                        SET (net_payout, commission_cost, acquiring_cost) = (
+                            SELECT net_payout, commission_cost, acquiring_cost
+                            FROM recalculated
+                            WHERE recalculated.shop_id=finance_daily.shop_id
+                              AND recalculated.business_date=finance_daily.business_date
+                        )
+                        WHERE EXISTS (
+                            SELECT 1 FROM recalculated
+                            WHERE recalculated.shop_id=finance_daily.shop_id
+                              AND recalculated.business_date=finance_daily.business_date
+                        )
                         """);
             }
             statement.execute("PRAGMA user_version = " + SCHEMA_VERSION);

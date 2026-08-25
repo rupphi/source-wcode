@@ -61,7 +61,8 @@ class AnalyticsDatabaseTest {
         FinanceAnalyticsRepository repository = new FinanceAnalyticsRepository();
         String day = LocalDate.of(2026, 8, 20).toString();
         FinanceRawRow sale = row("100", day, false, 500, 380, 1);
-        FinanceRawRow returned = row("101", day, true, 100, -80, 1);
+        // WB returns a positive forPay for a return; finance_daily must apply the accounting sign.
+        FinanceRawRow returned = row("101", day, true, 100, 80, 1);
         repository.upsertFinanceRows(7, List.of(sale, returned));
         repository.upsertAdvertisingRows(7, List.of(new AdvertisingRawRow(
                 "ad-1", day, "1", day + "T10:00:00+03:00", "77", "Campaign", 8,
@@ -72,6 +73,7 @@ class AnalyticsDatabaseTest {
         assertEquals(500, first.grossSales(), 0.001);
         assertEquals(100, first.returnsAmount(), 0.001);
         assertEquals(300, first.netPayout(), 0.001);
+        assertEquals(0, first.commissionCost(), 0.001);
         assertEquals(25, first.advertisingCost(), 0.001);
         assertEquals(20, first.logisticsCost(), 0.001);
         assertEquals(0, first.storageCost(), 0.001);
@@ -85,7 +87,41 @@ class AnalyticsDatabaseTest {
                 7, LocalDate.parse(day), LocalDate.parse(day));
         assertEquals(550, corrected.grossSales(), 0.001);
         assertEquals(340, corrected.netPayout(), 0.001);
+        assertEquals(0, corrected.commissionCost(), 0.001);
         assertEquals(1, corrected.days().getFirst().orderCount());
+    }
+
+    @Test
+    void migratesLegacyDailyReturnsToSignedPayoutAndNetCommission() throws Exception {
+        Path legacyDir = tempDir.resolve("legacy");
+        System.setProperty("wcode.appdata.dir", legacyDir.toString());
+        String day = LocalDate.of(2026, 8, 20).toString();
+        FinanceAnalyticsRepository repository = new FinanceAnalyticsRepository();
+        repository.upsertFinanceRows(7, List.of(
+                row("100", day, false, 500, 380, 1),
+                row("101", day, true, 100, 80, 1)));
+        try (Connection connection = AnalyticsDatabase.getConnection(); Statement statement = connection.createStatement()) {
+            statement.execute("UPDATE finance_daily SET net_payout=460, commission_cost=40, acquiring_cost=10");
+            statement.execute("PRAGMA user_version=4");
+        }
+
+        System.setProperty("wcode.appdata.dir", tempDir.resolve("other").toString());
+        AnalyticsDatabase.initialize();
+        System.setProperty("wcode.appdata.dir", legacyDir.toString());
+        AnalyticsDatabase.initialize();
+
+        FinanceDashboardSnapshot migrated = new FinanceDashboardRepository().load(
+                7, LocalDate.parse(day), LocalDate.parse(day));
+        assertEquals(300, migrated.netPayout(), 0.001);
+        assertEquals(0, migrated.commissionCost(), 0.001);
+        try (Connection connection = AnalyticsDatabase.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "SELECT for_pay, commission_cost FROM finance_raw WHERE shop_id=7 AND rrd_id='101'");
+             ResultSet result = statement.executeQuery()) {
+            assertTrue(result.next());
+            assertEquals(80, result.getDouble("for_pay"), 0.001);
+            assertEquals(20, result.getDouble("commission_cost"), 0.001);
+        }
     }
 
     @Test

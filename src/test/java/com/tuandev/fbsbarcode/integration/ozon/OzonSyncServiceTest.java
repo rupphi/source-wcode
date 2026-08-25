@@ -118,6 +118,27 @@ class OzonSyncServiceTest {
     }
 
     @Test
+    void unfulfilledQueueMovesPostingChangedOnOzonWebsiteIntoLocalPackingState() throws Exception {
+        server.enqueue(json("{\"postings\":[" + posting()
+                + "],\"cursor\":\"\",\"has_next\":false}"));
+        OzonPostingSyncService service = new OzonPostingSyncService(1, api);
+        service.sync();
+
+        server.enqueue(json("{\"postings\":[{\"posting_number\":\"POST-TEXT-1\","
+                + "\"status\":\"awaiting_deliver\","
+                + "\"products\":[{\"sku\":\"101\",\"offer_id\":\"offer-1\",\"quantity\":2}],"
+                + "\"requirements\":{},\"available_actions\":[]}],"
+                + "\"cursor\":\"\",\"has_next\":false}"));
+
+        assertEquals(1, service.syncUnfulfilled());
+
+        OzonPostingDto stored = new OzonPostingRepository().find(1, "POST-TEXT-1");
+        assertEquals("awaiting_deliver", stored.status());
+        server.takeRequest(1, TimeUnit.SECONDS);
+        assertEquals("/v4/posting/fbs/unfulfilled/list", server.takeRequest(1, TimeUnit.SECONDS).getPath());
+    }
+
+    @Test
     void successfulCatalogPageKeepsExternalIdsAsTextAndAdvancesCursorAtomically() throws Exception {
         String externalId = "90071992547409931234";
         server.enqueue(json("{\"result\":{\"items\":[{\"product_id\":\"" + externalId
@@ -130,10 +151,15 @@ class OzonSyncServiceTest {
                 + "\"type_id\":\"90001\",\"attributes\":["
                 + "{\"id\":10096,\"values\":[{\"value\":\"deep black\"}]},"
                 + "{\"id\":4295,\"values\":[{\"value\":\"176\"}]},"
+                + "{\"id\":9163,\"values\":[{\"value\":\"Women\"}]},"
                 + "{\"id\":9024,\"values\":[{\"value\":\"seller-article\"}]}]}]}"));
+        server.enqueue(json("{\"result\":[{\"description_category_id\":17000001,"
+                + "\"category_name\":\"Clothing\",\"children\":[{\"type_id\":90001,"
+                + "\"type_name\":\"Sportswear\",\"children\":[]}]}]}"));
         server.enqueue(json("{\"result\":["
                 + "{\"id\":10096,\"name\":\"Цвет товара\"},"
                 + "{\"id\":4295,\"name\":\"Российский размер\"},"
+                + "{\"id\":9163,\"name\":\"Пол\"},"
                 + "{\"id\":9024,\"name\":\"Код продавца\"}]}"));
 
         assertEquals(1, new OzonCatalogSyncService(1, api).sync());
@@ -143,10 +169,14 @@ class OzonSyncServiceTest {
         assertEquals("seller-article", scalar("SELECT article FROM ozon_products"));
         assertEquals("deep black", scalar("SELECT color FROM ozon_products"));
         assertEquals("176", scalar("SELECT size FROM ozon_products"));
+        assertEquals("Sportswear", scalar("SELECT category FROM ozon_products"));
+        assertEquals("Women", scalar("SELECT gender FROM ozon_products"));
         assertEquals("cursor-2", new OzonSyncStateRepository().find(1).productsLastId());
         assertTrue(server.takeRequest(1, TimeUnit.SECONDS).getPath().endsWith("/v3/product/list"));
         assertTrue(server.takeRequest(1, TimeUnit.SECONDS).getPath().endsWith("/v3/product/info/list"));
         assertTrue(server.takeRequest(1, TimeUnit.SECONDS).getPath().endsWith("/v4/product/info/attributes"));
+        assertTrue(server.takeRequest(1, TimeUnit.SECONDS).getPath()
+                .endsWith("/v1/description-category/tree"));
         assertTrue(server.takeRequest(1, TimeUnit.SECONDS).getPath()
                 .endsWith("/v1/description-category/attribute"));
     }

@@ -88,7 +88,7 @@ public class WbFinanceApiClient {
                 rows.add(row);
                 nextCursor = row.rrdId();
             }
-            return new WbFinancePage(rows, nextCursor, false);
+            return new WbFinancePage(rows, nextCursor, array.isEmpty());
         } catch (WbAnalyticsApiException exception) {
             throw exception;
         } catch (IOException | RuntimeException exception) {

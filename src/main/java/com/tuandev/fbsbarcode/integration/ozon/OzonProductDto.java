@@ -11,6 +11,8 @@ public record OzonProductDto(
         String article,
         String color,
         String size,
+        String category,
+        String gender,
         boolean archived,
         String updatedAt,
         List<String> barcodes) {
@@ -23,6 +25,8 @@ public record OzonProductDto(
         article = safe(article);
         color = safe(color);
         size = safe(size);
+        category = safe(category);
+        gender = safe(gender);
         updatedAt = bounded(updatedAt, 80);
         barcodes = barcodes == null ? List.of() : barcodes.stream()
                 .map(OzonProductDto::safe)
@@ -41,14 +45,33 @@ public record OzonProductDto(
             boolean archived,
             String updatedAt,
             List<String> barcodes) {
-        this(productId, offerId, sku, name, primaryImageUrl, offerId, "", "", archived, updatedAt, barcodes);
+        this(productId, offerId, sku, name, primaryImageUrl, offerId, "", "", "", "",
+                archived, updatedAt, barcodes);
     }
 
-    public OzonProductDto withCardAttributes(String article, String color, String size) {
+    /** Compatibility constructor for callers that do not yet provide category filters. */
+    public OzonProductDto(
+            String productId,
+            String offerId,
+            String sku,
+            String name,
+            String primaryImageUrl,
+            String article,
+            String color,
+            String size,
+            boolean archived,
+            String updatedAt,
+            List<String> barcodes) {
+        this(productId, offerId, sku, name, primaryImageUrl, article, color, size, "", "",
+                archived, updatedAt, barcodes);
+    }
+
+    public OzonProductDto withCardAttributes(
+            String article, String color, String size, String category, String gender) {
         return new OzonProductDto(
                 productId, offerId, sku, name, primaryImageUrl,
                 article == null || article.isBlank() ? offerId : article,
-                color, size, archived, updatedAt, barcodes);
+                color, size, category, gender, archived, updatedAt, barcodes);
     }
 
     private static String safe(String value) {

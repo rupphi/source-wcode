@@ -168,6 +168,27 @@ class OzonPrintBundleServiceTest {
     }
 
     @Test
+    void validatedKizCanBePublishedBeforeTheRemoteSetMutationRuns() throws Exception {
+        seedPosting(1);
+        seedValidatedExemplar(RAW_KIZ);
+        AtomicBoolean prepared = new AtomicBoolean(false);
+        Path labels = temporaryDirectory.resolve("validated-labels.pdf");
+        Path picking = temporaryDirectory.resolve("validated-picking.pdf");
+
+        OzonPrintBundleService.ExportResult result = service(prepared).export(
+                shop, "POST-1", labels.toFile(), picking.toFile());
+
+        assertFalse(prepared.get(), "A validated durable job must be printable before remote set");
+        assertEquals(1, result.kizPages());
+        assertTrue(Files.isRegularFile(labels));
+        assertTrue(Files.isRegularFile(picking));
+        try (PDDocument document = Loader.loadPDF(labels.toFile())) {
+            assertEquals(KizService.scannerSafeCode(RAW_KIZ),
+                    KizService.scannerSafeCode(decodeRenderedDataMatrixResult(document, 1, 300).getText()));
+        }
+    }
+
+    @Test
     void refusesToPublishWhenAutomaticPreparationDoesNotReachAccepted() throws Exception {
         seedPosting(1);
         Path labels = temporaryDirectory.resolve("blocked-labels.pdf");
@@ -371,6 +392,38 @@ class OzonPrintBundleServiceTest {
                 exemplar.setString(4, "2026-08-19T00:00:00Z");
                 exemplar.executeUpdate();
             }
+        }
+    }
+
+    private void seedValidatedExemplar(String rawCode) throws Exception {
+        try (Connection connection = Database.getConnection(); Statement statement = connection.createStatement()) {
+            statement.execute("INSERT INTO znack_products(shop_id,gtin,product_name,synced_at) "
+                    + "VALUES(1,'04645588781154','Suit','2026-08-19T00:00:00Z')");
+            statement.execute("INSERT INTO kiz_orders(id,shop_id,gtin,quantity,local_status,created_at,updated_at) "
+                    + "VALUES(1,1,'04645588781154',1,'COMPLETED','2026-08-19T00:00:00Z','2026-08-19T00:00:00Z')");
+            statement.execute("INSERT INTO ozon_exemplar_jobs(id,shop_id,posting_number,stage,created_at,updated_at) "
+                    + "VALUES(51,1,'POST-1','VALIDATED','2026-08-19T00:00:00Z','2026-08-19T00:00:00Z')");
+        }
+        try (Connection connection = Database.getConnection();
+                PreparedStatement kiz = connection.prepareStatement("""
+                        INSERT INTO kiz_codes(id,shop_id,order_id,raw_code,display_code,gtin,status,
+                            reservation_token,reserved_at,reservation_recoverable,created_at,updated_at)
+                        VALUES(100,1,1,?,?,'04645588781154','RESERVED','ozon:51',?,0,?,?)
+                        """);
+                PreparedStatement exemplar = connection.prepareStatement("""
+                        INSERT INTO ozon_exemplars(job_id,shop_id,posting_number,item_index,product_id,
+                            exemplar_id,exemplar_index,kiz_id,updated_at)
+                        VALUES(51,1,'POST-1',0,'1001','7001',0,100,?)
+                        """)) {
+            String now = "2026-08-19T00:00:00Z";
+            kiz.setString(1, rawCode);
+            kiz.setString(2, "KIZ-0");
+            kiz.setString(3, now);
+            kiz.setString(4, now);
+            kiz.setString(5, now);
+            kiz.executeUpdate();
+            exemplar.setString(1, now);
+            exemplar.executeUpdate();
         }
     }
 

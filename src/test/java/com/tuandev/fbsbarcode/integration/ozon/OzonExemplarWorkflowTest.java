@@ -117,6 +117,38 @@ class OzonExemplarWorkflowTest {
     }
 
     @Test
+    void printStagingStopsAfterValidationAndPushResumesWithoutAllocatingAnotherKiz() throws Exception {
+        server.enqueue(json(posting("awaiting_deliver")));
+        server.enqueue(json(createResponse()));
+        server.enqueue(json(validateResponse()));
+        OzonExemplarService service = service();
+
+        OzonPreparationResult staged = service.stageForPrint(shop, "POST-1");
+
+        assertEquals("VALIDATED", staged.stage());
+        assertEquals("RESERVED", scalar("SELECT status FROM kiz_codes WHERE id=1"));
+        assertEquals(List.of(
+                        "/v3/posting/fbs/get",
+                        "/v6/fbs/posting/product/exemplar/create-or-get",
+                        "/v5/fbs/posting/product/exemplar/validate"),
+                takeRequests(3).stream().map(RecordedRequest::getPath).toList());
+
+        server.enqueue(json(posting("awaiting_deliver")));
+        server.enqueue(json("{}"));
+        server.enqueue(json(statusAccepted()));
+        OzonPreparationResult pushed = service.prepare(shop, "POST-1");
+
+        assertEquals("ACCEPTED", pushed.stage());
+        assertEquals("CONSUMED", scalar("SELECT status FROM kiz_codes WHERE id=1"));
+        assertEquals(1, count("SELECT COUNT(*) FROM ozon_exemplars"));
+        assertEquals(List.of(
+                        "/v3/posting/fbs/get",
+                        "/v6/fbs/posting/product/exemplar/set",
+                        "/v5/fbs/posting/product/exemplar/status"),
+                takeRequests(3).stream().map(RecordedRequest::getPath).toList());
+    }
+
+    @Test
     void concurrentDoubleClickIsSerializedAndReservesOnlyOneKiz() throws Exception {
         enqueueHappyPath();
         server.enqueue(json(posting("awaiting_packaging")));

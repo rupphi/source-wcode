@@ -88,6 +88,24 @@ class OzonApiClientTest {
     }
 
     @Test
+    void listsCurrentUnfulfilledPostingsThroughVersionFourCutoffContract() throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("{\"postings\":[],\"cursor\":\"next\",\"has_next\":false}"));
+
+        client(1).listUnfulfilledPostings(
+                "2026-05-01T00:00:00Z", "2026-11-01T00:00:00Z", "cursor-1", 100);
+
+        var request = server.takeRequest();
+        assertEquals("/v4/posting/fbs/unfulfilled/list", request.getPath());
+        String body = request.getBody().readUtf8();
+        assertTrue(body.contains("\"cutoff_from\":\"2026-05-01T00:00:00Z\""));
+        assertTrue(body.contains("\"cutoff_to\":\"2026-11-01T00:00:00Z\""));
+        assertTrue(body.contains("\"cursor\":\"cursor-1\""));
+        assertTrue(body.contains("\"sort_dir\":\"asc\""));
+    }
+
+    @Test
     void malformedSuccessResponseAfterMutationIsTreatedAsAmbiguous() throws Exception {
         server.enqueue(new MockResponse().setResponseCode(200).setBody(""));
 

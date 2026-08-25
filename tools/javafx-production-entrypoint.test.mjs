@@ -125,11 +125,13 @@ test("local build scripts invoke Maven and package the JavaFX launcher", async (
     "local Windows packages must use the data-safe 1.1.10+ installer identity");
 });
 
-test("Windows CI builds a downloadable JavaFX 1.1.10 EXE without publishing a release", async () => {
+test("Windows CI builds a versioned downloadable JavaFX EXE without publishing a release", async () => {
   const workflow = await readFile(new URL(".github/workflows/build-java.yml", root), "utf8");
 
   assert.match(workflow, /build\.bat exe/);
-  assert.match(workflow, /WCode-1\.1\.10-Ozon-Test\.exe/);
+  assert.match(workflow, /APP_VERSION=.*release-version\.mjs/);
+  assert.match(workflow, /WCode-\$\{?env:APP_VERSION\}?-Ozon-Test\.exe/);
+  assert.doesNotMatch(workflow, /WCode-1\.1\.10-Ozon-Test/);
   assert.match(workflow, /actions\/upload-artifact/);
   assert.doesNotMatch(workflow, /gh release|RELEASE_TOKEN/);
 });
@@ -140,8 +142,10 @@ test("CI builds downloadable macOS test packages for Intel and Apple Silicon", a
   assert.match(workflow, /runner:\s*macos-15-intel\s*\n\s*architecture:\s*x64/);
   assert.match(workflow, /runner:\s*macos-15\s*\n\s*architecture:\s*arm64/);
   assert.match(workflow, /jpackage --type dmg/);
-  assert.match(workflow, /WCode-1\.1\.10-Ozon-Test-macos-\$architecture\.dmg/);
-  assert.match(workflow, /WCode-1\.1\.10-Ozon-Test-macos-\$architecture\.zip/);
+  assert.match(workflow, /APP_VERSION=\$\(node tools\/release-version\.mjs\)/);
+  assert.match(workflow, /WCode-\$APP_VERSION-Ozon-Test-macos-\$architecture\.dmg/);
+  assert.match(workflow, /WCode-\$APP_VERSION-Ozon-Test-macos-\$architecture\.zip/);
+  assert.doesNotMatch(workflow, /FBSBarcode-1\.1\.10\.jar|WCode-1\.1\.10-Ozon-Test/);
   assert.match(workflow, /surefire\.excludes=.*FxmlSmokeTest/,
     "the virtual Intel runner must avoid the unsupported in-process JavaFX harness");
   assert.match(workflow, /Contents\/MacOS\/WCode/,

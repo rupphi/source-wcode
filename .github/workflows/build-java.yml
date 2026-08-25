@@ -3,7 +3,7 @@ name: Build & Test JavaFX Desktop App
 on:
   workflow_dispatch:
   push:
-    branches: [dev, main, feature/javafx-ozon-1.1.10]
+    branches: [dev, main]
     paths-ignore:
       - README.md
   pull_request:
@@ -29,6 +29,10 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Resolve application version
+        shell: pwsh
+        run: '"APP_VERSION=$(node tools/release-version.mjs)" >> $env:GITHUB_ENV'
+
       - name: Verify JavaFX production and release contracts
         run: >-
           node --test
@@ -51,20 +55,21 @@ jobs:
           if ($installers.Count -ne 1 -or $installers[0].Length -lt 1MB) {
             throw 'jpackage did not create exactly one non-empty EXE installer.'
           }
-          $target = Join-Path $PWD 'out\WCode-1.1.10-Ozon-Test.exe'
+          $target = Join-Path $PWD "out\WCode-$env:APP_VERSION-Ozon-Test.exe"
           if ($installers[0].FullName -cne $target) {
             Move-Item -LiteralPath $installers[0].FullName -Destination $target -Force
           }
           $hash = (Get-FileHash $target -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  WCode-1.1.10-Ozon-Test.exe" | Set-Content out\WCode-1.1.10-Ozon-Test.sha256 -Encoding ascii
+          $checksum = Join-Path $PWD "out\WCode-$env:APP_VERSION-Ozon-Test.sha256"
+          "$hash  WCode-$env:APP_VERSION-Ozon-Test.exe" | Set-Content $checksum -Encoding ascii
 
       - name: Preserve Windows test installer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: WCode-1.1.10-Ozon-Test-Windows-x64
+          name: WCode-${{ env.APP_VERSION }}-Ozon-Test-Windows-x64
           path: |
-            out/WCode-1.1.10-Ozon-Test.exe
-            out/WCode-1.1.10-Ozon-Test.sha256
+            out/WCode-${{ env.APP_VERSION }}-Ozon-Test.exe
+            out/WCode-${{ env.APP_VERSION }}-Ozon-Test.sha256
           if-no-files-found: error
           retention-days: 14
 
@@ -97,6 +102,9 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Resolve application version
+        run: 'echo "APP_VERSION=$(node tools/release-version.mjs)" >> "$GITHUB_ENV"'
+
       - name: Verify JavaFX production and release contracts
         run: >-
           node --test
@@ -125,13 +133,13 @@ jobs:
           image_root="$PWD/test-image"
           image="$image_root/WCode.app"
           mkdir -p "$input/lib" "$image_root" out
-          cp target/FBSBarcode-1.1.10.jar "$input/"
+          cp "target/FBSBarcode-$APP_VERSION.jar" "$input/"
           cp -R target/lib/. "$input/lib/"
 
           jpackage --type app-image --name WCode --input "$input" \
-            --main-jar FBSBarcode-1.1.10.jar \
+            --main-jar "FBSBarcode-$APP_VERSION.jar" \
             --main-class com.tuandev.fbsbarcode.Launcher \
-            --dest "$image_root" --app-version 1.1.10 --vendor TuanDev \
+            --dest "$image_root" --app-version "$APP_VERSION" --vendor TuanDev \
             --mac-package-identifier com.tuandev.wcode \
             --java-options "--enable-native-access=ALL-UNNAMED" \
             --jlink-options "--strip-native-commands --strip-debug --no-man-pages --no-header-files --bind-services"
@@ -165,26 +173,26 @@ jobs:
           wait "$smoke_pid" || true
 
           ditto -c -k --sequesterRsrc --keepParent "$image" \
-            "out/WCode-1.1.10-Ozon-Test-macos-$architecture.zip"
+            "out/WCode-$APP_VERSION-Ozon-Test-macos-$architecture.zip"
           jpackage --type dmg --name WCode --app-image "$image" --dest out \
-            --app-version 1.1.10 --vendor TuanDev
+            --app-version "$APP_VERSION" --vendor TuanDev
           packages=(out/WCode*.dmg)
           test "${#packages[@]}" -eq 1
-          mv "${packages[0]}" "out/WCode-1.1.10-Ozon-Test-macos-$architecture.dmg"
-          test -s "out/WCode-1.1.10-Ozon-Test-macos-$architecture.dmg"
-          test -s "out/WCode-1.1.10-Ozon-Test-macos-$architecture.zip"
+          mv "${packages[0]}" "out/WCode-$APP_VERSION-Ozon-Test-macos-$architecture.dmg"
+          test -s "out/WCode-$APP_VERSION-Ozon-Test-macos-$architecture.dmg"
+          test -s "out/WCode-$APP_VERSION-Ozon-Test-macos-$architecture.zip"
           (cd out && shasum -a 256 \
-            "WCode-1.1.10-Ozon-Test-macos-$architecture.dmg" \
-            "WCode-1.1.10-Ozon-Test-macos-$architecture.zip" \
-            > "WCode-1.1.10-Ozon-Test-macos-$architecture.sha256")
+            "WCode-$APP_VERSION-Ozon-Test-macos-$architecture.dmg" \
+            "WCode-$APP_VERSION-Ozon-Test-macos-$architecture.zip" \
+            > "WCode-$APP_VERSION-Ozon-Test-macos-$architecture.sha256")
 
       - name: Preserve macOS test packages
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: WCode-1.1.10-Ozon-Test-macOS-${{ matrix.architecture }}
+          name: WCode-${{ env.APP_VERSION }}-Ozon-Test-macOS-${{ matrix.architecture }}
           path: |
-            out/WCode-1.1.10-Ozon-Test-macos-${{ matrix.architecture }}.dmg
-            out/WCode-1.1.10-Ozon-Test-macos-${{ matrix.architecture }}.zip
-            out/WCode-1.1.10-Ozon-Test-macos-${{ matrix.architecture }}.sha256
+            out/WCode-${{ env.APP_VERSION }}-Ozon-Test-macos-${{ matrix.architecture }}.dmg
+            out/WCode-${{ env.APP_VERSION }}-Ozon-Test-macos-${{ matrix.architecture }}.zip
+            out/WCode-${{ env.APP_VERSION }}-Ozon-Test-macos-${{ matrix.architecture }}.sha256
           if-no-files-found: error
           retention-days: 14

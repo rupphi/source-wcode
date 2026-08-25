@@ -108,6 +108,11 @@ public class WbApiClient {
         patchJson(apiKey, url, Map.of());
     }
 
+    public void deleteSupply(String apiKey, String supplyId) throws IOException {
+        String url = "https://marketplace-api.wildberries.ru/api/v3/supplies/" + supplyId;
+        delete(apiKey, url);
+    }
+
     public WbOrderMetaDetailsResponse getOrderMetadata(String apiKey, List<Long> orderIds) throws IOException {
         String url = "https://marketplace-api.wildberries.ru/api/marketplace/v3/orders/meta";
         return postJson(apiKey, url, Map.of("orders", orderIds), WbOrderMetaDetailsResponse.class);
@@ -193,6 +198,15 @@ public class WbApiClient {
                 .url(url)
                 .header("Authorization", "Bearer " + apiKey)
                 .delete(body)
+                .build();
+        execute(apiKey, request, Void.class);
+    }
+
+    private void delete(String apiKey, String url) throws IOException {
+        Request request = new Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer " + apiKey)
+                .delete()
                 .build();
         execute(apiKey, request, Void.class);
     }

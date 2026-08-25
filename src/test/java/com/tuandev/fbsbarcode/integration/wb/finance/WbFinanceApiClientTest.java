@@ -94,4 +94,19 @@ class WbFinanceApiClientTest {
         assertEquals(75, error.retryAfter().toSeconds());
         assertEquals(2, server.getRequestCount());
     }
+
+    @Test
+    void treatsAnEmptySuccessfulPageAsCompletionInsteadOfPollingTheSameCursorForever() {
+        server.enqueue(new MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json").setBody("[]"));
+        WbFinanceApiClient client = new WbFinanceApiClient(new OkHttpClient.Builder()
+                .retryOnConnectionFailure(false).build(), server.url("/finance").toString());
+
+        WbFinancePage page = client.loadPage(
+                "token", LocalDate.now(), LocalDate.now(), "42");
+
+        assertTrue(page.endOfReport());
+        assertEquals("42", page.nextCursor());
+        assertEquals(1, server.getRequestCount());
+    }
 }

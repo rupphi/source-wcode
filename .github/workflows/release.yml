@@ -329,11 +329,11 @@ jobs:
           Install-Msi (Join-Path $PWD 'release\WCode.msi')
           $newExecutable = Join-Path $env:LOCALAPPDATA 'WCodeApp\WCode.exe'
           if (-not (Test-Path $newExecutable -PathType Leaf)) {
-            throw 'WCode 1.1.10 was not installed in the data-safe program directory.'
+            throw "WCode $env:APP_VERSION was not installed in the data-safe program directory."
           }
           if (-not (Test-Path $oldExecutable -PathType Leaf) -or
               (Get-Content -LiteralPath $legacySentinel -Raw).Trim() -cne 'preserve-user-data') {
-            throw 'The 1.1.10 installer modified the legacy directory before data migration.'
+            throw "The $env:APP_VERSION installer modified the legacy directory before data migration."
           }
 
           $newProcess = Start-Process -FilePath $newExecutable -PassThru
@@ -344,7 +344,7 @@ jobs:
               if ($newProcess.HasExited) {
                 $startupLog = Join-Path $currentDataDir 'logs\startup.log'
                 if (Test-Path $startupLog -PathType Leaf) { Get-Content $startupLog }
-                throw 'The packaged WCode 1.1.10 launcher exited during migration startup.'
+                throw "The packaged WCode $env:APP_VERSION launcher exited during migration startup."
               }
               if ((Test-Path $currentDatabase -PathType Leaf) -and
                   (Test-Path $currentSentinel -PathType Leaf)) { break }
@@ -352,7 +352,7 @@ jobs:
             }
             if (-not (Test-Path $currentDatabase -PathType Leaf) -or
                 (Get-Content -LiteralPath $currentSentinel -Raw).Trim() -cne 'preserve-user-data') {
-              throw 'WCode 1.1.10 did not migrate the legacy app-data directory.'
+              throw "WCode $env:APP_VERSION did not migrate the legacy app-data directory."
             }
             & java -cp $probeClassPath UpgradeDatabaseProbe verify $currentDatabase
             if ($LASTEXITCODE -ne 0) { throw 'The migrated WCode database failed verification.' }
@@ -364,7 +364,7 @@ jobs:
             $startupLog = Join-Path $currentDataDir 'logs\startup.log'
             if (Test-Path $startupLog -PathType Leaf) {
               Get-Content $startupLog
-              throw 'WCode 1.1.10 recorded a startup failure after migration.'
+              throw "WCode $env:APP_VERSION recorded a startup failure after migration."
             }
           } finally {
             if ($newProcess -and -not $newProcess.HasExited) {
@@ -395,8 +395,10 @@ jobs:
         run: |
           if ($env:UPDATE_MANIFEST_ENABLED -ceq 'true') {
             $env:RELEASE_NOTES_JSON = ConvertTo-Json -Compress -InputObject @(
-              "WCode $env:APP_VERSION JavaFX with Wildberries and Ozon FBS",
-              'Snapshot-first database migration preserves existing user data'
+              'Dashboard tài chính WB/Ozon lọc đúng khoảng ngày và hiển thị đầy đủ các khoản phí',
+              'Ozon FBS/FBO: đồng bộ trạng thái, mapping theo article và quy trình in/push KIZ',
+              'Znack chỉ dùng GTIN có giấy tờ hợp lệ; bổ sung xoá supply WB trống',
+              'Giữ nguyên dữ liệu người dùng khi nâng cấp từ WCode 1.1.9 trở lên'
             )
             node tools/update-manifest.mjs release/WCode.msi release/update-manifest.json $env:APP_VERSION
           } else {
@@ -589,7 +591,18 @@ jobs:
           if [[ "$WINDOWS_SIGNING_ENABLED" != 'true' ]]; then
             windows_trust_note=' Bộ cài Windows hiện chưa có chữ ký Authenticode.'
           fi
-          notes="WCode ${APP_VERSION} JavaFX — Wildberries và Ozon FBS, dashboard tài chính WB/Ozon và quy trình KIZ. Trên Windows, dữ liệu 1.1.9 được sao chép sang thư mục WCodeData riêng trước khi dùng schema mới. Có bản macOS riêng cho Intel và Apple Silicon; các gói Mac hiện chưa được Apple notarize.${windows_trust_note}"
+          notes="$(cat <<EOF
+          WCode ${APP_VERSION}
+
+          - Dashboard tài chính WB/Ozon lọc đúng khoảng ngày; bổ sung tiền WB trả, hoa hồng, hoàn hàng, vận chuyển, quảng cáo, lưu kho, tiền phạt, chi phí khác và lãi ròng.
+          - Ozon FBS đồng bộ đúng trạng thái đơn từ Ozon; mapping GTIN theo article, chọn nhanh theo bộ lọc và chỉ yêu cầu một KIZ cho mỗi sản phẩm.
+          - File in được tạo trước khi đẩy KIZ lên Ozon; file nhặt hàng A4 và nhãn 58x40 giữ đúng định dạng.
+          - Bổ sung đóng hàng Ozon FBO, xoá supply WB trống và chỉ đưa GTIN Znack có giấy tờ hợp lệ vào danh sách sử dụng.
+          - CI tạo gói Windows x64 và macOS riêng cho Intel/Apple Silicon.
+
+          Khi nâng cấp từ 1.1.9, dữ liệu hiện có được sao chép an toàn sang thư mục WCodeData trước khi áp dụng schema mới. Các gói macOS hiện chưa được Apple notarize.${windows_trust_note}
+          EOF
+          )"
           if gh release view "$RELEASE_TAG" --repo "$RELEASE_REPO" >/dev/null 2>&1; then
             gh release edit "$RELEASE_TAG" --repo "$RELEASE_REPO" --title "WCode $APP_VERSION" --notes "$notes" --latest
           else

@@ -1,6 +1,7 @@
 package com.tuandev.fbsbarcode.integration.ozon;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.tuandev.fbsbarcode.config.Database;
@@ -66,7 +67,51 @@ class OzonProductGtinMappingRepositoryTest {
                 () -> mappings.replaceForGtin(1, FIRST_GTIN, List.of("UNKNOWN-SKU")));
     }
 
+    @Test
+    void articleMappingResolvesEveryCatalogSkuWithoutRequiringIndividualSkuMappings() {
+        new OzonCatalogRepository().upsertPage(1, List.of(
+                product("201", "SKU-SIZE-42", "shared-article", "Clothing", "Women"),
+                product("202", "SKU-SIZE-44", "shared-article", "Clothing", "Women")), "cursor-2");
+
+        mappings.replaceArticlesForGtin(1, FIRST_GTIN, List.of("shared-article"));
+
+        assertEquals(Map.of("shared-article", FIRST_GTIN), mappings.findAllArticles(1));
+        assertEquals(FIRST_GTIN, mappings.findResolvedBySku(1).get("SKU-SIZE-42"));
+        assertEquals(FIRST_GTIN, mappings.findResolvedBySku(1).get("SKU-SIZE-44"));
+    }
+
+    @Test
+    void legacySkuMappingIsSafelyInferredForSiblingSkusWithTheSameArticle() {
+        new OzonCatalogRepository().upsertPage(1, List.of(
+                product("301", "SKU-OLD-42", "legacy-article", "Clothing", "Women"),
+                product("302", "SKU-NEW-44", "legacy-article", "Clothing", "Women")), "cursor-3");
+        mappings.put(1, "SKU-OLD-42", FIRST_GTIN);
+
+        assertEquals(FIRST_GTIN, mappings.findAllArticles(1).get("legacy-article"));
+        assertEquals(FIRST_GTIN, mappings.findResolvedBySku(1).get("SKU-NEW-44"));
+    }
+
+    @Test
+    void trashedZnackGtinIsNeverResolvedForOzonPacking() throws Exception {
+        new OzonCatalogRepository().upsertPage(1, List.of(
+                product("401", "SKU-TRASHED", "trashed-article", "Clothing", "Women")), "cursor-4");
+        mappings.put(1, "SKU-TRASHED", FIRST_GTIN);
+        mappings.replaceArticlesForGtin(1, FIRST_GTIN, List.of("trashed-article"));
+        try (Connection connection = Database.getConnection(); Statement statement = connection.createStatement()) {
+            statement.execute("UPDATE znack_products SET deleted_at='2026-08-25T00:00:00Z' "
+                    + "WHERE shop_id=1 AND gtin='" + FIRST_GTIN + "'");
+        }
+
+        assertFalse(mappings.findResolvedBySku(1).containsKey("SKU-TRASHED"));
+    }
+
     private static OzonProductDto product(String productId, String sku, String offerId) {
         return new OzonProductDto(productId, offerId, sku, "Product " + sku, "", false, "", List.of());
+    }
+
+    private static OzonProductDto product(
+            String productId, String sku, String article, String category, String gender) {
+        return new OzonProductDto(productId, article, sku, "Product " + sku, "", article,
+                "black", "42", category, gender, false, "", List.of());
     }
 }

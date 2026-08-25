@@ -69,6 +69,16 @@ public final class OzonExemplarService {
     }
 
     public OzonPreparationResult prepare(Shop shop, String postingNumber) throws IOException {
+        return execute(shop, postingNumber, false);
+    }
+
+    /** Reserves and validates KIZ for printing, but deliberately performs no Ozon set mutation. */
+    public OzonPreparationResult stageForPrint(Shop shop, String postingNumber) throws IOException {
+        return execute(shop, postingNumber, true);
+    }
+
+    private OzonPreparationResult execute(Shop shop, String postingNumber, boolean stopAfterValidation)
+            throws IOException {
         MarketplaceGuard.requireOzon(shop);
         String safePosting = OzonApiClient.requireExternalId(postingNumber, "posting number");
         String key = shop.getId() + ":" + safePosting;
@@ -79,7 +89,7 @@ public final class OzonExemplarService {
         });
         synchronized (lock.monitor) {
             try {
-                return prepareLocked(shop, safePosting);
+                return prepareLocked(shop, safePosting, stopAfterValidation);
             } finally {
                 POSTING_LOCKS.computeIfPresent(key, (ignored, current) -> {
                     if (current != lock) return current;
@@ -90,12 +100,13 @@ public final class OzonExemplarService {
         }
     }
 
-    private OzonPreparationResult prepareLocked(Shop shop, String postingNumber) throws IOException {
+    private OzonPreparationResult prepareLocked(
+            Shop shop, String postingNumber, boolean stopAfterValidation) throws IOException {
         OzonApiClient api = apiClients.apply(
                 shop.getId(), new OzonCredentials(shop.getClientId(), shop.getApiKey()));
         OzonPostingDto posting = OzonJson.parsePostingDetail(api.getPosting(postingNumber, true));
         postings.upsertDetail(shop.getId(), posting);
-        Map<String, String> skuMappings = mappings.findAll(shop.getId());
+        Map<String, String> skuMappings = mappings.findResolvedBySku(shop.getId());
         OzonRequirementGuard.PreparationPlan plan = OzonRequirementGuard.plan(
                 posting, skuMappings, policies.findExemptSkus(shop.getId()));
         if (plan.exemplarCount() == 0) {
@@ -181,6 +192,10 @@ public final class OzonExemplarService {
                 }
                 return result(job, bindings.size(), false);
             }
+        }
+
+        if (job.stage() == OzonExemplarJobStage.VALIDATED && stopAfterValidation) {
+            return result(job, plan.exemplarCount(), false);
         }
 
         if (job.stage() == OzonExemplarJobStage.VALIDATED) {

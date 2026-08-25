@@ -836,7 +836,17 @@ class ZnackModuleTest {
                 return JsonParser.parseString("{\"results\":[{\"gtin\":\"04601234567891\",\"productName\":\"B\",\"tnVedEaes\":\"6202000000\"}],\"total\":2}");
             }
             @Override public JsonElement productCards(String base,String token,String gtins){
-                return JsonParser.parseString("{\"result\":[]}");
+                JsonArray result=new JsonArray();
+                for(String gtin:gtins.split(";")){
+                    result.add(JsonParser.parseString("""
+                            {"good_attrs":[{"attr_id":23557,"certificate_number":"DECL-%s",
+                            "certificate_issued_date":"2026-01-10"}],
+                            "identified_by":[{"type":"gtin","value":"%s"}]}
+                            """.formatted(gtin,gtin)));
+                }
+                JsonObject response=new JsonObject();
+                response.add("result",result);
+                return response;
             }
         };
         ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
@@ -876,7 +886,8 @@ class ZnackModuleTest {
                 String gtin=gtins.split(";")[0];
                 return JsonParser.parseString("""
                         {"result":[{"good_name":"Enriched product","good_attrs":[
-                        {"attr_id":13933,"attr_value":"6202 30 00 00"}],
+                        {"attr_id":13933,"attr_value":"6202 30 00 00"},
+                        {"attr_id":23557,"certificate_number":"DECL-1","certificate_issued_date":"2026-01-10"}],
                         "identified_by":[{"type":"gtin","value":"%s"}]}]}
                         """.formatted(gtin));
             }
@@ -961,7 +972,11 @@ class ZnackModuleTest {
             }
             @Override public JsonElement productCards(String base,String token,String gtins){
                 assertEquals("04601234567890",gtins);
-                return JsonParser.parseString("{\"result\":[]}");
+                return JsonParser.parseString("""
+                        {"result":[{"good_attrs":[
+                        {"attr_id":23557,"certificate_number":"DECL-1","certificate_issued_date":"2026-01-10"}],
+                        "identified_by":[{"type":"gtin","value":"04601234567890"}]}]}
+                        """);
             }
         };
         ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
@@ -1021,7 +1036,11 @@ class ZnackModuleTest {
                         """);
             }
             @Override public JsonElement productCards(String base,String token,String gtins){
-                return JsonParser.parseString("{\"result\":[]}");
+                return JsonParser.parseString("""
+                        {"result":[{"good_attrs":[
+                        {"attr_id":23557,"certificate_number":"DECL-1","certificate_issued_date":"2026-01-10"}],
+                        "identified_by":[{"type":"gtin","value":"04601234567890"}]}]}
+                        """);
             }
         };
         ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
@@ -1033,6 +1052,74 @@ class ZnackModuleTest {
 
         assertEquals(List.of("04601234567890"),products.stream().map(Product::gtin).toList());
         assertEquals(List.of("04601234567890"),repository.findProducts().stream().map(Product::gtin).toList());
+    }
+
+    @Test void productSyncMovesPublishedGtinWithoutGoodsDocumentsToTrash() throws Exception {
+        ZnackRepository repository=repository(1,"Shop A");
+        ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonElement products(String base,String token){
+                return JsonParser.parseString("""
+                        {"results":[
+                          {"gtin":"04601234567890","productName":"Documented","good_status":"published"},
+                          {"gtin":"04601234567891","productName":"Missing document","good_status":"published"}
+                        ]}
+                        """);
+            }
+            @Override public JsonElement productCards(String base,String token,String gtins){
+                return JsonParser.parseString("""
+                        {"result":[
+                          {"good_attrs":[{"attr_id":23557,"certificate_number":"DECL-1",
+                           "certificate_issued_date":"2026-01-10"}],
+                           "identified_by":[{"type":"gtin","value":"04601234567890"}]},
+                          {"good_attrs":[],
+                           "identified_by":[{"type":"gtin","value":"04601234567891"}]}
+                        ]}
+                        """);
+            }
+        };
+        ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+            @Override public String trueApiToken(Settings s){return "token";}
+        };
+
+        List<Product> products=new ZnackProductService(api,auth,repository)
+                .sync(testedSettings("","","","connection",""));
+
+        assertEquals(List.of("04601234567890"),products.stream().map(Product::gtin).toList());
+        assertEquals(List.of("04601234567891"),
+                repository.findDeletedProducts().stream().map(Product::gtin).toList());
+    }
+
+    @Test void partialCatalogResponseDoesNotClassifyAnUnreturnedGtinAsMissingDocuments() throws Exception {
+        ZnackRepository repository=repository(1,"Shop A");
+        ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonElement products(String base,String token){
+                return JsonParser.parseString("""
+                        {"results":[
+                          {"gtin":"04601234567890","productName":"Returned card","good_status":"published"},
+                          {"gtin":"04601234567891","productName":"Missing card","good_status":"published"}
+                        ]}
+                        """);
+            }
+            @Override public JsonElement productCards(String base,String token,String gtins){
+                return JsonParser.parseString("""
+                        {"result":[
+                          {"good_attrs":[{"attr_id":23557,"certificate_number":"DECL-1",
+                           "certificate_issued_date":"2026-01-10"}],
+                           "identified_by":[{"type":"gtin","value":"04601234567890"}]}
+                        ]}
+                        """);
+            }
+        };
+        ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+            @Override public String trueApiToken(Settings s){return "token";}
+        };
+
+        List<Product> products=new ZnackProductService(api,auth,repository)
+                .sync(testedSettings("","","","connection",""));
+
+        assertEquals(List.of("04601234567890"),products.stream().map(Product::gtin).toList());
+        assertTrue(repository.findDeletedProducts().isEmpty());
+        assertTrue(repository.findProduct("04601234567891").isEmpty());
     }
 
     @Test void blankHostsResolveToProductionWithoutReplacingCustomHosts() {
@@ -1216,12 +1303,21 @@ class ZnackModuleTest {
         ZnackSignatureProvider failingSigner=(input,context)->{
             throw new CryptoProException(CryptoProErrorCode.TOKEN_OR_CERTIFICATE_ABSENT,"token unavailable");
         };
-        ZnackAuthService auth=new ZnackAuthService(new ZnackApiClient(),failingSigner){
+        ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonElement permitDocuments(String base,String token,String gtin,String inn){
+                return JsonParser.parseString("""
+                        {"result":{"documents":[{"attr_id":23557,"number":"DOC-1",
+                        "from_date":"2026-01-10","status_group":1}]}}
+                        """);
+            }
+        };
+        ZnackAuthService auth=new ZnackAuthService(api,failingSigner){
+            @Override public String trueApiToken(Settings s){return "token";}
             @Override public String resolvedParticipantInn(Settings s){return "7701234567";}
         };
 
         assertThrows(CryptoProException.class,()->new ZnackIntroductionService(
-                new ZnackApiClient(),auth,failingSigner,repository).submit(
+                api,auth,failingSigner,repository).submit(
                 settingsWithDocument("",true,"DOC-1","20.06.2024","20.06.2029"),
                 repository.findOrder(orderId).orElseThrow(),repository.findProducts().getFirst(),
                 repository.findCodes(orderId)));

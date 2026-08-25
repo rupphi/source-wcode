@@ -34,7 +34,7 @@ public final class OzonFboKizPrintPlanner {
                 .toList();
         if (safeItems.isEmpty()) return new FboPrintPlan(List.of(), List.of());
 
-        Map<String, String> mappings = mappingRepository.findAll(shopId);
+        Map<String, String> mappings = mappingRepository.findResolvedBySku(shopId);
         Map<String, Integer> neededByGtin = new LinkedHashMap<>();
         Map<String, String> gtinBySku = new HashMap<>();
         List<String> missing = new ArrayList<>();

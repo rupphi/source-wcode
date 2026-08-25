@@ -19,6 +19,7 @@ import javafx.application.Platform;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
@@ -31,7 +32,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
-/** Maps Ozon catalog SKUs to a Znack GTIN without applying Wildberries category rules. */
+/** Maps Ozon catalog articles to a Znack GTIN without applying Wildberries category rules. */
 public final class OzonGtinMappingEditor {
     private final OzonCatalogRepository catalog = new OzonCatalogRepository();
     private final OzonProductGtinMappingRepository mappings = new OzonProductGtinMappingRepository();
@@ -41,7 +42,7 @@ public final class OzonGtinMappingEditor {
         Task<Data> task = new Task<>() {
             @Override
             protected Data call() {
-                return new Data(catalog.findAll(shopId), mappings.findAll(shopId));
+                return new Data(catalog.findAll(shopId), mappings.findAllArticles(shopId));
             }
         };
         host.busy(true);
@@ -65,59 +66,87 @@ public final class OzonGtinMappingEditor {
 
         TextField search = new TextField();
         search.setPromptText(tr("ozon.mapping.search"));
+        String all = tr("ozon.mapping.filter.all");
+        ComboBox<String> category = filterBox(all, data.products().stream()
+                .map(OzonProductDto::category).filter(value -> !value.isBlank()).toList());
+        ComboBox<String> gender = filterBox(all, data.products().stream()
+                .map(OzonProductDto::gender).filter(value -> !value.isBlank()).toList());
+        category.setPromptText(tr("ozon.mapping.filter.category"));
+        gender.setPromptText(tr("ozon.mapping.filter.gender"));
+        CheckBox selectAll = new CheckBox(tr("ozon.mapping.select_all"));
         Label selectedLabel = new Label();
         selectedLabel.getStyleClass().add("text-muted");
         VBox rows = new VBox(6);
         ScrollPane scroll = new ScrollPane(rows);
         scroll.setFitToWidth(true);
         scroll.setPrefViewportHeight(480);
-        Set<String> selected = data.currentMappings().entrySet().stream()
-                .filter(entry -> gtin.equals(entry.getValue()))
-                .map(Map.Entry::getKey)
+        Set<String> selected = selectedArticlesForGtin(data.products(), data.currentMappings(), gtin).stream()
+                .map(OzonGtinMappingEditor::articleKey)
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
 
-        Runnable refresh = () -> renderRows(gtin, data, search.getText(), selected, rows, selectedLabel);
+        Runnable refresh = () -> renderRows(
+                gtin, data, search.getText(), filterValue(category, all), filterValue(gender, all),
+                selected, rows, selectedLabel, selectAll);
         search.textProperty().addListener((ignored, oldValue, newValue) -> refresh.run());
+        category.valueProperty().addListener((ignored, oldValue, newValue) -> refresh.run());
+        gender.valueProperty().addListener((ignored, oldValue, newValue) -> refresh.run());
+        selectAll.setOnAction(event -> {
+            List<OzonProductDto> visible = visibleProducts(
+                    data.products(), search.getText(), filterValue(category, all), filterValue(gender, all));
+            if (selectAll.isSelected()) visible.forEach(product -> selected.add(articleKey(product.article())));
+            else visible.forEach(product -> selected.remove(articleKey(product.article())));
+            refresh.run();
+        });
+        HBox filters = new HBox(8, category, gender);
+        HBox.setHgrow(category, Priority.ALWAYS);
+        HBox.setHgrow(gender, Priority.ALWAYS);
+        category.setMaxWidth(Double.MAX_VALUE);
+        gender.setMaxWidth(Double.MAX_VALUE);
         VBox content = new VBox(10,
                 new Label(tr("ozon.mapping.catalog_heading") + " - " + gtin),
                 search,
+                filters,
+                selectAll,
                 selectedLabel,
                 scroll);
         content.setPrefSize(760, 560);
         VBox.setVgrow(scroll, Priority.ALWAYS);
         dialog.getDialogPane().setContent(content);
-        dialog.setResultConverter(button -> button == save ? List.copyOf(selected) : null);
+        dialog.setResultConverter(button -> button == save
+                ? articlesForKeys(data.products(), selected) : null);
         refresh.run();
-        dialog.showAndWait().ifPresent(skus -> save(shopId, gtin, skus, host));
+        dialog.showAndWait().ifPresent(articles -> save(shopId, gtin, articles, host));
     }
 
     private void renderRows(
             String gtin,
             Data data,
             String query,
+            String category,
+            String gender,
             Set<String> selected,
             VBox rows,
-            Label selectedLabel) {
+            Label selectedLabel,
+            CheckBox selectAll) {
         rows.getChildren().clear();
-        String normalizedQuery = query == null ? "" : query.strip().toLowerCase(Locale.ROOT);
-        List<OzonProductDto> visible = data.products().stream()
-                .filter(product -> !product.archived() && !product.sku().isBlank())
-                .filter(product -> normalizedQuery.isBlank() || matches(product, normalizedQuery))
-                .toList();
+        List<OzonProductDto> visible = visibleProducts(data.products(), query, category, gender);
         for (OzonProductDto product : visible) {
             CheckBox check = new CheckBox();
-            check.setSelected(selected.contains(product.sku()));
+            String key = articleKey(product.article());
+            check.setSelected(selected.contains(key));
             check.setOnAction(event -> {
-                if (check.isSelected()) selected.add(product.sku());
-                else selected.remove(product.sku());
+                if (check.isSelected()) selected.add(key);
+                else selected.remove(key);
                 selectedLabel.setText(MessageFormat.format(tr("ozon.mapping.selected"), selected.size()));
+                updateSelectAll(selectAll, visible, selected);
             });
-            Label name = new Label(product.name().isBlank() ? product.sku() : product.name());
+            Label name = new Label(product.name().isBlank() ? product.article() : product.name());
             name.getStyleClass().add("text-strong");
             name.setWrapText(true);
-            String metadata = "SKU " + product.sku()
-                    + (product.offerId().isBlank() ? "" : "  -  Offer " + product.offerId());
-            String owner = data.currentMappings().get(product.sku());
+            String metadata = tr("ozon.mapping.article") + " " + product.article()
+                    + (product.category().isBlank() ? "" : "  -  " + product.category())
+                    + (product.gender().isBlank() ? "" : "  -  " + product.gender());
+            String owner = currentOwner(data.currentMappings(), product.article());
             if (owner != null && !owner.equals(gtin)) {
                 metadata += "  -  " + MessageFormat.format(tr("ozon.mapping.current_gtin"), owner);
             }
@@ -130,9 +159,10 @@ public final class OzonGtinMappingEditor {
             row.getStyleClass().add("surface");
             labels.setOnMouseClicked(event -> {
                 check.setSelected(!check.isSelected());
-                if (check.isSelected()) selected.add(product.sku());
-                else selected.remove(product.sku());
+                if (check.isSelected()) selected.add(key);
+                else selected.remove(key);
                 selectedLabel.setText(MessageFormat.format(tr("ozon.mapping.selected"), selected.size()));
+                updateSelectAll(selectAll, visible, selected);
             });
             rows.getChildren().add(row);
         }
@@ -143,6 +173,7 @@ public final class OzonGtinMappingEditor {
             rows.getChildren().add(empty);
         }
         selectedLabel.setText(MessageFormat.format(tr("ozon.mapping.selected"), selected.size()));
+        updateSelectAll(selectAll, visible, selected);
     }
 
     private StackPane productImage(OzonProductDto product) {
@@ -169,11 +200,11 @@ public final class OzonGtinMappingEditor {
         return container;
     }
 
-    private void save(int shopId, String gtin, List<String> skus, KizGtinMappingEditor.Host host) {
+    private void save(int shopId, String gtin, List<String> articles, KizGtinMappingEditor.Host host) {
         Task<Void> task = new Task<>() {
             @Override
             protected Void call() {
-                mappings.replaceForGtin(shopId, gtin, skus);
+                mappings.replaceArticlesForGtin(shopId, gtin, articles);
                 return null;
             }
         };
@@ -192,7 +223,77 @@ public final class OzonGtinMappingEditor {
     private static boolean matches(OzonProductDto product, String query) {
         return product.name().toLowerCase(Locale.ROOT).contains(query)
                 || product.sku().toLowerCase(Locale.ROOT).contains(query)
-                || product.offerId().toLowerCase(Locale.ROOT).contains(query);
+                || product.offerId().toLowerCase(Locale.ROOT).contains(query)
+                || product.article().toLowerCase(Locale.ROOT).contains(query);
+    }
+
+    static List<OzonProductDto> visibleProducts(
+            List<OzonProductDto> products, String query, String category, String gender) {
+        String normalizedQuery = query == null ? "" : query.strip().toLowerCase(Locale.ROOT);
+        String normalizedCategory = category == null ? "" : category.strip();
+        String normalizedGender = gender == null ? "" : gender.strip();
+        Map<String, OzonProductDto> byArticle = new java.util.LinkedHashMap<>();
+        if (products == null) return List.of();
+        products.stream()
+                .filter(product -> product != null && !product.archived() && !product.article().isBlank())
+                .filter(product -> normalizedQuery.isBlank() || matches(product, normalizedQuery))
+                .filter(product -> normalizedCategory.isBlank()
+                        || normalizedCategory.equalsIgnoreCase(product.category()))
+                .filter(product -> normalizedGender.isBlank()
+                        || normalizedGender.equalsIgnoreCase(product.gender()))
+                .forEach(product -> byArticle.putIfAbsent(
+                        product.article().strip().toLowerCase(Locale.ROOT), product));
+        return List.copyOf(byArticle.values());
+    }
+
+    private static ComboBox<String> filterBox(String all, List<String> values) {
+        ComboBox<String> box = new ComboBox<>();
+        box.getItems().add(all);
+        values.stream().filter(value -> value != null && !value.isBlank()).distinct()
+                .sorted(String.CASE_INSENSITIVE_ORDER).forEach(box.getItems()::add);
+        box.getSelectionModel().selectFirst();
+        return box;
+    }
+
+    private static String filterValue(ComboBox<String> box, String all) {
+        String value = box.getValue();
+        return value == null || value.equals(all) ? "" : value;
+    }
+
+    private static String currentOwner(Map<String, String> mappings, String article) {
+        if (article == null) return null;
+        return mappings.entrySet().stream()
+                .filter(entry -> entry.getKey().equalsIgnoreCase(article))
+                .map(Map.Entry::getValue).findFirst().orElse(null);
+    }
+
+    private static void updateSelectAll(
+            CheckBox selectAll, List<OzonProductDto> visible, Set<String> selected) {
+        long selectedVisible = visible.stream().map(OzonProductDto::article)
+                .map(OzonGtinMappingEditor::articleKey).filter(selected::contains).count();
+        selectAll.setIndeterminate(selectedVisible > 0 && selectedVisible < visible.size());
+        selectAll.setSelected(!visible.isEmpty() && selectedVisible == visible.size());
+    }
+
+    static List<String> selectedArticlesForGtin(
+            List<OzonProductDto> products, Map<String, String> currentMappings, String gtin) {
+        Set<String> selectedKeys = currentMappings.entrySet().stream()
+                .filter(entry -> gtin.equals(entry.getValue()))
+                .map(Map.Entry::getKey)
+                .map(OzonGtinMappingEditor::articleKey)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        return articlesForKeys(products, selectedKeys);
+    }
+
+    private static List<String> articlesForKeys(List<OzonProductDto> products, Set<String> selectedKeys) {
+        return visibleProducts(products, "", "", "").stream()
+                .map(OzonProductDto::article)
+                .filter(article -> selectedKeys.contains(articleKey(article)))
+                .toList();
+    }
+
+    private static String articleKey(String article) {
+        return article == null ? "" : article.strip().toLowerCase(Locale.ROOT);
     }
 
     private static String tr(String key) {
