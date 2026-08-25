@@ -151,10 +151,13 @@ public final class AppDataRecoveryService {
         }
     }
 
-    private static void copyAppDataWithoutDeletingCurrent(Path source, Path target, boolean replaceDatabase) throws IOException {
+    static void copyAppDataWithoutDeletingCurrent(Path source, Path target, boolean replaceDatabase) throws IOException {
         try (Stream<Path> stream = Files.walk(source)) {
             for (Path path : stream.toList()) {
                 Path relative = source.relativize(path);
+                if (isLegacyInstallerPayload(relative)) {
+                    continue;
+                }
                 Path destination = target.resolve(relative);
                 if (Files.isDirectory(path)) {
                     Files.createDirectories(destination);
@@ -170,6 +173,19 @@ public final class AppDataRecoveryService {
                 }
             }
         }
+    }
+
+    private static boolean isLegacyInstallerPayload(Path relative) {
+        if (relative == null || relative.getNameCount() == 0) {
+            return false;
+        }
+        String topLevel = relative.getName(0).toString();
+        if ("app".equalsIgnoreCase(topLevel) || "runtime".equalsIgnoreCase(topLevel)) {
+            return true;
+        }
+        return relative.getNameCount() == 1
+                && ("WCode.exe".equalsIgnoreCase(topLevel)
+                        || "check-portable.bat".equalsIgnoreCase(topLevel));
     }
 
     private static boolean isDatabaseFile(Path path) {

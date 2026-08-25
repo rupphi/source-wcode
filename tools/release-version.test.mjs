@@ -6,6 +6,7 @@ import test from "node:test";
 import { resolveReleaseVersion } from "./release-version.mjs";
 
 const LEGACY_WINDOWS_UPGRADE_UUID = "D0FC7057-DA6C-3181-ADF9-C21DB2C9152A";
+const DATA_SAFE_WINDOWS_UPGRADE_UUID = "0356BE08-487C-4E04-A2C2-353AF93DB2DE";
 
 async function createProject(overrides = {}) {
   const root = await mkdtemp(path.join(tmpdir(), "wcode-release-version-"));
@@ -96,7 +97,7 @@ test("rejects malformed or mismatched release tags", async () => {
   }
 });
 
-test("keeps the Windows installer identity compatible with released 1.1.8 and 1.1.9", async () => {
+test("uses a data-safe Windows identity without uninstalling the legacy data directory", async () => {
   const workflow = await readFile(
     new URL("../.github/workflows/release.yml", import.meta.url),
     "utf8",
@@ -105,7 +106,9 @@ test("keeps the Windows installer identity compatible with released 1.1.8 and 1.
   const installerUses = workflow.match(/--win-upgrade-uuid \$env:WINDOWS_UPGRADE_UUID/g) ?? [];
   const separatedInstallDirs = workflow.match(/--install-dir 'WCodeApp'/g) ?? [];
 
-  assert.equal(declaration?.[1], LEGACY_WINDOWS_UPGRADE_UUID);
+  assert.equal(declaration?.[1], DATA_SAFE_WINDOWS_UPGRADE_UUID);
+  assert.notEqual(declaration?.[1], LEGACY_WINDOWS_UPGRADE_UUID,
+    "1.1.10 must not invoke the legacy uninstaller that removes LocalAppData/WCode");
   assert.equal(installerUses.length, 2, "both MSI and EXE must reuse the upgrade UUID");
   assert.equal(separatedInstallDirs.length, 2,
     "both installers must keep executables outside the LocalAppData WCode data directory");
@@ -115,10 +118,14 @@ test("keeps the Windows installer identity compatible with released 1.1.8 and 1.
     "release CI must pin the previous MSI checksum");
   assert.match(workflow, /upgrade-data-sentinel\.txt/,
     "release CI must verify that installer upgrades preserve local data");
+  assert.match(workflow, /LOCALAPPDATA 'WCodeData'/,
+    "release CI must verify migration to a dedicated data-only directory");
   assert.match(workflow, /LOCALAPPDATA 'WCodeApp\\WCode\.exe'/,
     "release CI must verify the data-safe executable path");
-  assert.match(workflow, /\$registrations\.Count -ne 1/,
-    "release CI must reject duplicate Windows registrations after upgrade");
+  assert.match(workflow, /UpgradeDatabaseProbe verify/,
+    "release CI must verify migrated SQLite contents after launching the packaged app");
+  assert.match(workflow, /\$currentRegistrations\.Count -ne 1/,
+    "release CI must verify the new installer registration");
 });
 
 test("builds a releasable Windows package when optional signing secrets are absent", async () => {

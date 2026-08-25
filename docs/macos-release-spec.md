@@ -44,7 +44,7 @@ matrix:
 
 ## Boundaries
 
-- Always: keep the Windows upgrade UUID unchanged; preserve optional signing behavior; package native dependencies on their matching Mac architecture; checksum every public artifact.
+- Always: keep the data-safe Windows 1.1.10+ upgrade UUID unchanged; never reuse the legacy 1.1.9 UUID; preserve optional signing behavior; package native dependencies on their matching Mac architecture; checksum every public artifact.
 - Ask first: adding paid GitHub larger runners or Apple Developer credentials.
 - Never: commit signing secrets, local databases, KIZ files, or publish a Mac build from a mismatched CPU architecture.
 

@@ -19,7 +19,7 @@ env:
   APP_NAME: WCode
   APP_VENDOR: TuanDev
   RELEASE_REPO: rupphi/relatest-wcode
-  WINDOWS_UPGRADE_UUID: D0FC7057-DA6C-3181-ADF9-C21DB2C9152A
+  WINDOWS_UPGRADE_UUID: 0356BE08-487C-4E04-A2C2-353AF93DB2DE
   TIMESTAMP_URL: http://timestamp.digicert.com
 
 jobs:
@@ -263,25 +263,113 @@ jobs:
           }
 
           Install-Msi $oldInstaller
-          $dataDir = Join-Path $env:LOCALAPPDATA 'WCode'
-          $oldExecutable = Join-Path $dataDir 'WCode.exe'
+          $legacyDataDir = Join-Path $env:LOCALAPPDATA 'WCode'
+          $currentDataDir = Join-Path $env:LOCALAPPDATA 'WCodeData'
+          $oldExecutable = Join-Path $legacyDataDir 'WCode.exe'
           if (-not (Test-Path $oldExecutable -PathType Leaf)) {
             throw 'The released WCode 1.1.9 MSI did not install at its expected legacy path.'
           }
-          New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
-          $sentinel = Join-Path $dataDir 'upgrade-data-sentinel.txt'
-          'preserve-user-data' | Set-Content -LiteralPath $sentinel -Encoding utf8
+
+          $probeRoot = Join-Path $env:RUNNER_TEMP 'wcode-upgrade-db-probe'
+          New-Item -ItemType Directory -Force -Path $probeRoot | Out-Null
+          $probeSource = Join-Path $probeRoot 'UpgradeDatabaseProbe.java'
+          @'
+          import java.nio.file.Path;
+          import java.sql.Connection;
+          import java.sql.DriverManager;
+          import java.sql.ResultSet;
+          import java.sql.Statement;
+
+          public final class UpgradeDatabaseProbe {
+              public static void main(String[] args) throws Exception {
+                  Path database = Path.of(args[1]).toAbsolutePath();
+                  Class.forName("org.sqlite.JDBC");
+                  try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database);
+                       Statement statement = connection.createStatement()) {
+                      if ("seed".equals(args[0])) {
+                          statement.execute("CREATE TABLE shops(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, api_key TEXT NOT NULL)");
+                          statement.execute("INSERT INTO shops(name, api_key) VALUES('upgrade-sentinel-shop', 'ci-placeholder')");
+                          statement.execute("PRAGMA user_version = 0");
+                          return;
+                      }
+                      try (ResultSet integrity = statement.executeQuery("PRAGMA integrity_check")) {
+                          if (!integrity.next() || !"ok".equals(integrity.getString(1))) {
+                              throw new IllegalStateException("Migrated database integrity check failed");
+                          }
+                      }
+                      try (ResultSet version = statement.executeQuery("PRAGMA user_version")) {
+                          if (!version.next() || version.getInt(1) != 2) {
+                              throw new IllegalStateException("Migrated database schema version is not 2");
+                          }
+                      }
+                      try (ResultSet shop = statement.executeQuery(
+                              "SELECT marketplace FROM shops WHERE name='upgrade-sentinel-shop'")) {
+                          if (!shop.next() || !"WILDBERRIES".equals(shop.getString(1))) {
+                              throw new IllegalStateException("Legacy shop data was not migrated");
+                          }
+                      }
+                  }
+              }
+          }
+          '@ | Set-Content -LiteralPath $probeSource -Encoding utf8
+          $sqliteJar = Get-ChildItem 'target\lib\sqlite-jdbc-*.jar' | Select-Object -First 1 -ExpandProperty FullName
+          $slf4jApi = Get-ChildItem 'target\lib\slf4j-api-*.jar' | Select-Object -First 1 -ExpandProperty FullName
+          $slf4jSimple = Get-ChildItem 'target\lib\slf4j-simple-*.jar' | Select-Object -First 1 -ExpandProperty FullName
+          $probeClassPath = "$probeRoot;$sqliteJar;$slf4jApi;$slf4jSimple"
+          & javac -cp "$sqliteJar;$slf4jApi" $probeSource
+          if ($LASTEXITCODE -ne 0) { throw 'Could not compile the upgrade database probe.' }
+
+          New-Item -ItemType Directory -Force -Path $legacyDataDir | Out-Null
+          $legacyDatabase = Join-Path $legacyDataDir 'database.db'
+          & java -cp $probeClassPath UpgradeDatabaseProbe seed $legacyDatabase
+          if ($LASTEXITCODE -ne 0) { throw 'Could not seed the WCode 1.1.9 database.' }
+          $legacySentinel = Join-Path $legacyDataDir 'upgrade-data-sentinel.txt'
+          'preserve-user-data' | Set-Content -LiteralPath $legacySentinel -Encoding utf8
 
           Install-Msi (Join-Path $PWD 'release\WCode.msi')
           $newExecutable = Join-Path $env:LOCALAPPDATA 'WCodeApp\WCode.exe'
           if (-not (Test-Path $newExecutable -PathType Leaf)) {
             throw 'WCode 1.1.10 was not installed in the data-safe program directory.'
           }
-          if ((Get-Content -LiteralPath $sentinel -Raw).Trim() -cne 'preserve-user-data') {
-            throw 'The 1.1.9 to 1.1.10 installer upgrade did not preserve local user data.'
+          if (-not (Test-Path $oldExecutable -PathType Leaf) -or
+              (Get-Content -LiteralPath $legacySentinel -Raw).Trim() -cne 'preserve-user-data') {
+            throw 'The 1.1.10 installer modified the legacy directory before data migration.'
           }
-          if (Test-Path $oldExecutable -PathType Leaf) {
-            throw 'The 1.1.9 executable was not removed during the major upgrade.'
+
+          $newProcess = Start-Process -FilePath $newExecutable -PassThru
+          try {
+            $currentDatabase = Join-Path $currentDataDir 'database.db'
+            $currentSentinel = Join-Path $currentDataDir 'upgrade-data-sentinel.txt'
+            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+              if ($newProcess.HasExited) {
+                $startupLog = Join-Path $currentDataDir 'logs\startup.log'
+                if (Test-Path $startupLog -PathType Leaf) { Get-Content $startupLog }
+                throw 'The packaged WCode 1.1.10 launcher exited during migration startup.'
+              }
+              if ((Test-Path $currentDatabase -PathType Leaf) -and
+                  (Test-Path $currentSentinel -PathType Leaf)) { break }
+              Start-Sleep -Seconds 1
+            }
+            if (-not (Test-Path $currentDatabase -PathType Leaf) -or
+                (Get-Content -LiteralPath $currentSentinel -Raw).Trim() -cne 'preserve-user-data') {
+              throw 'WCode 1.1.10 did not migrate the legacy app-data directory.'
+            }
+            & java -cp $probeClassPath UpgradeDatabaseProbe verify $currentDatabase
+            if ($LASTEXITCODE -ne 0) { throw 'The migrated WCode database failed verification.' }
+            if ((Test-Path (Join-Path $currentDataDir 'WCode.exe')) -or
+                (Test-Path (Join-Path $currentDataDir 'app')) -or
+                (Test-Path (Join-Path $currentDataDir 'runtime'))) {
+              throw 'Legacy jpackage binaries leaked into the new data-only directory.'
+            }
+            $startupLog = Join-Path $currentDataDir 'logs\startup.log'
+            if (Test-Path $startupLog -PathType Leaf) {
+              Get-Content $startupLog
+              throw 'WCode 1.1.10 recorded a startup failure after migration.'
+            }
+          } finally {
+            if ($newProcess -and -not $newProcess.HasExited) {
+              Stop-Process -Id $newProcess.Id -Force
+            }
           }
 
           $uninstallRoots = @(
@@ -293,11 +381,10 @@ jobs:
             Get-ItemProperty -Path $uninstallRoots -ErrorAction SilentlyContinue |
               Where-Object { $_.DisplayName -ceq 'WCode' -and $_.Publisher -ceq $env:APP_VENDOR }
           )
-          if ($registrations.Count -ne 1) {
-            throw "Expected one WCode registration after upgrade, found $($registrations.Count)."
-          }
-          if ($registrations[0].DisplayVersion -cne $env:APP_VERSION) {
-            throw "Unexpected installed WCode version: $($registrations[0].DisplayVersion)"
+          $currentRegistrations = @($registrations | Where-Object DisplayVersion -ceq $env:APP_VERSION)
+          $legacyRegistrations = @($registrations | Where-Object DisplayVersion -ceq '1.1.9')
+          if ($currentRegistrations.Count -ne 1 -or $legacyRegistrations.Count -ne 1) {
+            throw "Expected separate legacy and data-safe WCode registrations, found $($registrations.Count)."
           }
 
       - name: Create optional signed update manifest and checksums
@@ -502,7 +589,7 @@ jobs:
           if [[ "$WINDOWS_SIGNING_ENABLED" != 'true' ]]; then
             windows_trust_note=' Bộ cài Windows hiện chưa có chữ ký Authenticode.'
           fi
-          notes="WCode ${APP_VERSION} JavaFX — Wildberries và Ozon FBS, dashboard tài chính WB/Ozon và quy trình KIZ. Dữ liệu người dùng được snapshot trước migration. Có bản macOS riêng cho Intel và Apple Silicon; các gói Mac hiện chưa được Apple notarize.${windows_trust_note}"
+          notes="WCode ${APP_VERSION} JavaFX — Wildberries và Ozon FBS, dashboard tài chính WB/Ozon và quy trình KIZ. Trên Windows, dữ liệu 1.1.9 được sao chép sang thư mục WCodeData riêng trước khi dùng schema mới. Có bản macOS riêng cho Intel và Apple Silicon; các gói Mac hiện chưa được Apple notarize.${windows_trust_note}"
           if gh release view "$RELEASE_TAG" --repo "$RELEASE_REPO" >/dev/null 2>&1; then
             gh release edit "$RELEASE_TAG" --repo "$RELEASE_REPO" --title "WCode $APP_VERSION" --notes "$notes" --latest
           else

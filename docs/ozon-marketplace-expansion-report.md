@@ -18,7 +18,8 @@ MVP được đề xuất là **Ozon FBS Standard**: tạo cửa hàng, kiểm t
 JavaFX entrypoint, controller, FXML và theme nằm trực tiếp trong `src/main`. Maven là build system
 duy nhất, tạo runnable JAR cùng runtime dependencies cho `jpackage`. Core Ozon, schema v2 và bằng
 chứng live được giữ nguyên khi production UI quay lại JavaFX. Rollback dữ liệu dùng snapshot đã
-verify; Windows installer tiếp tục dùng upgrade identity của 1.1.9.
+verify; Windows 1.1.10 dùng installer identity và thư mục dữ liệu mới để không kích hoạt uninstaller
+legacy vốn đặt binary chung với dữ liệu.
 
 ### 1.1 Trạng thái triển khai ngày 2026-08-18
 
@@ -655,8 +656,9 @@ Build/release contract hiện yêu cầu:
 - Maven compile/test/package JavaFX, tạo runnable JAR và `target/lib` cho `jpackage`;
 - không còn source set desktop khác, frontend web, bridge binding hoặc Gradle wrapper;
 - script local và workflow đều package `com.tuandev.fbsbarcode.Launcher`;
-- Windows EXE/MSI giữ Upgrade UUID của 1.1.8/1.1.9; Authenticode và signed update manifest được
-  bật khi repo có đủ secret tương ứng;
+- Windows EXE/MSI dùng Upgrade UUID data-safe của 1.1.10+, giữ registration 1.1.9 trong lần chuyển
+  tiếp để không xóa `%LOCALAPPDATA%\WCode`, rồi app tự migrate sang `%LOCALAPPDATA%\WCodeData`;
+  Authenticode và signed update manifest được bật khi repo có đủ secret tương ứng;
 - migration 1.1.9 → 1.1.10 vẫn khóa app-data, snapshot/verify trước ghi, giữ ID/token/FK/WB data,
   backfill `WILDBERRIES`, thêm schema Ozon và fail closed khi gặp schema mới hơn.
 

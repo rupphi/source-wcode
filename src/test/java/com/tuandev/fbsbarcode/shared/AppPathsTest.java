@@ -26,4 +26,28 @@ class AppPathsTest {
             }
         }
     }
+
+    @Test
+    void windowsSeparatesCurrentDataFromTheLegacyInstallerDirectory() {
+        String previousOs = System.getProperty("os.name");
+        String previousOverride = System.getProperty("wcode.appdata.dir");
+        System.setProperty("os.name", "Windows 11");
+        System.clearProperty("wcode.appdata.dir");
+        try {
+            assertEquals("WCodeData", AppPaths.appDataDir().getFileName().toString());
+            assertTrue(AppPaths.legacyAppDataDirs().stream()
+                    .anyMatch(path -> path.getFileName().toString().equals("WCode")));
+        } finally {
+            if (previousOs == null) {
+                System.clearProperty("os.name");
+            } else {
+                System.setProperty("os.name", previousOs);
+            }
+            if (previousOverride == null) {
+                System.clearProperty("wcode.appdata.dir");
+            } else {
+                System.setProperty("wcode.appdata.dir", previousOverride);
+            }
+        }
+    }
 }
