@@ -211,7 +211,7 @@
     -fx-padding: 12px;
 }
 
-/* Finance dashboard: compact accounting cards with color as a secondary cue. */
+/* Finance dashboard: spacious accounting cards with color as a secondary cue. */
 .finance-filter-bar {
     -fx-padding: 9px 12px;
 }
@@ -223,8 +223,8 @@
 }
 
 .finance-kpi-card {
-    -fx-min-height: 68px;
-    -fx-padding: 10px 12px;
+    -fx-min-height: 80px;
+    -fx-padding: 14px 16px;
     -fx-border-width: 1px 1px 1px 4px;
 }
 
@@ -246,7 +246,7 @@
 
 .finance-kpi-card-net {
     -fx-border-color: -border-color -border-color -border-color -accent;
-    -fx-padding: 11px 14px;
+    -fx-padding: 15px 18px;
 }
 
 .finance-kpi-title {
@@ -265,8 +265,7 @@
 }
 
 .finance-kpi-value-income,
-.finance-kpi-value-positive,
-.finance-kpi-ratio-positive {
+.finance-kpi-value-positive {
     -fx-text-fill: -success;
 }
 
@@ -275,28 +274,13 @@
 }
 
 .finance-kpi-value-danger,
-.finance-kpi-value-negative,
-.finance-kpi-ratio-negative {
+.finance-kpi-value-negative {
     -fx-text-fill: -danger;
-}
-
-.finance-kpi-ratio {
-    -fx-font-size: 11px;
-    -fx-font-weight: 600;
-    -fx-text-fill: -text-muted;
 }
 
 .finance-kpi-help {
     -fx-font-size: 10px;
     -fx-text-fill: -text-muted;
-}
-
-.finance-kpi-ratio.finance-kpi-ratio-positive {
-    -fx-text-fill: -success;
-}
-
-.finance-kpi-ratio.finance-kpi-ratio-negative {
-    -fx-text-fill: -danger;
 }
 
 .finance-money-column {

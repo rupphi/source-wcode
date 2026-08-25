@@ -154,7 +154,10 @@ class FxmlSmokeTest {
                         && isAt(loader, "otherCostTitleLabel", 2, 2)
                         && isAt(loader, "netTitleLabel", 0, 3)
                         && loader.getNamespace().get("commissionColumn") != null
-                        && loader.getNamespace().get("netRatioLabel") != null);
+                        && loader.getNamespace().get("grossRatioLabel") == null
+                        && loader.getNamespace().get("netRatioLabel") == null
+                        && grid.getHgap() >= 14.0
+                        && grid.getVgap() >= 14.0);
             } finally {
                 latch.countDown();
             }

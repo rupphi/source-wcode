@@ -65,16 +65,6 @@ public class FinanceDashboardController {
     @FXML private Label otherCostValueLabel;
     @FXML private Label netValueLabel;
     @FXML private Label netHelpLabel;
-    @FXML private Label grossRatioLabel;
-    @FXML private Label payoutRatioLabel;
-    @FXML private Label commissionRatioLabel;
-    @FXML private Label returnsRatioLabel;
-    @FXML private Label logisticsRatioLabel;
-    @FXML private Label advertisingRatioLabel;
-    @FXML private Label storageRatioLabel;
-    @FXML private Label penaltyRatioLabel;
-    @FXML private Label otherCostRatioLabel;
-    @FXML private Label netRatioLabel;
     @FXML private Label emptyLabel;
     @FXML private TableView<FinanceDaily> dailyTable;
     @FXML private TableColumn<FinanceDaily, String> dateColumn;
@@ -157,8 +147,6 @@ public class FinanceDashboardController {
         updateMarketplaceTexts();
         if (currentSnapshot != null) {
             showData(currentSnapshot);
-        } else {
-            resetRatios();
         }
         dailyTable.refresh();
     }
@@ -239,42 +227,28 @@ public class FinanceDashboardController {
         currentSnapshot = snapshot;
         dailyTable.setItems(FXCollections.observableArrayList(snapshot.days()));
         String currency = snapshot.days().isEmpty() ? "RUB" : snapshot.days().get(0).currency();
-        setKpi(grossValueLabel, grossRatioLabel, snapshot.grossSales(), snapshot, currency);
-        setKpi(payoutValueLabel, payoutRatioLabel, snapshot.netPayout(), snapshot, currency);
-        setKpi(commissionValueLabel, commissionRatioLabel, snapshot.commissionCost(), snapshot, currency);
-        setKpi(returnsValueLabel, returnsRatioLabel, snapshot.returnsAmount(), snapshot, currency);
-        setKpi(logisticsValueLabel, logisticsRatioLabel, snapshot.logisticsCost(), snapshot, currency);
-        setKpi(advertisingValueLabel, advertisingRatioLabel, snapshot.advertisingCost(), snapshot, currency);
-        setKpi(storageValueLabel, storageRatioLabel, snapshot.storageCost(), snapshot, currency);
-        setKpi(penaltyValueLabel, penaltyRatioLabel, snapshot.penaltyCost(), snapshot, currency);
-        setKpi(otherCostValueLabel, otherCostRatioLabel, snapshot.otherCost(), snapshot, currency);
-        setKpi(netValueLabel, netRatioLabel, snapshot.netProfit(), snapshot, currency);
+        setKpi(grossValueLabel, snapshot.grossSales(), currency);
+        setKpi(payoutValueLabel, snapshot.netPayout(), currency);
+        setKpi(commissionValueLabel, snapshot.commissionCost(), currency);
+        setKpi(returnsValueLabel, snapshot.returnsAmount(), currency);
+        setKpi(logisticsValueLabel, snapshot.logisticsCost(), currency);
+        setKpi(advertisingValueLabel, snapshot.advertisingCost(), currency);
+        setKpi(storageValueLabel, snapshot.storageCost(), currency);
+        setKpi(penaltyValueLabel, snapshot.penaltyCost(), currency);
+        setKpi(otherCostValueLabel, snapshot.otherCost(), currency);
+        setKpi(netValueLabel, snapshot.netProfit(), currency);
         netValueLabel.getStyleClass().removeAll("finance-kpi-value-positive", "finance-kpi-value-negative");
-        netRatioLabel.getStyleClass().removeAll("finance-kpi-ratio-positive", "finance-kpi-ratio-negative");
         if (snapshot.netProfit() >= 0) {
             netValueLabel.getStyleClass().add("finance-kpi-value-positive");
-            netRatioLabel.getStyleClass().add("finance-kpi-ratio-positive");
         } else {
             netValueLabel.getStyleClass().add("finance-kpi-value-negative");
-            netRatioLabel.getStyleClass().add("finance-kpi-ratio-negative");
         }
         emptyLabel.setVisible(snapshot.days().isEmpty());
         emptyLabel.setManaged(snapshot.days().isEmpty());
     }
 
-    private void setKpi(Label valueLabel, Label ratioLabel, double amount,
-                        FinanceDashboardSnapshot snapshot, String currency) {
+    private void setKpi(Label valueLabel, double amount, String currency) {
         valueLabel.setText(money(amount, currency));
-        ratioLabel.setText(revenueRatio(snapshot.percentageOfRevenue(amount)));
-    }
-
-    private String revenueRatio(double percentage) {
-        if (Double.isNaN(percentage) || Double.isInfinite(percentage)) return "· —";
-        NumberFormat format = NumberFormat.getNumberInstance(locale());
-        format.setMinimumFractionDigits(0);
-        format.setMaximumFractionDigits(1);
-        return "· " + format.format(percentage) + "% "
-                + I18nService.getInstance().tr("finance.ratio.of_sales");
     }
 
     private void configureColumns() {
@@ -322,19 +296,10 @@ public class FinanceDashboardController {
                 otherCostValueLabel, netValueLabel}) {
             label.setText("0");
         }
-        resetRatios();
         statusLabel.setText("");
         emptyLabel.setVisible(true);
         emptyLabel.setManaged(true);
         setLoading(false);
-    }
-
-    private void resetRatios() {
-        for (Label label : new Label[]{grossRatioLabel, payoutRatioLabel, commissionRatioLabel,
-                returnsRatioLabel, logisticsRatioLabel, advertisingRatioLabel, storageRatioLabel,
-                penaltyRatioLabel, otherCostRatioLabel, netRatioLabel}) {
-            label.setText("· —");
-        }
     }
 
     private void updateMarketplaceTexts() {
