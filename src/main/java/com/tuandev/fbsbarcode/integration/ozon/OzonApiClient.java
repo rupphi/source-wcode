@@ -195,6 +195,56 @@ public final class OzonApiClient {
         return postJson("v3/posting/fbs/get", request, "postings");
     }
 
+    public JsonObject countFboSupplyOrders() throws IOException {
+        return postJson("v1/supply-order/status/counter", new JsonObject(), "fbo-supplies");
+    }
+
+    public JsonObject listFboSupplyOrders(List<String> states, String lastId, int limit) throws IOException {
+        if (states == null || states.isEmpty() || states.size() > 20) {
+            throw new IllegalArgumentException("A bounded list of Ozon FBO states is required");
+        }
+        if (limit < 1 || limit > 100) {
+            throw new IllegalArgumentException("Ozon FBO page limit must be between 1 and 100");
+        }
+        JsonArray stateValues = new JsonArray();
+        for (String state : states) {
+            String safe = requireExternalId(state, "FBO state");
+            if (!safe.matches("[A-Z][A-Z0-9_]{1,63}") || safe.startsWith("ORDER_STATE_")) {
+                throw new IllegalArgumentException("Invalid Ozon FBO state");
+            }
+            stateValues.add(safe);
+        }
+        JsonObject filter = new JsonObject();
+        filter.add("states", stateValues);
+        JsonObject request = new JsonObject();
+        request.add("filter", filter);
+        request.addProperty("last_id", lastId == null ? "" : requireCursor(lastId));
+        request.addProperty("limit", limit);
+        request.addProperty("sort_by", "ORDER_STATE_UPDATED_AT");
+        request.addProperty("sort_dir", "DESC");
+        return postJson("v3/supply-order/list", request, "fbo-supplies");
+    }
+
+    public JsonObject getFboSupplyOrders(List<String> orderIds) throws IOException {
+        JsonObject request = new JsonObject();
+        request.add("order_ids", boundedStrings(orderIds, 50, "FBO order id"));
+        return postJson("v3/supply-order/get", request, "fbo-supplies");
+    }
+
+    public JsonObject getFboSupplyBundle(List<String> bundleIds, String lastId, int limit) throws IOException {
+        if (limit < 1 || limit > 100) {
+            throw new IllegalArgumentException("Ozon FBO bundle page limit must be between 1 and 100");
+        }
+        JsonObject request = new JsonObject();
+        request.add("bundle_ids", boundedStrings(bundleIds, 100, "FBO bundle id"));
+        request.addProperty("is_asc", true);
+        request.addProperty("last_id", lastId == null ? "" : requireCursor(lastId));
+        request.addProperty("limit", limit);
+        request.addProperty("query", "");
+        request.addProperty("sort_field", "SKU");
+        return postJson("v1/supply-order/bundle", request, "fbo-supplies");
+    }
+
     public JsonObject createOrGetExemplars(JsonObject request) throws IOException {
         return mutateJson("v6/fbs/posting/product/exemplar/create-or-get", request, "exemplars");
     }
@@ -288,7 +338,7 @@ public final class OzonApiClient {
             throws IOException {
         String safePath = requirePath(path);
         String safeFamily = requireFamily(family);
-        int attempts = mutation ? 1 : retryPolicy.maximumAttempts();
+        int attempts = mutation || "fbo-supplies".equals(safeFamily) ? 1 : retryPolicy.maximumAttempts();
         IOException lastFailure = null;
         Duration retryAfter = null;
         for (int attempt = 1; attempt <= attempts; attempt++) {
@@ -305,6 +355,9 @@ public final class OzonApiClient {
             } catch (OzonApiException exception) {
                 lastFailure = exception;
                 retryAfter = exception.retryAfter();
+                if ("rate_limited".equals(exception.kind())) {
+                    limiter.registerRateLimit(shopId, safeFamily, retryAfter);
+                }
                 if (mutation || !exception.retryable() || attempt >= attempts) {
                     throw exception;
                 }
@@ -340,7 +393,7 @@ public final class OzonApiClient {
             int status = response.code();
             if (!response.isSuccessful()) {
                 boolean retryable = retryPolicy.isRetryableStatus(status);
-                Duration retryAfter = !mutation && retryable && attempt < attempts
+                Duration retryAfter = !mutation && retryable
                         ? OzonRetryPolicy.parseRetryAfter(response.header("Retry-After")) : null;
                 String upstreamCode = safeUpstreamCode(response.body());
                 throw new OzonApiException(
@@ -489,6 +542,14 @@ public final class OzonApiClient {
             throw new IllegalArgumentException("Ozon " + label + " must be a positive numeric identifier");
         }
         return new BigInteger(normalized);
+    }
+
+    private static String requireCursor(String value) {
+        String cursor = value == null ? "" : value.strip();
+        if (cursor.length() > 2048 || cursor.codePoints().anyMatch(Character::isISOControl)) {
+            throw new IllegalArgumentException("Invalid Ozon cursor");
+        }
+        return cursor;
     }
 
     private static JsonArray boundedStrings(List<String> values, int maximum, String label) {

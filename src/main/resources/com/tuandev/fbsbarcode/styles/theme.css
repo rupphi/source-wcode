@@ -872,6 +872,14 @@
     -fx-cell-size: 44px;
 }
 
+#fboSupplyOrderTable .table-row-cell {
+    -fx-cell-size: 52px;
+}
+
+#fboSupplyItemTable .table-row-cell {
+    -fx-cell-size: 68px;
+}
+
 /* ListView */
 .list-view {
     -fx-background-color: -bg-secondary;

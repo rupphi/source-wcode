@@ -10,6 +10,7 @@ import com.tuandev.fbsbarcode.integration.ozon.OzonRequirements;
 import com.tuandev.fbsbarcode.ui.history.PrintHistoryController;
 import com.tuandev.fbsbarcode.ui.dashboard.DashboardController;
 import com.tuandev.fbsbarcode.ui.fbo.FboPackingController;
+import com.tuandev.fbsbarcode.ui.fbosupply.FboSupplyOrdersController;
 import com.tuandev.fbsbarcode.ui.finance.FinanceDashboardController;
 import com.tuandev.fbsbarcode.ui.kizmapping.KizMappingController;
 import com.tuandev.fbsbarcode.ui.ozon.OzonDashboardController;
@@ -88,6 +89,7 @@ class FxmlSmokeTest {
         assertLoads(HomeController.class, "home-view.fxml");
         assertLoads(DashboardController.class, "dashboard-view.fxml");
         assertLoads(FinanceDashboardController.class, "finance-dashboard-view.fxml");
+        assertLoads(FboSupplyOrdersController.class, "fbo-supply-orders-view.fxml");
         assertLoads(ShopSidebarController.class, "shop-sidebar-view.fxml");
         assertLoads(WorkspaceHeaderController.class, "workspace-header-view.fxml");
         assertLoads(SupplyListController.class, "supply-list-view.fxml");
@@ -99,6 +101,28 @@ class FxmlSmokeTest {
         assertLoads(PrintTemplateDesignerController.class, "print-template-designer-view.fxml");
         assertLoads(ShopDialogController.class, "shop-dialog.fxml");
         assertLoads(OzonDashboardController.class, "ozon-dashboard-view.fxml");
+    }
+
+    @Test
+    void sidebarExposesFboSupplyTrackingForEveryMarketplace() throws Exception {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicBoolean valid = new AtomicBoolean(false);
+        Platform.runLater(() -> {
+            try {
+                FXMLLoader loader = FxmlViewLoader.loader(ShopSidebarController.class, "shop-sidebar-view.fxml");
+                FxmlViewLoader.load(loader);
+                ShopSidebarController controller = loader.getController();
+                Button button = (Button) loader.getNamespace().get("fboOrdersButton");
+                controller.setMarketplace(com.tuandev.fbsbarcode.integration.marketplace.Marketplace.WILDBERRIES);
+                boolean visibleForWb = button != null && button.isVisible() && button.isManaged();
+                controller.setMarketplace(com.tuandev.fbsbarcode.integration.marketplace.Marketplace.OZON);
+                valid.set(visibleForWb && button.isVisible() && button.isManaged());
+            } finally {
+                latch.countDown();
+            }
+        });
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+        assertTrue(valid.get(), "FBO/FBW supply tracking must be available for WB and Ozon shops");
     }
 
     @Test
