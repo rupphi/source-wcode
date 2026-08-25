@@ -22,7 +22,7 @@ Protected GitHub environment `release` cần:
 Windows Upgrade UUID `D0FC7057-DA6C-3181-ADF9-C21DB2C9152A` là identity vĩnh viễn đã dùng cho
 1.1.8/1.1.9. Không đổi UUID này ở `build.bat`, workflow hay installer tương lai.
 
-Từ 1.1.10, chương trình Windows được cài tại `%LOCALAPPDATA%\Programs\WCode`, còn dữ liệu tiếp tục
+Từ 1.1.10, chương trình Windows được cài tại `%LOCALAPPDATA%\WCodeApp`, còn dữ liệu tiếp tục
 ở `%LOCALAPPDATA%\WCode`. Không đưa executable trở lại thư mục dữ liệu. Workflow phải cài thật MSI
 1.1.9 rồi cài đè MSI mới, kiểm tra sentinel dữ liệu, đường dẫn executable và chỉ còn một registration.
 

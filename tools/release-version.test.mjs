@@ -103,7 +103,7 @@ test("keeps the Windows installer identity compatible with released 1.1.8 and 1.
   );
   const declaration = workflow.match(/^\s*WINDOWS_UPGRADE_UUID:\s*([0-9A-F-]+)\s*$/m);
   const installerUses = workflow.match(/--win-upgrade-uuid \$env:WINDOWS_UPGRADE_UUID/g) ?? [];
-  const separatedInstallDirs = workflow.match(/--install-dir 'Programs\\WCode'/g) ?? [];
+  const separatedInstallDirs = workflow.match(/--install-dir 'WCodeApp'/g) ?? [];
 
   assert.equal(declaration?.[1], LEGACY_WINDOWS_UPGRADE_UUID);
   assert.equal(installerUses.length, 2, "both MSI and EXE must reuse the upgrade UUID");
@@ -115,7 +115,7 @@ test("keeps the Windows installer identity compatible with released 1.1.8 and 1.
     "release CI must pin the previous MSI checksum");
   assert.match(workflow, /upgrade-data-sentinel\.txt/,
     "release CI must verify that installer upgrades preserve local data");
-  assert.match(workflow, /LOCALAPPDATA 'Programs\\WCode\\WCode\.exe'/,
+  assert.match(workflow, /LOCALAPPDATA 'WCodeApp\\WCode\.exe'/,
     "release CI must verify the data-safe executable path");
   assert.match(workflow, /\$registrations\.Count -ne 1/,
     "release CI must reject duplicate Windows registrations after upgrade");

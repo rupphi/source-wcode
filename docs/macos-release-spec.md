@@ -38,8 +38,8 @@ matrix:
 ## Testing Strategy
 
 - Contract tests must require both stable runner labels, `jpackage` DMG creation, portable ZIP creation, and both artifacts in the publish inventory.
-- Each runner executes the full Maven test suite before packaging.
-- Each runner verifies the `.app` launcher configuration and executable architecture before uploading artifacts.
+- Windows and Apple Silicon execute the complete Maven/FXML suite. The virtual Intel runner executes every non-FXML test because in-process `Platform.startup` aborts in that runner environment; the same FXML suite remains covered on Windows and Apple Silicon.
+- Each Mac runner verifies the `.app` launcher configuration and executable architecture, starts the packaged native launcher against an isolated data directory, and checks SQLite integrity before uploading artifacts.
 - The publish job verifies non-empty files and checksums before creating or updating the GitHub release.
 
 ## Boundaries

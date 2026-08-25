@@ -119,7 +119,7 @@ test("local build scripts invoke Maven and package the JavaFX launcher", async (
     assert.doesNotMatch(script.toLowerCase(), new RegExp(removedFrameworkName));
     assert.doesNotMatch(script, /gradlew/);
   }
-  assert.match(scripts[1], /--install-dir Programs\\WCode/,
+  assert.match(scripts[1], /--install-dir WCodeApp/,
     "Windows installers must not share the LocalAppData WCode data directory");
 });
 
@@ -140,6 +140,12 @@ test("CI builds downloadable macOS test packages for Intel and Apple Silicon", a
   assert.match(workflow, /jpackage --type dmg/);
   assert.match(workflow, /WCode-1\.1\.10-Ozon-Test-macos-\$architecture\.dmg/);
   assert.match(workflow, /WCode-1\.1\.10-Ozon-Test-macos-\$architecture\.zip/);
+  assert.match(workflow, /surefire\.excludes=.*FxmlSmokeTest/,
+    "the virtual Intel runner must avoid the unsupported in-process JavaFX harness");
+  assert.match(workflow, /Contents\/MacOS\/WCode/,
+    "the packaged native launcher must be smoke-tested on each Mac architecture");
+  assert.match(workflow, /PRAGMA integrity_check/,
+    "the packaged launcher smoke test must verify the isolated database");
   assert.doesNotMatch(workflow, /gh release|RELEASE_TOKEN/);
 });
 
@@ -151,6 +157,9 @@ test("tagged releases publish native macOS packages for Intel and Apple Silicon"
   assert.match(workflow, /jpackage --type dmg/);
   assert.match(workflow, /WCode-macos-\$architecture\.dmg/);
   assert.match(workflow, /WCode-macos-\$architecture\.zip/);
+  assert.match(workflow, /surefire\.excludes=.*FxmlSmokeTest/);
+  assert.match(workflow, /Contents\/MacOS\/WCode/);
+  assert.match(workflow, /PRAGMA integrity_check/);
   assert.match(workflow, /needs:\s*\[validate, windows, macos\]/);
   for (const artifact of [
     "WCode-macos-x64.dmg",
