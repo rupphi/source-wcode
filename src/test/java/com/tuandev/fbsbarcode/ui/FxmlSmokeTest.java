@@ -147,16 +147,18 @@ class FxmlSmokeTest {
                         && isAt(loader, "grossTitleLabel", 0, 0)
                         && isAt(loader, "payoutTitleLabel", 1, 0)
                         && isAt(loader, "commissionTitleLabel", 2, 0)
-                        && isAt(loader, "returnsTitleLabel", 0, 1)
-                        && isAt(loader, "logisticsTitleLabel", 1, 1)
-                        && isAt(loader, "advertisingTitleLabel", 2, 1)
-                        && isAt(loader, "storageTitleLabel", 0, 2)
-                        && isAt(loader, "penaltyTitleLabel", 1, 2)
-                        && isAt(loader, "otherCostTitleLabel", 2, 2)
-                        && isAt(loader, "netTitleLabel", 0, 3)
+                        && isAt(loader, "returnsTitleLabel", 3, 0)
+                        && isAt(loader, "logisticsTitleLabel", 4, 0)
+                        && isAt(loader, "advertisingTitleLabel", 0, 1)
+                        && isAt(loader, "storageTitleLabel", 1, 1)
+                        && isAt(loader, "penaltyTitleLabel", 2, 1)
+                        && isAt(loader, "otherCostTitleLabel", 3, 1)
+                        && isAt(loader, "netTitleLabel", 4, 1)
                         && loader.getNamespace().get("commissionColumn") != null
+                        && loader.getNamespace().get("netHelpLabel") == null
                         && loader.getNamespace().get("grossRatioLabel") == null
                         && loader.getNamespace().get("netRatioLabel") == null
+                        && grid.getColumnConstraints().size() == 5
                         && grid.getHgap() >= 14.0
                         && grid.getVgap() >= 14.0);
             } finally {

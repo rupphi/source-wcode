@@ -223,8 +223,8 @@
 }
 
 .finance-kpi-card {
-    -fx-min-height: 80px;
-    -fx-padding: 14px 16px;
+    -fx-min-height: 90px;
+    -fx-padding: 16px 18px;
     -fx-border-width: 1px 1px 1px 4px;
 }
 
@@ -237,27 +237,29 @@
 }
 
 .finance-kpi-card-cost {
-    -fx-border-color: -border-color -border-color -border-color -warning;
+    -fx-border-color: -warning;
+    -fx-border-width: 2px;
 }
 
 .finance-kpi-card-danger {
-    -fx-border-color: -border-color -border-color -border-color -danger;
+    -fx-border-color: -danger;
+    -fx-border-width: 2px;
 }
 
 .finance-kpi-card-net {
     -fx-border-color: -border-color -border-color -border-color -accent;
-    -fx-padding: 15px 18px;
+    -fx-padding: 16px 18px;
 }
 
 .finance-kpi-title {
-    -fx-font-size: 12px;
-    -fx-font-weight: 700;
+    -fx-font-size: 14px;
+    -fx-font-weight: 800;
     -fx-text-fill: -text-secondary;
 }
 
 .finance-kpi-value {
-    -fx-font-size: 17px;
-    -fx-font-weight: 700;
+    -fx-font-size: 20px;
+    -fx-font-weight: 800;
 }
 
 .finance-kpi-value-revenue {
@@ -276,11 +278,6 @@
 .finance-kpi-value-danger,
 .finance-kpi-value-negative {
     -fx-text-fill: -danger;
-}
-
-.finance-kpi-help {
-    -fx-font-size: 10px;
-    -fx-text-fill: -text-muted;
 }
 
 .finance-money-column {

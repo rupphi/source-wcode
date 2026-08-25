@@ -63,7 +63,6 @@ public class FinanceDashboardController {
     @FXML private Label storageValueLabel;
     @FXML private Label otherCostValueLabel;
     @FXML private Label netValueLabel;
-    @FXML private Label netHelpLabel;
     @FXML private Label emptyLabel;
     @FXML private TableView<FinanceDaily> dailyTable;
     @FXML private TableColumn<FinanceDaily, String> dateColumn;
@@ -122,7 +121,6 @@ public class FinanceDashboardController {
         storageTitleLabel.setText(i18n.tr("finance.kpi.storage"));
         otherCostTitleLabel.setText(i18n.tr("finance.kpi.other_cost"));
         netTitleLabel.setText(i18n.tr("finance.kpi.net"));
-        netHelpLabel.setText(i18n.tr("finance.kpi.net.help"));
         emptyLabel.setText(i18n.tr("finance.empty"));
         dateColumn.setText(i18n.tr("finance.col.date"));
         salesColumn.setText(i18n.tr("finance.col.sales"));
