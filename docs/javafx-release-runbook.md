@@ -12,12 +12,16 @@
 
 ## Release trust
 
-Protected GitHub environment `release` cần:
+Protected GitHub environment `release` cần `RELEASE_TOKEN` có `contents:write` trên
+`rupphi/relatest-wcode`. Các nhóm secret ký số sau là tùy chọn, nhưng mỗi nhóm phải được cấu hình
+đầy đủ hoặc bỏ trống hoàn toàn:
 
-- `WINDOWS_SIGNING_CERTIFICATE` và `WINDOWS_SIGNING_PASSWORD`;
-- `UPDATE_MANIFEST_PRIVATE_KEY` và `UPDATE_MANIFEST_PUBLIC_KEY`;
-- `UPDATE_SIGNING_PUBLISHER` khớp chính xác subject của certificate;
-- `RELEASE_TOKEN` có `contents:write` trên `rupphi/relatest-wcode`.
+- Authenticode: `WINDOWS_SIGNING_CERTIFICATE`, `WINDOWS_SIGNING_PASSWORD` và
+  `UPDATE_SIGNING_PUBLISHER` khớp chính xác subject của certificate;
+- manifest: `UPDATE_MANIFEST_PRIVATE_KEY` và `UPDATE_MANIFEST_PUBLIC_KEY`.
+
+Nếu chưa có chứng thư/khóa, workflow vẫn build và kiểm tra bộ cài như các release hiện tại, nhưng
+không được mô tả artifact là đã ký. Khi có secret, workflow tự ký và verify trước khi upload.
 
 Windows Upgrade UUID `D0FC7057-DA6C-3181-ADF9-C21DB2C9152A` là identity vĩnh viễn đã dùng cho
 1.1.8/1.1.9. Không đổi UUID này ở `build.bat`, workflow hay installer tương lai.
@@ -36,9 +40,9 @@ và chưa Apple notarize, vì vậy phải ghi rõ trạng thái này trong rele
 
 ## Sau khi workflow hoàn tất
 
-1. Verify Authenticode của `WCode.exe` và `WCode.msi`.
-2. Verify `checksums.sha256` bao phủ toàn bộ Windows/macOS assets và signed
-   `update-manifest.json` khớp MSI cuối cùng.
+1. Nếu đã cấu hình chứng thư, verify Authenticode của `WCode.exe` và `WCode.msi`.
+2. Verify `checksums.sha256` bao phủ toàn bộ Windows/macOS assets; nếu có
+   `update-manifest.json`, verify signed manifest khớp MSI cuối cùng.
 3. Cài đè từ 1.1.9, xác nhận chỉ có một registration WCode và dữ liệu shop/history còn nguyên.
 4. Mở app, kiểm tra Wildberries regression và Ozon read-only trước khi live mutation.
 5. Chỉ đánh dấu release `latest` sau khi canary operator hoàn tất một flow đóng gói thực.

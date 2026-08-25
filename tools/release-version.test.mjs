@@ -120,3 +120,22 @@ test("keeps the Windows installer identity compatible with released 1.1.8 and 1.
   assert.match(workflow, /\$registrations\.Count -ne 1/,
     "release CI must reject duplicate Windows registrations after upgrade");
 });
+
+test("builds a releasable Windows package when optional signing secrets are absent", async () => {
+  const workflow = await readFile(
+    new URL("../.github/workflows/release.yml", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(workflow, /Resolve-OptionalGroup 'Windows Authenticode signing'/);
+  assert.match(workflow, /WINDOWS_SIGNING_ENABLED=/);
+  assert.match(workflow, /if \(-not \$signingEnabled\) \{ return \}/,
+    "the shared installer build must make Authenticode conditional");
+  assert.match(workflow, /UPDATE_MANIFEST_ENABLED=/);
+  assert.match(workflow, /if \(\$env:UPDATE_MANIFEST_ENABLED -ceq 'true'\)/,
+    "the signed update manifest must only be emitted when its key pair exists");
+  assert.match(workflow, /Bộ cài Windows hiện chưa có chữ ký Authenticode/,
+    "release notes must disclose unsigned Windows packages");
+  assert.doesNotMatch(workflow, /for file in \\\n\s+WCode\.msi WCode\.exe WCode-portable\.zip update-manifest\.json/,
+    "publishing must not require an optional manifest");
+});

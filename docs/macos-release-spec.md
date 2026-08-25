@@ -2,7 +2,7 @@
 
 ## Objective
 
-Every tagged WCode JavaFX release must publish runnable macOS packages alongside the existing signed Windows packages. Intel and Apple Silicon Macs receive native builds so JavaFX and SQLite native libraries match the target CPU.
+Every tagged WCode JavaFX release must publish runnable macOS packages alongside the existing Windows packages. Intel and Apple Silicon Macs receive native builds so JavaFX and SQLite native libraries match the target CPU.
 
 ## Tech Stack
 
@@ -44,7 +44,7 @@ matrix:
 
 ## Boundaries
 
-- Always: keep Windows upgrade UUID and Windows update manifest unchanged; package native dependencies on their matching Mac architecture; checksum every public artifact.
+- Always: keep the Windows upgrade UUID unchanged; preserve optional signing behavior; package native dependencies on their matching Mac architecture; checksum every public artifact.
 - Ask first: adding paid GitHub larger runners or Apple Developer credentials.
 - Never: commit signing secrets, local databases, KIZ files, or publish a Mac build from a mismatched CPU architecture.
 
@@ -52,7 +52,7 @@ matrix:
 
 - Tagged releases build `WCode-macos-x64.dmg`, `WCode-macos-x64.zip`, `WCode-macos-arm64.dmg`, and `WCode-macos-arm64.zip`.
 - A Mac failure blocks the publish job; a partially built release is never marked latest.
-- Existing Windows 1.1.9-to-1.1.10 upgrade behavior and signed update manifest remain intact.
+- Existing Windows 1.1.9-to-1.1.10 upgrade behavior remains intact; a signed update manifest is included when its signing keys are configured.
 - Release notes state that the initial Mac packages are not Apple-notarized.
 
 ## Open Questions

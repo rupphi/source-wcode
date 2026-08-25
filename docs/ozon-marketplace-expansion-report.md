@@ -655,13 +655,14 @@ Build/release contract hiện yêu cầu:
 - Maven compile/test/package JavaFX, tạo runnable JAR và `target/lib` cho `jpackage`;
 - không còn source set desktop khác, frontend web, bridge binding hoặc Gradle wrapper;
 - script local và workflow đều package `com.tuandev.fbsbarcode.Launcher`;
-- Windows EXE/MSI giữ Upgrade UUID của 1.1.8/1.1.9, được ký Authenticode và có signed update manifest;
+- Windows EXE/MSI giữ Upgrade UUID của 1.1.8/1.1.9; Authenticode và signed update manifest được
+  bật khi repo có đủ secret tương ứng;
 - migration 1.1.9 → 1.1.10 vẫn khóa app-data, snapshot/verify trước ghi, giữ ID/token/FK/WB data,
   backfill `WILDBERRIES`, thêm schema Ozon và fail closed khi gặp schema mới hơn.
 
-Rollout production vẫn cần signed Windows artifact, clean upgrade rehearsal trên máy Windows thật,
-in vật lý 58×40/CryptoPro, xác nhận Seller cabinet đúng account và internal → canary. App-image local
-không có signing secrets nên chỉ dùng để kiểm thử, không gửi trực tiếp cho người dùng.
+Rollout production vẫn cần clean upgrade rehearsal trên máy Windows thật, in vật lý
+58×40/CryptoPro, xác nhận Seller cabinet đúng account và internal → canary. Nếu chưa có chứng thư
+Authenticode, release notes phải nêu rõ bộ cài Windows chưa ký; app-image local chỉ dùng để kiểm thử.
 
 Gate khôi phục JavaFX ngày 2026-08-23:
 
