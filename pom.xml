@@ -6,7 +6,7 @@
 
     <groupId>com.tuandev</groupId>
     <artifactId>FBSBarcode</artifactId>
-    <version>1.1.7</version>
+    <version>1.1.10</version>
     <name>WCode</name>
 
     <properties>
@@ -14,8 +14,10 @@
         <junit.version>5.12.1</junit.version>
         <slf4j.version>1.7.36</slf4j.version>
         <log4j.version>2.24.3</log4j.version>
-        <app.version>1.1.7</app.version>
+        <app.version>1.1.10</app.version>
         <app.vendor>TuanDev</app.vendor>
+        <app.update.public-key></app.update.public-key>
+        <app.update.publisher></app.update.publisher>
     </properties>
 
     <dependencies>
@@ -147,6 +149,12 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>mockwebserver</artifactId>
+            <version>4.12.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-simple</artifactId>
             <version>${slf4j.version}</version>
@@ -197,7 +205,6 @@
                 <version>0.0.8</version>
                 <executions>
                     <execution>
-                        <!-- Default configuration for running with: mvn clean javafx:run -->
                         <id>default-cli</id>
                         <configuration>
                             <mainClass>com.tuandev.fbsbarcode.Launcher</mainClass>
@@ -214,8 +221,6 @@
                     </execution>
                 </executions>
             </plugin>
-
-            <!-- Tạo jar có Main-Class -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
@@ -230,8 +235,6 @@
                     </archive>
                 </configuration>
             </plugin>
-
-            <!-- Copy dependencies ra target/lib -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
@@ -254,15 +257,10 @@
     </build>
 
     <profiles>
-        <!-- Obfuscation (kích hoạt: mvn package -Pobfuscate). Tắt mặc định để ./mvnw verify
-             và CI chạy nhanh; build.sh bật khi đóng gói installer. -->
         <profile>
             <id>obfuscate</id>
             <build>
                 <plugins>
-                    <!-- ProGuard 7.9.1 chấp nhận tối đa bytecode Java 24; hạ target về 24 cho
-                         bản obfuscate (jpackage vẫn bundle JRE 25 nên app chạy trên Java 25).
-                         Gỡ override này khi ProGuard hỗ trợ class file 69 (Java 25). -->
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-compiler-plugin</artifactId>
@@ -287,8 +285,6 @@
                             <obfuscate>true</obfuscate>
                             <injar>${project.build.finalName}.jar</injar>
                             <proguardInclude>${basedir}/proguard.conf</proguardInclude>
-                            <!-- runtime jmods được khai báo bằng -libraryjars trong proguard.conf
-                                 (ProGuard tự thay <java.home>) vì plugin không parse filter trong <libs> -->
                             <includeJre>false</includeJre>
                             <generateTemporaryConfigurationFile>true</generateTemporaryConfigurationFile>
                         </configuration>

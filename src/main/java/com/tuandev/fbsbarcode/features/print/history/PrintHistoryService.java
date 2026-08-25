@@ -48,12 +48,15 @@ public class PrintHistoryService {
                     order.getSticker(),
                     order.getStickerCode(),
                     order.getKiz(),
-                    imageCacheKey
+                    imageCacheKey,
+                    order.getId() == null ? null : String.valueOf(order.getId()),
+                    null
             ));
         }
         return repository.insertSuccessfulJob(
                 shop.getId(),
                 shop.getName(),
+                shop.getMarketplace().name(),
                 supplyId,
                 supplyName,
                 printedAt,
@@ -69,6 +72,7 @@ public class PrintHistoryService {
         return repository.insertFailedJob(
                 shop.getId(),
                 shop.getName(),
+                shop.getMarketplace().name(),
                 supplyId,
                 supplyName,
                 printedAt,

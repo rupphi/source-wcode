@@ -1,5 +1,6 @@
 package com.tuandev.fbsbarcode.features.print;
 
+import com.tuandev.fbsbarcode.integration.marketplace.MarketplaceGuard;
 import com.google.zxing.WriterException;
 import com.tuandev.fbsbarcode.features.kiz.KizService;
 import com.tuandev.fbsbarcode.features.kizmapping.KizMappingRepository;
@@ -32,6 +33,7 @@ public class OrderExportWorkflow {
     private final ZnackGtinInventoryService inventoryService = new ZnackGtinInventoryService();
 
     public ExportResult export(ExportRequest request) throws IOException, WriterException {
+        MarketplaceGuard.requireWildberries(request.shop());
         List<Order> workingOrders = copyOrders(request.orders());
         List<Kiz> usedKizs = List.of();
         Set<Long> replaceExistingOrderIds = Set.of();
@@ -82,6 +84,7 @@ public class OrderExportWorkflow {
     }
 
     public void verifyKizAvailability(List<Order> orders, Shop shop) throws IOException, IllegalStateException {
+        MarketplaceGuard.requireWildberries(shop);
         KizAssignmentResult result = assignKizCodes(copyOrders(orders), shop);
         inventoryService.release(shop.getId(), result.usedKizs());
     }

@@ -3,8 +3,10 @@ package com.tuandev.fbsbarcode.integration.znack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.util.List;
+import java.util.UUID;
 
 public final class ZnackSchemaSupport {
     public static final String AMBIGUOUS_MIGRATION_NOTICE = "znack_ambiguous_migration_notice";
@@ -20,6 +22,7 @@ public final class ZnackSchemaSupport {
             migrateLegacy(connection);
         }
         createTables(connection);
+        addPurchaseIdempotencyColumns(connection);
         addCryptoProColumns(connection);
         addIntroductionColumns(connection);
         addInventoryColumns(connection);
@@ -153,7 +156,7 @@ public final class ZnackSchemaSupport {
                     shop_id INTEGER NOT NULL,gtin TEXT NOT NULL,product_name TEXT,tn_ved TEXT,certificate_type TEXT,
                     certificate_number TEXT,certificate_date TEXT,production_date TEXT,good_mark_flag INTEGER,
                     good_turn_flag INTEGER,card_status TEXT,card_detailed_status TEXT,category TEXT,
-                    readiness_checked_at TEXT,deleted_at TEXT,cis_type TEXT,synced_at TEXT NOT NULL,
+                    readiness_checked_at TEXT,deleted_at TEXT,cis_type TEXT,permit_documents_json TEXT,synced_at TEXT NOT NULL,
                     PRIMARY KEY(shop_id,gtin),FOREIGN KEY(shop_id) REFERENCES shops(id) ON DELETE CASCADE)
                     """);
             st.execute("""
@@ -198,7 +201,7 @@ public final class ZnackSchemaSupport {
             st.execute("""
                     CREATE TABLE IF NOT EXISTS znack_purchase_pipelines(
                     id INTEGER PRIMARY KEY AUTOINCREMENT,shop_id INTEGER NOT NULL,gtin TEXT NOT NULL,quantity INTEGER NOT NULL,
-                    order_id INTEGER,stage TEXT NOT NULL,error_message TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,
+                    order_id INTEGER,request_key TEXT,stage TEXT NOT NULL,error_message TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,
                     FOREIGN KEY(shop_id,gtin) REFERENCES znack_products(shop_id,gtin) ON DELETE CASCADE,
                     FOREIGN KEY(shop_id,order_id) REFERENCES kiz_orders(shop_id,id),
                     FOREIGN KEY(shop_id) REFERENCES shops(id) ON DELETE CASCADE)
@@ -211,25 +214,50 @@ public final class ZnackSchemaSupport {
             st.execute("CREATE INDEX IF NOT EXISTS idx_znack_logs_shop_created ON znack_operation_logs(shop_id,created_at DESC)");
             st.execute("CREATE INDEX IF NOT EXISTS idx_znack_gtin_mapping_rules_shop_gtin ON znack_gtin_mapping_rules(shop_id,gtin)");
             st.execute("CREATE INDEX IF NOT EXISTS idx_znack_purchase_pipelines_shop_gtin ON znack_purchase_pipelines(shop_id,gtin,updated_at DESC)");
+            // Only a remote-purchase mutation is serialized per GTIN. Later requests remain
+            // durably QUEUED, while introduction jobs may continue independently after all codes
+            // have been downloaded.
             st.execute("""
-                    UPDATE znack_purchase_pipelines SET stage='FAILED',error_message='SUPERSEDED_DUPLICATE_PIPELINE'
-                    WHERE stage NOT IN ('COMPLETED','INTRODUCED','FAILED','INTRODUCTION_FAILED',
-                                        'INTRODUCTION_SKIPPED_MISSING_DOCUMENTS','INTRODUCTION_SKIPPED_MISSING_METADATA')
+                    UPDATE znack_purchase_pipelines SET stage='QUEUED',error_message=NULL
+                    WHERE stage IN ('VALIDATING','CREATING_ORDER','RECONCILING_ORDER','POLLING_ORDER','DOWNLOADING_CODES')
                       AND id NOT IN (
-                        SELECT MAX(id) FROM znack_purchase_pipelines
-                        WHERE stage NOT IN ('COMPLETED','INTRODUCED','FAILED','INTRODUCTION_FAILED',
-                                            'INTRODUCTION_SKIPPED_MISSING_DOCUMENTS','INTRODUCTION_SKIPPED_MISSING_METADATA')
+                        SELECT MIN(id) FROM znack_purchase_pipelines
+                        WHERE stage IN ('VALIDATING','CREATING_ORDER','RECONCILING_ORDER','POLLING_ORDER','DOWNLOADING_CODES')
                         GROUP BY shop_id,gtin
                       )
                     """);
-            // The partial-index predicate must match the terminal-stage list above; drop and
-            // re-create so existing databases pick up newly added terminal stages.
             st.execute("DROP INDEX IF EXISTS uq_znack_purchase_pipeline_active");
             st.execute("""
                     CREATE UNIQUE INDEX uq_znack_purchase_pipeline_active
                     ON znack_purchase_pipelines(shop_id,gtin)
-                    WHERE stage NOT IN ('COMPLETED','INTRODUCED','FAILED','INTRODUCTION_FAILED',
-                                        'INTRODUCTION_SKIPPED_MISSING_DOCUMENTS','INTRODUCTION_SKIPPED_MISSING_METADATA')
+                    WHERE stage IN ('VALIDATING','CREATING_ORDER','RECONCILING_ORDER','POLLING_ORDER','DOWNLOADING_CODES')
+                    """);
+        }
+    }
+
+    private static void addPurchaseIdempotencyColumns(Connection c) throws SQLException {
+        if (!tableExists(c, "znack_purchase_pipelines")) return;
+        try (Statement st = c.createStatement()) {
+            if (!hasColumn(c, "znack_purchase_pipelines", "request_key")) {
+                st.execute("ALTER TABLE znack_purchase_pipelines ADD COLUMN request_key TEXT");
+            }
+            try (ResultSet rows = st.executeQuery(
+                    "SELECT id,shop_id FROM znack_purchase_pipelines WHERE request_key IS NULL")) {
+                try (PreparedStatement update = c.prepareStatement(
+                        "UPDATE znack_purchase_pipelines SET request_key=? WHERE id=? AND request_key IS NULL")) {
+                    while (rows.next()) {
+                        String seed = "wcode-znack-purchase:" + rows.getInt("shop_id") + ":" + rows.getLong("id");
+                        update.setString(1, UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8)).toString());
+                        update.setLong(2, rows.getLong("id"));
+                        update.addBatch();
+                    }
+                    update.executeBatch();
+                }
+            }
+            st.execute("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS uq_znack_purchase_pipeline_request
+                    ON znack_purchase_pipelines(shop_id,request_key)
+                    WHERE request_key IS NOT NULL
                     """);
         }
     }
@@ -285,6 +313,9 @@ public final class ZnackSchemaSupport {
             }
             if (!hasColumn(c, "znack_products", "cis_type")) {
                 st.execute("ALTER TABLE znack_products ADD COLUMN cis_type TEXT");
+            }
+            if (!hasColumn(c, "znack_products", "permit_documents_json")) {
+                st.execute("ALTER TABLE znack_products ADD COLUMN permit_documents_json TEXT");
             }
         }
     }
@@ -371,13 +402,11 @@ public final class ZnackSchemaSupport {
             st.execute("PRAGMA foreign_keys=OFF");
             c.setAutoCommit(false);
             st.execute("""
-                    UPDATE znack_purchase_pipelines SET stage='FAILED',error_message='SUPERSEDED_DUPLICATE_PIPELINE'
-                    WHERE stage NOT IN ('COMPLETED','INTRODUCED','FAILED','INTRODUCTION_FAILED',
-                                        'INTRODUCTION_SKIPPED_MISSING_DOCUMENTS','INTRODUCTION_SKIPPED_MISSING_METADATA')
+                    UPDATE znack_purchase_pipelines SET stage='QUEUED',error_message=NULL
+                    WHERE stage IN ('VALIDATING','CREATING_ORDER','RECONCILING_ORDER','POLLING_ORDER','DOWNLOADING_CODES')
                       AND id NOT IN (
-                        SELECT MAX(id) FROM znack_purchase_pipelines
-                        WHERE stage NOT IN ('COMPLETED','INTRODUCED','FAILED','INTRODUCTION_FAILED',
-                                            'INTRODUCTION_SKIPPED_MISSING_DOCUMENTS','INTRODUCTION_SKIPPED_MISSING_METADATA')
+                        SELECT MIN(id) FROM znack_purchase_pipelines
+                        WHERE stage IN ('VALIDATING','CREATING_ORDER','RECONCILING_ORDER','POLLING_ORDER','DOWNLOADING_CODES')
                         GROUP BY shop_id,CASE
                           WHEN length(gtin)<14 AND gtin NOT GLOB '*[^0-9]*'
                           THEN substr('00000000000000'||gtin,-14,14) ELSE gtin END

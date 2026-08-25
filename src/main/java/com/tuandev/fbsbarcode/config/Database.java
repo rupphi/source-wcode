@@ -15,11 +15,17 @@ import java.sql.SQLException;
 import java.sql.Statement;
 
 import com.tuandev.fbsbarcode.integration.wb.WbSchemaSupport;
+import com.tuandev.fbsbarcode.integration.ozon.OzonSchemaSupport;
 import com.tuandev.fbsbarcode.integration.znack.ZnackSchemaSupport;
 
 public class Database {
     private static final Logger LOGGER = LoggerFactory.getLogger(Database.class);
     private static final String DB_NAME = "database.db";
+    private static final int CURRENT_SCHEMA_VERSION = 2;
+
+    public static int currentSchemaVersion() {
+        return CURRENT_SCHEMA_VERSION;
+    }
 
     public static Connection getConnection() {
         try {
@@ -51,10 +57,17 @@ public class Database {
     public static void initDatabase() {
         try (Connection conn = getConnection();
              Statement st = conn.createStatement()) {
+            int existingSchemaVersion = readSchemaVersion(conn);
+            if (existingSchemaVersion > CURRENT_SCHEMA_VERSION) {
+                throw new SQLException("Database schema is newer than this WCode binary");
+            }
             st.execute("""
                 CREATE TABLE IF NOT EXISTS shops(
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL,
+                    marketplace TEXT NOT NULL DEFAULT 'WILDBERRIES'
+                        CHECK(marketplace IN ('WILDBERRIES','OZON')),
+                    client_id TEXT,
                     api_key TEXT NOT NULL
                 )
             """);
@@ -111,7 +124,7 @@ public class Database {
             """);
 
             st.execute("""
-            CREATE TABLE IF NOT EXISTS print_jobs(
+                CREATE TABLE IF NOT EXISTS print_jobs(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 shop_id INTEGER NOT NULL,
                 shop_name TEXT,
@@ -123,13 +136,14 @@ public class Database {
                 template_name TEXT,
                 template_layout_json TEXT NOT NULL,
                 status TEXT NOT NULL,
-                error_message TEXT,
+                    error_message TEXT,
+                    marketplace TEXT NOT NULL DEFAULT 'WILDBERRIES',
                 FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
             )
             """);
 
             st.execute("""
-            CREATE TABLE IF NOT EXISTS print_job_items(
+                CREATE TABLE IF NOT EXISTS print_job_items(
                 print_job_id INTEGER NOT NULL,
                 sort_index INTEGER NOT NULL,
                 order_id INTEGER NOT NULL,
@@ -144,7 +158,9 @@ public class Database {
                 sticker TEXT,
                 sticker_code TEXT,
                 kiz TEXT,
-                image_cache_key TEXT,
+                    image_cache_key TEXT,
+                    external_order_id TEXT,
+                    external_item_id TEXT,
                 PRIMARY KEY (print_job_id, sort_index),
                 FOREIGN KEY (print_job_id) REFERENCES print_jobs(id) ON DELETE CASCADE
             )
@@ -152,7 +168,14 @@ public class Database {
 
             st.execute("INSERT INTO config (id, type) SELECT 1, 1 WHERE NOT EXISTS (SELECT 1 FROM config WHERE id = 1)");
             ensureColumnExists(conn, "print_jobs", "shop_name", "TEXT");
+            ensureColumnExists(conn, "shops", "marketplace", "TEXT NOT NULL DEFAULT 'WILDBERRIES'");
+            ensureColumnExists(conn, "shops", "client_id", "TEXT");
+            ensureColumnExists(conn, "print_jobs", "marketplace", "TEXT NOT NULL DEFAULT 'WILDBERRIES'");
             ensureColumnExists(conn, "print_job_items", "ru_size", "TEXT");
+            ensureColumnExists(conn, "print_job_items", "external_order_id", "TEXT");
+            ensureColumnExists(conn, "print_job_items", "external_item_id", "TEXT");
+            st.execute("UPDATE shops SET marketplace='WILDBERRIES' WHERE marketplace IS NULL OR trim(marketplace)=''");
+            st.execute("UPDATE print_jobs SET marketplace='WILDBERRIES' WHERE marketplace IS NULL OR trim(marketplace)=''");
             createIndexIfNotExists(conn, "idx_print_jobs_shop_id", "print_jobs", "shop_id");
             createIndexIfNotExists(conn, "idx_print_jobs_shop_supply_status", "print_jobs", "shop_id, supply_id, status");
             createIndexIfNotExists(conn, "idx_print_jobs_shop_printed_at", "print_jobs", "shop_id, printed_at DESC");
@@ -161,9 +184,19 @@ public class Database {
             createIndexIfNotExists(conn, "idx_image_cache_last_used_at", "image_cache", "last_used_at");
             WbSchemaSupport.initialize(conn);
             ZnackSchemaSupport.initialize(conn);
+            OzonSchemaSupport.initialize(conn);
             dropLegacyKizTables(conn);
+            ShopCredentialSchema.initialize(conn);
+            st.execute("PRAGMA user_version = " + CURRENT_SCHEMA_VERSION);
         } catch (SQLException e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    private static int readSchemaVersion(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement();
+                ResultSet result = statement.executeQuery("PRAGMA user_version")) {
+            return result.next() ? result.getInt(1) : 0;
         }
     }
 

@@ -23,7 +23,23 @@ public class PrintHistoryRepository {
                                     String templateName,
                                     String templateLayoutJson,
                                     List<PrintHistoryItem> items) {
-        return insertJob(shopId, shopName, supplyId, supplyName, printedAt, itemCount, templateId, templateName, templateLayoutJson, "success", null, items);
+        return insertSuccessfulJob(shopId, shopName, "WILDBERRIES", supplyId, supplyName, printedAt,
+                itemCount, templateId, templateName, templateLayoutJson, items);
+    }
+
+    public long insertSuccessfulJob(int shopId,
+                                    String shopName,
+                                    String marketplace,
+                                    String supplyId,
+                                    String supplyName,
+                                    String printedAt,
+                                    int itemCount,
+                                    Integer templateId,
+                                    String templateName,
+                                    String templateLayoutJson,
+                                    List<PrintHistoryItem> items) {
+        return insertJob(shopId, shopName, marketplace, supplyId, supplyName, printedAt, itemCount,
+                templateId, templateName, templateLayoutJson, "success", null, items);
     }
 
     public long insertFailedJob(int shopId,
@@ -36,11 +52,28 @@ public class PrintHistoryRepository {
                                 String templateName,
                                 String templateLayoutJson,
                                 String errorMessage) {
-        return insertJob(shopId, shopName, supplyId, supplyName, printedAt, itemCount, templateId, templateName, templateLayoutJson, "failed", errorMessage, List.of());
+        return insertFailedJob(shopId, shopName, "WILDBERRIES", supplyId, supplyName, printedAt,
+                itemCount, templateId, templateName, templateLayoutJson, errorMessage);
+    }
+
+    public long insertFailedJob(int shopId,
+                                String shopName,
+                                String marketplace,
+                                String supplyId,
+                                String supplyName,
+                                String printedAt,
+                                int itemCount,
+                                Integer templateId,
+                                String templateName,
+                                String templateLayoutJson,
+                                String errorMessage) {
+        return insertJob(shopId, shopName, marketplace, supplyId, supplyName, printedAt, itemCount,
+                templateId, templateName, templateLayoutJson, "failed", errorMessage, List.of());
     }
 
     private long insertJob(int shopId,
                            String shopName,
+                           String marketplace,
                            String supplyId,
                            String supplyName,
                            String printedAt,
@@ -54,14 +87,14 @@ public class PrintHistoryRepository {
         String jobSql = """
                 INSERT INTO print_jobs(
                     shop_id, shop_name, supply_id, supply_name, printed_at, item_count,
-                    template_id, template_name, template_layout_json, status, error_message
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    template_id, template_name, template_layout_json, status, error_message, marketplace
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
         String itemSql = """
                 INSERT INTO print_job_items(
                     print_job_id, sort_index, order_id, brand, name, subject_name, size, ru_size, color,
-                    article, barcode, sticker, sticker_code, kiz, image_cache_key
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    article, barcode, sticker, sticker_code, kiz, image_cache_key, external_order_id, external_item_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
         try (Connection conn = Database.getConnection()) {
             conn.setAutoCommit(false);
@@ -82,6 +115,7 @@ public class PrintHistoryRepository {
                 jobPs.setString(9, templateLayoutJson);
                 jobPs.setString(10, status);
                 jobPs.setString(11, errorMessage);
+                jobPs.setString(12, "OZON".equalsIgnoreCase(marketplace) ? "OZON" : "WILDBERRIES");
                 jobPs.executeUpdate();
 
                 long jobId;
@@ -108,6 +142,8 @@ public class PrintHistoryRepository {
                     itemPs.setString(13, item.stickerCode());
                     itemPs.setString(14, item.kiz());
                     itemPs.setString(15, item.imageCacheKey());
+                    itemPs.setString(16, item.externalOrderId());
+                    itemPs.setString(17, item.externalItemId());
                     itemPs.addBatch();
                 }
                 if (!items.isEmpty()) {
@@ -131,7 +167,7 @@ public class PrintHistoryRepository {
         List<PrintHistoryJobSummary> result = new ArrayList<>();
         String sql = """
                 SELECT id, shop_id, shop_name, supply_id, supply_name, printed_at, item_count,
-                       template_id, template_name, template_layout_json, status, error_message
+                       template_id, template_name, template_layout_json, status, error_message, marketplace
                 FROM print_jobs
                 WHERE shop_id = ?
                 ORDER BY printed_at DESC, id DESC
@@ -154,7 +190,8 @@ public class PrintHistoryRepository {
                         rs.getString("template_name"),
                         rs.getString("template_layout_json"),
                         rs.getString("status"),
-                        rs.getString("error_message")
+                        rs.getString("error_message"),
+                        rs.getString("marketplace")
                 ));
             }
             return result;
@@ -167,7 +204,8 @@ public class PrintHistoryRepository {
         List<PrintHistoryItem> result = new ArrayList<>();
         String sql = """
                 SELECT print_job_id, sort_index, order_id, brand, name, subject_name, size, color,
-                       ru_size, article, barcode, sticker, sticker_code, kiz, image_cache_key
+                       ru_size, article, barcode, sticker, sticker_code, kiz, image_cache_key,
+                       external_order_id, external_item_id
                 FROM print_job_items
                 WHERE print_job_id = ?
                 ORDER BY sort_index
@@ -192,7 +230,9 @@ public class PrintHistoryRepository {
                         rs.getString("sticker"),
                         rs.getString("sticker_code"),
                         rs.getString("kiz"),
-                        rs.getString("image_cache_key")
+                        rs.getString("image_cache_key"),
+                        rs.getString("external_order_id"),
+                        rs.getString("external_item_id")
                 ));
             }
             return result;

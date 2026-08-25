@@ -1,7 +1,6 @@
 package com.tuandev.fbsbarcode.features.supply;
 
 import com.tuandev.fbsbarcode.shared.ConfigService;
-import com.tuandev.fbsbarcode.ui.supply.OrderSortOptions;
 
 public class OrderSortPreferenceService {
     private static final String KEY = "supply_order_sort_options";

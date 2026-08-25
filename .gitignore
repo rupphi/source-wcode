@@ -5,6 +5,7 @@ target/
 .kotlin
 
 ### IntelliJ IDEA ###
+.idea/.name
 .idea/modules.xml
 .idea/jarRepositories.xml
 .idea/compiler.xml
@@ -27,7 +28,6 @@ target/
 /nbbuild/
 /dist/
 /nbdist/
-/.nb-gradle/
 build/
 !**/src/main/**/build/
 !**/src/test/**/build/
@@ -35,14 +35,21 @@ build/
 ### VS Code ###
 .vscode/
 
+### Local environment / secrets ###
+.env
+.env.*
+!.env.example
+kiz.txt
+
+### Local development databases ###
+app/*.db
+app/*.db-shm
+app/*.db-wal
+
 ### jpackage / jlink output ###
 out/
 out-*/
 runtime/
-
-### Downloaded JavaFX jmods (fetched by build scripts, not source) ###
-javafx-jmods-*/
-
 ### Mac OS ###
 .DS_Store
 # License/admin backend — sống trong repo riêng tuanworlddev/wcode-admin

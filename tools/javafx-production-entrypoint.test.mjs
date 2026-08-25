@@ -1,0 +1,172 @@
+import assert from "node:assert/strict";
+import { access, readFile, readdir } from "node:fs/promises";
+import test from "node:test";
+
+const root = new URL("../", import.meta.url);
+const removedFrameworkName = "j" + "desk";
+
+async function exists(relativePath) {
+  try {
+    await access(new URL(relativePath, root));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function textFiles(relativeDirectory) {
+  const entries = await readdir(new URL(relativeDirectory, root), { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const relativePath = `${relativeDirectory}/${entry.name}`;
+    if (entry.isDirectory()) {
+      files.push(...await textFiles(relativePath));
+    } else if (/\.(?:java|fxml|css|properties|md|xml|ya?ml|sh|bat|mjs)$/.test(entry.name)) {
+      files.push(relativePath);
+    }
+  }
+  return files;
+}
+
+test("JavaFX is the production desktop entrypoint", async () => {
+  for (const path of [
+    "src/main/java/com/tuandev/fbsbarcode/Launcher.java",
+    "src/main/java/com/tuandev/fbsbarcode/MainApplication.java",
+    "src/main/resources/META-INF/MANIFEST.MF",
+    "src/main/resources/com/tuandev/fbsbarcode/ui/ozon/ozon-dashboard-view.fxml",
+  ]) {
+    assert.equal(await exists(path), true, `${path} must exist`);
+  }
+
+  const launcher = await readFile(
+    new URL("src/main/java/com/tuandev/fbsbarcode/Launcher.java", root),
+    "utf8",
+  );
+  assert.match(launcher, /Application\.launch\(MainApplication\.class/);
+});
+
+test("the retired desktop stack is absent", async () => {
+  for (const path of [
+    `src/${removedFrameworkName}`,
+    `src/${removedFrameworkName}Test`,
+    "src/legacyTest",
+    "ui",
+    "build.gradle.kts",
+    "settings.gradle.kts",
+    "gradlew",
+    "gradlew.bat",
+    "gradle",
+    "packaging/WCode-Recovery.properties",
+  ]) {
+    assert.equal(await exists(path), false, `${path} must be removed`);
+  }
+
+  const authoritativeFiles = [
+    "pom.xml",
+    "build.sh",
+    "build.bat",
+    "check-portable.bat",
+    "README.md",
+    "CLAUDE.md",
+    "SECURITY.md",
+    ".gitignore",
+    ...await textFiles(".github/workflows"),
+    ...await textFiles("docs"),
+    ...await textFiles("src/main"),
+    ...await textFiles("src/test"),
+  ];
+  for (const file of authoritativeFiles) {
+    const content = await readFile(new URL(file, root), "utf8");
+    assert.doesNotMatch(content.toLowerCase(), new RegExp(removedFrameworkName), `${file} names the retired stack`);
+    assert.doesNotMatch(content, /gradlew|src\/legacyTest|build\.gradle/, `${file} names retired build wiring`);
+  }
+});
+
+test("Maven owns JavaFX compilation and packaging", async () => {
+  const pom = await readFile(new URL("pom.xml", root), "utf8");
+
+  assert.match(pom, /<artifactId>javafx-maven-plugin<\/artifactId>/);
+  assert.match(pom, /<mainClass>com\.tuandev\.fbsbarcode\.Launcher<\/mainClass>/);
+  assert.match(pom, /<artifactId>maven-jar-plugin<\/artifactId>/);
+  assert.match(pom, /<artifactId>maven-dependency-plugin<\/artifactId>/);
+  assert.doesNotMatch(pom, /src\/legacyTest/);
+  assert.doesNotMatch(pom.toLowerCase(), new RegExp(removedFrameworkName));
+
+  for (const artifact of [
+    "javafx-controls",
+    "javafx-fxml",
+    "materialfx",
+    "ikonli-javafx",
+    "ikonli-feather-pack",
+  ]) {
+    const dependency = pom.match(
+      new RegExp(`<dependency>[\\s\\S]*?<artifactId>${artifact}<\\/artifactId>[\\s\\S]*?<\\/dependency>`),
+    )?.[0];
+    assert.ok(dependency, `${artifact} dependency must exist`);
+    assert.doesNotMatch(dependency, /<scope>test<\/scope>/);
+  }
+});
+
+test("local build scripts invoke Maven and package the JavaFX launcher", async () => {
+  const scripts = await Promise.all([
+    readFile(new URL("build.sh", root), "utf8"),
+    readFile(new URL("build.bat", root), "utf8"),
+  ]);
+
+  for (const script of scripts) {
+    assert.match(script, /mvnw/);
+    assert.match(script, /com\.tuandev\.fbsbarcode\.Launcher/);
+    assert.doesNotMatch(script.toLowerCase(), new RegExp(removedFrameworkName));
+    assert.doesNotMatch(script, /gradlew/);
+  }
+  assert.match(scripts[1], /--install-dir WCodeApp/,
+    "Windows installers must not share the LocalAppData WCode data directory");
+});
+
+test("Windows CI builds a downloadable JavaFX 1.1.10 EXE without publishing a release", async () => {
+  const workflow = await readFile(new URL(".github/workflows/build-java.yml", root), "utf8");
+
+  assert.match(workflow, /build\.bat exe/);
+  assert.match(workflow, /WCode-1\.1\.10-Ozon-Test\.exe/);
+  assert.match(workflow, /actions\/upload-artifact/);
+  assert.doesNotMatch(workflow, /gh release|RELEASE_TOKEN/);
+});
+
+test("CI builds downloadable macOS test packages for Intel and Apple Silicon", async () => {
+  const workflow = await readFile(new URL(".github/workflows/build-java.yml", root), "utf8");
+
+  assert.match(workflow, /runner:\s*macos-15-intel\s*\n\s*architecture:\s*x64/);
+  assert.match(workflow, /runner:\s*macos-15\s*\n\s*architecture:\s*arm64/);
+  assert.match(workflow, /jpackage --type dmg/);
+  assert.match(workflow, /WCode-1\.1\.10-Ozon-Test-macos-\$architecture\.dmg/);
+  assert.match(workflow, /WCode-1\.1\.10-Ozon-Test-macos-\$architecture\.zip/);
+  assert.match(workflow, /surefire\.excludes=.*FxmlSmokeTest/,
+    "the virtual Intel runner must avoid the unsupported in-process JavaFX harness");
+  assert.match(workflow, /Contents\/MacOS\/WCode/,
+    "the packaged native launcher must be smoke-tested on each Mac architecture");
+  assert.match(workflow, /PRAGMA integrity_check/,
+    "the packaged launcher smoke test must verify the isolated database");
+  assert.doesNotMatch(workflow, /gh release|RELEASE_TOKEN/);
+});
+
+test("tagged releases publish native macOS packages for Intel and Apple Silicon", async () => {
+  const workflow = await readFile(new URL(".github/workflows/release.yml", root), "utf8");
+
+  assert.match(workflow, /runner:\s*macos-15-intel\s*\n\s*architecture:\s*x64/);
+  assert.match(workflow, /runner:\s*macos-15\s*\n\s*architecture:\s*arm64/);
+  assert.match(workflow, /jpackage --type dmg/);
+  assert.match(workflow, /WCode-macos-\$architecture\.dmg/);
+  assert.match(workflow, /WCode-macos-\$architecture\.zip/);
+  assert.match(workflow, /surefire\.excludes=.*FxmlSmokeTest/);
+  assert.match(workflow, /Contents\/MacOS\/WCode/);
+  assert.match(workflow, /PRAGMA integrity_check/);
+  assert.match(workflow, /needs:\s*\[validate, windows, macos\]/);
+  for (const artifact of [
+    "WCode-macos-x64.dmg",
+    "WCode-macos-x64.zip",
+    "WCode-macos-arm64.dmg",
+    "WCode-macos-arm64.zip",
+  ]) {
+    assert.match(workflow, new RegExp(artifact.replaceAll(".", "\\.")));
+  }
+});

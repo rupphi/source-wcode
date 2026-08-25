@@ -6,8 +6,10 @@ import com.tuandev.fbsbarcode.features.fbo.FboBarcodePdfExporter;
 import com.tuandev.fbsbarcode.features.fbo.FboBarcodePrintItem;
 import com.tuandev.fbsbarcode.features.fbo.FboKizPrintPlanner;
 import com.tuandev.fbsbarcode.features.fbo.FboProductRepository;
+import com.tuandev.fbsbarcode.features.fbo.FboProductSearchCriteria;
 import com.tuandev.fbsbarcode.features.fbo.FboProductSku;
 import com.tuandev.fbsbarcode.features.fbo.FboPrintPlan;
+import com.tuandev.fbsbarcode.features.finance.FinanceSyncScheduler;
 import com.tuandev.fbsbarcode.features.packing.PackingWorkflow;
 import com.tuandev.fbsbarcode.integration.wb.WbSupplySummary;
 import com.tuandev.fbsbarcode.integration.wb.WbSupplyWorkflow;
@@ -18,6 +20,9 @@ import com.tuandev.fbsbarcode.integration.znack.ZnackGtinInventoryService;
 import com.tuandev.fbsbarcode.integration.wb.WbSyncReport;
 import com.tuandev.fbsbarcode.integration.wb.WbSyncWorkflow;
 import com.tuandev.fbsbarcode.integration.wb.WbTokenInspector;
+import com.tuandev.fbsbarcode.integration.marketplace.Marketplace;
+import com.tuandev.fbsbarcode.integration.ozon.OzonFboKizPrintPlanner;
+import com.tuandev.fbsbarcode.integration.ozon.OzonFboProductRepository;
 import com.tuandev.fbsbarcode.models.Order;
 import com.tuandev.fbsbarcode.models.Shop;
 import com.tuandev.fbsbarcode.shared.AlertService;
@@ -43,14 +48,16 @@ import com.tuandev.fbsbarcode.integration.update.UpdateInfo;
 import com.tuandev.fbsbarcode.integration.update.UpdateInstallerService;
 import com.tuandev.fbsbarcode.integration.update.UpdateService;
 import com.tuandev.fbsbarcode.features.shop.ShopWorkflow;
+import com.tuandev.fbsbarcode.features.shop.ShopOperationCoordinator;
 import com.tuandev.fbsbarcode.features.supply.SupplyLoadWorkflow;
 import com.tuandev.fbsbarcode.ui.history.PrintHistoryController;
-import com.tuandev.fbsbarcode.ui.dashboard.DashboardController;
 import com.tuandev.fbsbarcode.ui.fbo.FboPackingController;
+import com.tuandev.fbsbarcode.ui.finance.FinanceDashboardController;
 import com.tuandev.fbsbarcode.ui.kizmapping.KizMappingController;
 import com.tuandev.fbsbarcode.ui.packing.PackingController;
+import com.tuandev.fbsbarcode.ui.ozon.OzonDashboardController;
 import com.tuandev.fbsbarcode.ui.shop.ShopSidebarController;
-import com.tuandev.fbsbarcode.ui.supply.OrderSortOptions;
+import com.tuandev.fbsbarcode.features.supply.OrderSortOptions;
 import com.tuandev.fbsbarcode.ui.supply.SupplyDetailController;
 import com.tuandev.fbsbarcode.ui.supply.SupplyListController;
 import com.tuandev.fbsbarcode.ui.supply.SupplyManagementController;
@@ -114,6 +121,8 @@ public class HomeController implements Initializable {
     private final FboProductRepository fboProductRepository = new FboProductRepository();
     private final FboBarcodePdfExporter fboBarcodePdfExporter = new FboBarcodePdfExporter();
     private final FboKizPrintPlanner fboKizPrintPlanner = new FboKizPrintPlanner();
+    private final OzonFboProductRepository ozonFboProductRepository = new OzonFboProductRepository();
+    private final OzonFboKizPrintPlanner ozonFboKizPrintPlanner = new OzonFboKizPrintPlanner();
     private final KizAttachmentCoordinator kizAttachmentCoordinator = KizAttachmentCoordinator.getInstance();
     private final WorkspaceState state = new WorkspaceState();
     private final WorkspaceActivityTracker activityTracker = new WorkspaceActivityTracker();
@@ -127,17 +136,19 @@ public class HomeController implements Initializable {
     public StackPane dynamicContentContainer;
 
     private BorderPane supplyManagementView;
-    private VBox dashboardView;
+    private VBox financeDashboardView;
     private VBox printHistoryView;
     private VBox packingView;
     private VBox fboPackingView;
+    private VBox ozonDashboardView;
     private Node kizMappingView;
     private Node znackAutomationView;
     private SupplyManagementController supplyManagementController;
-    private DashboardController dashboardController;
+    private FinanceDashboardController financeDashboardController;
     private PrintHistoryController printHistoryController;
     private PackingController packingController;
     private FboPackingController fboPackingController;
+    private OzonDashboardController ozonDashboardController;
     private KizMappingController kizMappingController;
     private ZnackAutomationController znackAutomationController;
 
@@ -214,10 +225,10 @@ public class HomeController implements Initializable {
     }
 
     private void loadDynamicViews() {
-        FXMLLoader dashboardLoader = FxmlViewLoader.loader(DashboardController.class, "dashboard-view.fxml");
-        dashboardView = FxmlViewLoader.load(dashboardLoader);
-        dashboardController = dashboardLoader.getController();
-        dashboardController.applyTranslations();
+        FXMLLoader financeLoader = FxmlViewLoader.loader(FinanceDashboardController.class, "finance-dashboard-view.fxml");
+        financeDashboardView = FxmlViewLoader.load(financeLoader);
+        financeDashboardController = financeLoader.getController();
+        financeDashboardController.applyTranslations();
 
         FXMLLoader supplyLoader = FxmlViewLoader.loader(SupplyManagementController.class, "supply-management-view.fxml");
         supplyManagementView = FxmlViewLoader.load(supplyLoader);
@@ -252,6 +263,11 @@ public class HomeController implements Initializable {
         FXMLLoader znackLoader = FxmlViewLoader.loader(ZnackAutomationController.class, "znack-automation-view.fxml");
         znackAutomationView = FxmlViewLoader.load(znackLoader);
         znackAutomationController = znackLoader.getController();
+
+        FXMLLoader ozonLoader = FxmlViewLoader.loader(OzonDashboardController.class, "ozon-dashboard-view.fxml");
+        ozonDashboardView = FxmlViewLoader.load(ozonLoader);
+        ozonDashboardController = ozonLoader.getController();
+        ozonDashboardController.setOnBusy((shopId, busy) -> markShopRunning(shopId, busy));
     }
 
     private void showPrintHistory() {
@@ -262,11 +278,22 @@ public class HomeController implements Initializable {
 
     private void showDashboard() {
         clearKizDraft();
-        setDynamicContent(dashboardView);
-        refreshDashboard(false);
+        setDynamicContent(financeDashboardView);
+        financeDashboardController.setShop(state.getSelectedShop());
+    }
+
+    private void showOzonDashboard(boolean syncRemote) {
+        clearKizDraft();
+        setDynamicContent(ozonDashboardView);
+        ozonDashboardController.setShop(state.getSelectedShop(), syncRemote);
     }
 
     private void showPacking() {
+        if (isOzonSelected()) {
+            showOzonDashboard(false);
+            ozonDashboardController.showPackingQueue();
+            return;
+        }
         clearKizDraft();
         setDynamicContent(packingView);
         refreshPackingView();
@@ -307,12 +334,15 @@ public class HomeController implements Initializable {
         if (packingController == null) {
             return;
         }
-        packingController.setShop(state.getSelectedShop(), state.isSelectedShopTokenValid());
+        Shop shop = state.getSelectedShop();
+        packingController.setShop(shop != null && shop.getMarketplace() == Marketplace.WILDBERRIES ? shop : null,
+                shop != null && shop.getMarketplace() == Marketplace.WILDBERRIES
+                        && state.isSelectedShopTokenValid());
     }
 
     private void refreshDashboard(boolean forceRefresh) {
-        if (dashboardController != null) {
-            dashboardController.setShop(state.getSelectedShop(), forceRefresh);
+        if (financeDashboardController != null && isDashboardVisible()) {
+            financeDashboardController.setShop(state.getSelectedShop());
         }
     }
 
@@ -321,12 +351,14 @@ public class HomeController implements Initializable {
             return;
         }
         Shop shop = state.getSelectedShop();
+        fboPackingController.setMarketplace(shop == null ? Marketplace.WILDBERRIES : shop.getMarketplace());
         if (shop == null) {
             fboPackingController.setSubjects(List.of());
             fboPackingController.replaceProducts(List.of(), false);
             return;
         }
-        fboPackingController.setSubjects(fboProductRepository.findSubjects(shop.getId()));
+        fboPackingController.setSubjects(shop.getMarketplace() == Marketplace.WILDBERRIES
+                ? fboProductRepository.findSubjects(shop.getId()) : List.of());
         reloadFboProducts();
     }
 
@@ -365,7 +397,11 @@ public class HomeController implements Initializable {
         Task<List<FboProductSku>> task = new Task<>() {
             @Override
             protected List<FboProductSku> call() {
-                return fboProductRepository.search(fboPackingController.criteria(shop.getId(), FBO_PAGE_SIZE + 1, offset));
+                FboProductSearchCriteria criteria = fboPackingController.criteria(
+                        shop.getId(), FBO_PAGE_SIZE + 1, offset);
+                return shop.getMarketplace() == Marketplace.OZON
+                        ? ozonFboProductRepository.search(criteria)
+                        : fboProductRepository.search(criteria);
             }
         };
         fboPackingController.setLoading(true);
@@ -482,12 +518,17 @@ public class HomeController implements Initializable {
         Task<Void> task = new Task<>() {
             @Override
             protected Void call() throws Exception {
-                FboPrintPlan plan = fboKizPrintPlanner.plan(shop.getId(), items);
-                exportFboPlan(shop.getId(), plan, file);
-                return null;
+                return ShopOperationCoordinator.withActiveShop(shop.getId(), () -> {
+                    FboPrintPlan plan = shop.getMarketplace() == Marketplace.OZON
+                            ? ozonFboKizPrintPlanner.plan(shop.getId(), items)
+                            : fboKizPrintPlanner.plan(shop.getId(), items);
+                    exportFboPlan(shop.getId(), plan, file);
+                    return null;
+                });
             }
         };
         task.setOnFailed(event -> {
+            if (ShopOperationCoordinator.isShopUnavailable(task.getException())) return;
             LOGGER.error("Không thể in barcode FBO", task.getException());
             AlertService.showError(task.getException().getMessage());
         });
@@ -514,12 +555,18 @@ public class HomeController implements Initializable {
         Task<Void> task = new Task<>() {
             @Override
             protected Void call() throws Exception {
-                FboPrintPlan plan = fboKizPrintPlanner.plan(shop.getId(), List.of(new FboBarcodePrintItem(product, 1)));
-                exportFboPlan(shop.getId(), plan, file);
-                return null;
+                return ShopOperationCoordinator.withActiveShop(shop.getId(), () -> {
+                    List<FboBarcodePrintItem> items = List.of(new FboBarcodePrintItem(product, 1));
+                    FboPrintPlan plan = shop.getMarketplace() == Marketplace.OZON
+                            ? ozonFboKizPrintPlanner.plan(shop.getId(), items)
+                            : fboKizPrintPlanner.plan(shop.getId(), items);
+                    exportFboPlan(shop.getId(), plan, file);
+                    return null;
+                });
             }
         };
         task.setOnFailed(event -> {
+            if (ShopOperationCoordinator.isShopUnavailable(task.getException())) return;
             LOGGER.error("Không thể in nhanh barcode FBO", task.getException());
             AlertService.showError(task.getException().getMessage());
         });
@@ -746,6 +793,10 @@ public class HomeController implements Initializable {
         if (shop == null) {
             return;
         }
+        if (shop.getMarketplace() != Marketplace.WILDBERRIES) {
+            showOzonDashboard(false);
+            return;
+        }
         if (state.getDisplayedOrders().isEmpty()) {
             AlertService.showWarning(
                     i18nService.tr("common.notice"),
@@ -867,7 +918,10 @@ public class HomeController implements Initializable {
         shopWorkflow.requestUpdateShop(shop).ifPresent(updated -> {
             shopWorkflow.updateShop(shop.getId(), updated);
             shop.setName(updated.getName());
-            shop.setApiKey(updated.getApiKey());
+            shop.setClientId(updated.getClientId());
+            if (updated.getApiKey() != null && !updated.getApiKey().isBlank()) {
+                shop.setApiKey(updated.getApiKey());
+            }
             renderShops();
             loadShops();
         });
@@ -879,7 +933,7 @@ public class HomeController implements Initializable {
             return;
         }
         int shopId = shop.getId();
-        if (activityTracker.isSyncing(shopId) || kizAttachmentCoordinator.hasActiveJobForShop(shopId)) {
+        if (isShopBusy(shopId)) {
             AlertService.showWarning(
                     i18nService.tr("workspace.delete_shop.busy.title"),
                     i18nService.tr("workspace.delete_shop.busy.header"),
@@ -913,12 +967,16 @@ public class HomeController implements Initializable {
         task.setOnSucceeded(e -> {
             WbSupplyWorkflow.clearImageCache();
             activityTracker.clear(shopId);
-            if (isCurrentShop(shopId)) {
+            Shop fallback = state.removeShopAndChooseFallback(shopId);
+            FinanceSyncScheduler.getInstance().removeShop(shopId, true);
+            if (fallback == null) {
                 state.clearWorkspace();
                 clearWorkspaceView();
                 ConfigService.setLastSelectedShopId(null);
+                renderShops();
+            } else {
+                selectShop(fallback);
             }
-            loadShops();
         });
         AppTaskExecutor.execute(task);
     }
@@ -926,6 +984,11 @@ public class HomeController implements Initializable {
     public void onSyncWildberries(ActionEvent actionEvent) {
         Shop shop = requireSelectedShop();
         if (shop != null) {
+            if (shop.getMarketplace() == Marketplace.OZON) {
+                showOzonDashboard(false);
+                ozonDashboardController.sync();
+                return;
+            }
             if (!state.isSelectedShopTokenValid()) {
                 AlertService.showWarning(
                         i18nService.tr("wb.token.title"),
@@ -947,6 +1010,7 @@ public class HomeController implements Initializable {
         };
         task.setOnSucceeded(e -> {
             state.setShops(task.getValue());
+            FinanceSyncScheduler.getInstance().updateShops(task.getValue());
             renderShops();
             if (state.getShops().isEmpty()) {
                 state.clearWorkspace();
@@ -988,7 +1052,11 @@ public class HomeController implements Initializable {
     }
 
     private void selectShop(Shop shop) {
+        boolean sharedView = isPrintHistoryVisible() || isZnackAutomationVisible();
+        boolean dashboardVisible = isDashboardVisible();
         state.setSelectedShop(shop);
+        shopSidebarController.setMarketplace(shop.getMarketplace());
+        workspaceHeaderController.setMarketplace(shop.getMarketplace());
         if (znackAutomationController != null) {
             znackAutomationController.setShop(shop);
         }
@@ -996,7 +1064,10 @@ public class HomeController implements Initializable {
             kizMappingController.setShop(shop);
         }
         if (supplyDetailController != null) {
-            supplyDetailController.setShop(shop);
+            supplyDetailController.setShop(shop.getMarketplace() == Marketplace.WILDBERRIES ? shop : null);
+        }
+        if (financeDashboardController != null && dashboardVisible) {
+            financeDashboardController.setShop(shop);
         }
         ConfigService.setLastSelectedShopId(shop.getId());
         renderShops();
@@ -1004,6 +1075,21 @@ public class HomeController implements Initializable {
         resetLoadedSupply();
         showWorkspace();
         updateHeaderState();
+        if (shop.getMarketplace() == Marketplace.OZON) {
+            refreshPackingView();
+            if (sharedView) {
+                if (isPrintHistoryVisible()) refreshPrintHistory();
+                if (isZnackAutomationVisible()) znackAutomationController.setShop(shop);
+            } else if (dashboardVisible) {
+                showDashboard();
+            } else {
+                showOzonDashboard(true);
+            }
+            return;
+        }
+        if (isOzonDashboardVisible()) {
+            showDashboard();
+        }
         if (isPrintHistoryVisible()) {
             refreshPrintHistory();
         }
@@ -1024,6 +1110,10 @@ public class HomeController implements Initializable {
 
     private void startShopSync(Shop shop, boolean manual) {
         if (shop == null) {
+            return;
+        }
+        if (shop.getMarketplace() != Marketplace.WILDBERRIES) {
+            if (manual && ozonDashboardController != null) ozonDashboardController.sync();
             return;
         }
         if (!state.isSelectedShopTokenValid()) {
@@ -1051,7 +1141,8 @@ public class HomeController implements Initializable {
         Task<WbSyncReport> task = new Task<>() {
             @Override
             protected WbSyncReport call() throws Exception {
-                return manual ? wbSyncWorkflow.syncAll(shop) : wbSyncWorkflow.syncOverview(shop);
+                return ShopOperationCoordinator.withActiveShop(shop.getId(),
+                        () -> manual ? wbSyncWorkflow.syncAll(shop) : wbSyncWorkflow.syncOverview(shop));
             }
         };
         task.setOnRunning(e -> {
@@ -1063,6 +1154,7 @@ public class HomeController implements Initializable {
             markShopRunning(shop.getId(), false);
             markProductKizSyncing(shop.getId(), false);
             Throwable ex = task.getException();
+            if (ShopOperationCoordinator.isShopUnavailable(ex)) return;
             LOGGER.error("Đồng bộ WB thất bại cho shop {}", shop.getId(), ex);
             refreshSupplyListIfCurrent(shop.getId());
             if (manual && isCurrentShop(shop.getId())) {
@@ -1101,7 +1193,7 @@ public class HomeController implements Initializable {
 
     private void refreshSupplyList(String supplyIdToRestore, boolean notifySelection) {
         Shop shop = state.getSelectedShop();
-        if (shop == null) {
+        if (shop == null || shop.getMarketplace() != Marketplace.WILDBERRIES) {
             clearSupplyViews();
             updateHeaderState();
             return;
@@ -1128,7 +1220,7 @@ public class HomeController implements Initializable {
 
     private void loadSupply(WbSupplySummary supply) {
         Shop shop = requireSelectedShop();
-        if (shop == null || supply == null) {
+        if (shop == null || shop.getMarketplace() != Marketplace.WILDBERRIES || supply == null) {
             return;
         }
         resetLoadedSupply();
@@ -1346,8 +1438,11 @@ public class HomeController implements Initializable {
         if (packingController != null) {
             packingController.applyTranslations();
         }
-        if (dashboardController != null) {
-            dashboardController.applyTranslations();
+        if (financeDashboardController != null) {
+            financeDashboardController.applyTranslations();
+        }
+        if (ozonDashboardController != null) {
+            ozonDashboardController.applyTranslations();
         }
         if (fboPackingController != null) {
             fboPackingController.applyTranslations();
@@ -1395,8 +1490,11 @@ public class HomeController implements Initializable {
         if (packingController != null) {
             packingController.setShop(null, false);
         }
-        if (dashboardController != null) {
-            dashboardController.setShop(null, false);
+        if (financeDashboardController != null) {
+            financeDashboardController.setShop(null);
+        }
+        if (ozonDashboardController != null) {
+            ozonDashboardController.setShop(null, false);
         }
         if (kizMappingController != null) {
             kizMappingController.setShop(null);
@@ -1499,7 +1597,20 @@ public class HomeController implements Initializable {
     }
 
     private boolean isDashboardVisible() {
-        return dynamicContentContainer.getChildren().contains(dashboardView);
+        return financeDashboardView != null && dynamicContentContainer.getChildren().contains(financeDashboardView);
+    }
+
+    private boolean isOzonDashboardVisible() {
+        return ozonDashboardView != null && dynamicContentContainer.getChildren().contains(ozonDashboardView);
+    }
+
+    private boolean isZnackAutomationVisible() {
+        return znackAutomationView != null && dynamicContentContainer.getChildren().contains(znackAutomationView);
+    }
+
+    private boolean isOzonSelected() {
+        Shop shop = state.getSelectedShop();
+        return shop != null && shop.getMarketplace() == Marketplace.OZON;
     }
 
     private boolean isPackingVisible() {
@@ -1529,6 +1640,12 @@ public class HomeController implements Initializable {
     }
 
     private boolean applySelectedShopTokenState(Shop shop, boolean showWarning) {
+        if (shop != null && shop.getMarketplace() == Marketplace.OZON) {
+            boolean configured = shop.isCredentialConfigured();
+            state.setSelectedShopTokenValid(configured);
+            state.setSelectedShopTokenMessage(configured ? null : "Ozon Client ID and API key are required.");
+            return configured;
+        }
         WbTokenInspector.TokenStatus status = WbTokenInspector.inspect(shop);
         state.setSelectedShopTokenValid(status.valid());
         state.setSelectedShopTokenMessage(status.message());
@@ -1573,7 +1690,8 @@ public class HomeController implements Initializable {
             supplyDetailController.setDeliverEnabled(canDeliverLoadedSupply());
         }
         if (supplyListController != null) {
-            supplyListController.setRefetchEnabled(hasShop && tokenValid);
+            supplyListController.setRefetchEnabled(hasShop && selectedShop.getMarketplace() == Marketplace.WILDBERRIES
+                    && tokenValid);
         }
     }
 
@@ -1585,6 +1703,7 @@ public class HomeController implements Initializable {
         Shop shop = state.getSelectedShop();
         boolean running = shop != null && isShopBusy(shop.getId());
         return shop != null
+                && shop.getMarketplace() == Marketplace.WILDBERRIES
                 && state.getLoadedSupplyId() != null
                 && !state.getDisplayedOrders().isEmpty()
                 && !running
@@ -1595,6 +1714,7 @@ public class HomeController implements Initializable {
         Shop shop = state.getSelectedShop();
         boolean running = shop != null && isShopBusy(shop.getId());
         return shop != null
+                && shop.getMarketplace() == Marketplace.WILDBERRIES
                 && loadedSupplySummary != null
                 && !running
                 && state.isSelectedShopTokenValid()

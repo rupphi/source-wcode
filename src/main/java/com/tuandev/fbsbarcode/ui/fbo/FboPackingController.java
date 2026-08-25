@@ -4,6 +4,7 @@ import com.tuandev.fbsbarcode.features.fbo.FboBarcodePrintItem;
 import com.tuandev.fbsbarcode.features.fbo.FboProductImageService;
 import com.tuandev.fbsbarcode.features.fbo.FboProductSearchCriteria;
 import com.tuandev.fbsbarcode.features.fbo.FboProductSku;
+import com.tuandev.fbsbarcode.integration.marketplace.Marketplace;
 import com.tuandev.fbsbarcode.shared.I18nService;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleObjectProperty;
@@ -54,6 +55,7 @@ public class FboPackingController {
     @FXML private TableColumn<FboProductRow, String> nameColumn;
     @FXML private TableColumn<FboProductRow, String> colorColumn;
     @FXML private TableColumn<FboProductRow, String> sizeColumn;
+    @FXML private TableColumn<FboProductRow, String> catalogSkuColumn;
     @FXML private TableColumn<FboProductRow, String> skuColumn;
     @FXML private TableColumn<FboProductRow, FboProductRow> quantityColumn;
     @FXML private TableColumn<FboProductRow, FboProductRow> quickPrintColumn;
@@ -70,6 +72,7 @@ public class FboPackingController {
     private boolean loading;
     private boolean hasMore;
     private boolean suppressSearchEvents;
+    private Marketplace marketplace = Marketplace.WILDBERRIES;
 
     @FXML
     private void initialize() {
@@ -111,6 +114,15 @@ public class FboPackingController {
 
     public void setOnQuickPrint(Consumer<FboProductSku> onQuickPrint) {
         this.onQuickPrint = onQuickPrint;
+    }
+
+    public void setMarketplace(Marketplace marketplace) {
+        this.marketplace = marketplace == null ? Marketplace.WILDBERRIES : marketplace;
+        boolean ozon = this.marketplace == Marketplace.OZON;
+        categoryMenuButton.setVisible(!ozon);
+        categoryMenuButton.setManaged(!ozon);
+        catalogSkuColumn.setVisible(ozon);
+        applyTranslations();
     }
 
     public FboProductSearchCriteria criteria(int shopId, int limit, int offset) {
@@ -162,13 +174,13 @@ public class FboPackingController {
     public void appendProducts(List<FboProductSku> products, boolean hasMore) {
         if (products != null) {
             products.stream().map(FboProductRow::new).forEach(row -> {
-                row.setQuantity(quantitiesBySku.getOrDefault(row.product().sku(), 0));
+                row.setQuantity(quantitiesBySku.getOrDefault(row.product().catalogSku(), 0));
                 row.quantityProperty().addListener((obs, oldValue, newValue) -> {
                     int quantity = newValue == null ? 0 : Math.max(0, newValue.intValue());
                     if (quantity > 0) {
-                        quantitiesBySku.put(row.product().sku(), quantity);
+                        quantitiesBySku.put(row.product().catalogSku(), quantity);
                     } else {
-                        quantitiesBySku.remove(row.product().sku());
+                        quantitiesBySku.remove(row.product().catalogSku());
                     }
                     updatePrintAvailability();
                 });
@@ -199,14 +211,16 @@ public class FboPackingController {
 
     public void applyTranslations() {
         I18nService i18n = I18nService.getInstance();
-        titleLabel.setText(i18n.tr("fbo.title"));
-        searchField.setPromptText(i18n.tr("fbo.search"));
+        boolean ozon = marketplace == Marketplace.OZON;
+        titleLabel.setText(i18n.tr(ozon ? "ozon.fbo.title" : "fbo.title"));
+        searchField.setPromptText(i18n.tr(ozon ? "ozon.fbo.search" : "fbo.search"));
         emptyStateLabel.setText(i18n.tr("fbo.empty"));
         loadingLabel.setText(i18n.tr("fbo.loading"));
         imageColumn.setText(i18n.tr("fbo.column.image"));
         nameColumn.setText(i18n.tr("fbo.column.name"));
         colorColumn.setText(i18n.tr("fbo.column.color"));
         sizeColumn.setText(i18n.tr("fbo.column.size"));
+        catalogSkuColumn.setText(i18n.tr("ozon.fbo.column.sku"));
         skuColumn.setText(i18n.tr("fbo.column.sku"));
         quantityColumn.setText(i18n.tr("fbo.column.quantity"));
         quickPrintColumn.setText(i18n.tr("fbo.column.print"));
@@ -292,6 +306,7 @@ public class FboPackingController {
         nameColumn.setCellValueFactory(cell -> new ReadOnlyStringWrapper(formatName(cell.getValue().product())));
         colorColumn.setCellValueFactory(cell -> new ReadOnlyStringWrapper(cell.getValue().product().color()));
         sizeColumn.setCellValueFactory(cell -> new ReadOnlyStringWrapper(cell.getValue().product().size()));
+        catalogSkuColumn.setCellValueFactory(cell -> new ReadOnlyStringWrapper(cell.getValue().product().catalogSku()));
         skuColumn.setCellValueFactory(cell -> new ReadOnlyStringWrapper(cell.getValue().product().sku()));
         quantityColumn.setCellValueFactory(cell -> new SimpleObjectProperty<>(cell.getValue()));
         quantityColumn.setCellFactory(column -> new QuantityCell());
@@ -300,6 +315,9 @@ public class FboPackingController {
     }
 
     private String formatName(FboProductSku product) {
+        if (marketplace == Marketplace.OZON) {
+            return safe(product.title()) + "\n" + safe(product.vendorCode());
+        }
         return safe(product.title()) + "\n" + product.nmId() + " • " + safe(product.vendorCode());
     }
 

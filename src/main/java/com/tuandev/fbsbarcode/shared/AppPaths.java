@@ -28,6 +28,10 @@ public final class AppPaths {
     }
 
     public static List<Path> legacyAppDataDirs() {
+        String override = System.getProperty("wcode.appdata.dir");
+        if (override != null && !override.isBlank()) {
+            return List.of();
+        }
         Path base = windowsLocalAppData()
                 .orElseGet(() -> Paths.get(System.getProperty("user.home", ".")));
         return Stream.of(

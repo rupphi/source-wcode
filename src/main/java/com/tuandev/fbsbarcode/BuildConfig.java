@@ -26,6 +26,14 @@ public final class BuildConfig {
         return PROPS.getProperty("app.update.url", "https://github.com/rupphi/relatest-wcode");
     }
 
+    public static String getUpdateManifestPublicKey() {
+        return PROPS.getProperty("app.update.public-key", "");
+    }
+
+    public static String getUpdateSigningPublisher() {
+        return PROPS.getProperty("app.update.publisher", "");
+    }
+
     public static String getLicenseServerUrl() {
         return PROPS.getProperty("app.license.url", "https://wcode.online");
     }

@@ -1,5 +1,6 @@
-package com.tuandev.fbsbarcode.ui.supply;
+package com.tuandev.fbsbarcode.features.supply;
 
+/** Order sorting value shared by the JavaFX controllers and supply services. */
 public record OrderSortOptions(
         boolean bySubject,
         boolean byArticle,

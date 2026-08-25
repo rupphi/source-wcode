@@ -13,6 +13,7 @@ import com.tuandev.fbsbarcode.integration.wb.WbSupplySummary;
 import com.tuandev.fbsbarcode.integration.wb.WbSupplyWorkflow;
 import com.tuandev.fbsbarcode.integration.wb.WbSyncWorkflow;
 import com.tuandev.fbsbarcode.integration.wb.WbApiException;
+import com.tuandev.fbsbarcode.integration.marketplace.MarketplaceGuard;
 import com.tuandev.fbsbarcode.models.Order;
 import com.tuandev.fbsbarcode.models.Shop;
 
@@ -39,7 +40,15 @@ public class PackingWorkflow {
     private final WbActionLogRepository actionLogRepository = new WbActionLogRepository();
 
     public PackingBoard loadBoard(Shop shop) {
-        List<Order> newOrders = supplyWorkflow.populateCachedOrderImages(orderRepository.getOrdersForPackingStatus(shop.getId(), "new"));
+        MarketplaceGuard.requireWildberries(shop);
+        PackingBoard board = loadBoardData(shop);
+        List<Order> newOrders = supplyWorkflow.populateCachedOrderImages(board.newOrders());
+        return new PackingBoard(newOrders, board.preparationSupplies(), board.dispatchSupplies());
+    }
+
+    public PackingBoard loadBoardData(Shop shop) {
+        MarketplaceGuard.requireWildberries(shop);
+        List<Order> newOrders = orderRepository.getOrdersForPackingStatus(shop.getId(), "new");
         List<WbSupplySummary> allSupplies = supplyWorkflow.getSupplies(shop.getId());
         List<WbSupplySummary> preparationSupplies = allSupplies.stream()
                 .filter(supply -> !supply.isDone())
@@ -51,6 +60,7 @@ public class PackingWorkflow {
     }
 
     public void refreshBoardData(Shop shop) throws IOException {
+        MarketplaceGuard.requireWildberries(shop);
         try {
             orderSyncService.syncNewOrders(shop);
             syncMissingProductsForNewOrders(shop);
@@ -64,6 +74,7 @@ public class PackingWorkflow {
     }
 
     public List<Order> loadSupplyOrders(Shop shop, String supplyId) {
+        MarketplaceGuard.requireWildberries(shop);
         return supplyWorkflow.loadOrdersForSupplyLocal(shop, supplyId);
     }
 
@@ -72,6 +83,7 @@ public class PackingWorkflow {
     }
 
     public String createShipment(Shop shop, String name, List<Long> orderIds) throws IOException {
+        MarketplaceGuard.requireWildberries(shop);
         Boolean orderB2b = validateOrderB2bSelection(shop.getId(), orderIds);
         String requestJson = "{\"name\":\"" + sanitize(name) + "\",\"orders\":" + orderIds + "}";
         try {
@@ -91,6 +103,7 @@ public class PackingWorkflow {
     }
 
     public void addOrdersToSupply(Shop shop, String supplyId, List<Long> orderIds) throws IOException {
+        MarketplaceGuard.requireWildberries(shop);
         List<Long> safeOrderIds = orderIds == null ? List.of() : new ArrayList<>(orderIds);
         validateSupplyB2bCompatibility(shop.getId(), supplyId, safeOrderIds);
         try {
@@ -115,10 +128,12 @@ public class PackingWorkflow {
     }
 
     public void deliverSupply(Shop shop, WbSupplySummary supply) throws IOException {
-        if (!printHistoryService.hasSuccessfulJobForSupply(shop.getId(), supply.getSupplyId())) {
+        MarketplaceGuard.requireWildberries(shop);
+        DeliveryPreflight preflight = inspectDelivery(shop.getId(), supply);
+        if (!preflight.labelsPrinted()) {
             throw new IllegalStateException("Сначала распечатайте этикетки для поставки.");
         }
-        if (orderRepository.hasRequiredMetaWithoutPrintedKiz(shop.getId(), supply.getSupplyId())) {
+        if (!preflight.kizComplete()) {
             throw new IllegalStateException("В поставке есть товары с обязательной маркировкой без KIZ.");
         }
         validateMetadataBeforeDelivery(shop, supply.getSupplyId());
@@ -134,6 +149,7 @@ public class PackingWorkflow {
     }
 
     public byte[] getSupplyBarcode(Shop shop, WbSupplySummary supply) throws IOException {
+        MarketplaceGuard.requireWildberries(shop);
         try {
             byte[] bytes = apiClient.getSupplyBarcode(shop.getApiKey(), supply.getSupplyId(), "png");
             actionLogRepository.record(shop.getId(), "GET_SUPPLY_BARCODE", supply.getSupplyId(), List.of(), "success", null, "bytes=" + bytes.length, null);
@@ -150,10 +166,21 @@ public class PackingWorkflow {
     }
 
     public boolean canDeliver(int shopId, WbSupplySummary supply) {
-        return supply != null
-                && !supply.isDone()
-                && supply.getItemCount() > 0
+        return inspectDelivery(shopId, supply).ready();
+    }
+
+    public DeliveryPreflight inspectDelivery(int shopId, WbSupplySummary supply) {
+        boolean supplyReady = supply != null && !supply.isDone() && supply.getItemCount() > 0;
+        boolean labelsPrinted = supplyReady
                 && printHistoryService.hasSuccessfulJobForSupply(shopId, supply.getSupplyId());
+        boolean kizComplete = supplyReady
+                && !orderRepository.hasRequiredMetaWithoutPrintedKiz(shopId, supply.getSupplyId());
+        List<String> blockers = new ArrayList<>();
+        if (!supplyReady) blockers.add("supply_not_ready");
+        if (supplyReady && !labelsPrinted) blockers.add("labels_missing");
+        if (supplyReady && !kizComplete) blockers.add("kiz_missing");
+        return new DeliveryPreflight(
+                blockers.isEmpty(), labelsPrinted, kizComplete, List.copyOf(blockers));
     }
 
     private void syncMissingProductsForNewOrders(Shop shop) throws IOException {
@@ -237,5 +264,12 @@ public class PackingWorkflow {
     }
 
     public record PackingBoard(List<Order> newOrders, List<WbSupplySummary> preparationSupplies, List<WbSupplySummary> dispatchSupplies) {
+    }
+
+    public record DeliveryPreflight(
+            boolean ready, boolean labelsPrinted, boolean kizComplete, List<String> blockers) {
+        public DeliveryPreflight {
+            blockers = List.copyOf(blockers);
+        }
     }
 }

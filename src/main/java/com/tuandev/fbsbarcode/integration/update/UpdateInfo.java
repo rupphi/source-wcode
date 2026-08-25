@@ -33,7 +33,10 @@ public class UpdateInfo {
             return firstAvailable("exe", "msi", "zip", "release");
         }
         if (os.contains("mac")) {
-            return firstAvailable("dmg", "release");
+            String architecture = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
+            String nativeDmg = architecture.contains("aarch64") || architecture.contains("arm64")
+                    ? "dmg-arm64" : "dmg-x64";
+            return firstAvailable(nativeDmg, "dmg", "release");
         }
         if (os.contains("nux") || os.contains("nix") || os.contains("aix")) {
             return firstAvailable("deb", "release");

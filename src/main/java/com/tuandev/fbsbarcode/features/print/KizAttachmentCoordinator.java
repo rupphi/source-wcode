@@ -1,10 +1,9 @@
 package com.tuandev.fbsbarcode.features.print;
 
+import com.tuandev.fbsbarcode.integration.marketplace.MarketplaceGuard;
 import com.tuandev.fbsbarcode.features.kiz.KizService;
 import com.tuandev.fbsbarcode.models.Kiz;
 import com.tuandev.fbsbarcode.models.Shop;
-import com.tuandev.fbsbarcode.shared.AppTaskExecutor;
-import javafx.concurrent.Task;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -16,17 +15,39 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 
 public final class KizAttachmentCoordinator {
     private static final Logger LOGGER = LoggerFactory.getLogger(KizAttachmentCoordinator.class);
+    private static final Executor VIRTUAL_EXECUTOR = command -> Thread.ofVirtual()
+            .name("wcode-kiz-attachment")
+            .start(command);
     private static final KizAttachmentCoordinator INSTANCE = new KizAttachmentCoordinator();
 
     private final Map<String, KizAttachmentProgress> activeJobs = new ConcurrentHashMap<>();
     private final CopyOnWriteArrayList<Consumer<KizAttachmentProgress>> listeners = new CopyOnWriteArrayList<>();
     private final Map<Long, String> failedAttachments = new ConcurrentHashMap<>();
+    private final Executor executor;
+    private final AttachmentClient client;
 
     private KizAttachmentCoordinator() {
+        this(VIRTUAL_EXECUTOR, new AttachmentClient() {
+            @Override
+            public KizService.RemoveMetaResult remove(String token, long orderId) throws IOException {
+                return KizService.removeSgtinFromOrder(token, orderId);
+            }
+
+            @Override
+            public KizService.AttachCodeResult attach(String token, long orderId, String code) throws IOException {
+                return KizService.addDataMatrixCodeToOrder(token, orderId, code);
+            }
+        });
+    }
+
+    KizAttachmentCoordinator(Executor executor, AttachmentClient client) {
+        this.executor = Objects.requireNonNull(executor, "executor");
+        this.client = Objects.requireNonNull(client, "client");
     }
 
     public static KizAttachmentCoordinator getInstance() {
@@ -87,6 +108,7 @@ public final class KizAttachmentCoordinator {
         if (shop == null || assignments == null || assignments.isEmpty()) {
             return;
         }
+        MarketplaceGuard.requireWildberries(shop);
 
         String safeSupplyId = supplyId == null ? "" : supplyId;
         String safeSupplyName = supplyName == null ? "" : supplyName;
@@ -106,14 +128,14 @@ public final class KizAttachmentCoordinator {
         activeJobs.put(key, initialProgress);
         notifyListeners(initialProgress);
 
-        Task<Void> task = new Task<>() {
-            @Override
-            protected Void call() throws Exception {
+        executor.execute(() -> {
+            try {
                 runAttachmentJob(key, shop, safeSupplyId, safeSupplyName, assignments);
-                return null;
+            } catch (IOException | RuntimeException error) {
+                LOGGER.warn("Background KIZ attachment stopped. shopId={}, supplyId={}, errorType={}",
+                        shop.getId(), safeSupplyId, error.getClass().getSimpleName());
             }
-        };
-        AppTaskExecutor.execute(task);
+        });
     }
 
     private void runAttachmentJob(String key,
@@ -132,7 +154,7 @@ public final class KizAttachmentCoordinator {
                     continue;
                 }
                 if (assignment.replaceExisting()) {
-                    KizService.RemoveMetaResult removeResult = KizService.removeSgtinFromOrder(
+                    KizService.RemoveMetaResult removeResult = client.remove(
                             shop.getApiKey(),
                             assignment.orderId()
                     );
@@ -147,9 +169,6 @@ public final class KizAttachmentCoordinator {
 
                         String message = "Не удалось удалить старый KIZ для order " + assignment.orderId()
                                 + " (HTTP " + removeResult.statusCode() + ")";
-                        if (removeResult.responseBody() != null && !removeResult.responseBody().isBlank()) {
-                            message += ": " + removeResult.responseBody();
-                        }
                         failures.add(message);
                         failedAttachments.put(assignment.orderId(), message);
                         LOGGER.warn("Background remove KIZ failed for shop {}, supply {}, order {}: {}",
@@ -160,7 +179,7 @@ public final class KizAttachmentCoordinator {
                     }
                 }
 
-                KizService.AttachCodeResult result = KizService.addDataMatrixCodeToOrder(
+                KizService.AttachCodeResult result = client.attach(
                         shop.getApiKey(),
                         assignment.orderId(),
                         assignment.kizCode()
@@ -190,9 +209,6 @@ public final class KizAttachmentCoordinator {
                 } else {
                     message = "Не удалось отправить KIZ для order " + assignment.orderId() + " (HTTP " + result.statusCode() + ")";
                 }
-                if (result.responseBody() != null && !result.responseBody().isBlank()) {
-                    message += ": " + result.responseBody();
-                }
                 failures.add(message);
                 failedAttachments.put(assignment.orderId(), message);
                 LOGGER.warn("Background attach KIZ failed for shop {}, supply {}, order {}: {}",
@@ -221,8 +237,7 @@ public final class KizAttachmentCoordinator {
             activeJobs.remove(key);
             notifyListeners(completedProgress);
         } catch (IOException | RuntimeException error) {
-            String message = error.getMessage() == null || error.getMessage().isBlank()
-                    ? error.getClass().getSimpleName() : error.getMessage();
+            String message = "KIZ attachment request failed (" + error.getClass().getSimpleName() + ")";
             failures.add(message);
             notifyListeners(new KizAttachmentProgress(shop.getId(), shop.getName(), supplyId, supplyName,
                     completed, assignments.size(), false, "KIZ attachment failed", List.copyOf(failures),
@@ -279,6 +294,12 @@ public final class KizAttachmentCoordinator {
 
     private static String buildKey(int shopId, String supplyId) {
         return shopId + ":" + (supplyId == null ? "" : supplyId);
+    }
+
+    interface AttachmentClient {
+        KizService.RemoveMetaResult remove(String token, long orderId) throws IOException;
+
+        KizService.AttachCodeResult attach(String token, long orderId, String code) throws IOException;
     }
 
     public record KizAttachmentProgress(

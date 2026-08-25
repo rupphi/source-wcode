@@ -1,6 +1,7 @@
 package com.tuandev.fbsbarcode.features.shop;
 
 import com.tuandev.fbsbarcode.config.Database;
+import com.tuandev.fbsbarcode.integration.marketplace.Marketplace;
 import com.tuandev.fbsbarcode.models.Shop;
 
 import java.sql.Connection;
@@ -13,12 +14,15 @@ import java.util.List;
 
 public class ShopRepository {
     public int insert(Shop shop) {
-        String sql = "INSERT INTO shops (name, api_key) VALUES (?, ?)";
+        shop.validateForCreate();
+        String sql = "INSERT INTO shops (name, marketplace, client_id, api_key) VALUES (?, ?, ?, ?)";
 
         try (Connection conn = Database.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+            PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, shop.getName());
-            ps.setString(2, shop.getApiKey());
+            ps.setString(2, shop.getMarketplace().name());
+            ps.setString(3, shop.getMarketplace() == Marketplace.OZON ? shop.getClientId() : null);
+            ps.setString(4, shop.getApiKey());
             return ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException(e);
@@ -26,13 +30,34 @@ public class ShopRepository {
     }
 
     public int update(int id, Shop shop) {
-        String sql = "UPDATE shops SET name = ?, api_key = ? WHERE id = ?";
+        Shop existing = findById(id);
+        if (existing == null) {
+            return 0;
+        }
+        if (existing.getMarketplace() != shop.getMarketplace()) {
+            throw new IllegalArgumentException("Marketplace cannot be changed after a shop is created.");
+        }
+        if (shop.getMarketplace() == Marketplace.OZON
+                && (shop.getClientId() == null || shop.getClientId().isBlank())) {
+            throw new IllegalArgumentException("Ozon Client ID is required.");
+        }
+        boolean replaceCredential = shop.getApiKey() != null && !shop.getApiKey().isBlank();
+        String sql = replaceCredential
+                ? "UPDATE shops SET name = ?, client_id = ?, api_key = ? WHERE id = ? AND marketplace = ?"
+                : "UPDATE shops SET name = ?, client_id = ? WHERE id = ? AND marketplace = ?";
 
         try (Connection conn = Database.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+            PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, shop.getName());
-            ps.setString(2, shop.getApiKey());
-            ps.setInt(3, id);
+            ps.setString(2, shop.getMarketplace() == Marketplace.OZON ? shop.getClientId() : null);
+            if (replaceCredential) {
+                ps.setString(3, shop.getApiKey().strip());
+                ps.setInt(4, id);
+                ps.setString(5, existing.getMarketplace().name());
+            } else {
+                ps.setInt(3, id);
+                ps.setString(4, existing.getMarketplace().name());
+            }
             return ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException(e);
@@ -40,7 +65,7 @@ public class ShopRepository {
     }
 
     public List<Shop> findAll() {
-        String sql = "SELECT id, name, api_key FROM shops";
+        String sql = "SELECT id, name, marketplace, client_id, api_key FROM shops ORDER BY id";
         List<Shop> shops = new ArrayList<>();
 
         try (Connection conn = Database.getConnection();
@@ -50,6 +75,8 @@ public class ShopRepository {
                 shops.add(new Shop(
                         rs.getInt("id"),
                         rs.getString("name"),
+                        Marketplace.fromDatabase(rs.getString("marketplace")),
+                        rs.getString("client_id"),
                         rs.getString("api_key")
                 ));
             }
@@ -59,11 +86,45 @@ public class ShopRepository {
         }
     }
 
+    public Shop findById(int id) {
+        String sql = "SELECT id, name, marketplace, client_id, api_key FROM shops WHERE id = ?";
+        try (Connection conn = Database.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, id);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    return null;
+                }
+                return new Shop(
+                        rs.getInt("id"),
+                        rs.getString("name"),
+                        Marketplace.fromDatabase(rs.getString("marketplace")),
+                        rs.getString("client_id"),
+                        rs.getString("api_key"));
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public int delete(int id) {
+        return ShopOperationCoordinator.withExclusiveShop(id, () -> deleteExclusive(id));
+    }
+
+    private int deleteExclusive(int id) {
         String sql = "DELETE FROM shops WHERE id = ?";
         try (Connection conn = Database.getConnection()) {
             conn.setAutoCommit(false);
-            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            try (PreparedStatement active = conn.prepareStatement("""
+                        SELECT 1 FROM ozon_exemplar_jobs
+                        WHERE shop_id=? AND stage NOT IN ('ACCEPTED','REJECTED') LIMIT 1
+                    """);
+                    PreparedStatement ps = conn.prepareStatement(sql)) {
+                active.setInt(1, id);
+                try (ResultSet result = active.executeQuery()) {
+                    if (result.next()) {
+                        throw new IllegalStateException("The Ozon shop has an unfinished exemplar job.");
+                    }
+                }
                 ps.setInt(1, id);
                 int deleted = ps.executeUpdate();
                 conn.commit();

@@ -1,12 +1,16 @@
 package com.tuandev.fbsbarcode.integration.znack;
 
 import com.google.gson.*;
+import com.tuandev.fbsbarcode.integration.znack.ZnackModels.GoodsDocument;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels.Product;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.time.Instant;
 
 public class ZnackProductService {
@@ -24,8 +28,7 @@ public class ZnackProductService {
             if(response.isJsonObject()&&response.getAsJsonObject().has("total")&&!response.getAsJsonObject().get("total").isJsonNull())total=response.getAsJsonObject().get("total").getAsInt();
             if(array!=null)for(JsonElement e:array){JsonObject o=e.getAsJsonObject();String gtin=text(o,"gtin","productGtin");if(!gtin.isBlank()){String normalized=GtinNormalizer.normalize(gtin);if(GtinNormalizer.isTechnicalRange(normalized)){technical++;continue;}byGtin.put(normalized,new Product(
                     normalized,text(o,"productName","name"),tnVed(o),
-                    text(o,"certificateType","certificate_type"),text(o,"certificateNumber","certificate_number"),
-                    text(o,"certificateDate","certificate_date"),text(o,"productionDate","production_date"),
+                    null,null,null,text(o,"productionDate","production_date"),
                     bool(o,"goodMarkFlag","good_mark_flag"),bool(o,"goodTurnFlag","good_turn_flag"),
                     text(o,"goodStatus","good_status","cardStatus"),text(o,"goodDetailedStatus","good_detailed_status"),
                     "",null,cisType(o)));}}
@@ -33,18 +36,35 @@ public class ZnackProductService {
             if(total==null&&received<PAGE_SIZE)break;
             if(received==0)break;
         }while(total==null||fetched<total);
-        enrichFromNationalCatalog(settings, token, byGtin);
+        Set<String> incompleteGtins=new HashSet<>();
+        for(Product persisted:repository.findProducts()){
+            if(needsCatalogMetadata(persisted))incompleteGtins.add(persisted.gtin());
+        }
+        Map<String,List<GoodsDocument>> permitDocumentSnapshots=new LinkedHashMap<>();
+        int failedCatalogBatches=enrichFromNationalCatalog(
+                settings,token,byGtin,incompleteGtins,permitDocumentSnapshots);
         List<Product> publishable=new ArrayList<>();List<String> unpublished=new ArrayList<>();
         for(Product p:byGtin.values()){if(ZnackCardStatus.isErrored(p.cardStatus(),p.cardDetailedStatus()))unpublished.add(p.gtin());else publishable.add(p);}
         repository.upsertProducts(publishable);
+        for(Product product:publishable){
+            List<GoodsDocument> documents=permitDocumentSnapshots.get(product.gtin());
+            if(documents!=null)repository.updateProductDocuments(product.gtin(),documents);
+        }
         int removed=repository.pruneTechnicalProducts();int unpublishedRemoved=repository.deleteUnpublishedProducts(unpublished);
-        repository.log("GTIN_SYNC",null,"INFO","Synced "+publishable.size()+" orderable GTINs; ignored "+technical+
+        String message="Synced "+publishable.size()+" orderable GTINs; ignored "+technical+
                 " technical GTINs; skipped "+unpublished.size()+" non-published cards; removed "+removed+
-                " unreferenced technical GTINs and "+unpublishedRemoved+" unreferenced non-published GTINs",200);
+                " unreferenced technical GTINs and "+unpublishedRemoved+" unreferenced non-published GTINs";
+        if(failedCatalogBatches>0)message+="; partial catalog enrichment: "+failedCatalogBatches+
+                " catalog batch"+(failedCatalogBatches==1?"":"es")+" failed after retries";
+        repository.log("GTIN_SYNC",null,failedCatalogBatches==0?"INFO":"WARN",message,200);
         return repository.findProducts();
     }
-    private void enrichFromNationalCatalog(ZnackModels.Settings settings,String token,Map<String,Product> byGtin){
-        List<String> gtins=List.copyOf(byGtin.keySet());
+    private int enrichFromNationalCatalog(ZnackModels.Settings settings,String token,Map<String,Product> byGtin,
+                                          Set<String> incompleteGtins,
+                                          Map<String,List<GoodsDocument>> permitDocumentSnapshots){
+        int failedBatches=0;
+        List<String> gtins=new ArrayList<>(byGtin.keySet());
+        gtins.sort(Comparator.comparing((String gtin)->!incompleteGtins.contains(gtin)));
         for(int start=0;start<gtins.size();start+=CATALOG_BATCH_SIZE){
             List<String> batch=gtins.subList(start,Math.min(start+CATALOG_BATCH_SIZE,gtins.size()));
             try{
@@ -57,6 +77,7 @@ public class ZnackProductService {
                     String name=text(card,"good_name","productName","name");
                     String tnVed=tnVed(card);
                     String category=categories(card);
+                    List<GoodsDocument> permitDocuments=ZnackPermitDocumentParser.fromProductCard(card);
                     JsonArray identifiers=array(card,"identified_by");
                     if(identifiers==null)continue;
                     for(JsonElement identifier:identifiers){
@@ -68,7 +89,9 @@ public class ZnackProductService {
                         try{
                             String gtin=GtinNormalizer.normalize(value);
                             Product current=byGtin.get(gtin);
-                            if(current!=null)byGtin.put(gtin,new Product(gtin,first(name,current.productName()),
+                            if(current!=null){
+                                permitDocumentSnapshots.put(gtin,permitDocuments);
+                                byGtin.put(gtin,new Product(gtin,first(name,current.productName()),
                                     first(tnVed,current.tnVed()),current.certificateType(),current.certificateNumber(),
                                     current.certificateDate(),current.productionDate(),
                                     first(bool(card,"goodMarkFlag","good_mark_flag"),current.goodMarkFlag()),
@@ -77,14 +100,21 @@ public class ZnackProductService {
                                     first(text(card,"goodDetailedStatus","good_detailed_status"),current.cardDetailedStatus()),
                                     first(category,current.category()),
                                     Instant.now(),current.cisType()));
+                            }
                         }catch(IllegalArgumentException ignored){}
                     }
                 }
             }catch(Exception error){
+                failedBatches++;
                 repository.log("GTIN_CATALOG_ENRICH",null,"WARN",error.getMessage(),null);
             }
         }
+        return failedBatches;
     }
+    private boolean needsCatalogMetadata(Product product){
+        return missing(product.productName())||missing(product.tnVed());
+    }
+    private boolean missing(String value){return value==null||value.isBlank()||"-".equals(value.trim());}
     /** Joins the {@code categories[].cat_name} values of a National Catalog card ("Обувь домашняя", ...). */
     private String categories(JsonObject card){
         JsonArray categories=array(card,"categories");

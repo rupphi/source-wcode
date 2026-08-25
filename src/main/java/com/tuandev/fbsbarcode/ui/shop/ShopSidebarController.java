@@ -1,5 +1,6 @@
 package com.tuandev.fbsbarcode.ui.shop;
 
+import com.tuandev.fbsbarcode.integration.marketplace.Marketplace;
 import com.tuandev.fbsbarcode.shared.AppLanguage;
 import com.tuandev.fbsbarcode.shared.I18nService;
 import javafx.fxml.FXML;
@@ -71,6 +72,7 @@ public class ShopSidebarController {
     private Consumer<AppLanguage> onLanguageChanged;
     private Consumer<String> onThemeChanged;
     private boolean licenseValid;
+    private Marketplace marketplace = Marketplace.WILDBERRIES;
 
     @FXML
     private void initialize() {
@@ -168,6 +170,20 @@ public class ShopSidebarController {
         activationStatusLabel.setStyle(licenseValid ? "-fx-text-fill: #22c55e; -fx-font-weight: 700;" : "-fx-text-fill: #ef4444; -fx-font-weight: 700;");
     }
 
+    public void setMarketplace(Marketplace marketplace) {
+        this.marketplace = marketplace == null ? Marketplace.WILDBERRIES : marketplace;
+        setAvailable(packingButton, true);
+        setAvailable(fboPackingButton, true);
+        setAvailable(kizMappingButton, true);
+        applyMarketplaceTexts();
+    }
+
+    private static void setAvailable(Button button, boolean available) {
+        button.setVisible(available);
+        button.setManaged(available);
+        button.setDisable(!available);
+    }
+
     public void applyTranslations() {
         I18nService i18n = I18nService.getInstance();
         templateButton.setText(" " + i18n.tr("sidebar.template"));
@@ -186,7 +202,17 @@ public class ShopSidebarController {
         checkVersionMenuItem.setText(i18n.tr("settings.check_version"));
         activationMenuItem.setText(i18n.tr("license.menu"));
         aboutMenuItem.setText(i18n.tr("settings.about"));
+        applyMarketplaceTexts();
         setLicenseValid(licenseValid);
+    }
+
+    private void applyMarketplaceTexts() {
+        if (packingButton == null || kizMappingButton == null) return;
+        I18nService i18n = I18nService.getInstance();
+        boolean ozon = marketplace == Marketplace.OZON;
+        packingButton.setText(" " + i18n.tr(ozon ? "sidebar.ozon_packing" : "sidebar.packing"));
+        fboPackingButton.setText(" " + i18n.tr(ozon ? "sidebar.ozon_fbo_packing" : "sidebar.fbo_packing"));
+        kizMappingButton.setText(" " + i18n.tr(ozon ? "ozon.mapping.sidebar" : "sidebar.kiz_mapping"));
     }
 
     @FXML

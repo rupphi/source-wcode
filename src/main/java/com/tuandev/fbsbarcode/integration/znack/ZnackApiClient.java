@@ -13,15 +13,29 @@ import java.time.Duration;
 public class ZnackApiClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(ZnackApiClient.class);
     private static final MediaType JSON = MediaType.parse("application/json");
+    // National Catalog API v5.62 sections 2.1/2.5: Retry-After is seconds and a limit window is at most five minutes.
+    private static final int RATE_LIMIT_MAX_ATTEMPTS = 3;
+    private static final long RATE_LIMIT_MAX_TOTAL_DELAY_MS = Duration.ofMinutes(5).toMillis();
+    private static final long RATE_LIMIT_FALLBACK_DELAY_MS = 1_000L;
     private final OkHttpClient client;
+    private final Sleeper sleeper;
     private final Gson gson = new Gson();
 
     public ZnackApiClient() {
-        this(new OkHttpClient.Builder().callTimeout(Duration.ofSeconds(40)).build());
+        this(defaultClient(), Thread::sleep);
     }
 
     ZnackApiClient(OkHttpClient client) {
+        this(client, Thread::sleep);
+    }
+
+    ZnackApiClient(Sleeper sleeper) {
+        this(defaultClient(), sleeper);
+    }
+
+    ZnackApiClient(OkHttpClient client, Sleeper sleeper) {
         this.client = client;
+        this.sleeper = sleeper;
     }
 
     public JsonObject authKey(String base) throws IOException { return get(authBase(base), "/auth/key", null).getAsJsonObject(); }
@@ -39,10 +53,18 @@ public class ZnackApiClient {
     public JsonElement productCards(String base, String token, String gtins) throws IOException {
         return get(trueApiBase(base, 3), "/nk/feed-product?gtins=" + url(gtins), token);
     }
+    public JsonElement permitDocuments(String base,String token,String gtin,String inn)throws IOException{
+        JsonObject body=new JsonObject();body.addProperty("gtin",gtin);
+        if(inn!=null&&!inn.isBlank())body.addProperty("inn",inn.trim());
+        return post(nationalCatalogBase(base),"/v4/rd-info-by-gtin",token,body);
+    }
     public JsonObject createOrder(String base,String token,String omsId,byte[] body,String signature)throws IOException{
         Request request=new Request.Builder().url(join(base,"/api/v3/order?omsId="+url(omsId))).headers(suzHeaders(token).newBuilder().add("X-Signature",signature).build())
                 .post(RequestBody.create(body,JSON)).build();
         return execute(request).getAsJsonObject();
+    }
+    public JsonObject orderList(String base,String token,String omsId)throws IOException{
+        return suzGet(base,"/api/v3/order/list?omsId="+url(omsId),token).getAsJsonObject();
     }
     public JsonArray orderStatus(String base,String token,String omsId,String orderId)throws IOException{return suzGet(base,"/api/v3/order/status?omsId="+url(omsId)+"&orderId="+url(orderId),token).getAsJsonArray();}
     public JsonElement codes(String base,String token,String omsId,String orderId,int quantity,String gtin)throws IOException{
@@ -82,6 +104,7 @@ public class ZnackApiClient {
 
     private JsonElement execute(Request request)throws IOException{return execute(request,false);}
     private JsonElement execute(Request request,boolean allowNotFoundBody)throws IOException{
+        long rateLimitDelayUsed=0;
         for(int attempt=1;;attempt++){
             try(Response response=client.newCall(request).execute()){
                 String body=response.body()==null?"":response.body().string();
@@ -92,6 +115,16 @@ public class ZnackApiClient {
                                 attempt,UOT_CREDENTIAL_RETRY_ATTEMPTS-1,request.method(),request.url());
                         sleepBeforeRetry(attempt);
                         continue;
+                    }
+                    if(response.code()==429&&isIdempotent(request)&&attempt<RATE_LIMIT_MAX_ATTEMPTS){
+                        long delay=rateLimitDelay(response.header("Retry-After"),attempt);
+                        if(delay<=RATE_LIMIT_MAX_TOTAL_DELAY_MS-rateLimitDelayUsed){
+                            LOGGER.warn("Znack API rate limit reached; retrying safe request after {} ms. method={}, attempt={}/{}",
+                                    delay,request.method(),attempt,RATE_LIMIT_MAX_ATTEMPTS);
+                            sleepRateLimit(delay);
+                            rateLimitDelayUsed+=delay;
+                            continue;
+                        }
                     }
                     LOGGER.error("Znack API request failed. method={}, url={}, httpStatus={}, contentType={}, responseBody={}",
                             request.method(),request.url(),response.code(),response.header("Content-Type",""),
@@ -110,6 +143,19 @@ public class ZnackApiClient {
                 }
             }
         }
+    }
+    private static OkHttpClient defaultClient(){return new OkHttpClient.Builder().callTimeout(Duration.ofSeconds(40)).build();}
+    private static boolean isIdempotent(Request request){return "GET".equals(request.method())||"HEAD".equals(request.method());}
+    private static long rateLimitDelay(String retryAfter,int attempt){
+        if(retryAfter!=null)try{
+            long seconds=Long.parseLong(retryAfter.trim());
+            if(seconds>=0)return Math.multiplyExact(seconds,1_000L);
+        }catch(ArithmeticException|NumberFormatException ignored){}
+        return RATE_LIMIT_FALLBACK_DELAY_MS<<(attempt-1);
+    }
+    private void sleepRateLimit(long delay)throws IOException{
+        try{sleeper.sleep(delay);}
+        catch(InterruptedException e){Thread.currentThread().interrupt();throw new IOException("Interrupted while waiting for the Znack rate limit.",e);}
     }
     private static void sleepBeforeRetry(int attempt)throws IOException{
         try{Thread.sleep(UOT_CREDENTIAL_RETRY_BASE_DELAY_MS*attempt);}
@@ -132,10 +178,18 @@ public class ZnackApiClient {
     }
     static String authBase(String base) { return trueApiBase(base, 3); }
     static String trueApiBase(String base, int version) { return apiRoot(base) + "/api/v" + version + "/true-api"; }
+    static String nationalCatalogBase(String trueApiBase) {
+        String normalized=trueApiBase==null?"":trueApiBase.trim().toLowerCase(java.util.Locale.ROOT);
+        if(normalized.contains("sandbox"))return ZnackModels.SANDBOX_NATIONAL_CATALOG;
+        if(normalized.isBlank()||normalized.contains("markirovka.crpt.ru"))return ZnackModels.PRODUCTION_NATIONAL_CATALOG;
+        return apiRoot(trueApiBase);
+    }
 
     public static class ZnackApiException extends IOException {
         private final int statusCode;
         public ZnackApiException(String message,int statusCode,String body){super(message+" (HTTP "+statusCode+"): "+ZnackSanitizer.message(body));this.statusCode=statusCode;}
         public int statusCode(){return statusCode;}
     }
+
+    @FunctionalInterface interface Sleeper { void sleep(long millis)throws InterruptedException; }
 }

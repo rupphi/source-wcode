@@ -6,8 +6,14 @@ import com.tuandev.fbsbarcode.integration.znack.signature.ZnackSignatureContext;
 import com.tuandev.fbsbarcode.integration.znack.signature.ZnackSignatureProvider;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 public class ZnackKizOrderService {
+    private static final Duration RECONCILIATION_CLOCK_SKEW = Duration.ofSeconds(30);
+    private static final Duration RECONCILIATION_WINDOW = Duration.ofMinutes(5);
     private final ZnackApiClient api; private final ZnackAuthService auth; private final ZnackSignatureProvider signer; private final ZnackRepository repository;
     public ZnackKizOrderService(ZnackApiClient api,ZnackAuthService auth,ZnackSignatureProvider signer,ZnackRepository repository){this.api=api;this.auth=auth;this.signer=signer;this.repository=repository;}
     public KizOrder buy(Settings s,String gtin,int quantity)throws Exception{
@@ -46,6 +52,49 @@ public class ZnackKizOrderService {
         for(JsonElement e:response){JsonObject o=e.getAsJsonObject();remote=text(o,"bufferStatus","status");available+=integer(o,"availableCodes");reason=text(o,"rejectionReason");rejected|="REJECTED".equalsIgnoreCase(remote);}
         BufferStatus status=new BufferStatus(remote,available,rejected,reason);repository.updateOrder(id,null,remote,status.localStatus(),reason);return repository.findOrder(id).orElseThrow();
     }
+    /**
+     * Uses SUZ's recovery-only order list after an ambiguous POST. A match is accepted only when
+     * GTIN, quantity and creation time identify exactly one remote order.
+     */
+    public OrderReconciliation reconcile(Settings s,KizOrder local)throws Exception{
+        ZnackSafety.requireSigned(s,true);
+        JsonObject response=api.orderList(s.resolvedSuzBaseUrl(),auth.suzToken(s),s.omsId());
+        JsonArray orderInfos=response.has("orderInfos")&&response.get("orderInfos").isJsonArray()
+                ?response.getAsJsonArray("orderInfos"):new JsonArray();
+        Instant earliest=local.createdAt().minus(RECONCILIATION_CLOCK_SKEW);
+        Instant latest=local.createdAt().plus(RECONCILIATION_WINDOW);
+        List<RemoteOrder> matches=new ArrayList<>();
+        for(JsonElement element:orderInfos){
+            if(!element.isJsonObject())continue;
+            JsonObject candidate=element.getAsJsonObject();
+            String externalId=text(candidate,"orderId");
+            if(externalId.isBlank()||!candidate.has("createdTimestamp")||candidate.get("createdTimestamp").isJsonNull())continue;
+            Instant created;
+            try{created=Instant.ofEpochMilli(candidate.get("createdTimestamp").getAsLong());}
+            catch(RuntimeException invalid){continue;}
+            if(created.isBefore(earliest)||created.isAfter(latest))continue;
+            JsonArray buffers=candidate.has("buffers")&&candidate.get("buffers").isJsonArray()
+                    ?candidate.getAsJsonArray("buffers"):new JsonArray();
+            int matchingQuantity=0;
+            for(JsonElement bufferElement:buffers){
+                if(!bufferElement.isJsonObject())continue;
+                JsonObject buffer=bufferElement.getAsJsonObject();
+                String candidateGtin=text(buffer,"gtin");
+                if(candidateGtin.isBlank())continue;
+                if(!local.gtin().equals(GtinNormalizer.normalize(candidateGtin)))continue;
+                matchingQuantity+=integer(buffer,"totalCodes");
+            }
+            if(matchingQuantity==local.quantity()){
+                matches.add(new RemoteOrder(externalId,text(candidate,"orderStatus"),created));
+            }
+        }
+        if(matches.isEmpty())return new OrderReconciliation(ReconciliationStatus.NOT_FOUND,null,0);
+        if(matches.size()>1)return new OrderReconciliation(ReconciliationStatus.CONFLICT,null,matches.size());
+        return new OrderReconciliation(ReconciliationStatus.MATCHED,matches.getFirst(),1);
+    }
+    public enum ReconciliationStatus{MATCHED,NOT_FOUND,CONFLICT}
+    public record OrderReconciliation(ReconciliationStatus status,RemoteOrder order,int candidateCount){}
+    public record RemoteOrder(String externalOrderId,String remoteStatus,Instant createdAt){}
     private String text(JsonObject o,String...k){for(String x:k)if(o.has(x)&&!o.get(x).isJsonNull())return o.get(x).getAsString();return "";}
     private int integer(JsonObject o,String k){return o.has(k)&&!o.get(k).isJsonNull()?o.get(k).getAsInt():0;}
     private String resolveCisType(Settings settings,String gtin)throws Exception{
