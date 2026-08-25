@@ -137,12 +137,13 @@ class FxmlSmokeTest {
                 DatePicker from = (DatePicker) loader.getNamespace().get("fromDatePicker");
                 DatePicker to = (DatePicker) loader.getNamespace().get("toDatePicker");
                 GridPane grid = (GridPane) loader.getNamespace().get("kpiGrid");
-                Label help = (Label) loader.getNamespace().get("payoutHelpLabel");
+                Label payoutValue = (Label) loader.getNamespace().get("payoutValueLabel");
                 valid.set(from.getOnAction() != null
                         && to.getOnAction() != null
                         && grid != null
-                        && help != null
-                        && !help.getText().isBlank()
+                        && loader.getNamespace().get("payoutHelpLabel") == null
+                        && payoutValue != null
+                        && payoutValue.getTooltip() != null
                         && isAt(loader, "grossTitleLabel", 0, 0)
                         && isAt(loader, "payoutTitleLabel", 1, 0)
                         && isAt(loader, "commissionTitleLabel", 2, 0)

@@ -62,8 +62,6 @@
                       GridPane.columnIndex="1" GridPane.rowIndex="0">
                     <Label fx:id="payoutTitleLabel" styleClass="finance-kpi-title" text="Payout" />
                     <Label fx:id="payoutValueLabel" styleClass="finance-kpi-value finance-kpi-value-income" text="0" />
-                    <Label fx:id="payoutHelpLabel" maxWidth="1.7976931348623157E308" styleClass="finance-kpi-help"
-                           text="Marketplace payable is not a bank transfer" wrapText="true" />
                 </VBox>
 
                 <VBox maxWidth="1.7976931348623157E308" spacing="5.0"

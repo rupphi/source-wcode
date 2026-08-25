@@ -46,7 +46,6 @@ public class FinanceDashboardController {
     @FXML private Label grossTitleLabel;
     @FXML private Label returnsTitleLabel;
     @FXML private Label payoutTitleLabel;
-    @FXML private Label payoutHelpLabel;
     @FXML private Label commissionTitleLabel;
     @FXML private Label advertisingTitleLabel;
     @FXML private Label penaltyTitleLabel;
@@ -116,7 +115,6 @@ public class FinanceDashboardController {
         grossTitleLabel.setText(i18n.tr("finance.kpi.sales"));
         returnsTitleLabel.setText(i18n.tr("finance.kpi.returns"));
         payoutTitleLabel.setText(i18n.tr("finance.kpi.payout"));
-        payoutHelpLabel.setText(i18n.tr("finance.kpi.payout.help"));
         commissionTitleLabel.setText(i18n.tr("finance.kpi.commission"));
         advertisingTitleLabel.setText(i18n.tr("finance.kpi.advertising"));
         penaltyTitleLabel.setText(i18n.tr("finance.kpi.penalty"));
