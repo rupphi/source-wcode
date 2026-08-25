@@ -48,7 +48,7 @@ và chưa Apple notarize, vì vậy phải ghi rõ trạng thái này trong rele
 1. Nếu đã cấu hình chứng thư, verify Authenticode của `WCode.exe` và `WCode.msi`.
 2. Verify `checksums.sha256` bao phủ toàn bộ Windows/macOS assets; nếu có
    `update-manifest.json`, verify signed manifest khớp MSI cuối cùng.
-3. Cài từ 1.1.9, xác nhận registration 1.1.9 không bị uninstall trước migration, app 1.1.10 mở được
+3. Cài từ 1.1.9, xác nhận registration 1.1.9 không bị uninstall trước migration, app phiên bản mới mở được
    và dữ liệu shop/history đã chuyển sang `WCodeData` còn nguyên.
 4. Mở app, kiểm tra Wildberries regression và Ozon read-only trước khi live mutation.
 5. Chỉ đánh dấu release `latest` sau khi canary operator hoàn tất một flow đóng gói thực.
