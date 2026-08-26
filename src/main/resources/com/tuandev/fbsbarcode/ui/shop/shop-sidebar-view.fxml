@@ -80,6 +80,15 @@
                 <FontIcon iconLiteral="fth-package" iconSize="16"/>
             </graphic>
         </Button>
+        <Button fx:id="fboOrdersButton" alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onFboOrders" prefHeight="30.0" prefWidth="190.0" text=" Đơn hàng FBO">
+            <styleClass>
+                <String fx:value="button" />
+                <String fx:value="btn-primary" />
+            </styleClass>
+            <graphic>
+                <FontIcon iconLiteral="fth-list" iconSize="16"/>
+            </graphic>
+        </Button>
         <Button fx:id="kizMappingButton" alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onKizMapping" prefHeight="30.0" prefWidth="190.0" text=" KIZ Mapping">
             <styleClass>
                 <String fx:value="button" />

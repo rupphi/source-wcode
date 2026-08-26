@@ -232,6 +232,69 @@ public final class WbSchemaSupport {
                     FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
                 )
             """);
+            st.execute("""
+                CREATE TABLE IF NOT EXISTS wb_fbw_orders(
+                    shop_id INTEGER NOT NULL,
+                    preorder_id TEXT NOT NULL,
+                    supply_id TEXT,
+                    status_id INTEGER,
+                    box_type_id INTEGER,
+                    virtual_type_id INTEGER,
+                    create_date TEXT,
+                    supply_date TEXT,
+                    fact_date TEXT,
+                    updated_date TEXT,
+                    warehouse_id TEXT,
+                    warehouse_name TEXT,
+                    actual_warehouse_id TEXT,
+                    actual_warehouse_name TEXT,
+                    transit_warehouse_id TEXT,
+                    transit_warehouse_name TEXT,
+                    quantity INTEGER NOT NULL DEFAULT 0,
+                    accepted_quantity INTEGER NOT NULL DEFAULT 0,
+                    unloading_quantity INTEGER NOT NULL DEFAULT 0,
+                    ready_for_sale_quantity INTEGER NOT NULL DEFAULT 0,
+                    depersonalized_quantity INTEGER NOT NULL DEFAULT 0,
+                    acceptance_cost INTEGER,
+                    acceptance_coefficient TEXT,
+                    storage_coefficient TEXT,
+                    delivery_coefficient TEXT,
+                    reject_reason TEXT,
+                    synced_at TEXT NOT NULL,
+                    detail_synced_at TEXT,
+                    PRIMARY KEY(shop_id,preorder_id),
+                    FOREIGN KEY(shop_id) REFERENCES shops(id) ON DELETE CASCADE
+                )
+            """);
+            st.execute("""
+                CREATE TABLE IF NOT EXISTS wb_fbw_order_items(
+                    shop_id INTEGER NOT NULL,
+                    preorder_id TEXT NOT NULL,
+                    item_key TEXT NOT NULL,
+                    barcode TEXT,
+                    vendor_code TEXT,
+                    nm_id TEXT,
+                    need_kiz INTEGER,
+                    tnved TEXT,
+                    tech_size TEXT,
+                    color TEXT,
+                    quantity INTEGER NOT NULL DEFAULT 0,
+                    accepted_quantity INTEGER NOT NULL DEFAULT 0,
+                    unloading_quantity INTEGER NOT NULL DEFAULT 0,
+                    ready_for_sale_quantity INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY(shop_id,preorder_id,item_key),
+                    FOREIGN KEY(shop_id,preorder_id)
+                        REFERENCES wb_fbw_orders(shop_id,preorder_id) ON DELETE CASCADE
+                )
+            """);
+            st.execute("""
+                CREATE TABLE IF NOT EXISTS wb_fbw_sync_state(
+                    shop_id INTEGER PRIMARY KEY,
+                    last_synced_at TEXT,
+                    last_error TEXT,
+                    FOREIGN KEY(shop_id) REFERENCES shops(id) ON DELETE CASCADE
+                )
+            """);
         }
 
         ensureShopColumn(conn, "wb_products_cursor_updated_at", "TEXT");
@@ -305,6 +368,9 @@ public final class WbSchemaSupport {
         createIndexIfTableExists(conn, "idx_wb_product_size_skus_shop_chrt_id", "wb_product_size_skus", "shop_id, chrt_id");
         createIndexIfTableExists(conn, "idx_wb_sync_runs_shop_id", "wb_sync_runs", "shop_id");
         createIndexIfTableExists(conn, "idx_wb_action_log_shop_id", "wb_action_log", "shop_id");
+        createIndexIfTableExists(conn, "idx_wb_fbw_orders_status", "wb_fbw_orders", "shop_id, status_id, updated_date DESC");
+        createIndexIfTableExists(conn, "idx_wb_fbw_orders_supply", "wb_fbw_orders", "shop_id, supply_id");
+        createIndexIfTableExists(conn, "idx_wb_fbw_items_order", "wb_fbw_order_items", "shop_id, preorder_id");
     }
 
     private static void ensureShopColumn(Connection conn, String columnName, String columnDefinition) throws SQLException {

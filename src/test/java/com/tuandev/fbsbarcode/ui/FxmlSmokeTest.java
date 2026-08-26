@@ -10,6 +10,7 @@ import com.tuandev.fbsbarcode.integration.ozon.OzonRequirements;
 import com.tuandev.fbsbarcode.ui.history.PrintHistoryController;
 import com.tuandev.fbsbarcode.ui.dashboard.DashboardController;
 import com.tuandev.fbsbarcode.ui.fbo.FboPackingController;
+import com.tuandev.fbsbarcode.ui.fbosupply.FboSupplyOrdersController;
 import com.tuandev.fbsbarcode.ui.finance.FinanceDashboardController;
 import com.tuandev.fbsbarcode.ui.kizmapping.KizMappingController;
 import com.tuandev.fbsbarcode.ui.ozon.OzonDashboardController;
@@ -88,6 +89,7 @@ class FxmlSmokeTest {
         assertLoads(HomeController.class, "home-view.fxml");
         assertLoads(DashboardController.class, "dashboard-view.fxml");
         assertLoads(FinanceDashboardController.class, "finance-dashboard-view.fxml");
+        assertLoads(FboSupplyOrdersController.class, "fbo-supply-orders-view.fxml");
         assertLoads(ShopSidebarController.class, "shop-sidebar-view.fxml");
         assertLoads(WorkspaceHeaderController.class, "workspace-header-view.fxml");
         assertLoads(SupplyListController.class, "supply-list-view.fxml");
@@ -102,6 +104,28 @@ class FxmlSmokeTest {
     }
 
     @Test
+    void sidebarExposesFboSupplyTrackingForEveryMarketplace() throws Exception {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicBoolean valid = new AtomicBoolean(false);
+        Platform.runLater(() -> {
+            try {
+                FXMLLoader loader = FxmlViewLoader.loader(ShopSidebarController.class, "shop-sidebar-view.fxml");
+                FxmlViewLoader.load(loader);
+                ShopSidebarController controller = loader.getController();
+                Button button = (Button) loader.getNamespace().get("fboOrdersButton");
+                controller.setMarketplace(com.tuandev.fbsbarcode.integration.marketplace.Marketplace.WILDBERRIES);
+                boolean visibleForWb = button != null && button.isVisible() && button.isManaged();
+                controller.setMarketplace(com.tuandev.fbsbarcode.integration.marketplace.Marketplace.OZON);
+                valid.set(visibleForWb && button.isVisible() && button.isManaged());
+            } finally {
+                latch.countDown();
+            }
+        });
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+        assertTrue(valid.get(), "FBO/FBW supply tracking must be available for WB and Ozon shops");
+    }
+
+    @Test
     void financeDashboardReloadsChangedDatesAndKeepsAccountingKpiOrder() throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
         AtomicBoolean valid = new AtomicBoolean(false);
@@ -113,24 +137,30 @@ class FxmlSmokeTest {
                 DatePicker from = (DatePicker) loader.getNamespace().get("fromDatePicker");
                 DatePicker to = (DatePicker) loader.getNamespace().get("toDatePicker");
                 GridPane grid = (GridPane) loader.getNamespace().get("kpiGrid");
-                Label help = (Label) loader.getNamespace().get("payoutHelpLabel");
+                Label payoutValue = (Label) loader.getNamespace().get("payoutValueLabel");
                 valid.set(from.getOnAction() != null
                         && to.getOnAction() != null
                         && grid != null
-                        && help != null
-                        && !help.getText().isBlank()
+                        && loader.getNamespace().get("payoutHelpLabel") == null
+                        && payoutValue != null
+                        && payoutValue.getTooltip() != null
                         && isAt(loader, "grossTitleLabel", 0, 0)
                         && isAt(loader, "payoutTitleLabel", 1, 0)
                         && isAt(loader, "commissionTitleLabel", 2, 0)
-                        && isAt(loader, "returnsTitleLabel", 0, 1)
-                        && isAt(loader, "logisticsTitleLabel", 1, 1)
-                        && isAt(loader, "advertisingTitleLabel", 2, 1)
-                        && isAt(loader, "storageTitleLabel", 0, 2)
-                        && isAt(loader, "penaltyTitleLabel", 1, 2)
-                        && isAt(loader, "otherCostTitleLabel", 2, 2)
-                        && isAt(loader, "netTitleLabel", 0, 3)
+                        && isAt(loader, "returnsTitleLabel", 3, 0)
+                        && isAt(loader, "logisticsTitleLabel", 4, 0)
+                        && isAt(loader, "advertisingTitleLabel", 0, 1)
+                        && isAt(loader, "storageTitleLabel", 1, 1)
+                        && isAt(loader, "penaltyTitleLabel", 2, 1)
+                        && isAt(loader, "otherCostTitleLabel", 3, 1)
+                        && isAt(loader, "netTitleLabel", 4, 1)
                         && loader.getNamespace().get("commissionColumn") != null
-                        && loader.getNamespace().get("netRatioLabel") != null);
+                        && loader.getNamespace().get("netHelpLabel") == null
+                        && loader.getNamespace().get("grossRatioLabel") == null
+                        && loader.getNamespace().get("netRatioLabel") == null
+                        && grid.getColumnConstraints().size() == 5
+                        && grid.getHgap() >= 14.0
+                        && grid.getVgap() >= 14.0);
             } finally {
                 latch.countDown();
             }

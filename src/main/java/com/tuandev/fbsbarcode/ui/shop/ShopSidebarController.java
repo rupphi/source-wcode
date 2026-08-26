@@ -28,6 +28,8 @@ public class ShopSidebarController {
     @FXML
     private Button fboPackingButton;
     @FXML
+    private Button fboOrdersButton;
+    @FXML
     private Button kizMappingButton;
     @FXML
     private Button znackAutomationButton;
@@ -61,6 +63,7 @@ public class ShopSidebarController {
     private Runnable onPacking;
     private Runnable onDashboard;
     private Runnable onFboPacking;
+    private Runnable onFboOrders;
     private Runnable onKizMapping;
     private Runnable onZnackAutomation;
     private Runnable onPrintHistory;
@@ -103,6 +106,10 @@ public class ShopSidebarController {
 
     public void setOnFboPacking(Runnable onFboPacking) {
         this.onFboPacking = onFboPacking;
+    }
+
+    public void setOnFboOrders(Runnable onFboOrders) {
+        this.onFboOrders = onFboOrders;
     }
 
     public void setOnKizMapping(Runnable onKizMapping) {
@@ -174,6 +181,7 @@ public class ShopSidebarController {
         this.marketplace = marketplace == null ? Marketplace.WILDBERRIES : marketplace;
         setAvailable(packingButton, true);
         setAvailable(fboPackingButton, true);
+        setAvailable(fboOrdersButton, true);
         setAvailable(kizMappingButton, true);
         applyMarketplaceTexts();
     }
@@ -192,6 +200,7 @@ public class ShopSidebarController {
         packingButton.setText(" " + i18n.tr("sidebar.packing"));
         btnPrintHistory.setText(" " + i18n.tr("sidebar.print_history"));
         fboPackingButton.setText(" " + i18n.tr("sidebar.fbo_packing"));
+        fboOrdersButton.setText(" " + i18n.tr("sidebar.fbo_orders"));
         kizMappingButton.setText(" " + i18n.tr("sidebar.kiz_mapping"));
         znackAutomationButton.setText(" " + i18n.tr("sidebar.znack_automation"));
         settingsMenuButton.setText(" " + i18n.tr("settings.menu"));
@@ -240,6 +249,13 @@ public class ShopSidebarController {
     private void onFboPacking() {
         if (onFboPacking != null) {
             onFboPacking.run();
+        }
+    }
+
+    @FXML
+    private void onFboOrders() {
+        if (onFboOrders != null) {
+            onFboOrders.run();
         }
     }
 

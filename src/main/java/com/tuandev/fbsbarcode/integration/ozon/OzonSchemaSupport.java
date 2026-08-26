@@ -216,6 +216,81 @@ public final class OzonSchemaSupport {
                         FOREIGN KEY(shop_id,posting_number) REFERENCES ozon_postings(shop_id,posting_number) ON DELETE CASCADE
                     )
                     """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS ozon_fbo_orders(
+                        shop_id INTEGER NOT NULL,
+                        order_id TEXT NOT NULL,
+                        order_number TEXT,
+                        state TEXT NOT NULL,
+                        created_date TEXT,
+                        state_updated_date TEXT,
+                        data_filling_deadline TEXT,
+                        drop_off_warehouse_id TEXT,
+                        drop_off_warehouse_name TEXT,
+                        drop_off_warehouse_address TEXT,
+                        timeslot_from TEXT,
+                        timeslot_to TEXT,
+                        timezone_name TEXT,
+                        is_virtual INTEGER,
+                        is_pickup INTEGER,
+                        is_econom INTEGER,
+                        is_quant INTEGER,
+                        is_super_fbo INTEGER,
+                        synced_at TEXT NOT NULL,
+                        PRIMARY KEY(shop_id,order_id),
+                        FOREIGN KEY(shop_id) REFERENCES shops(id) ON DELETE CASCADE
+                    )
+                    """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS ozon_fbo_supplies(
+                        shop_id INTEGER NOT NULL,
+                        order_id TEXT NOT NULL,
+                        supply_id TEXT NOT NULL,
+                        bundle_id TEXT,
+                        state TEXT,
+                        is_crossdock INTEGER,
+                        macrolocal_cluster_id TEXT,
+                        storage_warehouse_id TEXT,
+                        storage_warehouse_name TEXT,
+                        storage_warehouse_address TEXT,
+                        marking_required INTEGER,
+                        ettn_required INTEGER,
+                        PRIMARY KEY(shop_id,order_id,supply_id),
+                        FOREIGN KEY(shop_id,order_id)
+                            REFERENCES ozon_fbo_orders(shop_id,order_id) ON DELETE CASCADE
+                    )
+                    """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS ozon_fbo_supply_items(
+                        shop_id INTEGER NOT NULL,
+                        order_id TEXT NOT NULL,
+                        supply_id TEXT NOT NULL,
+                        item_key TEXT NOT NULL,
+                        sku TEXT,
+                        product_id TEXT,
+                        offer_id TEXT,
+                        barcode TEXT,
+                        name TEXT,
+                        image_url TEXT,
+                        quantity INTEGER NOT NULL DEFAULT 0,
+                        quant INTEGER,
+                        volume_litres REAL,
+                        shipment_type TEXT,
+                        placement_zone TEXT,
+                        PRIMARY KEY(shop_id,order_id,supply_id,item_key),
+                        FOREIGN KEY(shop_id,order_id,supply_id)
+                            REFERENCES ozon_fbo_supplies(shop_id,order_id,supply_id) ON DELETE CASCADE
+                    )
+                    """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS ozon_fbo_sync_state(
+                        shop_id INTEGER PRIMARY KEY,
+                        list_cursor TEXT,
+                        last_synced_at TEXT,
+                        last_error TEXT,
+                        FOREIGN KEY(shop_id) REFERENCES shops(id) ON DELETE CASCADE
+                    )
+                    """);
 
             statement.execute("CREATE INDEX IF NOT EXISTS idx_shops_marketplace ON shops(marketplace,id)");
             statement.execute("CREATE INDEX IF NOT EXISTS idx_ozon_products_shop_sku ON ozon_products(shop_id,sku)");
@@ -225,6 +300,9 @@ public final class OzonSchemaSupport {
             statement.execute("CREATE INDEX IF NOT EXISTS idx_ozon_posting_items_shop_sku ON ozon_posting_items(shop_id,sku)");
             statement.execute("CREATE INDEX IF NOT EXISTS idx_ozon_exemplar_jobs_stage ON ozon_exemplar_jobs(shop_id,stage,updated_at)");
             statement.execute("CREATE INDEX IF NOT EXISTS idx_ozon_action_log_shop_created ON ozon_action_log(shop_id,created_at DESC)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_ozon_fbo_orders_state ON ozon_fbo_orders(shop_id,state,state_updated_date DESC)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_ozon_fbo_supplies_order ON ozon_fbo_supplies(shop_id,order_id)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_ozon_fbo_items_order ON ozon_fbo_supply_items(shop_id,order_id,supply_id)");
         }
     }
 

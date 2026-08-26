@@ -32,7 +32,7 @@ class OzonApiClientTest {
 
     @Test
     void retriesBoundedReadsAndSendsCredentialsOnlyInOzonHeaders() throws Exception {
-        server.enqueue(new MockResponse().setResponseCode(429));
+        server.enqueue(new MockResponse().setResponseCode(503));
         server.enqueue(new MockResponse().setResponseCode(200)
                 .setHeader("Content-Type", "application/json").setBody("{\"result\":{\"items\":[]}}"));
         OzonApiClient client = client(2);

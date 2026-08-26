@@ -8,7 +8,6 @@
 <?import javafx.scene.control.TableColumn?>
 <?import javafx.scene.control.TableView?>
 <?import javafx.scene.layout.ColumnConstraints?>
-<?import javafx.scene.layout.FlowPane?>
 <?import javafx.scene.layout.GridPane?>
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.VBox?>
@@ -44,115 +43,83 @@
             <DatePicker fx:id="toDatePicker" onAction="#onDateRangeChanged" prefWidth="145.0" />
         </HBox>
 
-        <GridPane fx:id="kpiGrid" hgap="10.0" vgap="10.0" styleClass="finance-kpi-grid">
+        <GridPane fx:id="kpiGrid" hgap="14.0" vgap="14.0" styleClass="finance-kpi-grid">
             <columnConstraints>
-                <ColumnConstraints percentWidth="33.333" />
-                <ColumnConstraints percentWidth="33.333" />
-                <ColumnConstraints percentWidth="33.334" />
+                <ColumnConstraints percentWidth="20.0" />
+                <ColumnConstraints percentWidth="20.0" />
+                <ColumnConstraints percentWidth="20.0" />
+                <ColumnConstraints percentWidth="20.0" />
+                <ColumnConstraints percentWidth="20.0" />
             </columnConstraints>
             <children>
                 <VBox maxWidth="1.7976931348623157E308" spacing="5.0"
                       styleClass="surface finance-kpi-card finance-kpi-card-revenue"
                       GridPane.columnIndex="0" GridPane.rowIndex="0">
                     <Label fx:id="grossTitleLabel" styleClass="finance-kpi-title" text="Sales" />
-                    <FlowPane alignment="BASELINE_LEFT" hgap="7.0" vgap="2.0">
-                        <Label fx:id="grossValueLabel" styleClass="finance-kpi-value finance-kpi-value-revenue" text="0" />
-                        <Label fx:id="grossRatioLabel" styleClass="finance-kpi-ratio" text="· —" />
-                    </FlowPane>
+                    <Label fx:id="grossValueLabel" styleClass="finance-kpi-value finance-kpi-value-revenue" text="0" />
                 </VBox>
 
                 <VBox maxWidth="1.7976931348623157E308" spacing="5.0"
                       styleClass="surface finance-kpi-card finance-kpi-card-income"
                       GridPane.columnIndex="1" GridPane.rowIndex="0">
                     <Label fx:id="payoutTitleLabel" styleClass="finance-kpi-title" text="Payout" />
-                    <FlowPane alignment="BASELINE_LEFT" hgap="7.0" vgap="2.0">
-                        <Label fx:id="payoutValueLabel" styleClass="finance-kpi-value finance-kpi-value-income" text="0" />
-                        <Label fx:id="payoutRatioLabel" styleClass="finance-kpi-ratio" text="· —" />
-                    </FlowPane>
-                    <Label fx:id="payoutHelpLabel" maxWidth="1.7976931348623157E308" styleClass="finance-kpi-help"
-                           text="Marketplace payable is not a bank transfer" wrapText="true" />
+                    <Label fx:id="payoutValueLabel" styleClass="finance-kpi-value finance-kpi-value-income" text="0" />
                 </VBox>
 
                 <VBox maxWidth="1.7976931348623157E308" spacing="5.0"
                       styleClass="surface finance-kpi-card finance-kpi-card-cost"
                       GridPane.columnIndex="2" GridPane.rowIndex="0">
                     <Label fx:id="commissionTitleLabel" styleClass="finance-kpi-title" text="Commission" />
-                    <FlowPane alignment="BASELINE_LEFT" hgap="7.0" vgap="2.0">
-                        <Label fx:id="commissionValueLabel" styleClass="finance-kpi-value finance-kpi-value-cost" text="0" />
-                        <Label fx:id="commissionRatioLabel" styleClass="finance-kpi-ratio" text="· —" />
-                    </FlowPane>
+                    <Label fx:id="commissionValueLabel" styleClass="finance-kpi-value finance-kpi-value-cost" text="0" />
                 </VBox>
 
                 <VBox maxWidth="1.7976931348623157E308" spacing="5.0"
                       styleClass="surface finance-kpi-card finance-kpi-card-danger"
-                      GridPane.columnIndex="0" GridPane.rowIndex="1">
+                      GridPane.columnIndex="3" GridPane.rowIndex="0">
                     <Label fx:id="returnsTitleLabel" styleClass="finance-kpi-title" text="Returns" />
-                    <FlowPane alignment="BASELINE_LEFT" hgap="7.0" vgap="2.0">
-                        <Label fx:id="returnsValueLabel" styleClass="finance-kpi-value finance-kpi-value-danger" text="0" />
-                        <Label fx:id="returnsRatioLabel" styleClass="finance-kpi-ratio" text="· —" />
-                    </FlowPane>
+                    <Label fx:id="returnsValueLabel" styleClass="finance-kpi-value finance-kpi-value-danger" text="0" />
+                </VBox>
+
+                <VBox maxWidth="1.7976931348623157E308" spacing="5.0"
+                      styleClass="surface finance-kpi-card finance-kpi-card-cost"
+                      GridPane.columnIndex="4" GridPane.rowIndex="0">
+                    <Label fx:id="logisticsTitleLabel" styleClass="finance-kpi-title" text="Logistics" />
+                    <Label fx:id="logisticsValueLabel" styleClass="finance-kpi-value finance-kpi-value-cost" text="0" />
+                </VBox>
+
+                <VBox maxWidth="1.7976931348623157E308" spacing="5.0"
+                      styleClass="surface finance-kpi-card finance-kpi-card-cost"
+                      GridPane.columnIndex="0" GridPane.rowIndex="1">
+                    <Label fx:id="advertisingTitleLabel" styleClass="finance-kpi-title" text="Advertising" />
+                    <Label fx:id="advertisingValueLabel" styleClass="finance-kpi-value finance-kpi-value-cost" text="0" />
                 </VBox>
 
                 <VBox maxWidth="1.7976931348623157E308" spacing="5.0"
                       styleClass="surface finance-kpi-card finance-kpi-card-cost"
                       GridPane.columnIndex="1" GridPane.rowIndex="1">
-                    <Label fx:id="logisticsTitleLabel" styleClass="finance-kpi-title" text="Logistics" />
-                    <FlowPane alignment="BASELINE_LEFT" hgap="7.0" vgap="2.0">
-                        <Label fx:id="logisticsValueLabel" styleClass="finance-kpi-value finance-kpi-value-cost" text="0" />
-                        <Label fx:id="logisticsRatioLabel" styleClass="finance-kpi-ratio" text="· —" />
-                    </FlowPane>
-                </VBox>
-
-                <VBox maxWidth="1.7976931348623157E308" spacing="5.0"
-                      styleClass="surface finance-kpi-card finance-kpi-card-cost"
-                      GridPane.columnIndex="2" GridPane.rowIndex="1">
-                    <Label fx:id="advertisingTitleLabel" styleClass="finance-kpi-title" text="Advertising" />
-                    <FlowPane alignment="BASELINE_LEFT" hgap="7.0" vgap="2.0">
-                        <Label fx:id="advertisingValueLabel" styleClass="finance-kpi-value finance-kpi-value-cost" text="0" />
-                        <Label fx:id="advertisingRatioLabel" styleClass="finance-kpi-ratio" text="· —" />
-                    </FlowPane>
-                </VBox>
-
-                <VBox maxWidth="1.7976931348623157E308" spacing="5.0"
-                      styleClass="surface finance-kpi-card finance-kpi-card-cost"
-                      GridPane.columnIndex="0" GridPane.rowIndex="2">
                     <Label fx:id="storageTitleLabel" styleClass="finance-kpi-title" text="Storage" />
-                    <FlowPane alignment="BASELINE_LEFT" hgap="7.0" vgap="2.0">
-                        <Label fx:id="storageValueLabel" styleClass="finance-kpi-value finance-kpi-value-cost" text="0" />
-                        <Label fx:id="storageRatioLabel" styleClass="finance-kpi-ratio" text="· —" />
-                    </FlowPane>
+                    <Label fx:id="storageValueLabel" styleClass="finance-kpi-value finance-kpi-value-cost" text="0" />
                 </VBox>
 
                 <VBox maxWidth="1.7976931348623157E308" spacing="5.0"
                       styleClass="surface finance-kpi-card finance-kpi-card-danger"
-                      GridPane.columnIndex="1" GridPane.rowIndex="2">
+                      GridPane.columnIndex="2" GridPane.rowIndex="1">
                     <Label fx:id="penaltyTitleLabel" styleClass="finance-kpi-title" text="Penalties" />
-                    <FlowPane alignment="BASELINE_LEFT" hgap="7.0" vgap="2.0">
-                        <Label fx:id="penaltyValueLabel" styleClass="finance-kpi-value finance-kpi-value-danger" text="0" />
-                        <Label fx:id="penaltyRatioLabel" styleClass="finance-kpi-ratio" text="· —" />
-                    </FlowPane>
+                    <Label fx:id="penaltyValueLabel" styleClass="finance-kpi-value finance-kpi-value-danger" text="0" />
                 </VBox>
 
                 <VBox maxWidth="1.7976931348623157E308" spacing="5.0"
                       styleClass="surface finance-kpi-card finance-kpi-card-cost"
-                      GridPane.columnIndex="2" GridPane.rowIndex="2">
+                      GridPane.columnIndex="3" GridPane.rowIndex="1">
                     <Label fx:id="otherCostTitleLabel" styleClass="finance-kpi-title" text="Other costs" />
-                    <FlowPane alignment="BASELINE_LEFT" hgap="7.0" vgap="2.0">
-                        <Label fx:id="otherCostValueLabel" styleClass="finance-kpi-value finance-kpi-value-cost" text="0" />
-                        <Label fx:id="otherCostRatioLabel" styleClass="finance-kpi-ratio" text="· —" />
-                    </FlowPane>
+                    <Label fx:id="otherCostValueLabel" styleClass="finance-kpi-value finance-kpi-value-cost" text="0" />
                 </VBox>
 
                 <VBox maxWidth="1.7976931348623157E308" spacing="5.0"
                       styleClass="surface finance-kpi-card finance-kpi-card-net"
-                      GridPane.columnIndex="0" GridPane.columnSpan="3" GridPane.rowIndex="3">
+                      GridPane.columnIndex="4" GridPane.rowIndex="1">
                     <Label fx:id="netTitleLabel" styleClass="finance-kpi-title" text="Net" />
-                    <FlowPane alignment="BASELINE_LEFT" hgap="7.0" vgap="2.0">
-                        <Label fx:id="netValueLabel" styleClass="finance-kpi-value finance-kpi-value-positive" text="0" />
-                        <Label fx:id="netRatioLabel" styleClass="finance-kpi-ratio finance-kpi-ratio-positive" text="· —" />
-                    </FlowPane>
-                    <Label fx:id="netHelpLabel" maxWidth="1.7976931348623157E308" styleClass="finance-kpi-help"
-                           text="Estimate before cost of goods and taxes" wrapText="true" />
+                    <Label fx:id="netValueLabel" styleClass="finance-kpi-value finance-kpi-value-positive" text="0" />
                 </VBox>
             </children>
         </GridPane>

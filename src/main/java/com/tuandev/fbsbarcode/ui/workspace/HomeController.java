@@ -9,6 +9,7 @@ import com.tuandev.fbsbarcode.features.fbo.FboProductRepository;
 import com.tuandev.fbsbarcode.features.fbo.FboProductSearchCriteria;
 import com.tuandev.fbsbarcode.features.fbo.FboProductSku;
 import com.tuandev.fbsbarcode.features.fbo.FboPrintPlan;
+import com.tuandev.fbsbarcode.features.fbosupply.FboSupplyExecutor;
 import com.tuandev.fbsbarcode.features.finance.FinanceSyncScheduler;
 import com.tuandev.fbsbarcode.features.packing.PackingWorkflow;
 import com.tuandev.fbsbarcode.integration.wb.WbSupplySummary;
@@ -53,6 +54,7 @@ import com.tuandev.fbsbarcode.features.shop.ShopOperationCoordinator;
 import com.tuandev.fbsbarcode.features.supply.SupplyLoadWorkflow;
 import com.tuandev.fbsbarcode.ui.history.PrintHistoryController;
 import com.tuandev.fbsbarcode.ui.fbo.FboPackingController;
+import com.tuandev.fbsbarcode.ui.fbosupply.FboSupplyOrdersController;
 import com.tuandev.fbsbarcode.ui.finance.FinanceDashboardController;
 import com.tuandev.fbsbarcode.ui.kizmapping.KizMappingController;
 import com.tuandev.fbsbarcode.ui.packing.PackingController;
@@ -141,6 +143,7 @@ public class HomeController implements Initializable {
     private VBox printHistoryView;
     private VBox packingView;
     private VBox fboPackingView;
+    private VBox fboSupplyOrdersView;
     private VBox ozonDashboardView;
     private Node kizMappingView;
     private Node znackAutomationView;
@@ -149,6 +152,7 @@ public class HomeController implements Initializable {
     private PrintHistoryController printHistoryController;
     private PackingController packingController;
     private FboPackingController fboPackingController;
+    private FboSupplyOrdersController fboSupplyOrdersController;
     private OzonDashboardController ozonDashboardController;
     private KizMappingController kizMappingController;
     private ZnackAutomationController znackAutomationController;
@@ -256,6 +260,12 @@ public class HomeController implements Initializable {
         fboPackingController.setOnQuickPrint(this::printSingleFboBarcode);
         fboPackingController.applyTranslations();
 
+        FXMLLoader fboSupplyOrdersLoader = FxmlViewLoader.loader(
+                FboSupplyOrdersController.class, "fbo-supply-orders-view.fxml");
+        fboSupplyOrdersView = FxmlViewLoader.load(fboSupplyOrdersLoader);
+        fboSupplyOrdersController = fboSupplyOrdersLoader.getController();
+        fboSupplyOrdersController.applyTranslations();
+
         FXMLLoader kizMappingLoader = FxmlViewLoader.loader(KizMappingController.class, "kiz-mapping-view.fxml");
         kizMappingView = FxmlViewLoader.load(kizMappingLoader);
         kizMappingController = kizMappingLoader.getController();
@@ -304,6 +314,12 @@ public class HomeController implements Initializable {
         clearKizDraft();
         setDynamicContent(fboPackingView);
         refreshFboView();
+    }
+
+    private void showFboSupplyOrders() {
+        clearKizDraft();
+        setDynamicContent(fboSupplyOrdersView);
+        fboSupplyOrdersController.setShop(state.getSelectedShop(), true);
     }
 
     private void showKizMapping() {
@@ -1059,7 +1075,7 @@ public class HomeController implements Initializable {
     }
 
     private void selectShop(Shop shop) {
-        boolean sharedView = isPrintHistoryVisible() || isZnackAutomationVisible();
+        boolean sharedView = isPrintHistoryVisible() || isZnackAutomationVisible() || isFboSupplyOrdersVisible();
         boolean dashboardVisible = isDashboardVisible();
         state.setSelectedShop(shop);
         shopSidebarController.setMarketplace(shop.getMarketplace());
@@ -1069,6 +1085,9 @@ public class HomeController implements Initializable {
         }
         if (kizMappingController != null) {
             kizMappingController.setShop(shop);
+        }
+        if (fboSupplyOrdersController != null && isFboSupplyOrdersVisible()) {
+            fboSupplyOrdersController.setShop(shop, true);
         }
         if (supplyDetailController != null) {
             supplyDetailController.setShop(shop.getMarketplace() == Marketplace.WILDBERRIES ? shop : null);
@@ -1374,6 +1393,7 @@ public class HomeController implements Initializable {
         shopSidebarController.setOnDashboard(this::showDashboard);
         shopSidebarController.setOnPacking(this::showPacking);
         shopSidebarController.setOnFboPacking(this::showFboPacking);
+        shopSidebarController.setOnFboOrders(this::showFboSupplyOrders);
         shopSidebarController.setOnKizMapping(this::showKizMapping);
         shopSidebarController.setOnZnackAutomation(this::showZnackAutomation);
         shopSidebarController.setOnPrintHistory(this::showPrintHistory);
@@ -1455,6 +1475,9 @@ public class HomeController implements Initializable {
         if (fboPackingController != null) {
             fboPackingController.applyTranslations();
         }
+        if (fboSupplyOrdersController != null) {
+            fboSupplyOrdersController.applyTranslations();
+        }
         if (kizMappingController != null) {
             kizMappingController.applyTranslations();
         }
@@ -1480,6 +1503,9 @@ public class HomeController implements Initializable {
 
     private void clearWorkspaceView() {
         contentPane.setVisible(false);
+        if (fboSupplyOrdersController != null) {
+            fboSupplyOrdersController.setShop(null, false);
+        }
         clearSupplyViews();
         updateHeaderState();
     }
@@ -1673,6 +1699,10 @@ public class HomeController implements Initializable {
 
     private boolean isFboPackingVisible() {
         return dynamicContentContainer.getChildren().contains(fboPackingView);
+    }
+
+    private boolean isFboSupplyOrdersVisible() {
+        return fboSupplyOrdersView != null && dynamicContentContainer.getChildren().contains(fboSupplyOrdersView);
     }
 
     private boolean isKizMappingVisible() {
@@ -1938,6 +1968,7 @@ public class HomeController implements Initializable {
         if (supplyDetailController != null) {
             supplyDetailController.dispose();
         }
+        FboSupplyExecutor.shutdown();
         i18nService.removeListener(languageListener);
         kizAttachmentCoordinator.removeListener(kizProgressListener);
     }
