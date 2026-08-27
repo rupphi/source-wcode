@@ -156,7 +156,8 @@ public final class ZnackSchemaSupport {
                     shop_id INTEGER NOT NULL,gtin TEXT NOT NULL,product_name TEXT,tn_ved TEXT,certificate_type TEXT,
                     certificate_number TEXT,certificate_date TEXT,production_date TEXT,good_mark_flag INTEGER,
                     good_turn_flag INTEGER,card_status TEXT,card_detailed_status TEXT,category TEXT,
-                    readiness_checked_at TEXT,deleted_at TEXT,cis_type TEXT,permit_documents_json TEXT,synced_at TEXT NOT NULL,
+                    readiness_checked_at TEXT,deleted_at TEXT,identity_archived_at TEXT,cis_type TEXT,
+                    permit_documents_json TEXT,synced_at TEXT NOT NULL,
                     PRIMARY KEY(shop_id,gtin),FOREIGN KEY(shop_id) REFERENCES shops(id) ON DELETE CASCADE)
                     """);
             st.execute("""
@@ -308,6 +309,9 @@ public final class ZnackSchemaSupport {
             if (!hasColumn(c, "znack_products", "deleted_at")) {
                 st.execute("ALTER TABLE znack_products ADD COLUMN deleted_at TEXT");
             }
+            if (!hasColumn(c, "znack_products", "identity_archived_at")) {
+                st.execute("ALTER TABLE znack_products ADD COLUMN identity_archived_at TEXT");
+            }
             if (!hasColumn(c, "znack_products", "category")) {
                 st.execute("ALTER TABLE znack_products ADD COLUMN category TEXT");
             }
@@ -336,15 +340,15 @@ public final class ZnackSchemaSupport {
             st.execute("""
                     UPDATE kiz_codes
                     SET legal_status=COALESCE(legal_status,CASE
-                          WHEN status NOT IN ('AVAILABLE','RESERVED','CONSUMED') THEN status END),
+                          WHEN status NOT IN ('AVAILABLE','RESERVED','CONSUMED','ARCHIVED') THEN status END),
                         consumed_at=CASE
-                          WHEN status NOT IN ('AVAILABLE','RESERVED','CONSUMED','RECEIVED')
+                          WHEN status NOT IN ('AVAILABLE','RESERVED','CONSUMED','ARCHIVED','RECEIVED')
                           THEN COALESCE(consumed_at,updated_at) ELSE consumed_at END,
                         status=CASE
                           WHEN status='RECEIVED' THEN 'AVAILABLE'
-                          WHEN status IN ('AVAILABLE','RESERVED','CONSUMED') THEN status
+                          WHEN status IN ('AVAILABLE','RESERVED','CONSUMED','ARCHIVED') THEN status
                           ELSE 'CONSUMED' END
-                    WHERE legal_status IS NULL OR status NOT IN ('AVAILABLE','RESERVED','CONSUMED')
+                    WHERE legal_status IS NULL OR status NOT IN ('AVAILABLE','RESERVED','CONSUMED','ARCHIVED')
                     """);
         }
     }

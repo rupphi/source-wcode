@@ -358,7 +358,8 @@ public class KizMappingRepository {
 
     private void requireProduct(Connection c, int shopId, String gtin) throws SQLException {
         try (PreparedStatement ps = c.prepareStatement(
-                "SELECT 1 FROM znack_products WHERE shop_id=? AND gtin=?")) {
+                "SELECT 1 FROM znack_products WHERE shop_id=? AND gtin=? "
+                        + "AND deleted_at IS NULL AND identity_archived_at IS NULL")) {
             ps.setInt(1, shopId);
             ps.setString(2, gtin);
             try (ResultSet rs = ps.executeQuery()) {
