@@ -761,6 +761,89 @@ class ZnackModuleTest {
         assertNotEquals(OrderStatus.INTRODUCED,repository.findOrder(orderId).orElseThrow().localStatus());
     }
 
+    @Test void introductionConfirmationSplitsMoreThanOneThousandCodesIntoValidTrueApiBatches() throws Exception {
+        ZnackRepository repository=repository(1,"Shop A");
+        Product product=new Product("04601234567890","Product","6201000000",null,null,null,null);
+        repository.upsertProducts(List.of(product));
+        int quantity=2_001;
+        long orderId=repository.createDraft(product.gtin(),quantity);
+        List<String> rawCodes=new ArrayList<>(quantity);
+        for(int index=0;index<quantity;index++)rawCodes.add("code-"+index);
+        repository.insertCodes(orderId,product.gtin(),new DownloadedCodes(rawCodes,"block"));
+        long documentId=repository.createDocument(orderId,"{}");
+        repository.updateDocument(documentId,"doc-id","SUBMITTED",null);
+        List<Integer> requestSizes=new ArrayList<>();
+        ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonElement document(String base,String token,String externalId){
+                return JsonParser.parseString("{\"status\":\"CHECKED_OK\"}");
+            }
+            @Override public JsonElement cisesInfo(String base,String token,JsonElement body){
+                JsonArray request=body.getAsJsonArray();
+                requestSizes.add(request.size());
+                JsonArray response=new JsonArray();
+                request.forEach(ignored->{JsonObject item=new JsonObject();item.addProperty("status","INTRODUCED");response.add(item);});
+                return response;
+            }
+        };
+        ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+            @Override public String trueApiToken(Settings s){return "token";}
+        };
+
+        ZnackIntroductionService.ConfirmResult result=new ZnackIntroductionService(api,auth,testSigner(),repository)
+                .confirm(testedSettings("","","","connection",""),repository.findOrder(orderId).orElseThrow(),
+                        repository.findCodes(orderId));
+
+        assertTrue(result.introduced());
+        assertEquals(List.of(1_000,1_000,1),requestSizes);
+        assertTrue(repository.findCodes(orderId).stream()
+                .allMatch(code->code.legalStatus()==KizLegalStatus.IN_CIRCULATION));
+        assertEquals(OrderStatus.INTRODUCED,repository.findOrder(orderId).orElseThrow().localStatus());
+    }
+
+    @Test void persistedPollingIntroductionAutomaticallyResumesWithBatchedConfirmation() throws Exception {
+        ZnackRepository repository=repository(1,"Shop A");
+        Product product=new Product("04601234567890","Product","6201000000",null,null,null,null);
+        repository.upsertProducts(List.of(product));
+        int quantity=1_001;
+        long orderId=repository.createDraft(product.gtin(),quantity);
+        List<String> rawCodes=new ArrayList<>(quantity);
+        for(int index=0;index<quantity;index++)rawCodes.add("resume-code-"+index);
+        repository.insertCodes(orderId,product.gtin(),new DownloadedCodes(rawCodes,"block"));
+        long documentId=repository.createDocument(orderId,"{}");
+        repository.updateDocument(documentId,"doc-id","SUBMITTED",null);
+        long pipelineId=repository.createPipeline(product.gtin(),quantity);
+        repository.updatePipeline(pipelineId,orderId,PurchaseStage.POLLING_INTRODUCTION,
+                "HTTP 400: Too many KIZ codes");
+        List<Integer> requestSizes=new ArrayList<>();
+        ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonElement document(String base,String token,String externalId){
+                return JsonParser.parseString("{\"status\":\"CHECKED_OK\"}");
+            }
+            @Override public JsonElement cisesInfo(String base,String token,JsonElement body){
+                JsonArray request=body.getAsJsonArray();
+                requestSizes.add(request.size());
+                JsonArray response=new JsonArray();
+                request.forEach(ignored->{JsonObject item=new JsonObject();item.addProperty("status","INTRODUCED");response.add(item);});
+                return response;
+            }
+        };
+        ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+            @Override public String trueApiToken(Settings s){return "token";}
+        };
+        ZnackPurchaseCoordinator coordinator=new ZnackPurchaseCoordinator(repository,null,null,
+                new ZnackIntroductionService(api,auth,testSigner(),repository)){
+            @Override void schedule(long ignoredPipelineId){
+            }
+        };
+
+        coordinator.resume(testedSettings("","","","connection",""));
+
+        assertEquals(List.of(1_000,1),requestSizes);
+        assertEquals(PurchaseStage.INTRODUCED,repository.findPipeline(pipelineId).orElseThrow().stage());
+        assertTrue(repository.findPipeline(pipelineId).orElseThrow().errorMessage().isBlank());
+        assertEquals(OrderStatus.INTRODUCED,repository.findOrder(orderId).orElseThrow().localStatus());
+    }
+
     @Test void configuredCryptoProOverrideMustResolveToAnExecutable() {
         CryptoProException error=assertThrows(CryptoProException.class,
                 ()->new CryptoProCommandRunner().resolve(temp.resolve("missing-cryptcp").toString(),"cryptcp"));
