@@ -82,6 +82,7 @@ import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
+import javafx.scene.control.TableRow;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputDialog;
@@ -618,6 +619,14 @@ public final class OzonDashboardController {
         packingLabelTC.setCellFactory(column -> labelCell());
         for (TableView<OzonPostingDto> table : List.of(newOrdersTable, packingOrdersTable, deliveringOrdersTable)) {
             table.setSortPolicy(ignored -> false);
+            table.setRowFactory(ignored -> new TableRow<>() {
+                @Override protected void updateItem(OzonPostingDto posting, boolean empty) {
+                    super.updateItem(posting, empty);
+                    double height = empty || posting == null ? Region.USE_COMPUTED_SIZE : orderRowHeight(posting);
+                    setMinHeight(height);
+                    setPrefHeight(height);
+                }
+            });
             table.getColumns().forEach(column -> {
                 column.setSortable(false);
                 column.setReorderable(false);
@@ -637,48 +646,64 @@ public final class OzonDashboardController {
     private void configureImageColumn(TableColumn<OzonPostingDto, OzonPostingDto> imageColumn) {
         imageColumn.setCellValueFactory(data -> new ReadOnlyObjectWrapper<>(data.getValue()));
         imageColumn.setCellFactory(column -> new TableCell<>() {
-            private final ImageView imageView = new ImageView();
-            private final StackPane placeholder = new StackPane();
-            private final StackPane container = new StackPane(placeholder, imageView);
-            private String currentUrl;
+            private final VBox images = new VBox(6);
+            private String currentPostingNumber;
             {
-                imageView.setFitWidth(42);
-                imageView.setFitHeight(50);
-                imageView.setPreserveRatio(true);
-                imageView.setSmooth(true);
-                placeholder.setPrefSize(42, 50);
-                placeholder.setMaxSize(42, 50);
-                placeholder.getStyleClass().add("image-placeholder");
-                container.setPrefSize(46, 52);
+                images.setAlignment(Pos.CENTER);
             }
             @Override protected void updateItem(OzonPostingDto posting, boolean empty) {
                 super.updateItem(posting, empty);
                 if (empty || posting == null) {
-                    currentUrl = null;
-                    imageView.setImage(null);
+                    currentPostingNumber = null;
+                    images.getChildren().clear();
                     setGraphic(null);
                     return;
                 }
-                String requestedUrl = productImageUrl(posting);
-                currentUrl = requestedUrl;
-                imageView.setImage(null);
+                currentPostingNumber = posting.postingNumber();
+                images.getChildren().clear();
+                for (OzonPostingItemDto item : posting.items()) {
+                    images.getChildren().add(productImage(posting.postingNumber(), item));
+                }
+                setGraphic(images);
+            }
+
+            private StackPane productImage(String postingNumber, OzonPostingItemDto item) {
+                ImageView imageView = new ImageView();
+                imageView.setFitWidth(42);
+                imageView.setFitHeight(50);
+                imageView.setPreserveRatio(true);
+                imageView.setSmooth(true);
                 imageView.setVisible(false);
-                placeholder.setVisible(true);
-                setGraphic(container);
-                if (requestedUrl.isBlank()) return;
-                imageService.loadImage(requestedUrl).whenComplete((bytes, error) -> Platform.runLater(() -> {
-                    if (!Objects.equals(currentUrl, requestedUrl) || bytes == null || bytes.length == 0) return;
-                    imageView.setImage(new Image(new ByteArrayInputStream(bytes)));
-                    imageView.setVisible(true);
-                    placeholder.setVisible(false);
-                }));
+                StackPane placeholder = new StackPane();
+                placeholder.setPrefSize(42, 50);
+                placeholder.setMaxSize(42, 50);
+                placeholder.getStyleClass().add("image-placeholder");
+                Label quantityBadge = new Label("× " + item.quantity());
+                quantityBadge.getStyleClass().addAll("badge", "badge-warning");
+                quantityBadge.setMouseTransparent(true);
+                StackPane.setAlignment(quantityBadge, Pos.BOTTOM_RIGHT);
+                StackPane container = new StackPane(placeholder, imageView, quantityBadge);
+                container.setPrefSize(46, 52);
+
+                String requestedUrl = productImageUrl(item);
+                if (!requestedUrl.isBlank()) {
+                    imageService.loadImage(requestedUrl).whenComplete((bytes, error) -> Platform.runLater(() -> {
+                        if (!Objects.equals(currentPostingNumber, postingNumber)
+                                || !images.getChildren().contains(container)
+                                || bytes == null || bytes.length == 0) return;
+                        imageView.setImage(new Image(new ByteArrayInputStream(bytes)));
+                        imageView.setVisible(true);
+                        placeholder.setVisible(false);
+                    }));
+                }
+                return container;
             }
         });
     }
 
-    private String productImageUrl(OzonPostingDto posting) {
-        return posting.items().stream().map(OzonPostingItemDto::sku).map(productImageUrls::get)
-                .filter(Objects::nonNull).filter(value -> !value.isBlank()).findFirst().orElse("");
+    private String productImageUrl(OzonPostingItemDto item) {
+        if (item == null || item.sku().isBlank()) return "";
+        return value(productImageUrls.get(item.sku()));
     }
 
     private TableCell<OzonPostingDto, Boolean> selectionCell() {
@@ -1270,13 +1295,20 @@ public final class OzonDashboardController {
         return posting.inProcessAt().isBlank() ? "-" : posting.inProcessAt();
     }
 
-    private static String itemsText(OzonPostingDto posting) {
-        int total = posting.items().stream().mapToInt(OzonPostingItemDto::quantity).sum();
+    static String itemsText(OzonPostingDto posting) {
         if (posting.items().isEmpty()) return "-";
-        String first = posting.items().getFirst().name();
-        if (first.isBlank()) first = "SKU " + posting.items().getFirst().sku();
-        return posting.items().size() == 1 ? first + " × " + total
-                : first + "  +" + (posting.items().size() - 1) + "  •  " + total;
+        return posting.items().stream().map(OzonDashboardController::itemText)
+                .collect(java.util.stream.Collectors.joining("\n"));
+    }
+
+    static double orderRowHeight(OzonPostingDto posting) {
+        int itemRows = posting == null ? 0 : posting.items().size();
+        return 76.0 + Math.max(0, itemRows - 1) * 64.0;
+    }
+
+    private static String itemText(OzonPostingItemDto item) {
+        String name = item.name().isBlank() ? "SKU " + item.sku() : item.name();
+        return name + " × " + item.quantity();
     }
 
     private static String statusText(String status) {
@@ -1367,41 +1399,50 @@ public final class OzonDashboardController {
     private static String value(String value) { return value == null ? "" : value; }
 
     private final class OrderItemsCell extends TableCell<OzonPostingDto, String> {
-        private final VBox box = new VBox(3);
-        private final Label title = new Label();
-        private final Label metadata = new Label();
-        private final Label variants = new Label();
-        private final Label kizBadge = new Label();
-        private final HBox variantRow = new HBox(8, variants, kizBadge);
+        private final VBox box = new VBox(8);
         OrderItemsCell() {
-            title.getStyleClass().add("text-bold");
-            metadata.getStyleClass().add("text-muted");
-            variants.getStyleClass().add("text-muted");
-            kizBadge.getStyleClass().add("badge");
-            variantRow.setAlignment(Pos.CENTER_LEFT);
-            box.getChildren().addAll(title, metadata, variantRow);
             box.setAlignment(Pos.CENTER_LEFT);
         }
         @Override protected void updateItem(String value, boolean empty) {
             super.updateItem(value, empty);
             OzonPostingDto posting = getTableRow() == null ? null : getTableRow().getItem();
             if (empty || posting == null || posting.items().isEmpty()) {
+                box.getChildren().clear();
                 setGraphic(null);
                 return;
             }
-            OzonPostingItemDto item = posting.items().getFirst();
+            box.getChildren().clear();
+            for (OzonPostingItemDto item : posting.items()) {
+                box.getChildren().add(itemDetails(posting, item));
+            }
+            setAccessibleText(itemsText(posting));
+            setGraphic(box);
+        }
+
+        private VBox itemDetails(OzonPostingDto posting, OzonPostingItemDto item) {
             OzonProductVariant variant = OzonProductVariant.from(item, findCatalogProduct(item));
-            title.setText(itemsText(posting));
+            Label title = new Label(item.name().isBlank() ? "SKU " + item.sku() : item.name());
+            title.getStyleClass().add("text-bold");
+            title.setWrapText(true);
+            Label quantityBadge = new Label("× " + item.quantity());
+            quantityBadge.getStyleClass().addAll("badge", "badge-warning");
+            HBox titleRow = new HBox(8, title, quantityBadge);
+            titleRow.setAlignment(Pos.CENTER_LEFT);
+            HBox.setHgrow(title, Priority.ALWAYS);
+            Label metadata = new Label();
+            metadata.getStyleClass().add("text-muted");
             metadata.setText(tr("ozon.dashboard.item.article") + ": " + first(variant.article(), item.sku()));
             List<String> details = new ArrayList<>();
             if (!variant.color().isBlank()) details.add(tr("ozon.dashboard.item.color") + ": " + variant.color());
             if (!variant.size().isBlank()) details.add(tr("ozon.dashboard.item.size") + ": " + variant.size());
-            variants.setText(String.join(" • ", details));
+            Label variants = new Label(String.join(" • ", details));
+            variants.getStyleClass().add("text-muted");
             variants.setVisible(!details.isEmpty());
             variants.setManaged(!details.isEmpty());
+            Label kizBadge = new Label();
+            kizBadge.getStyleClass().add("badge");
             boolean mandatory = posting.requirements().mandatoryMarkProductIds().contains(item.productId());
             boolean exempt = !mandatory && !item.sku().isBlank() && kizExemptSkus.contains(item.sku());
-            kizBadge.getStyleClass().removeAll("badge-green", "badge-warning", "badge-red");
             if (!exempt) {
                 kizBadge.setText(tr("ozon.dashboard.kiz.required"));
                 kizBadge.getStyleClass().add("badge-red");
@@ -1409,7 +1450,11 @@ public final class OzonDashboardController {
                 kizBadge.setText(tr("ozon.dashboard.kiz.not_required"));
                 kizBadge.getStyleClass().add("badge-green");
             }
-            setGraphic(box);
+            HBox variantRow = new HBox(8, variants, kizBadge);
+            variantRow.setAlignment(Pos.CENTER_LEFT);
+            VBox itemBox = new VBox(3, titleRow, metadata, variantRow);
+            itemBox.setAlignment(Pos.CENTER_LEFT);
+            return itemBox;
         }
     }
 
