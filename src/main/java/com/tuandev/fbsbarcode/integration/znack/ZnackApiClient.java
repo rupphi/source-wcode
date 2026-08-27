@@ -13,6 +13,8 @@ import java.time.Duration;
 public class ZnackApiClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(ZnackApiClient.class);
     private static final MediaType JSON = MediaType.parse("application/json");
+    /** True API cises/info accepts no more than 1,000 identification codes per request. */
+    static final int CISES_MAX_CODES_PER_REQUEST = 1_000;
     // National Catalog API v5.62 sections 2.1/2.5: Retry-After is seconds and a limit window is at most five minutes.
     private static final int RATE_LIMIT_MAX_ATTEMPTS = 3;
     private static final long RATE_LIMIT_MAX_TOTAL_DELAY_MS = Duration.ofMinutes(5).toMillis();
@@ -85,6 +87,11 @@ public class ZnackApiClient {
         return get(trueApiBase(base,4),"/doc/"+url(documentId)+"/info?pg=lp",token);
     }
     public JsonElement cisesInfo(String base,String token,JsonElement body)throws IOException{
+        if(body==null||!body.isJsonArray())throw new IllegalArgumentException("Znack cises/info requires an array of KIZ codes.");
+        if(body.getAsJsonArray().size()>CISES_MAX_CODES_PER_REQUEST){
+            throw new IllegalArgumentException("Znack cises/info accepts at most "
+                    +CISES_MAX_CODES_PER_REQUEST+" KIZ codes per request.");
+        }
         Request request=new Request.Builder().url(join(trueApiBase(base,3),"/cises/info?pg=lp")).headers(headers(token))
                 .post(RequestBody.create(gson.toJson(body),JSON)).build();
         return execute(request,true);

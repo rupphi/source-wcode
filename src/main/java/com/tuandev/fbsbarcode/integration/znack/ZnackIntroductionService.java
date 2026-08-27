@@ -67,9 +67,16 @@ public class ZnackIntroductionService {
             }
             return new ConfirmResult(ConfirmStatus.PENDING,null);
         }
-        JsonArray values=new JsonArray();codes.forEach(c->values.add(ZnackCisNormalizer.forTrueApi(c.rawCode())));
-        JsonElement info=api.cisesInfo(s.resolvedTrueApiBaseUrl(),auth.trueApiToken(s),values);
-        if(!allIntroduced(info,codes.size()))return new ConfirmResult(ConfirmStatus.PENDING,null);
+        if(codes==null||codes.isEmpty())throw new IllegalStateException("No KIZ codes are available for introduction confirmation.");
+        String token=auth.trueApiToken(s);
+        for(int start=0;start<codes.size();start+=ZnackApiClient.CISES_MAX_CODES_PER_REQUEST){
+            List<KizCode> batch=codes.subList(start,
+                    Math.min(start+ZnackApiClient.CISES_MAX_CODES_PER_REQUEST,codes.size()));
+            JsonArray values=new JsonArray();
+            batch.forEach(c->values.add(ZnackCisNormalizer.forTrueApi(c.rawCode())));
+            JsonElement info=api.cisesInfo(s.resolvedTrueApiBaseUrl(),token,values);
+            if(!allIntroduced(info,batch.size()))return new ConfirmResult(ConfirmStatus.PENDING,null);
+        }
         repository.updateDocument(document.id(),null,"CHECKED_OK",null);
         repository.markCodes(order.id(),KizLegalStatus.IN_CIRCULATION,null,null);repository.updateOrder(order.id(),null,null,OrderStatus.INTRODUCED,null);
         return new ConfirmResult(ConfirmStatus.INTRODUCED,null);

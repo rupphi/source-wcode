@@ -12,8 +12,6 @@ import java.time.Instant;
 import java.util.List;
 
 public class ZnackIntroductionReadinessService {
-    private static final int CISES_BATCH_SIZE = 1_000;
-
     private final ZnackApiClient api;
     private final ZnackAuthService auth;
     private final ZnackRepository repository;
@@ -37,8 +35,9 @@ public class ZnackIntroductionReadinessService {
         int pending = 0;
         boolean missingName = false;
         String pendingReason = null;
-        for (int start = 0; start < codes.size(); start += CISES_BATCH_SIZE) {
-            List<KizCode> batch = codes.subList(start, Math.min(start + CISES_BATCH_SIZE, codes.size()));
+        for (int start = 0; start < codes.size(); start += ZnackApiClient.CISES_MAX_CODES_PER_REQUEST) {
+            List<KizCode> batch = codes.subList(start,
+                    Math.min(start + ZnackApiClient.CISES_MAX_CODES_PER_REQUEST, codes.size()));
             JsonArray request = new JsonArray();
             batch.forEach(code -> request.add(ZnackCisNormalizer.forTrueApi(code.rawCode())));
             CisBatch result = inspectCises(api.cisesInfo(settings.resolvedTrueApiBaseUrl(), token, request),
