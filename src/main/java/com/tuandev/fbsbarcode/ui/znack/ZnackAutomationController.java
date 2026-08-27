@@ -23,7 +23,6 @@ import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.KeyCode;
 import javafx.util.StringConverter;
 
-import java.nio.charset.StandardCharsets;
 import java.text.MessageFormat;
 import java.time.Duration;
 import java.time.Instant;
@@ -86,6 +85,7 @@ public class ZnackAutomationController {
     private boolean updatingCertificateSelection;
     private boolean reopeningCertificatePopup;
     private boolean productSyncRunning;
+    private boolean signerChangeSyncPending;
     private boolean signatureTestRunning;
     private long certificateDiscoveryGeneration;
     private long shopGeneration;
@@ -162,7 +162,13 @@ public class ZnackAutomationController {
             signerCertificate = value.selector();
             if (!loading) {
                 certificateMetadata = metadata(value);
-                if (!configurationKey().equals(testedConfigurationKey)) signerTestedAt = null;
+                if (sameCertificate(selectedCertificate(), loaded.signerCertificate())
+                        && loaded.signerTestedAt() != null) {
+                    signerTestedAt = loaded.signerTestedAt();
+                    testedConfigurationKey = configurationKey();
+                } else if (!configurationKey().equals(testedConfigurationKey)) {
+                    signerTestedAt = null;
+                }
             }
             updateSignatureSummary();
             updateSaveState();
@@ -174,6 +180,7 @@ public class ZnackAutomationController {
     public void setShop(Shop shop) {
         shopGeneration++;
         productSyncRunning = false;
+        signerChangeSyncPending = false;
         invalidateCertificateDiscovery();
         repository = shop == null ? null : new ZnackRepository(new ShopContext(shop.getId(), shop.getName()));
         if (repository == null) clear(); else {
@@ -272,6 +279,11 @@ public class ZnackAutomationController {
         Settings settings = settings();
         if (blank(settings.omsId()) || blank(settings.omsConnection())) {
             AlertService.showError(tr("znack.error.oms_required"));
+            return;
+        }
+        boolean removingCertificate = !blank(loaded.signerCertificate()) && blank(settings.signerCertificate());
+        if (removingCertificate || (!blank(settings.signerCertificate()) && settings.signerTestedAt() == null)) {
+            AlertService.showError(tr("znack.signature.error.verify_required"));
             return;
         }
         try {
@@ -388,35 +400,78 @@ public class ZnackAutomationController {
         // the FX thread, or the UI freezes with no feedback. Run it as a background Task.
         String cryptcpPath = loaded.cryptcpPath();
         String selector = selectedCertificate();
+        if (blank(selector)) {
+            AlertService.showError(tr("znack.signature.not_configured"));
+            return;
+        }
         Duration signTimeout = timeout();
         String configKey = configurationKey();
+        long generation = shopGeneration;
+        ZnackRepository currentRepository = repository;
+        Settings expectedSettings = loaded;
+        Settings candidateSettings = settings();
         setSignatureTestBusy(true);
-        Task<Void> task = new Task<>() {
-            @Override protected Void call() throws Exception {
-                new CryptoProSignatureProvider(cryptcpPath, selector, signTimeout)
-                        .sign(("WCode Znack signature test " + Instant.now()).getBytes(StandardCharsets.UTF_8),
-                                ZnackSignatureContext.SIGNATURE_TEST);
-                return null;
+        Task<SignatureVerification> task = new Task<>() {
+            @Override protected SignatureVerification call() throws Exception {
+                Instant verifiedAt = Instant.now();
+                Settings verifiedSettings = withSignerTestedAt(candidateSettings, verifiedAt);
+                ZnackApiClient api = new ZnackApiClient();
+                ZnackAuthService auth = new ZnackAuthService(api,
+                        new CryptoProSignatureProvider(cryptcpPath, selector, signTimeout));
+                // Verify the selected certificate against Znack itself before retiring any local catalog.
+                auth.trueApiToken(verifiedSettings);
+                ZnackRepository.CertificateVerificationResult result =
+                        currentRepository.saveVerifiedCertificate(expectedSettings, verifiedSettings);
+                return new SignatureVerification(verifiedSettings, result, api, auth);
             }
         };
         task.setOnSucceeded(event -> {
             setSignatureTestBusy(false);
-            signerTestedAt = Instant.now();
+            if (generation != shopGeneration || currentRepository != repository) return;
+            SignatureVerification verification = task.getValue();
+            loaded = verification.settings();
+            signerTestedAt = loaded.signerTestedAt();
             testedConfigurationKey = configKey;
-            repository.log("SIGNATURE_TEST", null, "INFO", "VERIFIED", null);
-            logsTable.getItems().setAll(repository.findLogs());
+            savedFingerprint = fingerprint(loaded);
+            logsTable.getItems().setAll(currentRepository.findLogs());
             updateSignatureSummary();
             updateSaveState();
+            if (verification.result().signerChanged()) {
+                selectedProductGtins.clear();
+                loadProductsFromDatabase();
+                loadDeletedProducts();
+                authStatusLabel.setText(tr("znack.signature.catalog_refreshing"));
+                signerChangeSyncPending = true;
+                requestProductSync(verification.api(), verification.auth());
+            }
         });
         task.setOnFailed(event -> {
             setSignatureTestBusy(false);
+            if (generation != shopGeneration || currentRepository != repository) return;
             Throwable failure = task.getException();
+            if (failure instanceof ZnackRepository.SignerChangeBlockedException) {
+                signerTestedAt = null;
+                currentRepository.log("SIGNATURE_TEST", null, "WARN", failure.getMessage(), null);
+                logsTable.getItems().setAll(currentRepository.findLogs());
+                updateSignatureSummary();
+                updateSaveState();
+                AlertService.showError(tr("znack.signature.error.active_work"));
+                return;
+            }
+            if (failure instanceof ZnackRepository.SettingsConflictException) {
+                signerTestedAt = null;
+                updateSignatureSummary();
+                updateSaveState();
+                AlertService.showError(tr("znack.signature.error.settings_changed"));
+                return;
+            }
             CryptoProException error = failure instanceof CryptoProException cpe ? cpe
                     : new CryptoProException(CryptoProErrorCode.SIGNING_FAILED, "CryptoPro signing failed.", failure);
             signerTestedAt = null;
-            repository.log("SIGNATURE_TEST", null, "ERROR", signatureDiagnostic(error), null);
-            logsTable.getItems().setAll(repository.findLogs());
+            currentRepository.log("SIGNATURE_TEST", null, "ERROR", signatureDiagnostic(error), null);
+            logsTable.getItems().setAll(currentRepository.findLogs());
             updateSignatureSummary();
+            updateSaveState();
             AlertService.showError(signatureError(error));
         });
         AppTaskExecutor.execute(task);
@@ -698,6 +753,10 @@ public class ZnackAutomationController {
     }
 
     private void requestProductSync() {
+        requestProductSync(null, null);
+    }
+
+    private void requestProductSync(ZnackApiClient verifiedApi, ZnackAuthService verifiedAuth) {
         if (repository == null || productSyncRunning || !hasVerifiedSignature(loaded)) return;
         long generation = shopGeneration;
         ZnackRepository currentRepository = repository;
@@ -705,10 +764,14 @@ public class ZnackAutomationController {
         Task<List<Product>> task = new Task<>() {
             @Override protected List<Product> call() throws Exception {
                 try {
-                    ZnackApiClient api = new ZnackApiClient();
-                    ZnackSignatureProvider signer = new CryptoProSignatureProvider(currentSettings.cryptcpPath(),
-                            currentSettings.signerCertificate(), Duration.ofSeconds(currentSettings.resolvedCryptoProTimeoutSeconds()));
-                    return new ZnackProductService(api, new ZnackAuthService(api, signer), currentRepository).sync(currentSettings);
+                    ZnackApiClient api = verifiedApi == null ? new ZnackApiClient() : verifiedApi;
+                    ZnackAuthService auth = verifiedAuth;
+                    if (auth == null) {
+                        ZnackSignatureProvider signer = new CryptoProSignatureProvider(currentSettings.cryptcpPath(),
+                                currentSettings.signerCertificate(), Duration.ofSeconds(currentSettings.resolvedCryptoProTimeoutSeconds()));
+                        auth = new ZnackAuthService(api, signer);
+                    }
+                    return new ZnackProductService(api, auth, currentRepository).sync(currentSettings);
                 } catch (Exception error) {
                     currentRepository.log("GTIN_SYNC", null, "ERROR", error.getMessage(), null);
                     throw error;
@@ -716,21 +779,32 @@ public class ZnackAutomationController {
             }
         };
         productSyncRunning = true;
+        updateSaveState();
         task.setOnSucceeded(event -> {
             if (generation != shopGeneration || currentRepository != repository) return;
             productSyncRunning = false;
+            updateSaveState();
             allProducts = task.getValue();
             productCategoryFilter.rebuild(allProducts.stream().map(Product::category).toList());
             applyProductFilter();
             ordersTable.getItems().setAll(currentRepository.findOrders());
             logsTable.getItems().setAll(currentRepository.findLogs());
             resumeEligibleIntroductions(currentSettings);
+            if (signerChangeSyncPending) {
+                signerChangeSyncPending = false;
+                authStatusLabel.setText(tr("znack.signature.catalog_refreshed"));
+            }
         });
         task.setOnFailed(event -> {
             if (generation != shopGeneration || currentRepository != repository) return;
             productSyncRunning = false;
+            updateSaveState();
             loadProductsFromDatabase();
             logsTable.getItems().setAll(currentRepository.findLogs());
+            if (signerChangeSyncPending) {
+                signerChangeSyncPending = false;
+                authStatusLabel.setText(tr("znack.signature.catalog_refresh_failed"));
+            }
         });
         AppTaskExecutor.execute(task);
     }
@@ -740,13 +814,28 @@ public class ZnackAutomationController {
     }
 
     private Settings settings() {
+        boolean certificateChanged = !blank(loaded.signerCertificate())
+                && !sameCertificate(selectedCertificate(), loaded.signerCertificate());
         return new Settings(loaded.trueApiBaseUrl(), loaded.suzBaseUrl(), omsIdField.getText(), omsConnectionField.getText(),
-                loaded.participantInn(), loaded.producerInn(), loaded.ownerInn(), loaded.signerExecutable(),
+                certificateChanged ? "" : loaded.participantInn(),
+                certificateChanged ? "" : loaded.producerInn(),
+                certificateChanged ? "" : loaded.ownerInn(), loaded.signerExecutable(),
                 selectedCertificate(), loaded.signerArgumentsJson(), loaded.documentNumber(),
                 loaded.documentDate(), loaded.pdfFolder(), autoIntroductionCheck.isSelected(),
                 loaded.certificateListExecutable(), loaded.certificateListArgumentsJson(), certificateMetadata,
                 signerTestedAt, loaded.certmgrPath(), loaded.cryptcpPath(), loaded.csptestPath(),
                 loaded.resolvedCryptoProTimeoutSeconds(), loaded.documentExpiryDate(), loaded.documentType());
+    }
+
+    private Settings withSignerTestedAt(Settings settings, Instant testedAt) {
+        return new Settings(settings.trueApiBaseUrl(), settings.suzBaseUrl(), settings.omsId(),
+                settings.omsConnection(), settings.participantInn(), settings.producerInn(), settings.ownerInn(),
+                settings.signerExecutable(), settings.signerCertificate(), settings.signerArgumentsJson(),
+                settings.documentNumber(), settings.documentDate(), settings.pdfFolder(), settings.autoIntroduction(),
+                settings.certificateListExecutable(), settings.certificateListArgumentsJson(),
+                settings.certificateMetadataJson(), testedAt, settings.certmgrPath(), settings.cryptcpPath(),
+                settings.csptestPath(), settings.resolvedCryptoProTimeoutSeconds(), settings.documentExpiryDate(),
+                settings.documentType());
     }
 
     private void clear() {
@@ -771,6 +860,7 @@ public class ZnackAutomationController {
         certificateMetadata = "";
         signerTestedAt = null;
         testedConfigurationKey = null;
+        signerChangeSyncPending = false;
         loading = false;
         savedFingerprint = fingerprint();
         authStatusLabel.setText(tr("znack.error.select_shop"));
@@ -778,10 +868,14 @@ public class ZnackAutomationController {
     }
 
     private void updateSaveState() {
-        saveButton.setDisable(repository == null || loading || Objects.equals(savedFingerprint, fingerprint()));
-        signatureCertificateCombo.setDisable(repository == null || signatureTestRunning);
+        boolean verificationRequired = (!blank(selectedCertificate()) && signerTestedAt == null)
+                || (!blank(loaded.signerCertificate()) && blank(selectedCertificate()));
+        saveButton.setDisable(repository == null || loading || verificationRequired
+                || Objects.equals(savedFingerprint, fingerprint()));
+        signatureCertificateCombo.setDisable(repository == null || signatureTestRunning || productSyncRunning);
         testSignatureButton.setDisable(repository == null || certificateDiscoveryRunning
-                || signatureTestRunning || selectedCertificateExpired());
+                || signatureTestRunning || productSyncRunning || blank(selectedCertificate())
+                || selectedCertificateExpired());
     }
 
     private void updateSignatureSummary() {
@@ -796,6 +890,22 @@ public class ZnackAutomationController {
         return String.join("\u001f", value(omsIdField.getText()), value(omsConnectionField.getText()), selectedCertificate(),
                 String.valueOf(autoIntroductionCheck.isSelected()),
                 value(certificateMetadata), signerTestedAt == null ? "" : signerTestedAt.toString());
+    }
+
+    private String fingerprint(Settings settings) {
+        return String.join("\u001f", value(settings.omsId()), value(settings.omsConnection()),
+                value(settings.signerCertificate()), String.valueOf(settings.autoIntroduction()),
+                value(settings.certificateMetadataJson()),
+                settings.signerTestedAt() == null ? "" : settings.signerTestedAt().toString());
+    }
+
+    private boolean sameCertificate(String first, String second) {
+        return value(first).trim().equalsIgnoreCase(value(second).trim());
+    }
+
+    private record SignatureVerification(Settings settings,
+                                         ZnackRepository.CertificateVerificationResult result,
+                                         ZnackApiClient api, ZnackAuthService auth) {
     }
 
     private String selectedCertificate() {

@@ -47,7 +47,7 @@ public class ZnackProductService {
         for(Product p:byGtin.values()){if(ZnackCardStatus.isErrored(p.cardStatus(),p.cardDetailedStatus()))unpublished.add(p.gtin());else publishable.add(p);}
         List<Product> catalogVerified=publishable.stream()
                 .filter(product->permitDocumentSnapshots.containsKey(product.gtin())).toList();
-        repository.upsertProducts(catalogVerified);
+        repository.upsertProducts(catalogVerified, settings);
         List<String> missingDocuments=new ArrayList<>();
         for(Product product:catalogVerified){
             List<GoodsDocument> documents=permitDocumentSnapshots.get(product.gtin());

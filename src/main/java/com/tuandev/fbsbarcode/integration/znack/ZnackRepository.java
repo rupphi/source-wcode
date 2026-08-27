@@ -1,6 +1,7 @@
 package com.tuandev.fbsbarcode.integration.znack;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.tuandev.fbsbarcode.config.Database;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels.*;
@@ -50,14 +51,22 @@ public final class ZnackRepository {
         }catch(SQLException e){throw new RuntimeException(e);}
     }
 
-    /** Persists a successfully tested selector and its audit entry in one optimistic transaction. */
-    public void saveVerifiedCertificate(Settings expected, Settings verified) {
+    /**
+     * Persists a successfully tested selector and its audit entry in one optimistic transaction.
+     * A different signing identity owns a different Znack catalog, so its predecessor is retired and
+     * every marketplace mapping is cleared atomically before the new identity becomes active.
+     */
+    public CertificateVerificationResult saveVerifiedCertificate(Settings expected, Settings verified) {
         Objects.requireNonNull(expected, "expected");
         Objects.requireNonNull(verified, "verified");
         try (Connection connection = Database.getConnection(); Statement transaction = connection.createStatement()) {
             transaction.execute("BEGIN IMMEDIATE");
             try {
                 if (!expected.equals(getSettings(connection))) throw new SettingsConflictException();
+                boolean signerChanged = signerChanged(expected, verified);
+                CatalogReset catalogReset = signerChanged
+                        ? resetCatalogForSignerChange(connection)
+                        : CatalogReset.EMPTY;
                 saveSettings(connection, verified);
                 try (PreparedStatement audit = connection.prepareStatement("""
                         INSERT INTO znack_operation_logs
@@ -69,16 +78,158 @@ public final class ZnackRepository {
                     audit.setString(3, Instant.now().toString());
                     audit.executeUpdate();
                 }
+                if (signerChanged) insertSignerChangeAudit(connection, catalogReset);
                 transaction.execute("COMMIT");
+                return new CertificateVerificationResult(signerChanged, catalogReset.mappingCount(),
+                        catalogReset.archivedProductCount(), catalogReset.deletedProductCount(),
+                        catalogReset.archivedCodeCount());
             } catch (SQLException | RuntimeException error) {
                 transaction.execute("ROLLBACK");
                 throw error;
             }
-        } catch (SettingsConflictException error) {
+        } catch (SettingsConflictException | SignerChangeBlockedException error) {
             throw error;
         } catch (SQLException error) {
             throw new RuntimeException(error);
         }
+    }
+
+    private CatalogReset resetCatalogForSignerChange(Connection connection) throws SQLException {
+        if (hasSignerChangeBlocker(connection)) throw new SignerChangeBlockedException();
+        int mappings = deleteForShop(connection, "znack_gtin_mapping_rules")
+                + deleteForShop(connection, "ozon_product_gtin_mappings")
+                + deleteForShop(connection, "ozon_article_gtin_mappings");
+        String now = Instant.now().toString();
+        int archivedCodes;
+        try (PreparedStatement statement = connection.prepareStatement("""
+                UPDATE kiz_codes
+                SET status='ARCHIVED',reservation_token=NULL,reserved_at=NULL,
+                    reservation_recoverable=NULL,updated_at=?
+                WHERE shop_id=? AND status='AVAILABLE'
+                """)) {
+            statement.setString(1, now);
+            statement.setInt(2, shop.shopId());
+            archivedCodes = statement.executeUpdate();
+        }
+        int archived;
+        try (PreparedStatement statement = connection.prepareStatement("""
+                UPDATE znack_products
+                SET deleted_at=COALESCE(deleted_at,?),identity_archived_at=?
+                WHERE shop_id=?
+                """)) {
+            statement.setString(1, now);
+            statement.setString(2, now);
+            statement.setInt(3, shop.shopId());
+            archived = statement.executeUpdate();
+        }
+        int deleted;
+        try (PreparedStatement statement = connection.prepareStatement("""
+                DELETE FROM znack_products
+                WHERE shop_id=?
+                  AND NOT EXISTS(SELECT 1 FROM kiz_orders orders
+                    WHERE orders.shop_id=znack_products.shop_id AND orders.gtin=znack_products.gtin)
+                  AND NOT EXISTS(SELECT 1 FROM znack_purchase_pipelines pipelines
+                    WHERE pipelines.shop_id=znack_products.shop_id AND pipelines.gtin=znack_products.gtin)
+                """)) {
+            statement.setInt(1, shop.shopId());
+            deleted = statement.executeUpdate();
+        }
+        return new CatalogReset(mappings, archived - deleted, deleted, archivedCodes);
+    }
+
+    private boolean hasSignerChangeBlocker(Connection connection) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT 1 FROM znack_purchase_pipelines
+                WHERE shop_id=?
+                  AND stage NOT IN ('COMPLETED','INTRODUCED','FAILED','INTRODUCTION_FAILED',
+                                    'INTRODUCTION_SKIPPED_MISSING_DOCUMENTS',
+                                    'INTRODUCTION_SKIPPED_MISSING_METADATA')
+                UNION ALL
+                SELECT 1 FROM kiz_codes WHERE shop_id=? AND status='RESERVED'
+                LIMIT 1
+                """)) {
+            statement.setInt(1, shop.shopId());
+            statement.setInt(2, shop.shopId());
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next();
+            }
+        }
+    }
+
+    private int deleteForShop(Connection connection, String table) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("DELETE FROM " + table + " WHERE shop_id=?")) {
+            statement.setInt(1, shop.shopId());
+            return statement.executeUpdate();
+        }
+    }
+
+    private void insertSignerChangeAudit(Connection connection, CatalogReset reset) throws SQLException {
+        try (PreparedStatement audit = connection.prepareStatement("""
+                INSERT INTO znack_operation_logs
+                (shop_id,shop_name,action,entity_reference,severity,message,http_status,created_at)
+                VALUES(?,?, 'SIGNER_CHANGE',NULL,'INFO',?,NULL,?)
+                """)) {
+            audit.setInt(1, shop.shopId());
+            audit.setString(2, shop.shopName());
+            audit.setString(3, "Catalog reset; mappings=" + reset.mappingCount()
+                    + "; archived_products=" + reset.archivedProductCount()
+                    + "; deleted_products=" + reset.deletedProductCount()
+                    + "; archived_codes=" + reset.archivedCodeCount());
+            audit.setString(4, Instant.now().toString());
+            audit.executeUpdate();
+        }
+    }
+
+    private static boolean signerChanged(Settings previous, Settings next) {
+        String previousSelector = value(previous.signerCertificate()).trim();
+        String nextSelector = value(next.signerCertificate()).trim();
+        if (previousSelector.isBlank()) return false;
+        if (previousSelector.equalsIgnoreCase(nextSelector)) return false;
+        String previousThumbprint = certificateThumbprint(previous);
+        String nextThumbprint = certificateThumbprint(next);
+        return previousThumbprint.isBlank() || nextThumbprint.isBlank()
+                || !previousThumbprint.equals(nextThumbprint);
+    }
+
+    private static boolean sameSigningIdentity(Settings first, Settings second) {
+        String firstSelector = value(first.signerCertificate()).trim();
+        String secondSelector = value(second.signerCertificate()).trim();
+        if (firstSelector.equalsIgnoreCase(secondSelector)) return true;
+        String firstThumbprint = certificateThumbprint(first);
+        String secondThumbprint = certificateThumbprint(second);
+        return !firstThumbprint.isBlank() && firstThumbprint.equals(secondThumbprint);
+    }
+
+    private static String certificateThumbprint(Settings settings) {
+        try {
+            JsonObject metadata = com.google.gson.JsonParser.parseString(
+                    value(settings.certificateMetadataJson())).getAsJsonObject();
+            if (metadata.has("thumbprint") && !metadata.get("thumbprint").isJsonNull()) {
+                String thumbprint = normalizeThumbprint(metadata.get("thumbprint").getAsString());
+                if (!thumbprint.isBlank()) return thumbprint;
+            }
+        } catch (RuntimeException ignored) {
+            // Older settings may contain no JSON metadata; selector equality was checked above.
+        }
+        return "";
+    }
+
+    private static String normalizeThumbprint(String value) {
+        return value(value).replaceAll("[^0-9A-Fa-f]", "").toUpperCase(Locale.ROOT);
+    }
+
+    private static String value(String value) {
+        return value == null ? "" : value;
+    }
+
+    public record CertificateVerificationResult(boolean signerChanged, int clearedMappingCount,
+                                                int archivedProductCount, int deletedProductCount,
+                                                int archivedCodeCount) {
+    }
+
+    private record CatalogReset(int mappingCount, int archivedProductCount, int deletedProductCount,
+                                int archivedCodeCount) {
+        private static final CatalogReset EMPTY = new CatalogReset(0, 0, 0, 0);
     }
 
     private Settings getSettings(Connection connection) throws SQLException {
@@ -116,7 +267,24 @@ public final class ZnackRepository {
         }
     }
 
-    public void upsertProducts(List<Product> products){
+    public static final class SignerChangeBlockedException extends RuntimeException {
+        public SignerChangeBlockedException() {
+            super("Finish active KIZ work before changing the signing certificate.");
+        }
+    }
+
+    public static final class StaleSignerException extends RuntimeException {
+        public StaleSignerException() {
+            super("Discarded a GTIN sync that belongs to the previous signing certificate.");
+        }
+    }
+
+    public void upsertProducts(List<Product> products) {
+        upsertProducts(products, null);
+    }
+
+    /** Rejects a late catalog response if the shop switched signing identity while it was loading. */
+    public void upsertProducts(List<Product> products, Settings expectedSigner) {
         String sql="""
                 INSERT INTO znack_products(shop_id,gtin,product_name,tn_ved,certificate_type,certificate_number,
                                            certificate_date,production_date,good_mark_flag,good_turn_flag,
@@ -136,9 +304,55 @@ public final class ZnackRepository {
                   card_detailed_status=COALESCE(NULLIF(excluded.card_detailed_status,''),znack_products.card_detailed_status),
                   readiness_checked_at=COALESCE(excluded.readiness_checked_at,znack_products.readiness_checked_at),
                   cis_type=COALESCE(NULLIF(excluded.cis_type,''),znack_products.cis_type),
+                  deleted_at=CASE WHEN znack_products.identity_archived_at IS NOT NULL
+                                  THEN NULL ELSE znack_products.deleted_at END,
+                  identity_archived_at=NULL,
                   synced_at=excluded.synced_at
                 """;
-        try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement(sql)){c.setAutoCommit(false);for(Product p:products){int i=1;ps.setInt(i++,shop.shopId());ps.setString(i++,GtinNormalizer.normalize(p.gtin()));ps.setString(i++,p.productName());ps.setString(i++,p.tnVed());ps.setString(i++,p.certificateType());ps.setString(i++,p.certificateNumber());ps.setString(i++,p.certificateDate());ps.setString(i++,p.productionDate());nullableBoolean(ps,i++,p.goodMarkFlag());nullableBoolean(ps,i++,p.goodTurnFlag());ps.setString(i++,p.cardStatus());ps.setString(i++,p.cardDetailedStatus());ps.setString(i++,p.category());ps.setString(i++,p.readinessCheckedAt()==null?null:p.readinessCheckedAt().toString());ps.setString(i++,p.cisType());ps.setString(i,Instant.now().toString());ps.addBatch();}ps.executeBatch();c.commit();}catch(SQLException e){throw new RuntimeException(e);}
+        try (Connection connection = Database.getConnection(); Statement transaction = connection.createStatement()) {
+            transaction.execute("BEGIN IMMEDIATE");
+            try {
+                if (expectedSigner != null) {
+                    Settings currentSigner = getSettings(connection);
+                    if (!value(currentSigner.signerCertificate()).isBlank()
+                            && !sameSigningIdentity(currentSigner, expectedSigner)) {
+                        throw new StaleSignerException();
+                    }
+                }
+                try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                    for (Product product : products) {
+                        int index = 1;
+                        statement.setInt(index++, shop.shopId());
+                        statement.setString(index++, GtinNormalizer.normalize(product.gtin()));
+                        statement.setString(index++, product.productName());
+                        statement.setString(index++, product.tnVed());
+                        statement.setString(index++, product.certificateType());
+                        statement.setString(index++, product.certificateNumber());
+                        statement.setString(index++, product.certificateDate());
+                        statement.setString(index++, product.productionDate());
+                        nullableBoolean(statement, index++, product.goodMarkFlag());
+                        nullableBoolean(statement, index++, product.goodTurnFlag());
+                        statement.setString(index++, product.cardStatus());
+                        statement.setString(index++, product.cardDetailedStatus());
+                        statement.setString(index++, product.category());
+                        statement.setString(index++, product.readinessCheckedAt() == null
+                                ? null : product.readinessCheckedAt().toString());
+                        statement.setString(index++, product.cisType());
+                        statement.setString(index, Instant.now().toString());
+                        statement.addBatch();
+                    }
+                    statement.executeBatch();
+                }
+                transaction.execute("COMMIT");
+            } catch (SQLException | RuntimeException error) {
+                transaction.execute("ROLLBACK");
+                throw error;
+            }
+        } catch (StaleSignerException error) {
+            throw error;
+        } catch (SQLException error) {
+            throw new RuntimeException(error);
+        }
     }
     public int pruneTechnicalProducts(){
         String deleteProducts="""
@@ -205,8 +419,8 @@ public final class ZnackRepository {
             }catch(SQLException e){c.rollback();throw e;}
         }catch(SQLException e){throw new RuntimeException(e);}
     }
-    public List<Product> findProducts(){try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement("SELECT * FROM znack_products WHERE shop_id=? AND gtin NOT LIKE '029%' AND deleted_at IS NULL ORDER BY gtin")){ps.setInt(1,shop.shopId());try(ResultSet r=ps.executeQuery()){List<Product> o=new ArrayList<>();while(r.next())o.add(product(r));return o;}}catch(SQLException e){throw new RuntimeException(e);}}
-    public List<Product> findDeletedProducts(){try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement("SELECT * FROM znack_products WHERE shop_id=? AND gtin NOT LIKE '029%' AND deleted_at IS NOT NULL ORDER BY gtin")){ps.setInt(1,shop.shopId());try(ResultSet r=ps.executeQuery()){List<Product> o=new ArrayList<>();while(r.next())o.add(product(r));return o;}}catch(SQLException e){throw new RuntimeException(e);}}
+    public List<Product> findProducts(){try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement("SELECT * FROM znack_products WHERE shop_id=? AND gtin NOT LIKE '029%' AND deleted_at IS NULL AND identity_archived_at IS NULL ORDER BY gtin")){ps.setInt(1,shop.shopId());try(ResultSet r=ps.executeQuery()){List<Product> o=new ArrayList<>();while(r.next())o.add(product(r));return o;}}catch(SQLException e){throw new RuntimeException(e);}}
+    public List<Product> findDeletedProducts(){try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement("SELECT * FROM znack_products WHERE shop_id=? AND gtin NOT LIKE '029%' AND deleted_at IS NOT NULL AND identity_archived_at IS NULL ORDER BY gtin")){ps.setInt(1,shop.shopId());try(ResultSet r=ps.executeQuery()){List<Product> o=new ArrayList<>();while(r.next())o.add(product(r));return o;}}catch(SQLException e){throw new RuntimeException(e);}}
     /** Hides the GTINs from every operational list; a later sync keeps them hidden until they are restored. */
     public void softDeleteProducts(List<String> gtins){setDeletedAt(gtins,Instant.now().toString());}
     public void restoreProducts(List<String> gtins){setDeletedAt(gtins,null);}
@@ -218,7 +432,7 @@ public final class ZnackRepository {
             ps.executeBatch();c.commit();
         }catch(SQLException e){throw new RuntimeException(e);}
     }
-    public Optional<Product> findProduct(String gtin){try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement("SELECT * FROM znack_products WHERE shop_id=? AND gtin=?")){ps.setInt(1,shop.shopId());ps.setString(2,GtinNormalizer.normalize(gtin));try(ResultSet r=ps.executeQuery()){return r.next()?Optional.of(product(r)):Optional.empty();}}catch(SQLException e){throw new RuntimeException(e);}}
+    public Optional<Product> findProduct(String gtin){try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement("SELECT * FROM znack_products WHERE shop_id=? AND gtin=? AND identity_archived_at IS NULL")){ps.setInt(1,shop.shopId());ps.setString(2,GtinNormalizer.normalize(gtin));try(ResultSet r=ps.executeQuery()){return r.next()?Optional.of(product(r)):Optional.empty();}}catch(SQLException e){throw new RuntimeException(e);}}
     public void updateProductCisType(String gtin,String cisType){execute("UPDATE znack_products SET cis_type=? WHERE shop_id=? AND gtin=?",ps->{ps.setString(1,cisType);ps.setInt(2,shop.shopId());ps.setString(3,GtinNormalizer.normalize(gtin));});}
     public void updateProductDocuments(String gtin,List<GoodsDocument> documents){
         LinkedHashSet<GoodsDocument> distinct=new LinkedHashSet<>();
@@ -256,6 +470,7 @@ public final class ZnackRepository {
         try(Connection c=Database.getConnection();Statement tx=c.createStatement()){
             tx.execute("BEGIN IMMEDIATE");
             try{
+                requireActiveProduct(c, normalized);
                 boolean busy;
                 try(PreparedStatement active=c.prepareStatement("""
                         SELECT 1 FROM znack_purchase_pipelines
@@ -271,6 +486,18 @@ public final class ZnackRepository {
                 return id;
             }catch(SQLException error){tx.execute("ROLLBACK");throw error;}
         }catch(SQLException e){throw new RuntimeException(e);}
+    }
+    private void requireActiveProduct(Connection connection,String gtin)throws SQLException{
+        try(PreparedStatement product=connection.prepareStatement("""
+                SELECT 1 FROM znack_products
+                WHERE shop_id=? AND gtin=? AND deleted_at IS NULL AND identity_archived_at IS NULL
+                """)){
+            product.setInt(1,shop.shopId());product.setString(2,gtin);
+            try(ResultSet rows=product.executeQuery()){
+                if(!rows.next())throw new IllegalArgumentException(
+                        "GTIN is no longer active for the selected signing certificate.");
+            }
+        }
     }
     private long insertPipeline(String gtin,int quantity,String requestKey,PurchaseStage stage){
         String key=requestKey==null||requestKey.isBlank()?java.util.UUID.randomUUID().toString():requestKey;

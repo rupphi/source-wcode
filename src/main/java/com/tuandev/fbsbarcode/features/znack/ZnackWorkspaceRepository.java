@@ -23,6 +23,7 @@ public final class ZnackWorkspaceRepository {
                 SELECT DISTINCT TRIM(category)
                 FROM znack_products
                 WHERE shop_id=? AND gtin NOT LIKE '029%%'
+                  AND identity_archived_at IS NULL
                   AND %s
                   AND category IS NOT NULL AND TRIM(category)<>''
                 ORDER BY TRIM(category) COLLATE NOCASE
@@ -60,7 +61,7 @@ public final class ZnackWorkspaceRepository {
                 SELECT gtin,product_name,category,tn_ved,cis_type,good_mark_flag,good_turn_flag,
                        readiness_checked_at,deleted_at
                 FROM znack_products
-                WHERE shop_id=? AND gtin NOT LIKE '029%%' AND %s
+                WHERE shop_id=? AND gtin NOT LIKE '029%%' AND identity_archived_at IS NULL AND %s
                   AND (?='' OR LOWER(gtin) LIKE ? ESCAPE '\\'
                        OR LOWER(COALESCE(product_name,'')) LIKE ? ESCAPE '\\'
                        OR LOWER(COALESCE(category,'')) LIKE ? ESCAPE '\\'

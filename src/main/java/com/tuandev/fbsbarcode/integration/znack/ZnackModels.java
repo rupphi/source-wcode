@@ -24,7 +24,7 @@ public final class ZnackModels {
     }
 
     public enum KizInventoryStatus {
-        AVAILABLE, RESERVED, CONSUMED
+        AVAILABLE, RESERVED, CONSUMED, ARCHIVED
     }
 
     public enum KizLegalStatus {
