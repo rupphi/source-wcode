@@ -397,7 +397,8 @@ jobs:
             $env:RELEASE_NOTES_JSON = ConvertTo-Json -Compress -InputObject @(
               'Dashboard tài chính WB/Ozon gọn hơn với bố cục 5 cột và đầy đủ các khoản phí',
               'Theo dõi trạng thái, số lượng và hình ảnh mặt hàng trong phiếu nhập FBO/FBW của WB và Ozon',
-              'Ozon FBS/FBO: đồng bộ trạng thái, mapping theo article và quy trình in/push KIZ',
+              'Ozon FBS hiển thị đầy đủ từng SKU, số lượng và ảnh trong đơn nhiều sản phẩm',
+              'Ozon FBS/FBO: đồng bộ trạng thái, mapping theo article và quy trình in/push KIZ theo từng đơn vị hàng',
               'Znack chỉ dùng GTIN có giấy tờ hợp lệ; bổ sung xoá supply WB trống',
               'Giữ nguyên dữ liệu người dùng khi nâng cấp từ WCode 1.1.9 trở lên'
             )
@@ -597,7 +598,8 @@ jobs:
 
           - Dashboard tài chính WB/Ozon được bố trí thành 5 cột lớn, gọn hơn và vẫn hiển thị đầy đủ doanh thu, tiền sàn trả, hoa hồng, hoàn hàng, vận chuyển, quảng cáo, lưu kho, tiền phạt, chi phí khác và lãi ròng.
           - Thêm trang theo dõi phiếu nhập FBO/FBW của Wildberries và Ozon: trạng thái, kho nhận, lịch giao, số lượng, mặt hàng và hình ảnh sản phẩm.
-          - Ozon FBS đồng bộ đúng trạng thái đơn từ Ozon; mapping GTIN theo article, chọn nhanh theo bộ lọc và chỉ yêu cầu một KIZ cho mỗi sản phẩm.
+          - Ozon FBS đồng bộ đúng trạng thái đơn từ Ozon; đơn nhiều sản phẩm hiển thị đầy đủ từng SKU, ảnh và số lượng nổi bật thay vì chỉ hiện mặt hàng đầu tiên.
+          - Mapping GTIN theo article, chọn nhanh theo bộ lọc và cấp đúng một KIZ cho mỗi đơn vị hàng bắt buộc dùng KIZ.
           - File in được tạo trước khi đẩy KIZ lên Ozon; file nhặt hàng A4 và nhãn 58x40 giữ đúng định dạng.
           - Bổ sung đóng hàng Ozon FBO, xoá supply WB trống và chỉ đưa GTIN Znack có giấy tờ hợp lệ vào danh sách sử dụng.
           - CI tạo gói Windows x64 và macOS riêng cho Intel/Apple Silicon.
