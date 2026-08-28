@@ -62,14 +62,25 @@ class ZnackGtinWorkflowTest {
         System.clearProperty("wcode.appdata.dir");
     }
 
-    @Test void softDeletedGtinStaysHiddenAcrossSyncUntilRestored() {
+    @Test void softDeletedGtinReleasesItsCategoryForAnotherGtinAndStaysHiddenUntilRestored() {
+        mappings.replaceRulesForGtin(
+                1, A, List.of(new ZnackGtinMappingSelection("Shoes", null, true)));
+        assertEquals(A, mappings.findMappings(1, List.of(1L, 2L)).get(1L));
+
         repository.softDeleteProducts(List.of(A));
 
         assertTrue(repository.findProducts().stream().noneMatch(p -> A.equals(p.gtin())));
         assertTrue(mappings.findGtinSummaries(1).stream().noneMatch(s -> A.equals(s.gtin())));
+        assertTrue(mappings.findRulesForGtin(1, A).isEmpty());
+        assertTrue(mappings.findOwnersForSubject(1, "Shoes").isEmpty());
         assertEquals(List.of(A), repository.findDeletedProducts().stream().map(Product::gtin).toList());
         // Running pipelines still resolve the product regardless of the soft-delete flag.
         assertTrue(repository.findProduct(A).isPresent());
+
+        mappings.replaceRulesForGtin(
+                1, B, List.of(new ZnackGtinMappingSelection("Shoes", null, true)));
+        assertEquals(B, mappings.findMappings(1, List.of(1L, 2L)).get(1L));
+        assertEquals(B, mappings.findMappings(1, List.of(1L, 2L)).get(2L));
 
         // A re-sync upserts the same GTIN again but must not resurrect it.
         repository.upsertProducts(List.of(new Product(A, "A refreshed", null, null, null, null, null)));
@@ -80,6 +91,8 @@ class ZnackGtinWorkflowTest {
         assertTrue(repository.findProducts().stream().anyMatch(p -> A.equals(p.gtin())));
         assertTrue(repository.findDeletedProducts().isEmpty());
         assertTrue(mappings.findGtinSummaries(1).stream().anyMatch(s -> A.equals(s.gtin())));
+        assertTrue(mappings.findRulesForGtin(1, A).isEmpty());
+        assertEquals(B, mappings.findMappings(1, List.of(1L)).get(1L));
     }
 
     @Test void wildcardIncludesExistingAndNewOrUnspecifiedGendersAndIsShopScoped() {

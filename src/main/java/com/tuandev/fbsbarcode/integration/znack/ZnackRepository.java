@@ -421,8 +421,35 @@ public final class ZnackRepository {
     }
     public List<Product> findProducts(){try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement("SELECT * FROM znack_products WHERE shop_id=? AND gtin NOT LIKE '029%' AND deleted_at IS NULL AND identity_archived_at IS NULL ORDER BY gtin")){ps.setInt(1,shop.shopId());try(ResultSet r=ps.executeQuery()){List<Product> o=new ArrayList<>();while(r.next())o.add(product(r));return o;}}catch(SQLException e){throw new RuntimeException(e);}}
     public List<Product> findDeletedProducts(){try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement("SELECT * FROM znack_products WHERE shop_id=? AND gtin NOT LIKE '029%' AND deleted_at IS NOT NULL AND identity_archived_at IS NULL ORDER BY gtin")){ps.setInt(1,shop.shopId());try(ResultSet r=ps.executeQuery()){List<Product> o=new ArrayList<>();while(r.next())o.add(product(r));return o;}}catch(SQLException e){throw new RuntimeException(e);}}
-    /** Hides the GTINs from every operational list; a later sync keeps them hidden until they are restored. */
-    public void softDeleteProducts(List<String> gtins){setDeletedAt(gtins,Instant.now().toString());}
+    /**
+     * Hides GTINs and releases every WB/Ozon mapping they own in the same transaction. A later
+     * catalog sync keeps them hidden until explicitly restored, but removed mappings stay removed.
+     */
+    public void softDeleteProducts(List<String> gtins) {
+        if (gtins == null || gtins.isEmpty()) return;
+        List<String> normalized = gtins.stream().map(GtinNormalizer::normalize).distinct().toList();
+        try (Connection connection = Database.getConnection(); Statement transaction = connection.createStatement()) {
+            transaction.execute("BEGIN IMMEDIATE");
+            try (PreparedStatement update = connection.prepareStatement(
+                    "UPDATE znack_products SET deleted_at=? WHERE shop_id=? AND gtin=?")) {
+                String deletedAt = Instant.now().toString();
+                for (String gtin : normalized) {
+                    update.setString(1, deletedAt);
+                    update.setInt(2, shop.shopId());
+                    update.setString(3, gtin);
+                    update.addBatch();
+                }
+                update.executeBatch();
+                ZnackMappingLifecycle.removeForGtins(connection, shop.shopId(), normalized);
+                transaction.execute("COMMIT");
+            } catch (SQLException | RuntimeException error) {
+                transaction.execute("ROLLBACK");
+                throw error;
+            }
+        } catch (SQLException error) {
+            throw new RuntimeException(error);
+        }
+    }
     public void restoreProducts(List<String> gtins){setDeletedAt(gtins,null);}
     private void setDeletedAt(List<String> gtins,String deletedAt){
         if(gtins==null||gtins.isEmpty())return;

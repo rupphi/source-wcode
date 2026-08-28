@@ -39,8 +39,13 @@ public final class OzonProductGtinMappingRepository {
 
     public String findGtin(int shopId, String sku) {
         try (Connection connection = Database.getConnection();
-                PreparedStatement statement = connection.prepareStatement(
-                        "SELECT gtin FROM ozon_product_gtin_mappings WHERE shop_id=? AND sku=?")) {
+                PreparedStatement statement = connection.prepareStatement("""
+                        SELECT mapping.gtin FROM ozon_product_gtin_mappings mapping
+                        JOIN znack_products product
+                          ON product.shop_id=mapping.shop_id AND product.gtin=mapping.gtin
+                        WHERE mapping.shop_id=? AND mapping.sku=?
+                          AND product.deleted_at IS NULL AND product.identity_archived_at IS NULL
+                        """)) {
             statement.setInt(1, shopId);
             statement.setString(2, OzonApiClient.requireExternalId(sku, "SKU"));
             try (ResultSet result = statement.executeQuery()) {
@@ -53,8 +58,14 @@ public final class OzonProductGtinMappingRepository {
 
     public Map<String, String> findAll(int shopId) {
         try (Connection connection = Database.getConnection();
-                PreparedStatement statement = connection.prepareStatement(
-                        "SELECT sku,gtin FROM ozon_product_gtin_mappings WHERE shop_id=? ORDER BY sku")) {
+                PreparedStatement statement = connection.prepareStatement("""
+                        SELECT mapping.sku,mapping.gtin FROM ozon_product_gtin_mappings mapping
+                        JOIN znack_products product
+                          ON product.shop_id=mapping.shop_id AND product.gtin=mapping.gtin
+                        WHERE mapping.shop_id=?
+                          AND product.deleted_at IS NULL AND product.identity_archived_at IS NULL
+                        ORDER BY mapping.sku
+                        """)) {
             statement.setInt(1, shopId);
             try (ResultSet result = statement.executeQuery()) {
                 Map<String, String> mappings = new LinkedHashMap<>();
@@ -76,6 +87,7 @@ public final class OzonProductGtinMappingRepository {
                         JOIN znack_products product
                           ON product.shop_id=mapping.shop_id AND product.gtin=mapping.gtin
                         WHERE mapping.shop_id=? AND product.deleted_at IS NULL
+                          AND product.identity_archived_at IS NULL
                         ORDER BY mapping.article COLLATE NOCASE
                         """);
                 PreparedStatement products = connection.prepareStatement("""
@@ -128,6 +140,7 @@ public final class OzonProductGtinMappingRepository {
                         JOIN znack_products product
                           ON product.shop_id=mapping.shop_id AND product.gtin=mapping.gtin
                         WHERE mapping.shop_id=? AND product.deleted_at IS NULL
+                          AND product.identity_archived_at IS NULL
                         """);
                 PreparedStatement products = connection.prepareStatement("""
                         SELECT sku,article FROM ozon_products
@@ -290,7 +303,8 @@ public final class OzonProductGtinMappingRepository {
 
     private static void requireGtin(Connection connection, int shopId, String gtin) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT 1 FROM znack_products WHERE shop_id=? AND gtin=? AND deleted_at IS NULL")) {
+                "SELECT 1 FROM znack_products WHERE shop_id=? AND gtin=? "
+                        + "AND deleted_at IS NULL AND identity_archived_at IS NULL")) {
             statement.setInt(1, shopId);
             statement.setString(2, gtin);
             try (ResultSet result = statement.executeQuery()) {
@@ -307,6 +321,7 @@ public final class OzonProductGtinMappingRepository {
                         JOIN znack_products product
                           ON product.shop_id=mapping.shop_id AND product.gtin=mapping.gtin
                         WHERE mapping.shop_id=? AND product.deleted_at IS NULL
+                          AND product.identity_archived_at IS NULL
                         ORDER BY mapping.sku
                         """)) {
             statement.setInt(1, shopId);

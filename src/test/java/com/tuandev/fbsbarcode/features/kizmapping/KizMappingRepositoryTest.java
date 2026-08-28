@@ -91,6 +91,26 @@ class KizMappingRepositoryTest {
         assertFalse(repository.hasGtinProduct(2, GTIN_A));
     }
 
+    @Test
+    void startupRepairsCategoryMappingLeftByAnOlderVersionForATrashedGtin() throws Exception {
+        product(1, GTIN_A, "Old", "Shoes", null);
+        product(1, GTIN_B, "New", "Shoes", null);
+        card(1, 101, "Shoes", "Female");
+        KizMappingRepository repository = new KizMappingRepository();
+        repository.replaceRulesForGtin(
+                1, GTIN_A, List.of(new ZnackGtinMappingSelection("Shoes", null, true)));
+        execute("UPDATE znack_products SET deleted_at='2026-08-28T00:00:00Z' "
+                + "WHERE shop_id=1 AND gtin='" + GTIN_A + "'");
+        assertEquals(1, mappingRuleCount(GTIN_A));
+
+        Database.initDatabase();
+
+        assertEquals(0, mappingRuleCount(GTIN_A));
+        repository.replaceRulesForGtin(
+                1, GTIN_B, List.of(new ZnackGtinMappingSelection("Shoes", null, true)));
+        assertEquals(GTIN_B, repository.findMappings(1, List.of(101L)).get(101L));
+    }
+
     private void orderAndPipeline() throws Exception {
         execute("""
                 INSERT INTO kiz_orders(shop_id,gtin,quantity,local_status,error_message,created_at,updated_at)
@@ -151,6 +171,17 @@ class KizMappingRepositoryTest {
     private void execute(String sql) throws Exception {
         try (Connection connection = Database.getConnection(); Statement statement = connection.createStatement()) {
             statement.execute(sql);
+        }
+    }
+
+    private int mappingRuleCount(String gtin) throws Exception {
+        try (Connection connection = Database.getConnection();
+                PreparedStatement statement = connection.prepareStatement(
+                        "SELECT COUNT(*) FROM znack_gtin_mapping_rules WHERE shop_id=1 AND gtin=?")) {
+            statement.setString(1, gtin);
+            try (var result = statement.executeQuery()) {
+                return result.next() ? result.getInt(1) : 0;
+            }
         }
     }
 }

@@ -16,6 +16,7 @@ import java.sql.Statement;
 
 import com.tuandev.fbsbarcode.integration.wb.WbSchemaSupport;
 import com.tuandev.fbsbarcode.integration.ozon.OzonSchemaSupport;
+import com.tuandev.fbsbarcode.integration.znack.ZnackMappingLifecycle;
 import com.tuandev.fbsbarcode.integration.znack.ZnackSchemaSupport;
 
 public class Database {
@@ -185,6 +186,10 @@ public class Database {
             WbSchemaSupport.initialize(conn);
             ZnackSchemaSupport.initialize(conn);
             OzonSchemaSupport.initialize(conn);
+            int inactiveMappings = ZnackMappingLifecycle.removeInactiveMappings(conn);
+            if (inactiveMappings > 0) {
+                LOGGER.info("Đã gỡ {} mapping tham chiếu GTIN không còn hoạt động", inactiveMappings);
+            }
             dropLegacyKizTables(conn);
             ShopCredentialSchema.initialize(conn);
             st.execute("PRAGMA user_version = " + CURRENT_SCHEMA_VERSION);

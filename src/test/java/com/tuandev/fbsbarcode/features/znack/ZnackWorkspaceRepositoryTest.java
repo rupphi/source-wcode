@@ -68,11 +68,30 @@ class ZnackWorkspaceRepositoryTest {
         product(1, GTIN_A, "A", "Shoes", "", null);
         product(1, GTIN_B, "B", "Shoes", "", null);
         product(2, GTIN_C, "C", "Shoes", "", null);
+        execute("""
+                INSERT INTO znack_gtin_mapping_rules(
+                    shop_id,gtin,subject_name,gender_value,wildcard_gender,created_at,updated_at)
+                VALUES(1,'%s','Shoes','',1,'2026-08-28T00:00:00Z','2026-08-28T00:00:00Z'),
+                      (2,'%s','Shoes','',1,'2026-08-28T00:00:00Z','2026-08-28T00:00:00Z')
+                """.formatted(GTIN_A, GTIN_C));
+        execute("""
+                INSERT INTO ozon_product_gtin_mappings(shop_id,sku,gtin,created_at,updated_at)
+                VALUES(1,'sku-a','%s','2026-08-28T00:00:00Z','2026-08-28T00:00:00Z')
+                """.formatted(GTIN_A));
+        execute("""
+                INSERT INTO ozon_article_gtin_mappings(
+                    shop_id,article_key,article,gtin,created_at,updated_at)
+                VALUES(1,'article-a','article-a','%s','2026-08-28T00:00:00Z','2026-08-28T00:00:00Z')
+                """.formatted(GTIN_A));
         ZnackWorkspaceRepository repository = new ZnackWorkspaceRepository();
 
         repository.setProductVisibility(1, "Shop A", List.of(GTIN_A, GTIN_B), true);
         assertTrue(deleted(1, GTIN_A));
         assertTrue(deleted(1, GTIN_B));
+        assertEquals(0, count("znack_gtin_mapping_rules", "shop_id=1 AND gtin='" + GTIN_A + "'"));
+        assertEquals(0, count("ozon_product_gtin_mappings", "shop_id=1 AND gtin='" + GTIN_A + "'"));
+        assertEquals(0, count("ozon_article_gtin_mappings", "shop_id=1 AND gtin='" + GTIN_A + "'"));
+        assertEquals(1, count("znack_gtin_mapping_rules", "shop_id=2 AND gtin='" + GTIN_C + "'"));
         assertEquals(2, count("znack_operation_logs", "shop_id=1 AND message='HIDDEN'"));
 
         assertThrows(ZnackWorkspaceRepository.VisibilityConflictException.class,
@@ -84,6 +103,7 @@ class ZnackWorkspaceRepositoryTest {
         repository.setProductVisibility(1, "Shop A", List.of(GTIN_A, GTIN_B), false);
         assertFalse(deleted(1, GTIN_A));
         assertFalse(deleted(1, GTIN_B));
+        assertEquals(0, count("znack_gtin_mapping_rules", "shop_id=1 AND gtin='" + GTIN_A + "'"));
         assertEquals(2, count("znack_operation_logs", "shop_id=1 AND message='RESTORED'"));
     }
 
