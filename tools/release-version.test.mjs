@@ -124,6 +124,12 @@ test("uses a data-safe Windows identity without uninstalling the legacy data dir
     "release CI must verify the data-safe executable path");
   assert.match(workflow, /UpgradeDatabaseProbe verify/,
     "release CI must verify migrated SQLite contents after launching the packaged app");
+  assert.match(workflow, /"ready"\.equals\(args\[0\]\)/,
+    "the upgrade probe must expose a schema-migration completion check");
+  assert.match(workflow, /UpgradeDatabaseProbe ready/,
+    "release CI must wait for schema initialization before full database verification");
+  assert.match(workflow, /\$migrationReady/,
+    "release CI must treat the schema version as the migration completion barrier");
   assert.match(workflow, /\$currentRegistrations\.Count -ne 1/,
     "release CI must verify the new installer registration");
 });
