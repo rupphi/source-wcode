@@ -2,6 +2,7 @@ package com.tuandev.fbsbarcode.features.znack;
 
 import com.tuandev.fbsbarcode.config.Database;
 import com.tuandev.fbsbarcode.integration.znack.GtinNormalizer;
+import com.tuandev.fbsbarcode.integration.znack.ZnackMappingLifecycle;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -125,6 +126,7 @@ public final class ZnackWorkspaceRepository {
                         changed += update.executeUpdate();
                     }
                     if (changed != normalized.size()) throw new VisibilityConflictException();
+                    if (deleted) ZnackMappingLifecycle.removeForGtins(connection, shopId, normalized);
                     for (String gtin : normalized) {
                         log.setInt(1, shopId);
                         log.setString(2, shopName);

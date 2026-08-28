@@ -595,12 +595,11 @@ jobs:
           notes="$(cat <<EOF
           WCode ${APP_VERSION}
 
-          - Khi chọn chữ ký số Znack khác, WCode xác minh chữ ký mới trực tiếp với Znack trước khi thay đổi dữ liệu của cửa hàng.
-          - Sau khi xác minh thành công, WCode tự xoá mapping GTIN cũ và đồng bộ lại danh mục GTIN thuộc chữ ký mới mà không yêu cầu ký/PIN lần thứ hai.
-          - Lịch sử đơn hàng và KIZ cũ vẫn được giữ; KIZ chưa dùng của chữ ký cũ được cách ly để không cấp nhầm cho đơn mới.
-          - WCode chặn đổi chữ ký khi tác vụ mua/lưu thông KIZ đang chạy hoặc KIZ đang được giữ cho đơn hàng, tránh làm hỏng quy trình đang xử lý.
-          - Chặn kết quả đồng bộ GTIN đến muộn từ chữ ký cũ và ngăn mapping/mua KIZ trên GTIN đã được lưu trữ.
-          - Giao diện đổi chữ ký và thông báo lỗi được hỗ trợ bằng tiếng Việt, Anh, Nga và Trung.
+          - Khi đưa GTIN vào thùng rác, WCode tự giải phóng mapping danh mục Wildberries và mapping SKU/article Ozon để người dùng có thể gán mặt hàng sang GTIN mới ngay.
+          - Việc ẩn GTIN và xoá mapping được thực hiện trong cùng một transaction, tránh trạng thái dữ liệu dở dang nếu thao tác gặp lỗi.
+          - Khi nâng cấp, WCode tự dọn các mapping còn sót lại từ phiên bản cũ nếu GTIN đã bị xoá, lưu trữ hoặc không còn tồn tại.
+          - Khôi phục GTIN cũ không tự chiếm lại mapping đã chuyển sang GTIN mới.
+          - Luồng đóng đơn/KIZ chỉ sử dụng mapping của GTIN đang hoạt động, ngăn cấp nhầm KIZ từ GTIN trong thùng rác.
 
           Khi nâng cấp từ 1.1.9, dữ liệu hiện có được sao chép an toàn sang thư mục WCodeData trước khi áp dụng schema mới. Các gói macOS hiện chưa được Apple notarize.${windows_trust_note}
           EOF

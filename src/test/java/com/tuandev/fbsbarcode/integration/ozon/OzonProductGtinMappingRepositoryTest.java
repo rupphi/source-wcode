@@ -6,8 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.tuandev.fbsbarcode.config.Database;
 import com.tuandev.fbsbarcode.features.kizmapping.KizMappingRepository;
+import com.tuandev.fbsbarcode.integration.znack.ZnackModels.ShopContext;
+import com.tuandev.fbsbarcode.integration.znack.ZnackRepository;
 import java.nio.file.Path;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.List;
 import java.util.Map;
@@ -97,12 +101,41 @@ class OzonProductGtinMappingRepositoryTest {
                 product("401", "SKU-TRASHED", "trashed-article", "Clothing", "Women")), "cursor-4");
         mappings.put(1, "SKU-TRASHED", FIRST_GTIN);
         mappings.replaceArticlesForGtin(1, FIRST_GTIN, List.of("trashed-article"));
-        try (Connection connection = Database.getConnection(); Statement statement = connection.createStatement()) {
-            statement.execute("UPDATE znack_products SET deleted_at='2026-08-25T00:00:00Z' "
-                    + "WHERE shop_id=1 AND gtin='" + FIRST_GTIN + "'");
-        }
+        new ZnackRepository(new ShopContext(1, "Ozon")).softDeleteProducts(List.of(FIRST_GTIN));
 
         assertFalse(mappings.findResolvedBySku(1).containsKey("SKU-TRASHED"));
+        assertFalse(mappings.findAll(1).containsValue(FIRST_GTIN));
+        assertFalse(mappings.findAllArticles(1).containsValue(FIRST_GTIN));
+        assertEquals(0, mappingCount("ozon_product_gtin_mappings", FIRST_GTIN));
+        assertEquals(0, mappingCount("ozon_article_gtin_mappings", FIRST_GTIN));
+    }
+
+    @Test
+    void startupRepairsOzonMappingsLeftByAnOlderVersionForATrashedGtin() throws Exception {
+        mappings.put(1, "SKU-A", FIRST_GTIN);
+        mappings.replaceArticlesForGtin(1, FIRST_GTIN, List.of("offer-a"));
+        try (Connection connection = Database.getConnection(); Statement statement = connection.createStatement()) {
+            statement.execute("UPDATE znack_products SET deleted_at='2026-08-28T00:00:00Z' "
+                    + "WHERE shop_id=1 AND gtin='" + FIRST_GTIN + "'");
+        }
+        assertEquals(1, mappingCount("ozon_product_gtin_mappings", FIRST_GTIN));
+        assertEquals(1, mappingCount("ozon_article_gtin_mappings", FIRST_GTIN));
+
+        Database.initDatabase();
+
+        assertEquals(0, mappingCount("ozon_product_gtin_mappings", FIRST_GTIN));
+        assertEquals(0, mappingCount("ozon_article_gtin_mappings", FIRST_GTIN));
+    }
+
+    private int mappingCount(String table, String gtin) throws Exception {
+        try (Connection connection = Database.getConnection();
+                PreparedStatement statement = connection.prepareStatement(
+                        "SELECT COUNT(*) FROM " + table + " WHERE shop_id=1 AND gtin=?")) {
+            statement.setString(1, gtin);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next() ? result.getInt(1) : 0;
+            }
+        }
     }
 
     private static OzonProductDto product(String productId, String sku, String offerId) {

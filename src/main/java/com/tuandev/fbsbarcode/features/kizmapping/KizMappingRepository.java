@@ -167,8 +167,12 @@ public class KizMappingRepository {
 
     public Map<String, String> findOwnersForSubject(int shopId, String subjectName) {
         String sql = """
-                SELECT gender_value,gtin FROM znack_gtin_mapping_rules
-                WHERE shop_id=? AND subject_name=? AND gtin NOT LIKE '029%'
+                SELECT mapping.gender_value,mapping.gtin
+                FROM znack_gtin_mapping_rules mapping
+                JOIN znack_products product
+                  ON product.shop_id=mapping.shop_id AND product.gtin=mapping.gtin
+                WHERE mapping.shop_id=? AND mapping.subject_name=? AND mapping.gtin NOT LIKE '029%'
+                  AND product.deleted_at IS NULL AND product.identity_archived_at IS NULL
                 """;
         try (Connection c = Database.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setInt(1, shopId);
@@ -245,12 +249,20 @@ public class KizMappingRepository {
                         LEFT JOIN znack_gtin_mapping_rules exact
                           ON exact.shop_id=c.shop_id AND exact.subject_name=c.subject_name
                          AND exact.gtin NOT LIKE '029%'
+                         AND EXISTS(SELECT 1 FROM znack_products exact_product
+                           WHERE exact_product.shop_id=exact.shop_id AND exact_product.gtin=exact.gtin
+                             AND exact_product.deleted_at IS NULL
+                             AND exact_product.identity_archived_at IS NULL)
                          AND exact.wildcard_gender=0
                          AND exact.gender_value=COALESCE(NULLIF(TRIM(COALESCE(json_extract(ch.value_json,'$[0]'),
                              json_extract(ch.value_json,'$'))),''),?)
                         LEFT JOIN znack_gtin_mapping_rules wildcard
                           ON wildcard.shop_id=c.shop_id AND wildcard.subject_name=c.subject_name
                          AND wildcard.gtin NOT LIKE '029%'
+                         AND EXISTS(SELECT 1 FROM znack_products wildcard_product
+                           WHERE wildcard_product.shop_id=wildcard.shop_id AND wildcard_product.gtin=wildcard.gtin
+                             AND wildcard_product.deleted_at IS NULL
+                             AND wildcard_product.identity_archived_at IS NULL)
                          AND wildcard.wildcard_gender=1
                         WHERE c.shop_id=? AND c.nm_id IN (
                         """ + placeholders + ")";
@@ -335,9 +347,12 @@ public class KizMappingRepository {
     private void validateNoConflicts(Connection c, int shopId, String gtin,
                                      List<ZnackGtinMappingSelection> selections) throws SQLException {
         String sql = """
-                SELECT gtin FROM znack_gtin_mapping_rules
-                WHERE shop_id=? AND subject_name=? AND gtin<>?
-                  AND (wildcard_gender=1 OR ?=1 OR gender_value=?)
+                SELECT mapping.gtin FROM znack_gtin_mapping_rules mapping
+                JOIN znack_products product
+                  ON product.shop_id=mapping.shop_id AND product.gtin=mapping.gtin
+                WHERE mapping.shop_id=? AND mapping.subject_name=? AND mapping.gtin<>?
+                  AND product.deleted_at IS NULL AND product.identity_archived_at IS NULL
+                  AND (mapping.wildcard_gender=1 OR ?=1 OR mapping.gender_value=?)
                 LIMIT 1
                 """;
         try (PreparedStatement ps = c.prepareStatement(sql)) {
