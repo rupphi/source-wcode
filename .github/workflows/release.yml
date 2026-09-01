@@ -611,11 +611,11 @@ jobs:
           notes="$(cat <<EOF
           WCode ${APP_VERSION}
 
-          - Khi đưa GTIN vào thùng rác, WCode tự giải phóng mapping danh mục Wildberries và mapping SKU/article Ozon để người dùng có thể gán mặt hàng sang GTIN mới ngay.
-          - Việc ẩn GTIN và xoá mapping được thực hiện trong cùng một transaction, tránh trạng thái dữ liệu dở dang nếu thao tác gặp lỗi.
-          - Khi nâng cấp, WCode tự dọn các mapping còn sót lại từ phiên bản cũ nếu GTIN đã bị xoá, lưu trữ hoặc không còn tồn tại.
-          - Khôi phục GTIN cũ không tự chiếm lại mapping đã chuyển sang GTIN mới.
-          - Luồng đóng đơn/KIZ chỉ sử dụng mapping của GTIN đang hoạt động, ngăn cấp nhầm KIZ từ GTIN trong thùng rác.
+          - Bỏ cột thời gian giao hàng khỏi cả ba danh sách đơn Ozon FBS để dành thêm không gian cho thông tin đơn và sản phẩm.
+          - Pipeline mua/lưu thông KIZ bắt đầu trong phiên hiện tại tiếp tục chạy khi người dùng chuyển sang cửa hàng khác.
+          - Pipeline KIZ cũ được phục hồi sau khi mở app chỉ yêu cầu CryptoPro khi người dùng chủ động chọn đúng cửa hàng.
+          - Khi CryptoPro bị huỷ hoặc chữ ký/token không sẵn sàng, WCode dừng tự động yêu cầu ký để tránh cửa sổ chọn chứng thư xuất hiện liên tục.
+          - Các yêu cầu ký CryptoPro được tuần tự hoá theo phiên, ngăn nhiều pipeline mở nhiều cửa sổ ký cùng lúc.
 
           Khi nâng cấp từ 1.1.9, dữ liệu hiện có được sao chép an toàn sang thư mục WCodeData trước khi áp dụng schema mới. Các gói macOS hiện chưa được Apple notarize.${windows_trust_note}
           EOF

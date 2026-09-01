@@ -9,6 +9,8 @@ import com.tuandev.fbsbarcode.features.kizmapping.KizMappingRepository;
 import com.tuandev.fbsbarcode.features.kizmapping.ZnackGtinMappingSelection;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels.*;
 import com.tuandev.fbsbarcode.integration.znack.ZnackIntroductionService.PermitDocumentsUnavailableException;
+import com.tuandev.fbsbarcode.integration.znack.signature.CryptoProSigningResult;
+import com.tuandev.fbsbarcode.integration.znack.signature.ZnackSignatureContext;
 import com.tuandev.fbsbarcode.models.Kiz;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -59,6 +61,7 @@ class ZnackGtinWorkflowTest {
         // Kill delayed background polls before the per-test temp DB is deleted; a poll firing
         // later would lock the next test's SQLite file on Windows.
         ZnackPurchaseCoordinator.cancelPendingPolls();
+        ZnackSigningSession.resetForTests();
         System.clearProperty("wcode.appdata.dir");
     }
 
@@ -1166,6 +1169,84 @@ class ZnackGtinWorkflowTest {
         assertEquals("temporary polling failure", repository.findPipeline(pipeline).orElseThrow().errorMessage());
     }
 
+    @Test void recoveredPipelineThatNeedsSigningWaitsWithoutSchedulingAnotherCryptoProAttempt() throws Exception {
+        Settings base = testedSettings();
+        Settings auto = withAutoIntroduction(base);
+        repository.updateProductMetadata(new Product(A, "A", "6201000000", null, null, null, null));
+        long order = repository.createDraft(A, 1);
+        repository.insertCodes(order, A, new DownloadedCodes(List.of("recovered-signing-code"), "block"));
+        long pipeline = repository.createPipeline(A, 1);
+        repository.updatePipeline(pipeline, order, PurchaseStage.WAITING_INTRODUCTION_READINESS, null);
+        AtomicInteger cryptoProCalls = new AtomicInteger();
+        var guardedSigner = ZnackSigningSession.guard(1, (payload, context) -> {
+            cryptoProCalls.incrementAndGet();
+            return new CryptoProSigningResult(new byte[]{1}, "ok");
+        });
+        ZnackIntroductionReadinessService readiness = new ZnackIntroductionReadinessService(null, null, repository) {
+            @Override public Readiness check(Settings ignored, Product product, List<KizCode> codes) throws Exception {
+                guardedSigner.sign(new byte[]{9}, ZnackSignatureContext.AUTH_CHALLENGE);
+                return Readiness.waiting("not ready");
+            }
+        };
+        ZnackPurchaseCoordinator coordinator = new ZnackPurchaseCoordinator(
+                repository, null, null, null, readiness);
+
+        coordinator.resume(auto);
+
+        assertEquals(0, cryptoProCalls.get());
+        assertTrue(ZnackSigningSession.isWaitingForSignature(1, pipeline));
+        assertFalse(ZnackPurchaseCoordinator.isScheduledForTests(1, pipeline));
+        assertEquals(PurchaseStage.WAITING_INTRODUCTION_READINESS,
+                repository.findPipeline(pipeline).orElseThrow().stage());
+        assertEquals(1, new ZnackGtinInventoryService().availableCount(1, A));
+
+        ZnackSigningSession.authorizeShop(1);
+        coordinator.resume(auto);
+
+        assertEquals(1, cryptoProCalls.get());
+        assertFalse(ZnackSigningSession.isWaitingForSignature(1, pipeline));
+        assertTrue(ZnackPurchaseCoordinator.isScheduledForTests(1, pipeline));
+    }
+
+    @Test void pipelineStartedThisSessionCanKeepSigningAfterTheUserSelectsAnotherShop() throws Exception {
+        Settings base = testedSettings();
+        Settings auto = withAutoIntroduction(base);
+        repository.updateProductMetadata(new Product(A, "A", "6201000000", null, null, null, null));
+        ZnackKizOrderService orderService = readyOrderService();
+        ZnackKizCodeService codeService = new ZnackKizCodeService(null, null, repository) {
+            @Override public int download(Settings ignored, long id) {
+                KizOrder order = repository.findOrder(id).orElseThrow();
+                return repository.insertCodes(id, order.gtin(),
+                        new DownloadedCodes(List.of("current-session-code"), "block"));
+            }
+        };
+        AtomicInteger cryptoProCalls = new AtomicInteger();
+        var guardedSigner = ZnackSigningSession.guard(1, (payload, context) -> {
+            cryptoProCalls.incrementAndGet();
+            return new CryptoProSigningResult(new byte[]{1}, "ok");
+        });
+        ZnackIntroductionReadinessService readiness = new ZnackIntroductionReadinessService(null, null, repository) {
+            @Override public Readiness check(Settings ignored, Product product, List<KizCode> codes) throws Exception {
+                guardedSigner.sign(new byte[]{9}, ZnackSignatureContext.AUTH_CHALLENGE);
+                return Readiness.waiting("not ready");
+            }
+        };
+        ZnackPurchaseCoordinator coordinator = new ZnackPurchaseCoordinator(
+                repository, orderService, codeService, null, readiness) {
+            @Override void schedule(long ignoredPipeline) {
+            }
+        };
+
+        long pipeline = coordinator.start(auto, A, 1);
+        ZnackSigningSession.authorizeShop(2);
+        coordinator.resume(auto);
+
+        assertEquals(1, cryptoProCalls.get());
+        assertFalse(ZnackSigningSession.isWaitingForSignature(1, pipeline));
+        assertEquals(PurchaseStage.WAITING_INTRODUCTION_READINESS,
+                repository.findPipeline(pipeline).orElseThrow().stage());
+    }
+
     private ZnackKizOrderService readyOrderService() {
         return new ZnackKizOrderService(null, null, null, repository) {
             @Override public KizOrder buy(Settings ignored, String gtin, int quantity) {
@@ -1215,6 +1296,15 @@ class ZnackGtinWorkflowTest {
         Path cryptcp = executableFixture();
         return new Settings("", "", "oms", "connection", "", "", "", "", "certificate", "[]",
                 "", "", "", false, "", "[]", "", Instant.now(), "", cryptcp.toString(), "", 60, "");
+    }
+
+    private Settings withAutoIntroduction(Settings base) {
+        return new Settings(base.trueApiBaseUrl(), base.suzBaseUrl(), base.omsId(), base.omsConnection(),
+                base.participantInn(), base.producerInn(), base.ownerInn(), base.signerExecutable(),
+                base.signerCertificate(), base.signerArgumentsJson(), "DOC-1", "20.06.2024", "", true,
+                base.certificateListExecutable(), base.certificateListArgumentsJson(), base.certificateMetadataJson(),
+                base.signerTestedAt(), base.certmgrPath(), base.cryptcpPath(), base.csptestPath(),
+                base.cryptoProTimeoutSeconds(), "20.06.2029", "CONFORMITY_DECLARATION");
     }
 
     private Path executableFixture() throws Exception {

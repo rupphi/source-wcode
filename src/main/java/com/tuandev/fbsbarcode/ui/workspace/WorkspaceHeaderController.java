@@ -36,6 +36,7 @@ public class WorkspaceHeaderController {
     private Runnable onDeleteShop;
     private Consumer<Shop> onShopSelected;
     private Marketplace marketplace = Marketplace.WILDBERRIES;
+    private boolean updatingShops;
 
     @FXML
     public void initialize() {
@@ -53,7 +54,7 @@ public class WorkspaceHeaderController {
         buttonCell.getStyleClass().add("shop-combo-button-cell");
         shopComboBox.setButtonCell(buttonCell);
         shopComboBox.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
-            if (newVal != null && onShopSelected != null) {
+            if (!updatingShops && newVal != null && onShopSelected != null) {
                 onShopSelected.accept(newVal);
             }
         });
@@ -97,12 +98,17 @@ public class WorkspaceHeaderController {
     }
 
     public void setShops(List<Shop> shops, Shop selectedShop) {
-        Shop currentSelection = shopComboBox.getValue();
-        shopComboBox.getItems().setAll(shops);
-        if (selectedShop != null) {
-            shopComboBox.getSelectionModel().select(selectedShop);
-        } else if (currentSelection != null) {
-            shopComboBox.getSelectionModel().select(currentSelection);
+        updatingShops = true;
+        try {
+            Shop currentSelection = shopComboBox.getValue();
+            shopComboBox.getItems().setAll(shops);
+            if (selectedShop != null) {
+                shopComboBox.getSelectionModel().select(selectedShop);
+            } else if (currentSelection != null) {
+                shopComboBox.getSelectionModel().select(currentSelection);
+            }
+        } finally {
+            updatingShops = false;
         }
     }
 

@@ -138,18 +138,15 @@ public final class OzonDashboardController {
     @FXML private TableColumn<OzonPostingDto, Boolean> newOrderSelectTC;
     @FXML private TableColumn<OzonPostingDto, OzonPostingDto> newOrderImageTC;
     @FXML private TableColumn<OzonPostingDto, String> newOrderNumberTC;
-    @FXML private TableColumn<OzonPostingDto, String> newOrderShipmentTC;
     @FXML private TableColumn<OzonPostingDto, String> newOrderItemsTC;
     @FXML private TableView<OzonPostingDto> packingOrdersTable;
     @FXML private TableColumn<OzonPostingDto, OzonPostingDto> packingOrderImageTC;
     @FXML private TableColumn<OzonPostingDto, String> packingOrderNumberTC;
-    @FXML private TableColumn<OzonPostingDto, String> packingOrderShipmentTC;
     @FXML private TableColumn<OzonPostingDto, String> packingOrderItemsTC;
     @FXML private TableColumn<OzonPostingDto, Void> packingLabelTC;
     @FXML private TableView<OzonPostingDto> deliveringOrdersTable;
     @FXML private TableColumn<OzonPostingDto, OzonPostingDto> deliveringOrderImageTC;
     @FXML private TableColumn<OzonPostingDto, String> deliveringOrderNumberTC;
-    @FXML private TableColumn<OzonPostingDto, String> deliveringOrderShipmentTC;
     @FXML private TableColumn<OzonPostingDto, String> deliveringOrderItemsTC;
     @FXML private TableColumn<OzonPostingDto, String> deliveringOrderStatusTC;
     @FXML private CheckBox sortByProductCheckBox;
@@ -304,9 +301,6 @@ public final class OzonDashboardController {
         newOrderNumberTC.setText(i18n.tr("ozon.dashboard.col.order"));
         packingOrderNumberTC.setText(i18n.tr("ozon.dashboard.col.order"));
         deliveringOrderNumberTC.setText(i18n.tr("ozon.dashboard.col.order"));
-        newOrderShipmentTC.setText(i18n.tr("ozon.dashboard.col.shipment"));
-        packingOrderShipmentTC.setText(i18n.tr("ozon.dashboard.col.shipment"));
-        deliveringOrderShipmentTC.setText(i18n.tr("ozon.dashboard.col.shipment"));
         newOrderItemsTC.setText(i18n.tr("ozon.dashboard.col.items"));
         packingOrderItemsTC.setText(i18n.tr("ozon.dashboard.col.items"));
         deliveringOrderItemsTC.setText(i18n.tr("ozon.dashboard.col.items"));
@@ -611,9 +605,9 @@ public final class OzonDashboardController {
         configureImageColumn(newOrderImageTC);
         configureImageColumn(packingOrderImageTC);
         configureImageColumn(deliveringOrderImageTC);
-        configureOrderColumns(newOrderNumberTC, newOrderShipmentTC, newOrderItemsTC);
-        configureOrderColumns(packingOrderNumberTC, packingOrderShipmentTC, packingOrderItemsTC);
-        configureOrderColumns(deliveringOrderNumberTC, deliveringOrderShipmentTC, deliveringOrderItemsTC);
+        configureOrderColumns(newOrderNumberTC, newOrderItemsTC);
+        configureOrderColumns(packingOrderNumberTC, packingOrderItemsTC);
+        configureOrderColumns(deliveringOrderNumberTC, deliveringOrderItemsTC);
         deliveringOrderStatusTC.setCellValueFactory(data ->
                 new SimpleStringProperty(statusText(data.getValue().status())));
         packingLabelTC.setCellFactory(column -> labelCell());
@@ -635,10 +629,8 @@ public final class OzonDashboardController {
     }
 
     private void configureOrderColumns(TableColumn<OzonPostingDto, String> orderColumn,
-            TableColumn<OzonPostingDto, String> shipmentColumn,
             TableColumn<OzonPostingDto, String> itemsColumn) {
         orderColumn.setCellValueFactory(data -> new SimpleStringProperty(orderText(data.getValue())));
-        shipmentColumn.setCellValueFactory(data -> new SimpleStringProperty(shipmentText(data.getValue())));
         itemsColumn.setCellValueFactory(data -> new SimpleStringProperty(itemsText(data.getValue())));
         itemsColumn.setCellFactory(column -> new OrderItemsCell());
     }
@@ -1288,11 +1280,6 @@ public final class OzonDashboardController {
     private static String orderText(OzonPostingDto posting) {
         String order = posting.orderNumber().isBlank() ? posting.postingNumber() : posting.orderNumber();
         return order.equals(posting.postingNumber()) ? order : order + "\n" + posting.postingNumber();
-    }
-
-    private static String shipmentText(OzonPostingDto posting) {
-        if (!posting.shipmentAt().isBlank()) return posting.shipmentAt();
-        return posting.inProcessAt().isBlank() ? "-" : posting.inProcessAt();
     }
 
     static String itemsText(OzonPostingDto posting) {

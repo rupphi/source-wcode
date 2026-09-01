@@ -66,10 +66,11 @@ public class ZnackPurchaseCoordinator {
     }
 
     private static ZnackPurchaseCoordinator create(ZnackRepository repository, Settings settings) {
-        ZnackSignatureProvider signer = settings.signerCertificate() == null || settings.signerCertificate().isBlank()
+        ZnackSignatureProvider cryptoProSigner = settings.signerCertificate() == null || settings.signerCertificate().isBlank()
                 ? ZnackSignatureProvider.unconfigured()
                 : new CryptoProSignatureProvider(settings.cryptcpPath(), settings.signerCertificate(),
                 Duration.ofSeconds(settings.resolvedCryptoProTimeoutSeconds()));
+        ZnackSignatureProvider signer = ZnackSigningSession.guard(repository.shop().shopId(), cryptoProSigner);
         ZnackApiClient api = new ZnackApiClient();
         ZnackAuthService auth = new ZnackAuthService(api, signer);
         return new ZnackPurchaseCoordinator(repository, new ZnackKizOrderService(api, auth, signer, repository),
@@ -104,14 +105,21 @@ public class ZnackPurchaseCoordinator {
 
     public long start(Settings settings, String gtin, int quantity, String requestKey) throws Exception {
         ZnackPurchasePipelineState replay = replay(requestKey, gtin, quantity);
-        if (replay != null) return replay.id();
+        if (replay != null) {
+            ZnackSigningSession.authorizePipeline(repository.shop().shopId(), replay.id());
+            return replay.id();
+        }
         validatePrerequisites(settings, gtin, quantity);
         long pipelineId;
         synchronized (CREATE_LOCK) {
             replay = replay(requestKey, gtin, quantity);
-            if (replay != null) return replay.id();
+            if (replay != null) {
+                ZnackSigningSession.authorizePipeline(repository.shop().shopId(), replay.id());
+                return replay.id();
+            }
             pipelineId = repository.enqueuePipeline(gtin, quantity, requestKey);
         }
+        ZnackSigningSession.authorizePipeline(repository.shop().shopId(), pipelineId);
         ZnackPurchasePipelineState persisted = repository.findPipeline(pipelineId).orElseThrow();
         if (persisted.stage() != PurchaseStage.QUEUED) advance(settings, pipelineId);
         schedule(pipelineId);
@@ -122,14 +130,21 @@ public class ZnackPurchaseCoordinator {
     public long enqueue(Settings settings, String gtin, int quantity, String requestKey) throws Exception {
         requireRequestKey(requestKey);
         ZnackPurchasePipelineState replay = replay(requestKey, gtin, quantity);
-        if (replay != null) return replay.id();
+        if (replay != null) {
+            ZnackSigningSession.authorizePipeline(repository.shop().shopId(), replay.id());
+            return replay.id();
+        }
         validatePrerequisites(settings, gtin, quantity);
         long pipelineId;
         synchronized (CREATE_LOCK) {
             replay = replay(requestKey, gtin, quantity);
-            if (replay != null) return replay.id();
+            if (replay != null) {
+                ZnackSigningSession.authorizePipeline(repository.shop().shopId(), replay.id());
+                return replay.id();
+            }
             pipelineId = repository.enqueuePipeline(gtin, quantity, requestKey);
         }
+        ZnackSigningSession.authorizePipeline(repository.shop().shopId(), pipelineId);
         Thread.ofVirtual().name("wcode-znack-purchase-" + repository.shop().shopId() + "-" + pipelineId)
                 .start(() -> advanceEnqueued(pipelineId));
         return pipelineId;
@@ -190,6 +205,7 @@ public class ZnackPurchaseCoordinator {
         if (pipeline.orderId() == null || repository.findCodes(pipeline.orderId()).isEmpty()) {
             throw new IllegalStateException("The failed introduction has no downloaded codes to retry.");
         }
+        ZnackSigningSession.authorizePipeline(repository.shop().shopId(), pipeline.id());
         synchronized (CREATE_LOCK) {
             repository.updatePipeline(pipeline.id(), pipeline.orderId(),
                     PurchaseStage.WAITING_INTRODUCTION_READINESS, null);
@@ -207,7 +223,9 @@ public class ZnackPurchaseCoordinator {
             try {
                 advance(settings, pipeline.id());
             } catch (Exception e) {
-                repository.log("PURCHASE_PIPELINE_RESUME", pipeline.gtin(), "ERROR", e.getMessage(), null);
+                if (!(e instanceof ZnackSigningSession.SigningDeferredException)) {
+                    repository.log("PURCHASE_PIPELINE_RESUME", pipeline.gtin(), "ERROR", e.getMessage(), null);
+                }
             } finally {
                 schedule(pipeline.id());
             }
@@ -244,7 +262,9 @@ public class ZnackPurchaseCoordinator {
                         && repository.findLatestDocument(pipeline.orderId()).isEmpty()) {
                     repository.updatePipeline(pipeline.id(), pipeline.orderId(), pipeline.stage(), e.getMessage());
                 }
-                repository.log("INTRODUCTION_RESUME", pipeline.gtin(), "ERROR", e.getMessage(), null);
+                if (!(e instanceof ZnackSigningSession.SigningDeferredException)) {
+                    repository.log("INTRODUCTION_RESUME", pipeline.gtin(), "ERROR", e.getMessage(), null);
+                }
             } finally {
                 schedule(pipeline.id());
             }
@@ -255,7 +275,8 @@ public class ZnackPurchaseCoordinator {
         String key = pipelineKey(pipelineId);
         if (!RUNNING.add(key)) return;
         String gtin = null;
-        try {
+        try (ZnackSigningSession.PipelineScope ignored =
+                     ZnackSigningSession.openPipeline(repository.shop().shopId(), pipelineId)) {
             ZnackPurchasePipelineState pipeline = repository.findPipeline(pipelineId).orElseThrow();
             gtin = pipeline.gtin();
             try {
@@ -288,7 +309,12 @@ public class ZnackPurchaseCoordinator {
             } catch (Exception e) {
                 PurchaseStage current = repository.findPipeline(pipelineId).map(ZnackPurchasePipelineState::stage)
                         .orElse(PurchaseStage.FAILED);
-                if (current == PurchaseStage.RECONCILING_ORDER
+                if (e instanceof ZnackSigningSession.SigningDeferredException) {
+                    repository.updatePipeline(pipelineId, null, current, ZnackSigningSession.WAITING_MESSAGE);
+                    LOGGER.info("Znack signing deferred until explicit shop selection. shopId={}, pipelineId={}, stage={}",
+                            repository.shop().shopId(), pipelineId, current);
+                    throw e;
+                } else if (current == PurchaseStage.RECONCILING_ORDER
                         || current == PurchaseStage.POLLING_ORDER || current == PurchaseStage.DOWNLOADING_CODES
                         || current == PurchaseStage.WAITING_INTRODUCTION_READINESS
                         || current == PurchaseStage.POLLING_INTRODUCTION) {
@@ -526,6 +552,7 @@ public class ZnackPurchaseCoordinator {
     void schedule(long pipelineId) {
         ZnackPurchasePipelineState pipeline = repository.findPipeline(pipelineId).orElse(null);
         if (pipeline == null || !pipeline.active() || pipeline.stage() == PurchaseStage.CREATING_ORDER) return;
+        if (ZnackSigningSession.isWaitingForSignature(repository.shop().shopId(), pipelineId)) return;
         String key = pipelineKey(pipelineId);
         if (!SCHEDULED.add(key)) return;
         long delaySeconds = pipeline.stage() == PurchaseStage.WAITING_INTRODUCTION_READINESS
@@ -565,6 +592,10 @@ public class ZnackPurchaseCoordinator {
         }
         PENDING_POLLS.clear();
         SCHEDULED.clear();
+    }
+
+    static boolean isScheduledForTests(int shopId, long pipelineId) {
+        return SCHEDULED.contains(shopId + ":" + pipelineId);
     }
 
     private String pipelineKey(long pipelineId) {

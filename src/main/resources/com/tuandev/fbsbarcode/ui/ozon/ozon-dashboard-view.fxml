@@ -60,7 +60,6 @@
                                                 <TableColumn fx:id="newOrderSelectTC" maxWidth="46.0" minWidth="46.0" prefWidth="46.0" resizable="false" text="" />
                                                 <TableColumn fx:id="newOrderImageTC" maxWidth="58.0" minWidth="58.0" prefWidth="58.0" resizable="false" text="" />
                                                 <TableColumn fx:id="newOrderNumberTC" minWidth="120.0" prefWidth="170.0" text="Order" />
-                                                <TableColumn fx:id="newOrderShipmentTC" minWidth="95.0" prefWidth="130.0" text="Shipment" />
                                                 <TableColumn fx:id="newOrderItemsTC" minWidth="140.0" prefWidth="270.0" text="Items" />
                                             </columns>
                                         </TableView>
@@ -90,7 +89,6 @@
                                             <columns>
                                                 <TableColumn fx:id="packingOrderImageTC" maxWidth="58.0" minWidth="58.0" prefWidth="58.0" resizable="false" text="" />
                                                 <TableColumn fx:id="packingOrderNumberTC" minWidth="120.0" prefWidth="165.0" text="Order" />
-                                                <TableColumn fx:id="packingOrderShipmentTC" minWidth="95.0" prefWidth="125.0" text="Shipment" />
                                                 <TableColumn fx:id="packingOrderItemsTC" minWidth="130.0" prefWidth="235.0" text="Items" />
                                                 <TableColumn fx:id="packingLabelTC" maxWidth="54.0" minWidth="54.0" prefWidth="54.0" resizable="false" text="" />
                                             </columns>
@@ -109,7 +107,6 @@
                                             <columns>
                                                 <TableColumn fx:id="deliveringOrderImageTC" maxWidth="58.0" minWidth="58.0" prefWidth="58.0" resizable="false" text="" />
                                                 <TableColumn fx:id="deliveringOrderNumberTC" minWidth="120.0" prefWidth="165.0" text="Order" />
-                                                <TableColumn fx:id="deliveringOrderShipmentTC" minWidth="95.0" prefWidth="125.0" text="Shipment" />
                                                 <TableColumn fx:id="deliveringOrderItemsTC" minWidth="130.0" prefWidth="230.0" text="Items" />
                                                 <TableColumn fx:id="deliveringOrderStatusTC" minWidth="90.0" prefWidth="120.0" text="Status" />
                                             </columns>

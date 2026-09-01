@@ -19,6 +19,9 @@ import com.tuandev.fbsbarcode.integration.license.LicenseService;
 import com.tuandev.fbsbarcode.integration.license.LicenseState;
 import com.tuandev.fbsbarcode.integration.znack.ZnackPurchaseCoordinator;
 import com.tuandev.fbsbarcode.integration.znack.ZnackGtinInventoryService;
+import com.tuandev.fbsbarcode.integration.znack.ZnackModels;
+import com.tuandev.fbsbarcode.integration.znack.ZnackRepository;
+import com.tuandev.fbsbarcode.integration.znack.ZnackSigningSession;
 import com.tuandev.fbsbarcode.integration.wb.WbSyncReport;
 import com.tuandev.fbsbarcode.integration.wb.WbSyncWorkflow;
 import com.tuandev.fbsbarcode.integration.wb.WbTokenInspector;
@@ -1074,6 +1077,27 @@ public class HomeController implements Initializable {
         return false;
     }
 
+    private void selectShopExplicitly(Shop shop) {
+        ZnackSigningSession.authorizeShop(shop.getId());
+        selectShop(shop);
+        Task<Void> resume = new Task<>() {
+            @Override
+            protected Void call() {
+                ZnackRepository repository = new ZnackRepository(
+                        new ZnackModels.ShopContext(shop.getId(), shop.getName()));
+                ZnackPurchaseCoordinator coordinator = ZnackPurchaseCoordinator.create(repository);
+                var settings = repository.getSettings();
+                coordinator.resume(settings);
+                coordinator.resumeEligibleIntroductions(settings);
+                return null;
+            }
+        };
+        resume.setOnFailed(event -> LOGGER.warn(
+                "Could not resume Znack pipelines after explicit shop selection. shopId={}",
+                shop.getId(), resume.getException()));
+        AppTaskExecutor.execute(resume);
+    }
+
     private void selectShop(Shop shop) {
         boolean sharedView = isPrintHistoryVisible() || isZnackAutomationVisible() || isFboSupplyOrdersVisible();
         boolean dashboardVisible = isDashboardVisible();
@@ -1416,7 +1440,7 @@ public class HomeController implements Initializable {
         workspaceHeaderController.setOnSync(() -> onSyncWildberries(new ActionEvent()));
         workspaceHeaderController.setOnEditShop(() -> onUpdateShop(new ActionEvent()));
         workspaceHeaderController.setOnDeleteShop(() -> onDeleteShop(new ActionEvent()));
-        workspaceHeaderController.setOnShopSelected(this::selectShop);
+        workspaceHeaderController.setOnShopSelected(this::selectShopExplicitly);
         workspaceHeaderController.applyTranslations();
         headerContainer.getChildren().setAll(root);
     }

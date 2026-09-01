@@ -51,7 +51,9 @@ import java.sql.Statement;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -101,6 +103,39 @@ class FxmlSmokeTest {
         assertLoads(PrintTemplateDesignerController.class, "print-template-designer-view.fxml");
         assertLoads(ShopDialogController.class, "shop-dialog.fxml");
         assertLoads(OzonDashboardController.class, "ozon-dashboard-view.fxml");
+    }
+
+    @Test
+    void restoringHeaderShopDoesNotMasqueradeAsAnExplicitUserSelection() throws Exception {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicInteger selections = new AtomicInteger();
+        AtomicInteger afterRestore = new AtomicInteger();
+        AtomicInteger afterExplicitSelection = new AtomicInteger();
+        Platform.runLater(() -> {
+            try {
+                FXMLLoader loader = FxmlViewLoader.loader(WorkspaceHeaderController.class,
+                        "workspace-header-view.fxml");
+                FxmlViewLoader.load(loader);
+                WorkspaceHeaderController controller = loader.getController();
+                @SuppressWarnings("unchecked")
+                ComboBox<Shop> shops = (ComboBox<Shop>) loader.getNamespace().get("shopComboBox");
+                Shop restored = new Shop(1, "Restored", "token");
+                Shop explicitlySelected = new Shop(2, "Selected", "token");
+                controller.setOnShopSelected(ignored -> selections.incrementAndGet());
+
+                controller.setShops(java.util.List.of(restored, explicitlySelected), restored);
+                afterRestore.set(selections.get());
+
+                shops.getSelectionModel().select(explicitlySelected);
+                afterExplicitSelection.set(selections.get());
+            } finally {
+                latch.countDown();
+            }
+        });
+
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+        assertEquals(0, afterRestore.get());
+        assertEquals(1, afterExplicitSelection.get());
     }
 
     @Test
@@ -407,6 +442,9 @@ class FxmlSmokeTest {
                         && loader.getNamespace().get("packingLabelTC") != null
                         && loader.getNamespace().get("deliveringOrdersTable") != null
                         && loader.getNamespace().get("deliveringOrderImageTC") != null
+                        && loader.getNamespace().get("newOrderShipmentTC") == null
+                        && loader.getNamespace().get("packingOrderShipmentTC") == null
+                        && loader.getNamespace().get("deliveringOrderShipmentTC") == null
                         && loader.getNamespace().get("printAllButton") != null
                         && loader.getNamespace().get("sortByProductCheckBox") != null
                         && loader.getNamespace().get("sortByArticleCheckBox") != null
