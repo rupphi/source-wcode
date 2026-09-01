@@ -176,19 +176,13 @@ public class HomeController implements Initializable {
     private final Consumer<KizAttachmentCoordinator.KizAttachmentProgress> kizProgressListener =
             progress -> Platform.runLater(() -> onKizAttachmentProgress(progress));
     private final Set<Integer> productKizSyncingShopIds = ConcurrentHashMap.newKeySet();
+    private boolean initialZnackShopAuthorized;
     private boolean disposed;
 
     @Override
     public void initialize(URL url, ResourceBundle resourceBundle) {
         Database.initDatabase();
         new ZnackGtinInventoryService().releaseRecoverableReservations();
-        Task<Void> resumeZnackPipelines = new Task<>() {
-            @Override protected Void call() {
-                ZnackPurchaseCoordinator.resumeAllPersisted();
-                return null;
-            }
-        };
-        AppTaskExecutor.execute(resumeZnackPipelines);
         printTemplateService.ensureDefaultTemplateExists();
 
         fileChooser = new FileChooser();
@@ -1056,6 +1050,9 @@ public class HomeController implements Initializable {
             } else {
                 selectShop(state.getShops().get(0));
             }
+            if (authorizeInitialZnackShop(state.getSelectedShop())) {
+                resumeAllPersistedZnackPipelines();
+            }
         });
         task.setOnFailed(e -> AlertService.showError(task.getException().getMessage()));
         AppTaskExecutor.execute(task);
@@ -1095,6 +1092,29 @@ public class HomeController implements Initializable {
         resume.setOnFailed(event -> LOGGER.warn(
                 "Could not resume Znack pipelines after explicit shop selection. shopId={}",
                 shop.getId(), resume.getException()));
+        AppTaskExecutor.execute(resume);
+    }
+
+    boolean authorizeInitialZnackShop(Shop shop) {
+        if (initialZnackShopAuthorized || shop == null) {
+            return false;
+        }
+        initialZnackShopAuthorized = true;
+        ZnackSigningSession.authorizeShop(shop.getId());
+        return true;
+    }
+
+    private void resumeAllPersistedZnackPipelines() {
+        Task<Void> resume = new Task<>() {
+            @Override
+            protected Void call() {
+                ZnackPurchaseCoordinator.resumeAllPersisted();
+                return null;
+            }
+        };
+        resume.setOnFailed(event -> LOGGER.warn(
+                "Could not resume persisted Znack pipelines after selecting the initial shop.",
+                resume.getException()));
         AppTaskExecutor.execute(resume);
     }
 

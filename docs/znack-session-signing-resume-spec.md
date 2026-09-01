@@ -8,8 +8,9 @@ Prevent persisted Znack purchase/introduction pipelines from repeatedly opening 
 
 - A pipeline created by a user action in the current process is authorized to request signatures for the rest of that process. It remains authorized if the user switches to another shop.
 - A pipeline restored from SQLite after app startup may continue steps that do not need a new signature. At the first signing boundary it waits without invoking CryptoPro.
+- After the startup shop list is loaded, the shop restored as active is authorized once and its persisted pipelines resume automatically. This covers cases where the user closed WCode to top up the Znack balance and then reopened it.
 - Selecting a shop from the shop dropdown is explicit session authorization for that shop. Waiting restored pipelines for that shop resume in the background.
-- Restoring the last selected shop during startup is not explicit authorization and must not trigger signing.
+- Restored pipelines belonging to other shops remain paused at the signing boundary until the user selects their shop.
 - Authorization and waiting state are in memory only. No database migration or persisted consent flag is introduced.
 - If CryptoPro reports cancellation, missing token/certificate, unavailable private key, or an expired certificate, automatic signing retries stop for that pipeline. Its existing order, downloaded KIZ, document, and idempotency state remain unchanged and retryable.
 - An already-submitted ambiguous mutation is still reconciled or polled through the existing pipeline stages; the change must not submit duplicate purchases or introduction documents.
@@ -22,7 +23,7 @@ Prevent persisted Znack purchase/introduction pipelines from repeatedly opening 
 - Mark newly enqueued pipelines and explicit introduction retries as authorized.
 - Mark a pipeline as waiting when signing lacks session authorization or CryptoPro returns a human-action error. The poll scheduler does not reschedule a waiting pipeline.
 - Explicit shop selection authorizes the shop, clears its in-memory waits, and invokes persisted pipeline resume on the existing background executor.
-- Suppress the shop dropdown callback while its items/initial value are populated so startup restoration cannot masquerade as a user selection.
+- Suppress the shop dropdown callback while its items/initial value are populated. The startup coordinator separately authorizes only the resolved active shop and starts the one-time persisted-pipeline recovery after that selection is known.
 
 ## Code boundaries
 
@@ -42,5 +43,5 @@ Prevent persisted Znack purchase/introduction pipelines from repeatedly opening 
 
 - Closing the CryptoPro dialog cannot cause the same background pipeline to reopen it every 30 seconds.
 - New purchases keep progressing after changing the selected shop.
-- Old work resumes signing only after the user deliberately selects its shop.
+- Old work for the startup active shop resumes automatically; old work for every other shop resumes signing only after the user deliberately selects that shop.
 - No paid KIZ, pipeline, order, or document state is deleted or duplicated.

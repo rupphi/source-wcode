@@ -10,9 +10,9 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Process-local consent and pause state for background Znack signing.
  *
- * <p>Nothing in this class is persisted. A recovered pipeline must therefore reach an explicit
- * shop selection before it can open CryptoPro, while a pipeline created in this process keeps its
- * authorization if the visible shop changes.</p>
+ * <p>Nothing in this class is persisted. A recovered pipeline can open CryptoPro after its shop is
+ * authorized by the startup active-shop selection or by a later explicit shop selection, while a
+ * pipeline created in this process keeps its authorization if the visible shop changes.</p>
  */
 public final class ZnackSigningSession {
     static final String WAITING_MESSAGE = "Waiting for the user to select this shop before signing.";
