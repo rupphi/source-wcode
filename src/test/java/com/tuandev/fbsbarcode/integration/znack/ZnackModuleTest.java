@@ -84,6 +84,8 @@ class ZnackModuleTest {
                 "WAITING_INTRODUCTION_DOCUMENTS", missingDocuments));
         assertEquals("", ZnackErrorMessages.displayForPipeline(
                 "INTRODUCTION_SKIPPED_MISSING_DOCUMENTS", missingDocuments));
+        assertEquals("", ZnackErrorMessages.displayForPipeline(
+                "WAITING_INTRODUCTION_READINESS", missingDocuments));
         assertEquals("temporary readiness failure", ZnackErrorMessages.displayForPipeline(
                 "WAITING_INTRODUCTION_READINESS", "temporary readiness failure"));
         assertEquals(pollingDetail, ZnackErrorMessages.displayForPipeline("FAILED", pollingDetail));
@@ -1031,6 +1033,66 @@ class ZnackModuleTest {
         var metadata=new KizMappingRepository().findLabelMetadata(1,synced.gtin());
         assertEquals("МУЖСКОЙ",metadata.gender());
         assertEquals("48-56",metadata.size());
+    }
+
+    @Test void productSyncUsesOfficialRegistryCertificateForWaitingIntroductionWhenFeedOmitsIt() throws Exception {
+        String gtin="04627877922394";
+        ZnackRepository repository=repository(1,"Shop A");
+        repository.upsertProducts(List.of(new Product(
+                gtin,"Трусы боксеры для мальчиков","6107110000",null,null,null,null)));
+        long orderId=repository.createDraft(gtin,1);
+        repository.insertCodes(orderId,gtin,new DownloadedCodes(List.of(
+                "010462787792239421abcdefghijklm\u001D91ABCD\u001D92signature"),"block"));
+        long pipelineId=repository.createPipeline(gtin,1);
+        repository.updatePipeline(pipelineId,orderId,PurchaseStage.WAITING_INTRODUCTION_READINESS,
+                "GTIN "+gtin+" has no active National Catalog declaration or certificate. "
+                        +"Publish or reactivate the GTIN document; the introduction will retry automatically.");
+        repository.softDeleteProducts(List.of(gtin));
+        AtomicInteger registryCalls=new AtomicInteger();
+        ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonElement products(String base,String token){
+                return JsonParser.parseString("""
+                        {"results":[{"gtin":"04627877922394","productName":"Трусы боксеры для мальчиков",
+                        "tnVedCode10":"6107110000"}]}
+                        """);
+            }
+            @Override public JsonElement productCards(String base,String token,String gtins){
+                return JsonParser.parseString("""
+                        {"result":[{"identified_by":[{"type":"gtin","value":"04627877922394"}],
+                        "good_name":"Трусы боксеры для мальчиков"}]}
+                        """);
+            }
+            @Override public JsonElement permitDocuments(String base,String token,String requestedGtin,String inn){
+                registryCalls.incrementAndGet();
+                assertEquals(gtin,requestedGtin);
+                return JsonParser.parseString("""
+                        {"result":{"documents":[{
+                          "attr_id":23561,
+                          "number":"ЕАЭС RU С-CN.АБ47.В.03492/24",
+                          "from_date":"2024-01-26",
+                          "status_group":1,
+                          "status":"Действует"
+                        }]}}
+                        """);
+            }
+        };
+        ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+            @Override public String trueApiToken(Settings s){return "token";}
+        };
+
+        new ZnackProductService(api,auth,repository).sync(testedSettings("","","","connection",""));
+
+        assertEquals(1,registryCalls.get(),"one registry lookup is enough for every waiting order of the GTIN");
+        Product synced=repository.findProduct(gtin).orElseThrow();
+        assertEquals(List.of(new GoodsDocument("CONFORMITY_CERTIFICATE",
+                "ЕАЭС RU С-CN.АБ47.В.03492/24","2024-01-26")),synced.permitDocuments());
+        assertEquals(List.of(gtin),repository.findProducts().stream().map(Product::gtin).toList(),
+                "an active official certificate must restore the GTIN from trash");
+        assertEquals(List.of(pipelineId),repository.findWaitingIntroductionDocumentPipelines().stream()
+                .map(ZnackPurchasePipelineState::id).toList(),
+                "legacy missing-document readiness waits must remain recoverable after upgrade");
+        assertTrue(repository.findActivePipelines().isEmpty(),
+                "legacy missing-document waits must not be polled as ordinary readiness work");
     }
 
     @Test void productSyncFetchesEveryReportedPage() throws Exception {

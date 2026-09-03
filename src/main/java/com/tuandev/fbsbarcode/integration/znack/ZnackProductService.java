@@ -47,6 +47,8 @@ public class ZnackProductService {
                 settings,token,byGtin,incompleteGtins,permitDocumentSnapshots,labelMetadataSnapshots);
         List<Product> publishable=new ArrayList<>();List<String> unpublished=new ArrayList<>();
         for(Product p:byGtin.values()){if(ZnackCardStatus.isErrored(p.cardStatus(),p.cardDetailedStatus()))unpublished.add(p.gtin());else publishable.add(p);}
+        RegistryEnrichment registryEnrichment=enrichWaitingDocumentsFromRegistry(
+                settings,token,publishable,permitDocumentSnapshots);
         List<Product> catalogVerified=publishable.stream()
                 .filter(product->permitDocumentSnapshots.containsKey(product.gtin())).toList();
         repository.upsertProducts(catalogVerified, settings);
@@ -71,9 +73,54 @@ public class ZnackProductService {
                 " unreferenced technical GTINs and "+unpublishedRemoved+" unreferenced non-published GTINs";
         if(failedCatalogBatches>0)message+="; partial catalog enrichment: "+failedCatalogBatches+
                 " catalog batch"+(failedCatalogBatches==1?"":"es")+" failed after retries";
-        repository.log("GTIN_SYNC",null,failedCatalogBatches==0?"INFO":"WARN",message,200);
+        if(registryEnrichment.failed()>0)message+="; "+registryEnrichment.failed()+
+                " waiting GTIN document lookup"+(registryEnrichment.failed()==1?"":"s")+" failed";
+        repository.log("GTIN_SYNC",null,failedCatalogBatches==0&&registryEnrichment.failed()==0?"INFO":"WARN",message,200);
         return repository.findProducts();
     }
+
+    /**
+     * The feed-product card is useful for names and attributes, but it is not authoritative for
+     * permit documents and can omit an existing certificate. For GTINs with already-purchased KIZ
+     * waiting for circulation, query the documented registry endpoint before deciding that the
+     * product has no declaration/certificate. One lookup is made per distinct GTIN, not per order.
+     */
+    private RegistryEnrichment enrichWaitingDocumentsFromRegistry(
+            ZnackModels.Settings settings,String token,List<Product> publishable,
+            Map<String,List<GoodsDocument>> permitDocumentSnapshots){
+        Set<String> publishableGtins=publishable.stream().map(Product::gtin)
+                .collect(java.util.stream.Collectors.toSet());
+        Set<String> waitingGtins=new java.util.LinkedHashSet<>();
+        repository.findWaitingIntroductionDocumentPipelines().stream()
+                .map(ZnackPurchasePipelineState::gtin)
+                .filter(publishableGtins::contains)
+                .filter(gtin->permitDocumentSnapshots.getOrDefault(gtin,List.of()).isEmpty())
+                .sorted()
+                .forEach(waitingGtins::add);
+        int failed=0;
+        for(String gtin:waitingGtins){
+            try{
+                JsonElement response=api.permitDocuments(settings.resolvedTrueApiBaseUrl(),token,gtin,
+                        settings.ownerInn()==null?"":settings.ownerInn().trim());
+                if(ZnackPermitDocumentParser.registryLookupPending(response)){
+                    permitDocumentSnapshots.remove(gtin);
+                    repository.log("GTIN_DOCUMENT_ENRICH",gtin,"INFO",
+                            "National Catalog document lookup is pending; keeping the previous local state",null);
+                    continue;
+                }
+                permitDocumentSnapshots.put(gtin,ZnackPermitDocumentParser.activeFromRegistry(response));
+            }catch(Exception error){
+                failed++;
+                // Do not erase a previously valid document or move the product to trash when the
+                // authoritative lookup itself failed. A later/manual sync can safely retry it.
+                permitDocumentSnapshots.remove(gtin);
+                repository.log("GTIN_DOCUMENT_ENRICH",gtin,"WARN",error.getMessage(),null);
+            }
+        }
+        return new RegistryEnrichment(failed);
+    }
+
+    private record RegistryEnrichment(int failed) {}
     private int enrichFromNationalCatalog(ZnackModels.Settings settings,String token,Map<String,Product> byGtin,
                                           Set<String> incompleteGtins,
                                           Map<String,List<GoodsDocument>> permitDocumentSnapshots,

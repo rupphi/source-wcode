@@ -550,7 +550,20 @@ public final class ZnackRepository {
     }
     public void updatePipeline(long id,Long orderId,PurchaseStage stage,String error){execute("UPDATE znack_purchase_pipelines SET order_id=COALESCE(?,order_id),stage=?,error_message=?,updated_at=? WHERE shop_id=? AND id=?",ps->{if(orderId==null)ps.setNull(1,Types.BIGINT);else ps.setLong(1,orderId);ps.setString(2,stage.name());ps.setString(3,ZnackSanitizer.message(error));ps.setString(4,Instant.now().toString());ps.setInt(5,shop.shopId());ps.setLong(6,id);});}
     public Optional<ZnackPurchasePipelineState> findActivePipeline(String gtin){String sql="SELECT * FROM znack_purchase_pipelines WHERE shop_id=? AND gtin=? AND stage IN ('VALIDATING','CREATING_ORDER','RECONCILING_ORDER','POLLING_ORDER','DOWNLOADING_CODES') ORDER BY id LIMIT 1";try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement(sql)){ps.setInt(1,shop.shopId());ps.setString(2,GtinNormalizer.normalize(gtin));try(ResultSet r=ps.executeQuery()){return r.next()?Optional.of(pipeline(r)):Optional.empty();}}catch(SQLException e){throw new RuntimeException(e);}}
-    public List<ZnackPurchasePipelineState> findActivePipelines(){String sql="SELECT * FROM znack_purchase_pipelines WHERE shop_id=? AND stage NOT IN ('COMPLETED','INTRODUCED','FAILED','INTRODUCTION_FAILED','INTRODUCTION_SKIPPED_MISSING_DOCUMENTS','INTRODUCTION_SKIPPED_MISSING_METADATA','WAITING_INTRODUCTION_DOCUMENTS') ORDER BY id";try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement(sql)){ps.setInt(1,shop.shopId());try(ResultSet r=ps.executeQuery()){List<ZnackPurchasePipelineState> o=new ArrayList<>();while(r.next())o.add(pipeline(r));return o;}}catch(SQLException e){throw new RuntimeException(e);}}
+    public List<ZnackPurchasePipelineState> findActivePipelines(){String sql="""
+            SELECT * FROM znack_purchase_pipelines
+            WHERE shop_id=?
+              AND stage NOT IN ('COMPLETED','INTRODUCED','FAILED','INTRODUCTION_FAILED',
+                'INTRODUCTION_SKIPPED_MISSING_DOCUMENTS','INTRODUCTION_SKIPPED_MISSING_METADATA',
+                'WAITING_INTRODUCTION_DOCUMENTS')
+              AND NOT (
+                stage='WAITING_INTRODUCTION_READINESS'
+                AND lower(COALESCE(error_message,'')) LIKE '%declaration or certificate%'
+                AND (lower(COALESCE(error_message,'')) LIKE '%no active%'
+                     OR lower(COALESCE(error_message,'')) LIKE '%missing%')
+              )
+            ORDER BY id
+            """;try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement(sql)){ps.setInt(1,shop.shopId());try(ResultSet r=ps.executeQuery()){List<ZnackPurchasePipelineState> o=new ArrayList<>();while(r.next())o.add(pipeline(r));return o;}}catch(SQLException e){throw new RuntimeException(e);}}
     public Optional<ZnackPurchasePipelineState> activateNextQueuedPipeline(String gtin){
         String normalized=GtinNormalizer.normalize(gtin);
         try(Connection c=Database.getConnection();Statement tx=c.createStatement()){
@@ -591,7 +604,19 @@ public final class ZnackRepository {
             """;try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement(sql)){ps.setInt(1,shop.shopId());ps.setString(2,GtinNormalizer.normalize(gtin));ps.setInt(3,quantity);ps.setString(4,notBefore.toString());try(ResultSet r=ps.executeQuery()){return r.next()?Optional.of(order(r)):Optional.empty();}}catch(SQLException e){throw new RuntimeException(e);}}
     public Optional<ZnackPurchasePipelineState> findLatestIntroductionFailedPipeline(String gtin){String sql="SELECT * FROM znack_purchase_pipelines WHERE shop_id=? AND gtin=? AND stage='INTRODUCTION_FAILED' ORDER BY id DESC LIMIT 1";try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement(sql)){ps.setInt(1,shop.shopId());ps.setString(2,GtinNormalizer.normalize(gtin));try(ResultSet r=ps.executeQuery()){return r.next()?Optional.of(pipeline(r)):Optional.empty();}}catch(SQLException e){throw new RuntimeException(e);}}
     public List<ZnackPurchasePipelineState> findSkippedIntroductionPipelines(){String sql="SELECT * FROM znack_purchase_pipelines WHERE shop_id=? AND stage IN ('INTRODUCTION_SKIPPED_MISSING_DOCUMENTS','INTRODUCTION_SKIPPED_MISSING_METADATA') ORDER BY id";try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement(sql)){ps.setInt(1,shop.shopId());try(ResultSet r=ps.executeQuery()){List<ZnackPurchasePipelineState> o=new ArrayList<>();while(r.next())o.add(pipeline(r));return o;}}catch(SQLException e){throw new RuntimeException(e);}}
-    public List<ZnackPurchasePipelineState> findWaitingIntroductionDocumentPipelines(){String sql="SELECT * FROM znack_purchase_pipelines WHERE shop_id=? AND stage='WAITING_INTRODUCTION_DOCUMENTS' ORDER BY id";try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement(sql)){ps.setInt(1,shop.shopId());try(ResultSet r=ps.executeQuery()){List<ZnackPurchasePipelineState> o=new ArrayList<>();while(r.next())o.add(pipeline(r));return o;}}catch(SQLException e){throw new RuntimeException(e);}}
+    public List<ZnackPurchasePipelineState> findWaitingIntroductionDocumentPipelines(){String sql="""
+            SELECT * FROM znack_purchase_pipelines
+            WHERE shop_id=? AND (
+              stage='WAITING_INTRODUCTION_DOCUMENTS'
+              OR (
+                stage='WAITING_INTRODUCTION_READINESS'
+                AND lower(COALESCE(error_message,'')) LIKE '%declaration or certificate%'
+                AND (lower(COALESCE(error_message,'')) LIKE '%no active%'
+                     OR lower(COALESCE(error_message,'')) LIKE '%missing%')
+              )
+            )
+            ORDER BY id
+            """;try(Connection c=Database.getConnection();PreparedStatement ps=c.prepareStatement(sql)){ps.setInt(1,shop.shopId());try(ResultSet r=ps.executeQuery()){List<ZnackPurchasePipelineState> o=new ArrayList<>();while(r.next())o.add(pipeline(r));return o;}}catch(SQLException e){throw new RuntimeException(e);}}
     public List<ZnackPurchasePipelineState> findLegacyRejectedIntroductionPipelines(){String sql="""
             SELECT p.* FROM znack_purchase_pipelines p
             WHERE p.shop_id=? AND p.stage='FAILED' AND p.error_message LIKE '%HTTP 422%'

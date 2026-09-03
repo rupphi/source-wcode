@@ -280,7 +280,8 @@ public class ZnackPurchaseCoordinator {
             Product product = repository.findProduct(pipeline.gtin()).orElse(null);
             if (product == null || pipeline.orderId() == null || repository.findCodes(pipeline.orderId()).isEmpty()
                     || product.tnVed() == null || product.tnVed().isBlank()
-                    || (pipeline.stage() == PurchaseStage.WAITING_INTRODUCTION_DOCUMENTS
+                    || (ZnackErrorMessages.isMissingDocumentsWait(
+                                pipeline.stage().name(), pipeline.errorMessage())
                         && !hasCompletePermit(product))) {
                 continue;
             }

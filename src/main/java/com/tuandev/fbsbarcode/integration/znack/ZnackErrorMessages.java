@@ -67,7 +67,7 @@ public final class ZnackErrorMessages {
      * The raw diagnostic remains stored for audit and retry decisions.
      */
     public static String displayForPipeline(String stage, String raw) {
-        if (isExpectedReadinessProgress(stage, raw) || isMissingDocumentsStage(stage)) return "";
+        if (isExpectedReadinessProgress(stage, raw) || isMissingDocumentsWait(stage, raw)) return "";
         return display(raw);
     }
 
@@ -75,6 +75,19 @@ public final class ZnackErrorMessages {
     public static boolean isMissingDocumentsStage(String stage) {
         return WAITING_INTRODUCTION_DOCUMENTS.equalsIgnoreCase(stage)
                 || LEGACY_MISSING_DOCUMENTS.equalsIgnoreCase(stage);
+    }
+
+    /**
+     * Also recognizes the v1.1.18-and-earlier state where a confirmed missing-document response
+     * was stored as a readiness wait. This keeps upgraded databases from polling and displaying
+     * the same diagnostic until the catalog document is synchronized.
+     */
+    public static boolean isMissingDocumentsWait(String stage, String raw) {
+        if (isMissingDocumentsStage(stage)) return true;
+        if (!WAITING_INTRODUCTION_READINESS.equalsIgnoreCase(stage) || raw == null) return false;
+        String normalized = raw.toLowerCase(java.util.Locale.ROOT);
+        return normalized.contains("declaration or certificate")
+                && (normalized.contains("no active") || normalized.contains("missing"));
     }
 
     /** True only for Znack's insufficient-account-balance response. */
