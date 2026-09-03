@@ -44,8 +44,6 @@ public class Database {
             try (Statement statement = connection.createStatement()) {
                 statement.execute("PRAGMA foreign_keys = ON");
                 statement.execute("PRAGMA busy_timeout = 5000");
-                statement.execute("PRAGMA journal_mode = WAL");
-                statement.execute("PRAGMA synchronous = NORMAL");
             }
             return connection;
 
@@ -58,6 +56,8 @@ public class Database {
     public static void initDatabase() {
         try (Connection conn = getConnection();
              Statement st = conn.createStatement()) {
+            st.execute("PRAGMA journal_mode = WAL");
+            st.execute("PRAGMA synchronous = NORMAL");
             int existingSchemaVersion = readSchemaVersion(conn);
             if (existingSchemaVersion > CURRENT_SCHEMA_VERSION) {
                 throw new SQLException("Database schema is newer than this WCode binary");
