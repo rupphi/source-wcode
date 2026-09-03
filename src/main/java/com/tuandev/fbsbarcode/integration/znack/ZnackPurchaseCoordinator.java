@@ -218,6 +218,37 @@ public class ZnackPurchaseCoordinator {
         }
     }
 
+    /**
+     * Requeues the same failed purchase after the user has replenished their Znack balance. The
+     * persisted request key and pipeline id are retained, so retrying cannot create a duplicate
+     * local purchase request. Only the deterministic insufficient-funds failure is eligible.
+     */
+    public void retryInsufficientFunds(Settings settings, long pipelineId) throws Exception {
+        ZnackPurchasePipelineState pipeline;
+        synchronized (CREATE_LOCK) {
+            pipeline = repository.findPipeline(pipelineId)
+                    .filter(candidate -> candidate.stage() == PurchaseStage.FAILED)
+                    .filter(candidate -> ZnackErrorMessages.isInsufficientFunds(candidate.errorMessage()))
+                    .orElseThrow(() -> new IllegalStateException(
+                            "No insufficient-funds purchase to retry for pipeline " + pipelineId));
+            repository.updatePipeline(pipeline.id(), pipeline.orderId(), PurchaseStage.QUEUED, null);
+        }
+        ZnackSigningSession.authorizePipeline(repository.shop().shopId(), pipeline.id());
+        repository.log("PURCHASE_RETRY", pipeline.gtin(), "INFO", "INSUFFICIENT_FUNDS_RETRY_REQUESTED", null);
+
+        ZnackPurchasePipelineState activated = repository.activateNextQueuedPipeline(pipeline.gtin()).orElse(null);
+        if (activated == null) {
+            schedule(pipeline.id());
+            return;
+        }
+        try {
+            advance(settings, activated.id());
+        } finally {
+            schedule(activated.id());
+            if (activated.id() != pipeline.id()) schedule(pipeline.id());
+        }
+    }
+
     public void resume(Settings settings) {
         for (ZnackPurchasePipelineState pipeline : repository.findActivePipelines()) {
             try {

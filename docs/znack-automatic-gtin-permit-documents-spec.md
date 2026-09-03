@@ -21,8 +21,12 @@ inactive document from being submitted for circulation.
 - National Catalog `/v4/rd-info-by-gtin` is the authoritative pre-submission check for the selected
   GTIN. Only status group `1` (green/valid for introduction), or the equivalent documented active
   status when the optional group is absent, may be submitted.
-- `certificate_document_data` is an array. All distinct active permit documents returned for the
-  GTIN are included in every product item in the introduction payload.
+- `certificate_document_data` is an array. WCode applies a deterministic type priority to the
+  active documents returned for the GTIN: use all active `CONFORMITY_DECLARATION` documents when
+  present; otherwise use all active `CONFORMITY_CERTIFICATE` documents. The number and issue date
+  always come from the same selected registry document. If neither conformity type exists, the
+  existing `STATE_REGISTRATION_CERTIFICATE` fallback remains available for product groups that use
+  that document type.
 
 Official local documentation:
 
@@ -77,13 +81,16 @@ public record GoodsDocument(String type, String number, String date) {
 ## Functional behavior
 
 1. During GTIN synchronization, WCode parses every supported permit-document attribute returned in
-   `good_attrs` and stores the complete list against that shop and GTIN.
+   `good_attrs`, including both declaration attribute `23557` and certificate attribute `23561`,
+   and stores the complete list against that shop and GTIN.
 2. A successful card response with no permit-document attributes clears previously synchronized
    documents. A failed/partial catalog request does not erase the last successful data.
 3. Immediately before creating an introduction document, WCode calls `/v4/rd-info-by-gtin` with the
    same GTIN and the configured owner/participant INN.
-4. WCode replaces the stored list with the distinct currently active documents returned by that
-   check and builds `certificate_document_data` from that list.
+4. WCode selects the currently active declaration documents returned by that check. If none exist,
+   it falls back to the currently active conformity certificates, then to the already-supported
+   state-registration documents. It replaces the stored list with the selected documents and builds
+   `certificate_document_data` from exactly that list.
 5. WCode never falls back to `znack_settings.document_number`, `document_date`, or `document_type`.
 6. If no active permit document is available, WCode does not submit an introduction document. The
    already purchased KIZ codes remain retryable and the error tells the user to correct/publish the
@@ -110,8 +117,8 @@ public record GoodsDocument(String type, String number, String date) {
   attributes.
 - Repository tests for multiple documents, empty-list clearing, shop isolation and old-schema
   migration.
-- Introduction tests proving that multiple active documents are emitted and shop defaults are never
-  used.
+- Introduction tests proving that declarations take priority, conformity certificates are used as
+  fallback, document dates remain paired with their numbers, and shop defaults are never used.
 - Failure tests for missing, expired, inactive and foreign-GTIN documents.
 - Coordinator tests proving missing documents do not trigger another KIZ purchase and remain
   retryable after the National Catalog card is corrected.
@@ -141,8 +148,9 @@ public record GoodsDocument(String type, String number, String date) {
 
 ## Success criteria
 
-- A GTIN with two active declarations/certificates produces two matching entries in
-  `certificate_document_data` without user input.
+- A GTIN with both active declarations and certificates uses declarations in
+  `certificate_document_data`; a GTIN without an active declaration uses its active conformity
+  certificates without user input.
 - A stale shop default cannot appear in an introduction payload.
 - A GTIN with no active registered document is blocked before submission with an actionable,
   retryable status; purchased codes are retained.
@@ -155,8 +163,9 @@ public record GoodsDocument(String type, String number, String date) {
 ## Assumptions requiring approval
 
 1. The current scope is the existing `lp` (light industry) `LP_INTRODUCE_GOODS` workflow.
-2. WCode should submit all active permit documents registered for the GTIN, not arbitrarily select
-   only the first one.
+2. WCode should submit all active documents of the preferred type: declarations first, or
+   conformity certificates only when no active declaration is available. It must not arbitrarily
+   combine fields or select an incomplete document.
 3. Missing, inactive or unverifiable documents must block submission and remain retryable; WCode
    must not silently continue or use legacy defaults.
 4. The production National Catalog base is the officially documented
@@ -172,3 +181,5 @@ public record GoodsDocument(String type, String number, String date) {
       building the payload.
 - [x] Remove default-document input fields and update FXML/controller tests.
 - [x] Run focused tests and the complete Maven verification suite.
+- [x] Add explicit declaration-priority and certificate-fallback tests, then apply the shared
+      selection rule to circulation payload creation.

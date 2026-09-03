@@ -46,6 +46,9 @@ class OzonFboWorkflowTest {
         znack.upsertProducts(List.of(new Product(GTIN, "Jacket GTIN", null, null, null, null, null)));
         long order = znack.createDraft(GTIN, 2);
         znack.insertCodes(order, GTIN, new DownloadedCodes(List.of("KIZ-1", "KIZ-2"), "block"));
+        try (Connection connection = Database.getConnection(); Statement statement = connection.createStatement()) {
+            statement.execute("UPDATE kiz_codes SET legal_status='IN_CIRCULATION' WHERE shop_id=1");
+        }
         new OzonProductGtinMappingRepository().put(1, "SKU-42", GTIN);
     }
 

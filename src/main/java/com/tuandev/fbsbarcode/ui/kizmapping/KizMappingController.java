@@ -14,6 +14,8 @@ import com.tuandev.fbsbarcode.shared.AppTaskExecutor;
 import com.tuandev.fbsbarcode.shared.I18nService;
 import com.tuandev.fbsbarcode.ui.controls.CategoryFilterMenu;
 import com.tuandev.fbsbarcode.ui.license.LicenseDialogService;
+import com.tuandev.fbsbarcode.ui.znack.ZnackInsufficientFundsDialogService;
+import com.tuandev.fbsbarcode.ui.znack.ZnackKizInventoryActionService;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.animation.KeyFrame;
@@ -40,6 +42,7 @@ public class KizMappingController {
     @FXML private TableColumn<ZnackGtinInventorySummary,ZnackGtinInventorySummary> actionsColumn;
 
     private final KizMappingRepository mappingRepository = new KizMappingRepository();
+    private final ZnackKizInventoryActionService inventoryActions = new ZnackKizInventoryActionService();
     private CategoryFilterMenu categoryFilter;
     private List<ZnackGtinInventorySummary> summaries = List.of();
     private Shop shop;
@@ -62,8 +65,12 @@ public class KizMappingController {
                 v.getValue().latestPipelineStage(), v.getValue().latestOrderStatus()))));
         mappingColumn.setCellFactory(column -> statusCell("badge-green", "badge-gray"));
         pipelineColumn.setCellFactory(column -> statusCell("badge-warning", "badge-gray"));
-        errorColumn.setCellValueFactory(v -> new SimpleStringProperty(
-                ZnackErrorMessages.display(v.getValue().latestError())));
+        errorColumn.setCellValueFactory(v -> {
+            ZnackGtinInventorySummary summary = v.getValue();
+            String status = first(summary.latestPipelineStage(), summary.latestOrderStatus());
+            return new SimpleStringProperty(
+                    ZnackErrorMessages.displayForPipeline(status, summary.latestError()));
+        });
         errorColumn.setCellFactory(column -> new TableCell<>() {
             @Override protected void updateItem(String display, boolean empty) {
                 super.updateItem(display, empty);
@@ -177,6 +184,7 @@ public class KizMappingController {
             categoryFilter.rebuild(summaries.stream().map(ZnackGtinInventorySummary::category).toList());
             applyFilter();
             setLoadingState();
+            ZnackInsufficientFundsDialogService.promptIfNeeded(current, summaries, this::refresh);
         });
         task.setOnFailed(event -> {
             if (generation != shopGeneration) return;
@@ -198,6 +206,7 @@ public class KizMappingController {
         }
         int shopId = shop.getId();
         long generation = shopGeneration;
+        ZnackRepository currentRepository = znackRepository;
         Task<List<ZnackGtinInventorySummary>> task = new Task<>() {
             @Override protected List<ZnackGtinInventorySummary> call() {
                 return mappingRepository.findGtinSummaries(shopId);
@@ -210,6 +219,8 @@ public class KizMappingController {
                 categoryFilter.rebuild(summaries.stream().map(ZnackGtinInventorySummary::category).toList());
                 applyFilter();
                 setLoading(false);
+                ZnackInsufficientFundsDialogService.promptIfNeeded(
+                        currentRepository, summaries, this::refresh);
             }
         });
         task.setOnFailed(e -> {
@@ -288,6 +299,22 @@ public class KizMappingController {
             coordinator.retryIntroduction(currentSettings, summary.gtin());
             return null;
         });
+    }
+
+    private void exportKiz(ZnackGtinInventorySummary summary) {
+        long generation = shopGeneration;
+        inventoryActions.export(gtinTable, shop, summary,
+                busy -> { if (generation == shopGeneration) setLoading(busy); },
+                () -> { if (generation == shopGeneration) refresh(); },
+                error -> { if (generation == shopGeneration) AlertService.showError(friendlyError(error)); });
+    }
+
+    private void archiveFailedKiz(ZnackGtinInventorySummary summary) {
+        long generation = shopGeneration;
+        inventoryActions.archiveFailed(gtinTable, shop, summary,
+                busy -> { if (generation == shopGeneration) setLoading(busy); },
+                () -> { if (generation == shopGeneration) refresh(); },
+                error -> { if (generation == shopGeneration) AlertService.showError(friendlyError(error)); });
     }
 
     private void runTask(ThrowingSupplier action) {
@@ -421,7 +448,9 @@ public class KizMappingController {
         private final Button mapping = new Button();
         private final Button retry = new Button();
         private final Button buy = new Button();
-        private final HBox box = new HBox(6, mapping, retry, buy);
+        private final Button export = new Button();
+        private final Button archive = new Button();
+        private final HBox box = new HBox(6, mapping, retry, export, archive, buy);
         private final Tooltip buyTooltip = new Tooltip(tr("kiz_mapping.action.buy"));
         private final Tooltip technicalGtinTooltip = new Tooltip(tr("supply.gtin_inventory.error.technical_gtin"));
 
@@ -429,8 +458,12 @@ public class KizMappingController {
             icon(mapping, "fth-link", tr("kiz_mapping.action.mapping"));
             icon(retry, "fth-rotate-ccw", tr("kiz_mapping.action.retry_introduction"));
             icon(buy, "fth-plus", tr("kiz_mapping.action.buy"));
+            icon(export, "fth-download", tr("kiz_mapping.action.export"));
+            icon(archive, "fth-trash-2", tr("kiz_mapping.action.delete_failed"));
             mapping.setOnAction(e -> showMapping(getItem()));
             retry.setOnAction(e -> retryIntroduction(getItem()));
+            export.setOnAction(e -> exportKiz(getItem()));
+            archive.setOnAction(e -> archiveFailedKiz(getItem()));
             buy.setOnAction(e -> showBuy(getItem()));
         }
 
@@ -447,9 +480,12 @@ public class KizMappingController {
             buy.setDisable(technical);
             buy.setTooltip(technical ? technicalGtinTooltip : buyTooltip);
             boolean introductionFailed = !empty && item != null
+                    && item.discardable() > 0
                     && "INTRODUCTION_FAILED".equalsIgnoreCase(value(item.latestPipelineStage()));
             retry.setVisible(introductionFailed);
             retry.setManaged(introductionFailed);
+            export.setDisable(empty || item == null || item.available() <= 0);
+            archive.setDisable(empty || item == null || item.discardable() <= 0);
             setGraphic(empty || item == null ? null : box);
         }
     }

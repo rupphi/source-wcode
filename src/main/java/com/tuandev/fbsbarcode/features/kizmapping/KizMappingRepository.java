@@ -54,13 +54,20 @@ public class KizMappingRepository {
                 : " AND TRIM(p.category) IN (" + String.join(",", Collections.nCopies(categories.size(), "?")) + ")";
         String sql = """
                 SELECT p.gtin,p.product_name,p.category,
-                  SUM(CASE WHEN c.status='AVAILABLE' THEN 1 ELSE 0 END) available_count,
-                  SUM(CASE WHEN c.status='RESERVED' THEN 1 ELSE 0 END) reserved_count,
-                  SUM(CASE WHEN c.status='CONSUMED' THEN 1 ELSE 0 END) consumed_count,
+                  SUM(CASE WHEN c.status='AVAILABLE' AND c.legal_status='IN_CIRCULATION' THEN 1 ELSE 0 END) available_count,
+                  SUM(CASE WHEN c.status='RESERVED' AND c.legal_status='IN_CIRCULATION' THEN 1 ELSE 0 END) reserved_count,
+                  SUM(CASE WHEN c.status='CONSUMED' AND c.legal_status='IN_CIRCULATION' THEN 1 ELSE 0 END) consumed_count,
+                  SUM(CASE WHEN c.status='AVAILABLE' AND COALESCE(c.legal_status,'')<>'IN_CIRCULATION'
+                    AND EXISTS (
+                      SELECT 1 FROM znack_purchase_pipelines failed
+                      WHERE failed.shop_id=c.shop_id AND failed.order_id=c.order_id
+                        AND failed.stage='INTRODUCTION_FAILED'
+                    ) THEN 1 ELSE 0 END) discardable_count,
                   ((SELECT COUNT(*) FROM znack_gtin_mapping_rules r WHERE r.shop_id=p.shop_id AND r.gtin=p.gtin)
                    + (SELECT COUNT(*) FROM ozon_product_gtin_mappings o WHERE o.shop_id=p.shop_id AND o.gtin=p.gtin)
                    + (SELECT COUNT(*) FROM ozon_article_gtin_mappings a WHERE a.shop_id=p.shop_id AND a.gtin=p.gtin)) rule_count,
                   (SELECT o.local_status FROM kiz_orders o WHERE o.shop_id=p.shop_id AND o.gtin=p.gtin ORDER BY o.updated_at DESC LIMIT 1) order_status,
+                  (SELECT x.id FROM znack_purchase_pipelines x WHERE x.shop_id=p.shop_id AND x.gtin=p.gtin ORDER BY x.updated_at DESC LIMIT 1) pipeline_id,
                   (SELECT x.stage FROM znack_purchase_pipelines x WHERE x.shop_id=p.shop_id AND x.gtin=p.gtin ORDER BY x.updated_at DESC LIMIT 1) pipeline_stage,
                   COALESCE((SELECT x.error_message FROM znack_purchase_pipelines x WHERE x.shop_id=p.shop_id AND x.gtin=p.gtin ORDER BY x.updated_at DESC LIMIT 1),
                            (SELECT o.error_message FROM kiz_orders o WHERE o.shop_id=p.shop_id AND o.gtin=p.gtin ORDER BY o.updated_at DESC LIMIT 1)) latest_error,
@@ -108,6 +115,77 @@ public class KizMappingRepository {
             try (ResultSet rs = ps.executeQuery()) {
                 return rs.next();
             }
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public ZnackKizLabelMetadata findLabelMetadata(int shopId, String gtin) {
+        String normalized = GtinNormalizer.normalize(gtin);
+        String productName = "";
+        Set<String> genders = new LinkedHashSet<>();
+        Set<String> sizes = new LinkedHashSet<>();
+        try (Connection c = Database.getConnection()) {
+            try (PreparedStatement product = c.prepareStatement("""
+                    SELECT COALESCE(product_name,'') FROM znack_products
+                    WHERE shop_id=? AND gtin=? AND deleted_at IS NULL
+                    """)) {
+                product.setInt(1, shopId);
+                product.setString(2, normalized);
+                try (ResultSet rs = product.executeQuery()) {
+                    if (rs.next()) productName = rs.getString(1);
+                }
+            }
+            try (PreparedStatement variants = c.prepareStatement("""
+                    SELECT DISTINCT
+                      COALESCE(NULLIF(TRIM(COALESCE(json_extract(gender.value_json,'$[0]'),
+                        json_extract(gender.value_json,'$'))),''),?) gender_value,
+                      COALESCE(NULLIF(TRIM(size.tech_size),''),NULLIF(TRIM(size.wb_size),''),'') size_value
+                    FROM znack_gtin_mapping_rules rule
+                    JOIN wb_product_cards card
+                      ON card.shop_id=rule.shop_id AND card.subject_name=rule.subject_name
+                    LEFT JOIN wb_product_characteristics gender
+                      ON gender.shop_id=card.shop_id AND gender.nm_id=card.nm_id
+                     AND gender.characteristic_id=?
+                    LEFT JOIN wb_product_sizes size
+                      ON size.shop_id=card.shop_id AND size.nm_id=card.nm_id
+                    WHERE rule.shop_id=? AND rule.gtin=?
+                      AND (rule.wildcard_gender=1 OR rule.gender_value=COALESCE(
+                        NULLIF(TRIM(COALESCE(json_extract(gender.value_json,'$[0]'),
+                          json_extract(gender.value_json,'$'))),''),?))
+                    ORDER BY gender_value COLLATE NOCASE,size_value COLLATE NOCASE
+                    """)) {
+                variants.setString(1, UNSPECIFIED_GENDER);
+                variants.setInt(2, GENDER_CHARACTERISTIC_ID);
+                variants.setInt(3, shopId);
+                variants.setString(4, normalized);
+                variants.setString(5, UNSPECIFIED_GENDER);
+                try (ResultSet rs = variants.executeQuery()) {
+                    while (rs.next()) {
+                        String gender = rs.getString(1);
+                        String size = rs.getString(2);
+                        if (gender != null && !gender.isBlank() && !UNSPECIFIED_GENDER.equals(gender)) {
+                            genders.add(gender.strip());
+                        }
+                        if (size != null && !size.isBlank()) sizes.add(size.strip());
+                    }
+                }
+            }
+            if (genders.isEmpty()) {
+                try (PreparedStatement rules = c.prepareStatement("""
+                        SELECT DISTINCT gender_value FROM znack_gtin_mapping_rules
+                        WHERE shop_id=? AND gtin=? AND wildcard_gender=0
+                          AND gender_value<>? ORDER BY gender_value COLLATE NOCASE
+                        """)) {
+                    rules.setInt(1, shopId);
+                    rules.setString(2, normalized);
+                    rules.setString(3, UNSPECIFIED_GENDER);
+                    try (ResultSet rs = rules.executeQuery()) {
+                        while (rs.next()) genders.add(rs.getString(1));
+                    }
+                }
+            }
+            return new ZnackKizLabelMetadata(productName, String.join(", ", genders), String.join(", ", sizes));
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
@@ -312,13 +390,20 @@ public class KizMappingRepository {
     public List<ZnackGtinInventorySummary> findGtinSummaries(int shopId) {
         String sql = """
                 SELECT p.gtin,p.product_name,p.category,
-                  SUM(CASE WHEN c.status='AVAILABLE' THEN 1 ELSE 0 END) available_count,
-                  SUM(CASE WHEN c.status='RESERVED' THEN 1 ELSE 0 END) reserved_count,
-                  SUM(CASE WHEN c.status='CONSUMED' THEN 1 ELSE 0 END) consumed_count,
+                  SUM(CASE WHEN c.status='AVAILABLE' AND c.legal_status='IN_CIRCULATION' THEN 1 ELSE 0 END) available_count,
+                  SUM(CASE WHEN c.status='RESERVED' AND c.legal_status='IN_CIRCULATION' THEN 1 ELSE 0 END) reserved_count,
+                  SUM(CASE WHEN c.status='CONSUMED' AND c.legal_status='IN_CIRCULATION' THEN 1 ELSE 0 END) consumed_count,
+                  SUM(CASE WHEN c.status='AVAILABLE' AND COALESCE(c.legal_status,'')<>'IN_CIRCULATION'
+                    AND EXISTS (
+                      SELECT 1 FROM znack_purchase_pipelines failed
+                      WHERE failed.shop_id=c.shop_id AND failed.order_id=c.order_id
+                        AND failed.stage='INTRODUCTION_FAILED'
+                    ) THEN 1 ELSE 0 END) discardable_count,
                   ((SELECT COUNT(*) FROM znack_gtin_mapping_rules r WHERE r.shop_id=p.shop_id AND r.gtin=p.gtin)
                    + (SELECT COUNT(*) FROM ozon_product_gtin_mappings o WHERE o.shop_id=p.shop_id AND o.gtin=p.gtin)
                    + (SELECT COUNT(*) FROM ozon_article_gtin_mappings a WHERE a.shop_id=p.shop_id AND a.gtin=p.gtin)) rule_count,
                   (SELECT o.local_status FROM kiz_orders o WHERE o.shop_id=p.shop_id AND o.gtin=p.gtin ORDER BY o.updated_at DESC LIMIT 1) order_status,
+                  (SELECT x.id FROM znack_purchase_pipelines x WHERE x.shop_id=p.shop_id AND x.gtin=p.gtin ORDER BY x.updated_at DESC LIMIT 1) pipeline_id,
                   (SELECT x.stage FROM znack_purchase_pipelines x WHERE x.shop_id=p.shop_id AND x.gtin=p.gtin ORDER BY x.updated_at DESC LIMIT 1) pipeline_stage,
                   COALESCE((SELECT x.error_message FROM znack_purchase_pipelines x WHERE x.shop_id=p.shop_id AND x.gtin=p.gtin ORDER BY x.updated_at DESC LIMIT 1),
                            (SELECT o.error_message FROM kiz_orders o WHERE o.shop_id=p.shop_id AND o.gtin=p.gtin ORDER BY o.updated_at DESC LIMIT 1)) latest_error,
@@ -426,8 +511,13 @@ public class KizMappingRepository {
 
     private static ZnackGtinInventorySummary summary(ResultSet rs) throws SQLException {
         return new ZnackGtinInventorySummary(rs.getString(1), rs.getString(2), rs.getString(3),
-                rs.getInt(4), rs.getInt(5), rs.getInt(6), rs.getInt(7), rs.getString(8),
-                rs.getString(9), rs.getString(10), instant(rs.getString(11)));
+                rs.getInt(4), rs.getInt(5), rs.getInt(6), rs.getInt(7), rs.getInt(8), rs.getString(9),
+                nullableLong(rs, 10), rs.getString(11), rs.getString(12), instant(rs.getString(13)));
+    }
+
+    private static Long nullableLong(ResultSet rs, int column) throws SQLException {
+        long value = rs.getLong(column);
+        return rs.wasNull() ? null : value;
     }
 
     private static String escapeLike(String value) {

@@ -69,6 +69,26 @@ final class ZnackPermitDocumentParser {
         return List.copyOf(documents);
     }
 
+    static List<GoodsDocument> selectForCirculation(List<GoodsDocument> documents) {
+        if (documents == null || documents.isEmpty()) return List.of();
+        LinkedHashSet<GoodsDocument> complete = new LinkedHashSet<>();
+        for (GoodsDocument document : documents) {
+            if (document != null && document.complete()) complete.add(document);
+        }
+        List<GoodsDocument> declarations = documentsOfType(complete, "CONFORMITY_DECLARATION");
+        if (!declarations.isEmpty()) return declarations;
+        List<GoodsDocument> certificates = documentsOfType(complete, "CONFORMITY_CERTIFICATE");
+        if (!certificates.isEmpty()) return certificates;
+        // Preserve the existing state-registration-document fallback for product groups that use it.
+        return List.copyOf(complete);
+    }
+
+    private static List<GoodsDocument> documentsOfType(Set<GoodsDocument> documents, String type) {
+        return documents.stream()
+                .filter(document -> type.equalsIgnoreCase(document.type()))
+                .toList();
+    }
+
     private static JsonArray registryDocuments(JsonElement response) {
         if (response == null || response.isJsonNull()) return null;
         if (response.isJsonArray()) return response.getAsJsonArray();

@@ -265,7 +265,8 @@ public class WbSupplyRepository {
                 SELECT supply_id
                 FROM wb_supplies
                 WHERE shop_id = ? AND done = 0
-                ORDER BY created_at DESC, supply_id DESC
+                ORDER BY CASE WHEN COALESCE(order_count,0)=0 THEN 0 ELSE 1 END,
+                         COALESCE(synced_at,'') ASC,created_at ASC,supply_id ASC
                 LIMIT ?
                 """;
         try (Connection conn = Database.getConnection();

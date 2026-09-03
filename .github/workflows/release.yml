@@ -411,10 +411,11 @@ jobs:
         run: |
           if ($env:UPDATE_MANIFEST_ENABLED -ceq 'true') {
             $env:RELEASE_NOTES_JSON = ConvertTo-Json -Compress -InputObject @(
-              'Đổi chữ ký số Znack an toàn: xác minh chữ ký mới trước khi thay đổi dữ liệu',
-              'Tự xoá mapping GTIN cũ và đồng bộ lại danh mục GTIN thuộc chữ ký mới',
-              'Lưu lịch sử đơn/KIZ cũ nhưng cách ly KIZ chưa dùng để không cấp nhầm giữa hai chữ ký',
-              'Chặn đổi chữ ký khi tác vụ mua/lưu thông KIZ đang chạy hoặc KIZ đang được giữ cho đơn hàng',
+              'Chỉ hiển thị và cấp phát KIZ đã lưu thông thành công cho WB và Ozon',
+              'Hỗ trợ giấy chứng nhận phù hợp khi GTIN không có giấy công bố phù hợp',
+              'Thông báo rõ khi tài khoản Znack không đủ tiền và cho phép thử lại đúng pipeline cũ',
+              'Xuất tem KIZ 58×40 theo số lượng, có DataMatrix và tự mở file sau khi lưu',
+              'Tự dọn supply WB cũ khi WB xác nhận supply không còn tồn tại',
               'Giữ nguyên dữ liệu người dùng khi nâng cấp từ WCode 1.1.9 trở lên'
             )
             node tools/update-manifest.mjs release/WCode.msi release/update-manifest.json $env:APP_VERSION
@@ -611,11 +612,13 @@ jobs:
           notes="$(cat <<EOF
           WCode ${APP_VERSION}
 
-          - Bỏ cột thời gian giao hàng khỏi cả ba danh sách đơn Ozon FBS để dành thêm không gian cho thông tin đơn và sản phẩm.
-          - Pipeline mua/lưu thông KIZ bắt đầu trong phiên hiện tại tiếp tục chạy khi người dùng chuyển sang cửa hàng khác.
-          - Pipeline KIZ cũ được phục hồi sau khi mở app chỉ yêu cầu CryptoPro khi người dùng chủ động chọn đúng cửa hàng.
-          - Khi CryptoPro bị huỷ hoặc chữ ký/token không sẵn sàng, WCode dừng tự động yêu cầu ký để tránh cửa sổ chọn chứng thư xuất hiện liên tục.
-          - Các yêu cầu ký CryptoPro được tuần tự hoá theo phiên, ngăn nhiều pipeline mở nhiều cửa sổ ký cùng lúc.
+          - Chỉ KIZ có trạng thái pháp lý IN_CIRCULATION mới được hiển thị là khả dụng và cấp cho WB/Ozon; KIZ đang chờ hoặc lưu thông lỗi được giữ lại để xử lý nhưng không thể dùng nhầm.
+          - Thêm nút xuất tem KIZ 58×40: chọn số lượng, lưu PDF gồm DataMatrix, tên sản phẩm, giới tính và size, sau đó tự mở file.
+          - Thêm thao tác lưu trữ KIZ lỗi; chỉ KIZ thuộc pipeline INTRODUCTION_FAILED mới được phép lưu trữ, không ảnh hưởng KIZ đang chờ hay còn có thể tiếp tục.
+          - Khi Znack trả lỗi 3590 do không đủ tiền, WCode hiện thông báo và nút Thử lại để tiếp tục đúng pipeline mua KIZ đã lưu, không tạo đơn mua trùng.
+          - Đồng bộ và lưu thông GTIN hỗ trợ cả Декларация о соответствии và Сертификат соответствия, ưu tiên giấy công bố rồi dùng giấy chứng nhận khi cần.
+          - Trạng thái kiểm tra KIZ EMITTED được hiển thị gọn là “Đang chờ lưu thông”.
+          - Tự xoá supply WB cũ khỏi danh sách khi WB xác nhận supply không còn tồn tại bằng 404; lỗi tạm thời không làm mất dữ liệu.
 
           Khi nâng cấp từ 1.1.9, dữ liệu hiện có được sao chép an toàn sang thư mục WCodeData trước khi áp dụng schema mới. Các gói macOS hiện chưa được Apple notarize.${windows_trust_note}
           EOF

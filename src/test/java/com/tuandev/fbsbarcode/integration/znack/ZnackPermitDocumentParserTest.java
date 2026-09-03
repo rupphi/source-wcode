@@ -110,4 +110,21 @@ class ZnackPermitDocumentParserTest {
                 new GoodsDocument("STATE_REGISTRATION_CERTIFICATE", "ACTIVE-FLAG", "2026-03-12")
         ), documents);
     }
+
+    @Test
+    void circulationPrefersDeclarationsAndFallsBackToConformityCertificates() {
+        GoodsDocument certificate = new GoodsDocument(
+                "CONFORMITY_CERTIFICATE", "CERTIFICATE-1", "2026-03-11");
+        GoodsDocument declaration = new GoodsDocument(
+                "CONFORMITY_DECLARATION", "DECLARATION-1", "2026-02-10");
+        GoodsDocument stateRegistration = new GoodsDocument(
+                "STATE_REGISTRATION_CERTIFICATE", "STATE-1", "2026-04-12");
+
+        assertEquals(List.of(declaration), ZnackPermitDocumentParser.selectForCirculation(
+                List.of(certificate, declaration)));
+        assertEquals(List.of(certificate), ZnackPermitDocumentParser.selectForCirculation(
+                List.of(certificate)));
+        assertEquals(List.of(stateRegistration), ZnackPermitDocumentParser.selectForCirculation(
+                List.of(stateRegistration)));
+    }
 }

@@ -113,7 +113,7 @@ public final class OzonExemplarJobRepository {
                         try (PreparedStatement reserve = connection.prepareStatement("""
                                 UPDATE kiz_codes SET status='RESERVED',reservation_token=?,reserved_at=?,
                                     reservation_recoverable=0,updated_at=?
-                                WHERE id=? AND shop_id=? AND status='AVAILABLE'
+                                WHERE id=? AND shop_id=? AND status='AVAILABLE' AND legal_status='IN_CIRCULATION'
                                 """)) {
                             reserve.setString(1, reservationToken);
                             reserve.setString(2, now);
@@ -435,7 +435,9 @@ public final class OzonExemplarJobRepository {
     private static List<Long> availableKiz(Connection connection, int shopId, String gtin, int quantity)
             throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT id FROM kiz_codes WHERE shop_id=? AND gtin=? AND status='AVAILABLE' ORDER BY id LIMIT ?
+                SELECT id FROM kiz_codes
+                WHERE shop_id=? AND gtin=? AND status='AVAILABLE' AND legal_status='IN_CIRCULATION'
+                ORDER BY id LIMIT ?
                 """)) {
             statement.setInt(1, shopId);
             statement.setString(2, gtin);

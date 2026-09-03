@@ -21,7 +21,8 @@ public class ZnackIntroductionService {
         List<GoodsDocument> goodsDocuments;
         try{
             JsonElement registry=api.permitDocuments(s.resolvedTrueApiBaseUrl(),token,product.gtin(),owner);
-            goodsDocuments=ZnackPermitDocumentParser.activeFromRegistry(registry);
+            goodsDocuments=ZnackPermitDocumentParser.selectForCirculation(
+                    ZnackPermitDocumentParser.activeFromRegistry(registry));
         }catch(Exception error){
             throw new PermitDocumentsUnavailableException(
                     "Could not verify active National Catalog documents for GTIN "+product.gtin()+". The introduction will retry automatically.",error);

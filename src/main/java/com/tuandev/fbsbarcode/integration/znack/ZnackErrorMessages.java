@@ -15,8 +15,12 @@ import java.util.regex.Pattern;
  * so the audit log keeps everything; the panes should only show the human part of the payload.
  */
 public final class ZnackErrorMessages {
+    private static final String WAITING_INTRODUCTION_READINESS = "WAITING_INTRODUCTION_READINESS";
+    private static final String READINESS_PROGRESS_PREFIX = "True API readiness:";
     private static final Pattern HTTP_STATUS = Pattern.compile("\\(HTTP (\\d{3})\\)");
     private static final Pattern ERROR_CODE = Pattern.compile("\"?errorCode\"?\\s*[:=]\\s*\"?(\\d+)\"?");
+    private static final Pattern INSUFFICIENT_FUNDS_CODE = Pattern.compile(
+            "(?i)(?:HTTP\\s*400\\)?\\s*:\\s*|(?:error[_\\s-]?code|code)\"?\\s*[:=]\\s*\"?)3590(?!\\d)");
     private static final Set<String> MESSAGE_KEYS = Set.of(
             "error_message", "errormessage", "message", "description", "error_description",
             "detail", "reason", "globalerrors", "fielderrors", "errors");
@@ -51,6 +55,30 @@ public final class ZnackErrorMessages {
         Matcher status = HTTP_STATUS.matcher(raw);
         String prefix = status.find() ? "HTTP " + status.group(1) + ": " : "";
         return prefix + String.join("; ", messages);
+    }
+
+    /**
+     * User-facing pipeline detail. Readiness polling progress is an expected transient state, not
+     * an actionable error, so the UI represents it with the localized pipeline status only. The
+     * raw diagnostic remains stored for audit and retry decisions.
+     */
+    public static String displayForPipeline(String stage, String raw) {
+        if (isExpectedReadinessProgress(stage, raw)) return "";
+        return display(raw);
+    }
+
+    /** True only for Znack's insufficient-account-balance response. */
+    public static boolean isInsufficientFunds(String raw) {
+        if (raw == null || raw.isBlank()) return false;
+        return INSUFFICIENT_FUNDS_CODE.matcher(raw).find()
+                || raw.toLowerCase(java.util.Locale.ROOT).contains("notenoughmoneyexception");
+    }
+
+    private static boolean isExpectedReadinessProgress(String stage, String raw) {
+        if (!WAITING_INTRODUCTION_READINESS.equalsIgnoreCase(stage) || raw == null) return false;
+        String detail = raw.stripLeading();
+        return detail.regionMatches(true, 0, READINESS_PROGRESS_PREFIX, 0,
+                READINESS_PROGRESS_PREFIX.length());
     }
 
     private static int jsonStart(String raw) {

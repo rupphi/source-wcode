@@ -50,7 +50,10 @@ public class WbSyncWorkflow {
         int newOrders = orderSyncService.syncNewOrders(shop);
         int orderWindow = orderSyncService.syncOrdersWindow(shop);
         int supplyDetails = supplySyncService.syncRecentSupplyDetails(shop);
-        return new WbSyncReport(products, supplies + supplyDetails, newOrders + orderWindow, 0);
+        int openSupplyDetails = supplySyncService.syncOpenSupplyDetails(shop);
+        int openSupplyCounts = supplySyncService.syncOpenSupplyCounts(shop);
+        return new WbSyncReport(products, supplies + supplyDetails + openSupplyDetails + openSupplyCounts,
+                newOrders + orderWindow, 0);
     }
 
     public WbSyncReport refetchSupplies(Shop shop) throws IOException {

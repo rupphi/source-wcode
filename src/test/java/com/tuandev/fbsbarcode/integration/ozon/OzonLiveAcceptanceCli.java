@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.tuandev.fbsbarcode.config.Database;
 import com.tuandev.fbsbarcode.features.kiz.KizService;
 import com.tuandev.fbsbarcode.features.shop.ShopRepository;
 import com.tuandev.fbsbarcode.integration.marketplace.Marketplace;
@@ -60,6 +61,10 @@ public final class OzonLiveAcceptanceCli {
     private OzonLiveAcceptanceCli() {
     }
 
+    static void initializeLocalDatabase() {
+        Database.initDatabase();
+    }
+
     public static void main(String[] args) {
         try {
             Arguments parsed = Arguments.parse(args);
@@ -67,6 +72,7 @@ public final class OzonLiveAcceptanceCli {
             secureDirectory(parsed.dataDir());
             try (LocalDataMigrationGate.Session ignored = LocalDataMigrationGate.prepare(
                     AppPaths.appDataDir(), "1.1.7-live", "ozon-live")) {
+                initializeLocalDatabase();
                 Shop shop = ensureShop(loadCredentials(parsed.envFile()));
                 switch (parsed.command()) {
                     case "discover" -> discover(shop, parsed);
@@ -92,7 +98,7 @@ public final class OzonLiveAcceptanceCli {
         OzonSyncWorkflow workflow = new OzonSyncWorkflow();
         OzonConnectionCheck connection = workflow.checkConnection(shop);
         OzonSyncReport sync = workflow.syncOverview(shop);
-        List<Candidate> candidates = eligibleCandidates(shop.getId());
+        List<Candidate> candidates = eligibleCandidates(shop.getId(), arguments);
         System.out.println("live_result=read_only_ok");
         System.out.println("account=" + maskedIdentity(connection.clientId()));
         System.out.println("roles=" + connection.roleCount());
@@ -401,28 +407,35 @@ public final class OzonLiveAcceptanceCli {
         putConfig(KIZ_FINGERPRINT_KEY, fixture.fingerprint());
     }
 
-    private static List<Candidate> eligibleCandidates(int shopId) {
+    private static List<Candidate> eligibleCandidates(int shopId, Arguments arguments) throws IOException {
+        String fixtureGtin = loadKizFixture(arguments.kizFile(), arguments.kizLine()).gtin();
+        Map<String, String> mappings = new OzonProductGtinMappingRepository().findResolvedBySku(shopId);
         return new OzonPostingRepository().findByStatus(shopId, "awaiting_packaging", 500, 0).stream()
                 .map(OzonLiveAcceptanceCli::candidate)
                 .filter(java.util.Objects::nonNull)
+                .filter(candidate -> fixtureGtin.equals(mappings.get(candidate.item().sku())))
                 .sorted(Comparator.comparing(
                         (Candidate value) -> value.posting().shipmentAt(), Comparator.reverseOrder()))
                 .toList();
     }
 
     private static Candidate candidate(OzonPostingDto posting) {
-        if (!"awaiting_packaging".equalsIgnoreCase(posting.status())
-                || posting.requirements().blocksPreparation()
-                || !posting.isSinglePackageSupported()) return null;
+        if (!isSingleUnitCandidate(posting)) return null;
+        OzonPostingItemDto item = posting.items().getFirst();
         Set<String> mandatory = Set.copyOf(posting.requirements().mandatoryMarkProductIds());
         Set<String> optional = Set.copyOf(posting.requirements().optionalMarkProductIds());
-        List<OzonPostingItemDto> marked = posting.items().stream()
-                .filter(item -> mandatory.contains(item.productId()) || optional.contains(item.productId()))
-                .toList();
-        int quantity = marked.stream().mapToInt(OzonPostingItemDto::quantity).sum();
-        if (marked.size() != 1 || quantity != 1 || marked.getFirst().sku().isBlank()) return null;
-        String marking = mandatory.contains(marked.getFirst().productId()) ? "mandatory" : "optional";
-        return new Candidate(posting, marked.getFirst(), alias(posting.postingNumber()), marking, quantity);
+        String marking = mandatory.contains(item.productId())
+                ? "mandatory" : optional.contains(item.productId()) ? "optional" : "default";
+        return new Candidate(posting, item, alias(posting.postingNumber()), marking, 1);
+    }
+
+    static boolean isSingleUnitCandidate(OzonPostingDto posting) {
+        if (!"awaiting_packaging".equalsIgnoreCase(posting.status())
+                || posting.requirements().blocksPreparation()
+                || !posting.isSinglePackageSupported()
+                || posting.items().size() != 1) return false;
+        OzonPostingItemDto item = posting.items().getFirst();
+        return item.quantity() == 1 && !item.sku().isBlank();
     }
 
     private static Candidate selectCandidate(List<Candidate> candidates, String requestedAlias) {

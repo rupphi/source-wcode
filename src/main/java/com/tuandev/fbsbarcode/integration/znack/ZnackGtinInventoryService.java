@@ -39,7 +39,7 @@ public class ZnackGtinInventoryService {
                 try (PreparedStatement ps = c.prepareStatement("""
                         UPDATE kiz_codes SET status='RESERVED',reservation_token=?,reserved_at=?,
                         reservation_recoverable=1,updated_at=?
-                        WHERE shop_id=? AND status='AVAILABLE' AND id IN (
+                        WHERE shop_id=? AND status='AVAILABLE' AND legal_status='IN_CIRCULATION' AND id IN (
                         """ + placeholders + ")")) {
                     String now = Instant.now().toString();
                     ps.setString(1, token);
@@ -72,11 +72,85 @@ public class ZnackGtinInventoryService {
 
     public int availableCount(int shopId, String gtin) {
         try (Connection c = Database.getConnection(); PreparedStatement ps = c.prepareStatement(
-                "SELECT COUNT(*) FROM kiz_codes WHERE shop_id=? AND gtin=? AND status='AVAILABLE'")) {
+                "SELECT COUNT(*) FROM kiz_codes WHERE shop_id=? AND gtin=? "
+                        + "AND status='AVAILABLE' AND legal_status='IN_CIRCULATION'")) {
             ps.setInt(1, shopId);
             ps.setString(2, GtinNormalizer.normalize(gtin));
             try (ResultSet rs = ps.executeQuery()) {
                 return rs.next() ? rs.getInt(1) : 0;
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public int discardableCount(int shopId, String gtin) {
+        try (Connection c = Database.getConnection(); PreparedStatement ps = c.prepareStatement("""
+                SELECT COUNT(*) FROM kiz_codes code
+                WHERE code.shop_id=? AND code.gtin=? AND code.status='AVAILABLE'
+                  AND COALESCE(code.legal_status,'')<>'IN_CIRCULATION'
+                  AND EXISTS (
+                    SELECT 1 FROM znack_purchase_pipelines failed
+                    WHERE failed.shop_id=code.shop_id AND failed.order_id=code.order_id
+                      AND failed.stage='INTRODUCTION_FAILED'
+                  )
+                """)) {
+            ps.setInt(1, shopId);
+            ps.setString(2, GtinNormalizer.normalize(gtin));
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : 0;
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /** Archives unusable marks only after their purchase pipeline has explicitly failed introduction. */
+    public int archiveDiscardable(int shopId, String shopName, String gtin) {
+        String normalized = GtinNormalizer.normalize(gtin);
+        try (Connection c = Database.getConnection(); Statement tx = c.createStatement()) {
+            tx.execute("BEGIN IMMEDIATE");
+            try {
+                int archived;
+                String now = Instant.now().toString();
+                try (PreparedStatement ps = c.prepareStatement("""
+                        UPDATE kiz_codes AS code
+                        SET status='ARCHIVED',reservation_token=NULL,reserved_at=NULL,
+                            reservation_recoverable=NULL,updated_at=?
+                        WHERE code.shop_id=? AND code.gtin=? AND code.status='AVAILABLE'
+                          AND COALESCE(code.legal_status,'')<>'IN_CIRCULATION'
+                          AND EXISTS (
+                            SELECT 1 FROM znack_purchase_pipelines failed
+                            WHERE failed.shop_id=code.shop_id AND failed.order_id=code.order_id
+                              AND failed.stage='INTRODUCTION_FAILED'
+                          )
+                        """)) {
+                    ps.setString(1, now);
+                    ps.setInt(2, shopId);
+                    ps.setString(3, normalized);
+                    archived = ps.executeUpdate();
+                }
+                if (archived > 0) {
+                    try (PreparedStatement log = c.prepareStatement("""
+                            INSERT INTO znack_operation_logs
+                            (shop_id,shop_name,action,entity_reference,severity,message,http_status,created_at)
+                            VALUES(?,?,?,?,?,?,NULL,?)
+                            """)) {
+                        log.setInt(1, shopId);
+                        log.setString(2, shopName == null ? "" : shopName);
+                        log.setString(3, "KIZ_ARCHIVE");
+                        log.setString(4, normalized);
+                        log.setString(5, "INFO");
+                        log.setString(6, "ARCHIVED_UNUSABLE_KIZ:" + archived);
+                        log.setString(7, now);
+                        log.executeUpdate();
+                    }
+                }
+                tx.execute("COMMIT");
+                return archived;
+            } catch (Exception e) {
+                tx.execute("ROLLBACK");
+                throw e;
             }
         } catch (SQLException e) {
             throw new RuntimeException(e);
@@ -104,7 +178,7 @@ public class ZnackGtinInventoryService {
     private List<Kiz> selectAvailable(Connection c, int shopId, String gtin, int quantity) throws SQLException {
         try (PreparedStatement ps = c.prepareStatement("""
                 SELECT id,raw_code FROM kiz_codes
-                WHERE shop_id=? AND gtin=? AND status='AVAILABLE'
+                WHERE shop_id=? AND gtin=? AND status='AVAILABLE' AND legal_status='IN_CIRCULATION'
                 ORDER BY id LIMIT ?
                 """)) {
             ps.setInt(1, shopId);

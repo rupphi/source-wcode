@@ -54,9 +54,10 @@ class KizMappingRepositoryTest {
         List<ZnackGtinInventorySummary> shoes = repository.findGtinSummariesPage(
                 1, "", List.of("Shoes"), 2, 0);
         assertEquals(List.of(GTIN_A, GTIN_B), shoes.stream().map(ZnackGtinInventorySummary::gtin).toList());
-        assertEquals(2, shoes.getFirst().available());
+        assertEquals(1, shoes.getFirst().available());
         assertEquals(1, shoes.getFirst().reserved());
         assertEquals(1, shoes.getFirst().consumed());
+        assertEquals(1, shoes.getFirst().discardable());
         assertEquals("CODES_READY", shoes.getFirst().latestOrderStatus());
         assertEquals("COMPLETED", shoes.getFirst().latestPipelineStage());
         assertEquals("safe error", shoes.getFirst().latestError());
@@ -117,6 +118,12 @@ class KizMappingRepositoryTest {
                 VALUES(1,'%s',4,'CODES_READY','order error','2026-07-18T00:00:00Z','2026-07-18T00:00:00Z')
                 """.formatted(GTIN_A));
         execute("""
+                INSERT INTO znack_purchase_pipelines(
+                    shop_id,gtin,quantity,stage,order_id,error_message,created_at,updated_at)
+                VALUES(1,'%s',4,'INTRODUCTION_FAILED',1,'introduction failed',
+                       '2026-07-17T00:00:00Z','2026-07-17T00:00:00Z')
+                """.formatted(GTIN_A));
+        execute("""
                 INSERT INTO znack_purchase_pipelines(shop_id,gtin,quantity,stage,error_message,created_at,updated_at)
                 VALUES(1,'%s',4,'COMPLETED','safe error','2026-07-18T00:00:00Z','2026-07-18T00:00:00Z')
                 """.formatted(GTIN_A));
@@ -125,16 +132,22 @@ class KizMappingRepositoryTest {
     private void codes() throws Exception {
         try (Connection connection = Database.getConnection(); PreparedStatement statement = connection.prepareStatement("""
                 INSERT INTO kiz_codes(
-                    shop_id,order_id,raw_code,display_code,gtin,status,created_at,updated_at)
-                VALUES(1,1,?,?,?,?, '2026-07-18T00:00:00Z','2026-07-18T00:00:00Z')
+                    shop_id,order_id,raw_code,display_code,gtin,status,legal_status,created_at,updated_at)
+                VALUES(1,1,?,?,?,?,?, '2026-07-18T00:00:00Z','2026-07-18T00:00:00Z')
                 """)) {
             int index = 0;
-            for (String status : List.of("AVAILABLE", "AVAILABLE", "RESERVED", "CONSUMED")) {
+            for (String[] state : List.of(
+                    new String[]{"AVAILABLE", "IN_CIRCULATION"},
+                    new String[]{"AVAILABLE", "RECEIVED"},
+                    new String[]{"RESERVED", "IN_CIRCULATION"},
+                    new String[]{"CONSUMED", "IN_CIRCULATION"})) {
+                String status = state[0];
                 String code = "code-" + status + "-" + index++;
                 statement.setString(1, code);
                 statement.setString(2, code);
                 statement.setString(3, GTIN_A);
                 statement.setString(4, status);
+                statement.setString(5, state[1]);
                 statement.addBatch();
             }
             statement.executeBatch();

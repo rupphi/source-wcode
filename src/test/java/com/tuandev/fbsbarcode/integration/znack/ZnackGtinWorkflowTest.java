@@ -145,6 +145,7 @@ class ZnackGtinWorkflowTest {
     @Test void inventoryReservationConsumptionAndReleaseNeverDuplicate() throws Exception {
         long order = repository.createDraft(A, 2);
         repository.insertCodes(order, A, new DownloadedCodes(List.of("one","two"), "b"));
+        repository.markCodes(order, KizLegalStatus.IN_CIRCULATION, null, null);
         ZnackGtinInventoryService inventory = new ZnackGtinInventoryService();
         List<Kiz> first = inventory.reserveAvailable(1, A, 1, "first");
         List<Kiz> second = inventory.reserveAvailable(1, A, 1, "second");
@@ -160,9 +161,56 @@ class ZnackGtinWorkflowTest {
         }
     }
 
+    @Test void inventoryExposesOnlyCirculatedCodesAndArchivesOnlyTerminalUnusableCodes() throws Exception {
+        long terminalOrder = repository.createDraft(A, 3);
+        repository.insertCodes(terminalOrder, A,
+                new DownloadedCodes(List.of("circulated", "received", "intro-sent"), "terminal"));
+        try (Connection connection = Database.getConnection(); Statement statement = connection.createStatement()) {
+            statement.execute("UPDATE kiz_codes SET legal_status='IN_CIRCULATION' WHERE raw_code='circulated'");
+            statement.execute("UPDATE kiz_codes SET legal_status='INTRO_SENT' WHERE raw_code='intro-sent'");
+        }
+        long failedPipeline = repository.createPipeline(A, 3);
+        repository.updatePipeline(failedPipeline, terminalOrder, PurchaseStage.INTRODUCTION_FAILED,
+                "Introduction failed");
+        long activeOrder = repository.createDraft(A, 1);
+        repository.insertCodes(activeOrder, A, new DownloadedCodes(List.of("active-pending"), "active"));
+        long activePipeline = repository.createPipeline(A, 1);
+        repository.updatePipeline(activePipeline, activeOrder, PurchaseStage.WAITING_INTRODUCTION_READINESS, null);
+
+        ZnackGtinInventoryService inventory = new ZnackGtinInventoryService();
+
+        assertEquals(1, inventory.availableCount(1, A));
+        assertEquals(2, inventory.discardableCount(1, A));
+        assertEquals(2, inventory.archiveDiscardable(1, "A", A));
+        assertEquals(0, inventory.discardableCount(1, A));
+        assertEquals(2, countCodes("status='ARCHIVED'"));
+        assertEquals(1, countCodes("raw_code='active-pending' AND status='AVAILABLE'"));
+        assertEquals("circulated", inventory.reserveAvailable(1, A, 1, "circulated-only")
+                .getFirst().getCode());
+    }
+
+    @Test void archiveNeverRemovesRecoverableOrManuallyPendingCodes() throws Exception {
+        long skippedOrder = repository.createDraft(A, 1);
+        repository.insertCodes(skippedOrder, A, new DownloadedCodes(List.of("missing-documents"), "skipped"));
+        long skippedPipeline = repository.createPipeline(A, 1);
+        repository.updatePipeline(skippedPipeline, skippedOrder,
+                PurchaseStage.INTRODUCTION_SKIPPED_MISSING_DOCUMENTS, "Missing documents");
+        long manualOrder = repository.createDraft(A, 1);
+        repository.insertCodes(manualOrder, A, new DownloadedCodes(List.of("manual-pending"), "manual"));
+        long completedPipeline = repository.createPipeline(A, 1);
+        repository.updatePipeline(completedPipeline, manualOrder, PurchaseStage.COMPLETED, null);
+
+        ZnackGtinInventoryService inventory = new ZnackGtinInventoryService();
+
+        assertEquals(0, inventory.discardableCount(1, A));
+        assertEquals(0, inventory.archiveDiscardable(1, "A", A));
+        assertEquals(2, countCodes("status='AVAILABLE'"));
+    }
+
     @Test void staleReservationCannotConsumeCodeAfterItWasReleasedAndReservedAgain() {
         long order = repository.createDraft(A, 1);
         repository.insertCodes(order, A, new DownloadedCodes(List.of("one"), "b"));
+        repository.markCodes(order, KizLegalStatus.IN_CIRCULATION, null, null);
         ZnackGtinInventoryService inventory = new ZnackGtinInventoryService();
         List<Kiz> stale = inventory.reserveAvailable(1, A, 1, "stale");
         inventory.release(1, stale);
@@ -176,6 +224,7 @@ class ZnackGtinWorkflowTest {
     @Test void releaseRejectsMissingReservationTokenInsteadOfSilentlyLeakingCode() throws Exception {
         long order = repository.createDraft(A, 1);
         repository.insertCodes(order, A, new DownloadedCodes(List.of("one"), "b"));
+        repository.markCodes(order, KizLegalStatus.IN_CIRCULATION, null, null);
         ZnackGtinInventoryService inventory = new ZnackGtinInventoryService();
         List<Kiz> reserved = inventory.reserveAvailable(1, A, 1, "owned");
 
@@ -189,6 +238,7 @@ class ZnackGtinWorkflowTest {
     @Test void startupRecoveryReleasesOnlyReservationsCreatedByTheRecoverableLifecycle() throws Exception {
         long order = repository.createDraft(A, 2);
         repository.insertCodes(order, A, new DownloadedCodes(List.of("recoverable", "legacy-reserved"), "b"));
+        repository.markCodes(order, KizLegalStatus.IN_CIRCULATION, null, null);
         ZnackGtinInventoryService inventory = new ZnackGtinInventoryService();
         inventory.reserveAvailable(1, A, 1, "recoverable-token");
         List<Kiz> legacy = inventory.reserveAvailable(1, A, 1, "legacy-token");
@@ -232,6 +282,7 @@ class ZnackGtinWorkflowTest {
     @Test void reservationCannotBeConsumedThroughAnotherShop() {
         long order = repository.createDraft(A, 1);
         repository.insertCodes(order, A, new DownloadedCodes(List.of("one"), "b"));
+        repository.markCodes(order, KizLegalStatus.IN_CIRCULATION, null, null);
         ZnackGtinInventoryService inventory = new ZnackGtinInventoryService();
         List<Kiz> reserved = inventory.reserveAvailable(1, A, 1, "shop-one");
 
@@ -334,7 +385,7 @@ class ZnackGtinWorkflowTest {
         assertEquals(PurchaseStage.COMPLETED, repository.findPipeline(pipeline).orElseThrow().stage());
         assertEquals(PurchaseStage.COMPLETED, repository.findPipeline(queued).orElseThrow().stage());
         assertEquals(2, buys.get());
-        assertEquals(2, new ZnackGtinInventoryService().availableCount(1, A));
+        assertEquals(0, new ZnackGtinInventoryService().availableCount(1, A));
     }
 
     @Test void persistedPurchaseRequestKeyMakesCompletedAndInFlightReplaysIdempotent() throws Exception {
@@ -432,7 +483,7 @@ class ZnackGtinWorkflowTest {
         assertEquals("recovered-order", repository.findOrder(
                 repository.findPipeline(persisted).orElseThrow().orderId()).orElseThrow().externalOrderId());
         assertEquals(1, buys.get());
-        assertEquals(1, new ZnackGtinInventoryService().availableCount(1, A));
+        assertEquals(0, new ZnackGtinInventoryService().availableCount(1, A));
     }
 
     @Test void confirmedMissingRemoteOrderReleasesNextQueuedPurchase() throws Exception {
@@ -482,7 +533,7 @@ class ZnackGtinWorkflowTest {
 
         assertEquals(PurchaseStage.COMPLETED, repository.findPipeline(queuedPipeline).orElseThrow().stage());
         assertEquals(2, buys.get());
-        assertEquals(1, new ZnackGtinInventoryService().availableCount(1, A));
+        assertEquals(0, new ZnackGtinInventoryService().availableCount(1, A));
     }
 
     @Test void preRequestPurchaseFailureDoesNotPermanentlyBlockGtin() throws Exception {
@@ -505,7 +556,7 @@ class ZnackGtinWorkflowTest {
         }
     }
 
-    @Test void missingIntroductionMetadataKeepsDownloadedCodesAvailable() throws Exception {
+    @Test void missingIntroductionMetadataKeepsDownloadedCodesStoredButUnavailable() throws Exception {
         Settings base = testedSettings();
         Settings auto = new Settings(base.trueApiBaseUrl(), base.suzBaseUrl(), base.omsId(), base.omsConnection(),
                 base.participantInn(), base.producerInn(), base.ownerInn(), base.signerExecutable(),
@@ -535,7 +586,8 @@ class ZnackGtinWorkflowTest {
         coordinator.resume(auto);
         assertEquals(PurchaseStage.INTRODUCTION_SKIPPED_MISSING_METADATA,
                 repository.findPipeline(pipeline).orElseThrow().stage());
-        assertEquals(1, new ZnackGtinInventoryService().availableCount(1, A));
+        assertEquals(0, new ZnackGtinInventoryService().availableCount(1, A));
+        assertEquals(1, repository.findCodes(repository.findPipeline(pipeline).orElseThrow().orderId()).size());
     }
 
     @Test void skippedIntroductionResumesAfterDocumentsAndMetadataBecomeAvailable() throws Exception {
@@ -834,7 +886,7 @@ class ZnackGtinWorkflowTest {
         assertTrue(result.message().contains("1000 pending"));
     }
 
-    @Test void readinessStageIsSafeToRetryAndKeepsDownloadedCodesAvailable() throws Exception {
+    @Test void readinessStageIsSafeToRetryAndKeepsDownloadedCodesUnavailable() throws Exception {
         Settings base = testedSettings();
         Settings auto = new Settings(base.trueApiBaseUrl(), base.suzBaseUrl(), base.omsId(), base.omsConnection(),
                 base.participantInn(), base.producerInn(), base.ownerInn(), base.signerExecutable(),
@@ -858,7 +910,7 @@ class ZnackGtinWorkflowTest {
         ZnackPurchasePipelineState persisted = repository.findPipeline(pipeline).orElseThrow();
         assertEquals(PurchaseStage.WAITING_INTRODUCTION_READINESS, persisted.stage());
         assertTrue(persisted.errorMessage().contains("EMITTED"));
-        assertEquals(1, new ZnackGtinInventoryService().availableCount(1, A));
+        assertEquals(0, new ZnackGtinInventoryService().availableCount(1, A));
     }
 
     @Test void unavailableGtinDocumentsReturnIntroductionToAutomaticRetryWithoutLosingCodes() throws Exception {
@@ -892,7 +944,7 @@ class ZnackGtinWorkflowTest {
         assertEquals(OrderStatus.WAITING_INTRODUCTION_READINESS,
                 repository.findOrder(order).orElseThrow().localStatus());
         assertTrue(repository.findLatestDocument(order).isEmpty());
-        assertEquals(1, new ZnackGtinInventoryService().availableCount(1, A));
+        assertEquals(0, new ZnackGtinInventoryService().availableCount(1, A));
     }
 
     @Test void readinessStageCompletesIdempotentlyWhenCodesWereIntroducedManually() throws Exception {
@@ -941,7 +993,7 @@ class ZnackGtinWorkflowTest {
 
         coordinator.resume(settings);
         assertEquals(PurchaseStage.COMPLETED, repository.findPipeline(pipeline).orElseThrow().stage());
-        assertEquals(2, new ZnackGtinInventoryService().availableCount(1, A));
+        assertEquals(0, new ZnackGtinInventoryService().availableCount(1, A));
     }
 
     @Test void samePipelineCannotAdvanceConcurrently() throws Exception {
@@ -1014,6 +1066,48 @@ class ZnackGtinWorkflowTest {
 
         assertTrue(fresh > failed);
         assertEquals(PurchaseStage.INTRODUCTION_FAILED, repository.findPipeline(failed).orElseThrow().stage());
+    }
+
+    @Test void insufficientFundsRetryReusesTheExactPersistedPipeline() throws Exception {
+        String insufficientFunds = "HTTP 400: 3590; NotEnoughMoneyException: "
+                + "Недостаточно средств на лицевом счету";
+        long pipeline = repository.createPipeline(A, 1);
+        repository.updatePipeline(pipeline, null, PurchaseStage.FAILED, insufficientFunds);
+        AtomicInteger advances = new AtomicInteger();
+        AtomicReference<Long> advancedPipeline = new AtomicReference<>();
+        ZnackPurchaseCoordinator coordinator = new ZnackPurchaseCoordinator(repository, null, null, null) {
+            @Override public void advance(Settings ignored, long pipelineId) {
+                advances.incrementAndGet();
+                advancedPipeline.set(pipelineId);
+            }
+
+            @Override void schedule(long ignoredPipeline) {
+            }
+        };
+
+        coordinator.retryInsufficientFunds(testedSettings(), pipeline);
+
+        assertEquals(1, advances.get());
+        assertEquals(pipeline, advancedPipeline.get());
+        assertEquals(PurchaseStage.VALIDATING, repository.findPipeline(pipeline).orElseThrow().stage());
+        try (Connection connection = Database.getConnection(); ResultSet rows = connection.createStatement()
+                .executeQuery("SELECT COUNT(*) FROM znack_purchase_pipelines WHERE shop_id=1 AND gtin='" + A + "'")) {
+            assertTrue(rows.next());
+            assertEquals(1, rows.getInt(1));
+        }
+    }
+
+    @Test void insufficientFundsRetryRejectsARegularFailedPipeline() throws Exception {
+        long pipeline = repository.createPipeline(A, 1);
+        repository.updatePipeline(pipeline, null, PurchaseStage.FAILED, "HTTP 400: another failure");
+        ZnackPurchaseCoordinator coordinator = new ZnackPurchaseCoordinator(repository, null, null, null) {
+            @Override void schedule(long ignoredPipeline) {
+            }
+        };
+
+        assertThrows(IllegalStateException.class,
+                () -> coordinator.retryInsufficientFunds(testedSettings(), pipeline));
+        assertEquals(PurchaseStage.FAILED, repository.findPipeline(pipeline).orElseThrow().stage());
     }
 
     @Test void introductionRetryTargetsTheSelectedPipelineWhenOneGtinHasSeveralFailures() throws Exception {
@@ -1198,7 +1292,7 @@ class ZnackGtinWorkflowTest {
         assertFalse(ZnackPurchaseCoordinator.isScheduledForTests(1, pipeline));
         assertEquals(PurchaseStage.WAITING_INTRODUCTION_READINESS,
                 repository.findPipeline(pipeline).orElseThrow().stage());
-        assertEquals(1, new ZnackGtinInventoryService().availableCount(1, A));
+        assertEquals(0, new ZnackGtinInventoryService().availableCount(1, A));
 
         ZnackSigningSession.authorizeShop(1);
         coordinator.resume(auto);
@@ -1305,6 +1399,13 @@ class ZnackGtinWorkflowTest {
                 base.certificateListExecutable(), base.certificateListArgumentsJson(), base.certificateMetadataJson(),
                 base.signerTestedAt(), base.certmgrPath(), base.cryptcpPath(), base.csptestPath(),
                 base.cryptoProTimeoutSeconds(), "20.06.2029", "CONFORMITY_DECLARATION");
+    }
+
+    private int countCodes(String predicate) throws Exception {
+        try (Connection connection = Database.getConnection(); Statement statement = connection.createStatement();
+                ResultSet result = statement.executeQuery("SELECT COUNT(*) FROM kiz_codes WHERE " + predicate)) {
+            return result.next() ? result.getInt(1) : 0;
+        }
     }
 
     private Path executableFixture() throws Exception {

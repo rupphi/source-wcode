@@ -131,9 +131,9 @@ class OzonPrintReadinessServiceTest {
 
     private void insertKiz(int id) throws Exception {
         try (Connection connection = Database.getConnection(); Statement statement = connection.createStatement()) {
-            statement.execute("INSERT INTO kiz_codes(id,shop_id,order_id,raw_code,display_code,gtin,status,created_at,updated_at) "
+            statement.execute("INSERT INTO kiz_codes(id,shop_id,order_id,raw_code,display_code,gtin,status,legal_status,created_at,updated_at) "
                     + "VALUES(" + id + ",1,1,'01" + GTIN + "21SERIAL-" + id + "','KIZ-" + id + "','"
-                    + GTIN + "','AVAILABLE','2026-08-24T00:00:00Z','2026-08-24T00:00:00Z')");
+                    + GTIN + "','AVAILABLE','IN_CIRCULATION','2026-08-24T00:00:00Z','2026-08-24T00:00:00Z')");
         }
     }
 

@@ -75,6 +75,9 @@ class FboKizPrintPlannerTest {
         for (int i = 1; i <= codeCount; i++) {
             repository.insertCodes(order, GTIN, new DownloadedCodes(List.of("KIZ-" + i), "block"));
         }
+        try (Connection c = Database.getConnection(); Statement st = c.createStatement()) {
+            st.execute("UPDATE kiz_codes SET legal_status='IN_CIRCULATION' WHERE shop_id=1");
+        }
     }
 
     private void clearDb() throws Exception {

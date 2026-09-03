@@ -32,8 +32,8 @@ class OzonDurableReservationTest {
                     + "VALUES(1,'04600000000001','Marked item','2026-08-18T00:00:00Z')");
             statement.execute("INSERT INTO kiz_orders(id,shop_id,gtin,quantity,local_status,created_at,updated_at) "
                     + "VALUES(1,1,'04600000000001',1,'COMPLETED','2026-08-18T00:00:00Z','2026-08-18T00:00:00Z')");
-            statement.execute("INSERT INTO kiz_codes(id,shop_id,order_id,raw_code,display_code,gtin,status,created_at,updated_at) "
-                    + "VALUES(1,1,1,'010460000000000121ABC','010460000000000121ABC','04600000000001','AVAILABLE',"
+            statement.execute("INSERT INTO kiz_codes(id,shop_id,order_id,raw_code,display_code,gtin,status,legal_status,created_at,updated_at) "
+                    + "VALUES(1,1,1,'010460000000000121ABC','010460000000000121ABC','04600000000001','AVAILABLE','IN_CIRCULATION',"
                     + "'2026-08-18T00:00:00Z','2026-08-18T00:00:00Z')");
         }
         OzonPostingDto posting = new OzonPostingDto("POST-1", "", "", "awaiting_packaging", "", "", "", "",

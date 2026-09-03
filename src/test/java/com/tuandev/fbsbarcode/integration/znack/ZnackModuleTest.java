@@ -70,6 +70,29 @@ class ZnackModuleTest {
         assertEquals("", ZnackErrorMessages.display(null));
     }
 
+    @Test void waitingIntroductionReadinessHidesExpectedPollingDetailsButKeepsRealErrors() {
+        String pollingDetail = "True API readiness: 0/100 KIZ ready, 100 pending. "
+                + "KIZ is not APPLIED yet: EMITTED";
+
+        assertEquals("", ZnackErrorMessages.displayForPipeline(
+                "WAITING_INTRODUCTION_READINESS", pollingDetail));
+        assertEquals("temporary readiness failure", ZnackErrorMessages.displayForPipeline(
+                "WAITING_INTRODUCTION_READINESS", "temporary readiness failure"));
+        assertEquals(pollingDetail, ZnackErrorMessages.displayForPipeline("FAILED", pollingDetail));
+    }
+
+    @Test void identifiesInsufficientFundsOnlyFromZnackError3590OrItsExceptionType() {
+        String exactError = "HTTP 400: 3590; \"NotEnoughMoneyException: contract_id=[1234567]: "
+                + "Недостаточно средств на лицевом счету\"";
+
+        assertTrue(ZnackErrorMessages.isInsufficientFunds(exactError));
+        assertTrue(ZnackErrorMessages.isInsufficientFunds(
+                "Znack API request failed: NotEnoughMoneyException: balance is too low"));
+        assertFalse(ZnackErrorMessages.isInsufficientFunds("HTTP 400: 35901; unrelated"));
+        assertFalse(ZnackErrorMessages.isInsufficientFunds("HTTP 400: 3055; emission is blocked"));
+        assertFalse(ZnackErrorMessages.isInsufficientFunds(null));
+    }
+
     @Test void sanitizerRedactsJsonAndHeaderStyleSecrets() {
         String sanitized=ZnackSanitizer.message("""
                 {"token":"secret-token","signature":"secret-signature","pin":"1234"}
@@ -907,6 +930,36 @@ class ZnackModuleTest {
         assertEquals("BUNDLE",repository.findProducts().getFirst().cisType());
     }
 
+    @Test void productSyncKeepsGtinWithOnlyConformityCertificate() throws Exception {
+        ZnackRepository repository=repository(1,"Shop A");
+        ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonElement products(String base,String token){
+                return JsonParser.parseString("""
+                        {"results":[{"gtin":"04601234567890","productName":"Product","tnVedCode10":"6202300000"}]}
+                        """);
+            }
+            @Override public JsonElement productCards(String base,String token,String gtins){
+                return JsonParser.parseString("""
+                        {"result":[{"identified_by":[{"type":"gtin","value":"04601234567890"}],
+                        "good_attrs":[{"attr_id":23561,"certificate_number":"CERTIFICATE-ONLY",
+                        "certificate_issued_date":"2026-03-11"}]}]}
+                        """);
+            }
+        };
+        ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+            @Override public String trueApiToken(Settings s){return "token";}
+        };
+
+        new ZnackProductService(api,auth,repository).sync(testedSettings("","","","connection",""));
+
+        Product synced=repository.findProducts().getFirst();
+        assertEquals("CONFORMITY_CERTIFICATE",synced.certificateType());
+        assertEquals("CERTIFICATE-ONLY",synced.certificateNumber());
+        assertEquals("2026-03-11",synced.certificateDate());
+        assertEquals(List.of(new GoodsDocument("CONFORMITY_CERTIFICATE","CERTIFICATE-ONLY","2026-03-11")),
+                synced.permitDocuments());
+    }
+
     @Test void productSyncFetchesEveryReportedPage() throws Exception {
         ZnackRepository repository=repository(1,"Shop A");
         AtomicInteger requestedPage=new AtomicInteger(-1);
@@ -1266,7 +1319,7 @@ class ZnackModuleTest {
         } finally { server.stop(0); }
     }
 
-    @Test void ownProductionIntroductionUsesEveryActiveGtinDocumentAndParticipantFallbacks() throws Exception {
+    @Test void ownProductionIntroductionPrefersActiveDeclarationAndParticipantFallbacks() throws Exception {
         ZnackRepository repository=repository(1, "Shop A");
         Product product=new Product("04601234567890","Product","6201000000",null,null,null,null);
         repository.upsertProducts(List.of(product));
@@ -1304,16 +1357,57 @@ class ZnackModuleTest {
         assertEquals(normalizedCis,payload.getAsJsonArray("products").get(0).getAsJsonObject().get("uit_code").getAsString());
         assertTrue(payload.getAsJsonArray("products").get(0).getAsJsonObject().has("tnved_code"));
         JsonArray certificates=payload.getAsJsonArray("products").get(0).getAsJsonObject().getAsJsonArray("certificate_document_data");
-        assertEquals(List.of("DECLARATION-1","CERTIFICATE-2"),certificates.asList().stream()
+        assertEquals(List.of("DECLARATION-1"),certificates.asList().stream()
                 .map(JsonElement::getAsJsonObject).map(c->c.get("certificate_number").getAsString()).toList());
-        assertEquals(List.of("CONFORMITY_DECLARATION","CONFORMITY_CERTIFICATE"),certificates.asList().stream()
+        assertEquals(List.of("CONFORMITY_DECLARATION"),certificates.asList().stream()
                 .map(JsonElement::getAsJsonObject).map(c->c.get("certificate_type").getAsString()).toList());
+        assertEquals(List.of("2026-01-10"),certificates.asList().stream()
+                .map(JsonElement::getAsJsonObject).map(c->c.get("certificate_date").getAsString()).toList());
         assertTrue(certificates.asList().stream().noneMatch(c->c.getAsJsonObject().has("certificate_expiration_date")));
         assertEquals("04601234567890",registryGtin.get());
         assertEquals("7701234567",registryInn.get());
-        assertEquals(List.of("DECLARATION-1","CERTIFICATE-2"),repository.findProduct(product.gtin()).orElseThrow()
+        assertEquals(List.of("DECLARATION-1"),repository.findProduct(product.gtin()).orElseThrow()
                 .permitDocuments().stream().map(GoodsDocument::number).toList());
         assertEquals("doc",repository.findLatestDocument(orderId).orElseThrow().externalDocumentId());
+    }
+
+    @Test void ownProductionIntroductionFallsBackToActiveConformityCertificate() throws Exception {
+        ZnackRepository repository=repository(1,"Shop A");
+        Product product=new Product("04601234567890","Product","6201000000",null,null,null,null);
+        repository.upsertProducts(List.of(product));
+        long orderId=repository.createDraft(product.gtin(),1);
+        repository.insertCodes(orderId,product.gtin(),new DownloadedCodes(List.of(
+                "010460123456789021abcdefghijklm\u001D91ABCD\u001D92signature"),"block"));
+        AtomicReference<JsonObject> request=new AtomicReference<>();
+        ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonElement permitDocuments(String base,String token,String gtin,String inn){
+                return JsonParser.parseString("""
+                        {"result":{"documents":[
+                          {"attr_id":23561,"number":"CERTIFICATE-ONLY","from_date":"2026-03-11","status_group":1}
+                        ]}}
+                        """);
+            }
+            @Override public String createDocument(String base,String token,JsonObject body){request.set(body);return "doc";}
+        };
+        ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+            @Override public String trueApiToken(Settings s){return "token";}
+            @Override public String resolvedParticipantInn(Settings s){return "7701234567";}
+        };
+
+        new ZnackIntroductionService(api,auth,testSigner(),repository).submit(
+                settingsWithDocument("",false,"LEGACY-MUST-NOT-BE-USED","20.06.2024","16.06.2029"),
+                repository.findOrder(orderId).orElseThrow(),product,repository.findCodes(orderId));
+
+        String encoded=request.get().get("product_document").getAsString();
+        JsonObject payload=JsonParser.parseString(new String(java.util.Base64.getDecoder().decode(encoded),
+                StandardCharsets.UTF_8)).getAsJsonObject();
+        JsonObject certificate=payload.getAsJsonArray("products").get(0).getAsJsonObject()
+                .getAsJsonArray("certificate_document_data").get(0).getAsJsonObject();
+        assertEquals("CONFORMITY_CERTIFICATE",certificate.get("certificate_type").getAsString());
+        assertEquals("CERTIFICATE-ONLY",certificate.get("certificate_number").getAsString());
+        assertEquals("2026-03-11",certificate.get("certificate_date").getAsString());
+        assertEquals(List.of(new GoodsDocument("CONFORMITY_CERTIFICATE","CERTIFICATE-ONLY","2026-03-11")),
+                repository.findProduct(product.gtin()).orElseThrow().permitDocuments());
     }
 
     @Test void inactiveGtinDocumentsBlockSubmissionClearStaleSnapshotAndIgnoreLegacyDefault() {
@@ -1427,11 +1521,18 @@ class ZnackModuleTest {
             assertFalse(bundle.getString("znack.document_type.conformity_declaration").isBlank());
             assertFalse(bundle.getString("kiz_mapping.mapping.summary").isBlank());
             assertFalse(bundle.getString("znack.status_value.waiting_introduction_readiness").isBlank());
+            assertFalse(bundle.getString("znack.insufficient_funds.title").isBlank());
+            assertFalse(bundle.getString("znack.insufficient_funds.header").isBlank());
+            assertFalse(bundle.getString("znack.insufficient_funds.content").isBlank());
+            assertFalse(bundle.getString("znack.insufficient_funds.retry").isBlank());
         }
         assertEquals("Получите omsConnection в СУЗ: Управление заказами → Устройства → Идентификатор соединения.",
                 ResourceBundle.getBundle("com.tuandev.fbsbarcode.i18n.messages",Locale.forLanguageTag("ru")).getString("znack.oms_connection_help"));
         assertEquals("Không tìm thấy chữ ký điện tử. Vui lòng cắm USB token, kiểm tra CryptoPro rồi thử lại.",
                 ResourceBundle.getBundle("com.tuandev.fbsbarcode.i18n.messages",Locale.forLanguageTag("vi")).getString("znack.signature.not_found"));
+        assertEquals("Đang chờ lưu thông",
+                ResourceBundle.getBundle("com.tuandev.fbsbarcode.i18n.messages", Locale.forLanguageTag("vi"))
+                        .getString("znack.status_value.waiting_introduction_readiness"));
     }
 
     @Test void sanitizesNestedErrorDetailsBeforeLogging() {

@@ -49,8 +49,8 @@ class OzonExemplarWorkflowTest {
                     + "VALUES(1,'04600000000001','Marked item','2026-08-18T00:00:00Z')");
             statement.execute("INSERT INTO kiz_orders(id,shop_id,gtin,quantity,local_status,created_at,updated_at) "
                     + "VALUES(1,1,'04600000000001',1,'COMPLETED','2026-08-18T00:00:00Z','2026-08-18T00:00:00Z')");
-            statement.execute("INSERT INTO kiz_codes(id,shop_id,order_id,raw_code,display_code,gtin,status,created_at,updated_at) "
-                    + "VALUES(1,1,1,'" + RAW_KIZ + "','" + RAW_KIZ + "','04600000000001','AVAILABLE',"
+            statement.execute("INSERT INTO kiz_codes(id,shop_id,order_id,raw_code,display_code,gtin,status,legal_status,created_at,updated_at) "
+                    + "VALUES(1,1,1,'" + RAW_KIZ + "','" + RAW_KIZ + "','04600000000001','AVAILABLE','IN_CIRCULATION',"
                     + "'2026-08-18T00:00:00Z','2026-08-18T00:00:00Z')");
             statement.execute("INSERT INTO ozon_product_gtin_mappings(shop_id,sku,gtin,created_at,updated_at) "
                     + "VALUES(1,'101','04600000000001','2026-08-18T00:00:00Z','2026-08-18T00:00:00Z')");
@@ -93,6 +93,24 @@ class OzonExemplarWorkflowTest {
         assertEquals(6, server.getRequestCount());
         assertEquals(1, count("SELECT COUNT(*) FROM ozon_exemplars"));
         assertEquals(1, count("SELECT COUNT(*) FROM kiz_codes WHERE status='CONSUMED'"));
+    }
+
+    @Test
+    void receivedKizIsNeverAllocatedAheadOfACirculatedKiz() throws Exception {
+        try (Connection connection = Database.getConnection(); Statement statement = connection.createStatement()) {
+            statement.execute("UPDATE kiz_codes SET legal_status='RECEIVED' WHERE id=1");
+            statement.execute("INSERT INTO kiz_codes(id,shop_id,order_id,raw_code,display_code,gtin,status,legal_status,created_at,updated_at) "
+                    + "VALUES(2,1,1,'010460000000000121READY','READY','04600000000001','AVAILABLE','IN_CIRCULATION',"
+                    + "'2026-08-18T00:00:00Z','2026-08-18T00:00:00Z')");
+        }
+        enqueueHappyPath();
+
+        OzonPreparationResult result = service().prepare(shop, "POST-1");
+
+        assertEquals("ACCEPTED", result.stage());
+        assertEquals("AVAILABLE", scalar("SELECT status FROM kiz_codes WHERE id=1"));
+        assertEquals("CONSUMED", scalar("SELECT status FROM kiz_codes WHERE id=2"));
+        assertEquals("2", scalar("SELECT kiz_id FROM ozon_exemplars WHERE id=1"));
     }
 
     @Test

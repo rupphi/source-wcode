@@ -50,6 +50,7 @@ import com.tuandev.fbsbarcode.ui.kizmapping.KizGtinMappingEditor;
 import com.tuandev.fbsbarcode.ui.kizmapping.OzonGtinMappingEditor;
 import com.tuandev.fbsbarcode.ui.kizmapping.OzonKizPolicyEditor;
 import com.tuandev.fbsbarcode.ui.license.LicenseDialogService;
+import com.tuandev.fbsbarcode.ui.znack.ZnackInsufficientFundsDialogService;
 import java.awt.Desktop;
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -942,6 +943,7 @@ public final class OzonDashboardController {
         }
         int shopId = shop.getId();
         long generation = shopGeneration;
+        ZnackRepository currentRepository = znackRepository;
         Task<List<ZnackGtinInventorySummary>> task = new Task<>() {
             @Override protected List<ZnackGtinInventorySummary> call() {
                 return gtinRepository.findGtinSummaries(shopId);
@@ -953,6 +955,8 @@ public final class OzonDashboardController {
             renderGtinSummaries(task.getValue());
             setGtinLoading(false);
             startPendingGtinSync();
+            ZnackInsufficientFundsDialogService.promptIfNeeded(
+                    currentRepository, task.getValue(), this::refreshGtinInventory);
         });
         task.setOnFailed(event -> {
             if (generation != shopGeneration) return;
@@ -1031,8 +1035,9 @@ public final class OzonDashboardController {
         }
         VBox card = new VBox(8, header, statusRow);
         card.getStyleClass().add("gtin-inventory-card");
-        if (summary.latestError() != null && !summary.latestError().isBlank()) {
-            Label detail = new Label(ZnackErrorMessages.display(summary.latestError()));
+        String displayError = ZnackErrorMessages.displayForPipeline(status, summary.latestError());
+        if (!displayError.isBlank()) {
+            Label detail = new Label(displayError);
             detail.getStyleClass().add("text-muted");
             detail.setWrapText(true);
             card.getChildren().add(detail);
