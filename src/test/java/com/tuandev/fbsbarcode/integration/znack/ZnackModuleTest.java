@@ -1095,6 +1095,37 @@ class ZnackModuleTest {
                 "legacy missing-document waits must not be polled as ordinary readiness work");
     }
 
+    @Test void productSyncPreservesExistingDocumentsAndActiveStatusWhenCatalogBatchFails() throws Exception {
+        String gtin = "04627877922395";
+        ZnackRepository repository = repository(1, "Shop A");
+        Product existing = new Product(gtin, "Existing Product", "6107110000", null, null, null, null);
+        repository.upsertProducts(List.of(existing));
+        repository.updateProductDocuments(gtin, List.of(new GoodsDocument("CONFORMITY_DECLARATION", "DECLARATION-123", "2024-01-01")));
+
+        ZnackApiClient api = new ZnackApiClient() {
+            @Override public JsonElement products(String base, String token) {
+                return JsonParser.parseString("""
+                        {"results":[{"gtin":"04627877922395","productName":"Existing Product",
+                        "tnVedCode10":"6107110000"}]}
+                        """);
+            }
+            @Override public JsonElement productCards(String base, String token, String gtins) {
+                throw new RuntimeException("Simulated HTTP 429 catalog failure");
+            }
+        };
+        ZnackAuthService auth = new ZnackAuthService(api, testSigner()) {
+            @Override public String trueApiToken(Settings s) { return "token"; }
+        };
+
+        new ZnackProductService(api, auth, repository).sync(testedSettings("", "", "", "connection", ""));
+
+        Product synced = repository.findProduct(gtin).orElseThrow();
+        assertEquals(List.of(gtin), repository.findProducts().stream().map(Product::gtin).toList(),
+                "failed catalog batches must not soft-delete active products");
+        assertEquals(List.of(new GoodsDocument("CONFORMITY_DECLARATION", "DECLARATION-123", "2024-01-01")),
+                synced.permitDocuments(), "existing local documents must be preserved when catalog batch fails");
+    }
+
     @Test void productSyncFetchesEveryReportedPage() throws Exception {
         ZnackRepository repository=repository(1,"Shop A");
         AtomicInteger requestedPage=new AtomicInteger(-1);

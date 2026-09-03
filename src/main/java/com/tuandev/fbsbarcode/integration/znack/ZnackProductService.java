@@ -41,10 +41,18 @@ public class ZnackProductService {
         for(Product persisted:repository.findProducts()){
             if(needsCatalogMetadata(persisted))incompleteGtins.add(persisted.gtin());
         }
+        Map<String, Product> existingProductsByGtin = new LinkedHashMap<>();
+        for (Product p : repository.findProducts()) {
+            existingProductsByGtin.put(p.gtin(), p);
+        }
+        for (Product p : repository.findDeletedProducts()) {
+            existingProductsByGtin.put(p.gtin(), p);
+        }
         Map<String,List<GoodsDocument>> permitDocumentSnapshots=new LinkedHashMap<>();
         Map<String,ZnackKizLabelMetadata> labelMetadataSnapshots=new LinkedHashMap<>();
-        int failedCatalogBatches=enrichFromNationalCatalog(
+        CatalogEnrichment catalogResult=enrichFromNationalCatalog(
                 settings,token,byGtin,incompleteGtins,permitDocumentSnapshots,labelMetadataSnapshots);
+        int failedCatalogBatches=catalogResult.failedBatches();
         List<Product> publishable=new ArrayList<>();List<String> unpublished=new ArrayList<>();
         for(Product p:byGtin.values()){if(ZnackCardStatus.isErrored(p.cardStatus(),p.cardDetailedStatus()))unpublished.add(p.gtin());else publishable.add(p);}
         RegistryEnrichment registryEnrichment=enrichWaitingDocumentsFromRegistry(
@@ -55,14 +63,29 @@ public class ZnackProductService {
         List<String> missingDocuments=new ArrayList<>();
         for(Product product:catalogVerified){
             List<GoodsDocument> documents=permitDocumentSnapshots.get(product.gtin());
-            repository.updateProductDocuments(product.gtin(),documents);
+            Product existing=existingProductsByGtin.get(product.gtin());
+            boolean hasExistingDocs=existing!=null&&existing.permitDocuments()!=null&&!existing.permitDocuments().isEmpty();
+            boolean isBatchFailed=catalogResult.failedBatchGtins().contains(product.gtin());
+            if(documents==null||documents.isEmpty()){
+                if(hasExistingDocs||isBatchFailed){
+                    if(hasExistingDocs){
+                        documents=existing.permitDocuments();
+                        permitDocumentSnapshots.put(product.gtin(),documents);
+                    }
+                }else{
+                    missingDocuments.add(product.gtin());
+                }
+            }
+            repository.updateProductDocuments(product.gtin(),documents==null?List.of():documents);
             ZnackKizLabelMetadata labelMetadata=labelMetadataSnapshots.get(product.gtin());
             if(labelMetadata!=null)repository.updateProductLabelMetadata(
                     product.gtin(),labelMetadata.gender(),labelMetadata.size());
-            if(documents.isEmpty())missingDocuments.add(product.gtin());
         }
         List<String> withDocuments=catalogVerified.stream()
-                .filter(product->!permitDocumentSnapshots.get(product.gtin()).isEmpty())
+                .filter(product->{
+                    List<GoodsDocument> docs=permitDocumentSnapshots.get(product.gtin());
+                    return docs!=null&&!docs.isEmpty();
+                })
                 .map(Product::gtin).toList();
         repository.restoreProducts(withDocuments);
         repository.softDeleteProducts(missingDocuments);
@@ -121,15 +144,21 @@ public class ZnackProductService {
     }
 
     private record RegistryEnrichment(int failed) {}
-    private int enrichFromNationalCatalog(ZnackModels.Settings settings,String token,Map<String,Product> byGtin,
+    private record CatalogEnrichment(int failedBatches, Set<String> failedBatchGtins) {}
+    private CatalogEnrichment enrichFromNationalCatalog(ZnackModels.Settings settings,String token,Map<String,Product> byGtin,
                                           Set<String> incompleteGtins,
                                           Map<String,List<GoodsDocument>> permitDocumentSnapshots,
                                           Map<String,ZnackKizLabelMetadata> labelMetadataSnapshots){
         int failedBatches=0;
+        Set<String> failedBatchGtins=new HashSet<>();
         List<String> gtins=new ArrayList<>(byGtin.keySet());
         gtins.sort(Comparator.comparing((String gtin)->!incompleteGtins.contains(gtin)));
         for(int start=0;start<gtins.size();start+=CATALOG_BATCH_SIZE){
             List<String> batch=gtins.subList(start,Math.min(start+CATALOG_BATCH_SIZE,gtins.size()));
+            if(start>0){
+                try{Thread.sleep(200);}
+                catch(InterruptedException e){Thread.currentThread().interrupt();}
+            }
             try{
                 JsonElement response=api.productCards(settings.resolvedTrueApiBaseUrl(),token,String.join(";",batch));
                 JsonArray cards=array(response,"result");
@@ -176,10 +205,11 @@ public class ZnackProductService {
                 }
             }catch(Exception error){
                 failedBatches++;
+                failedBatchGtins.addAll(batch);
                 repository.log("GTIN_CATALOG_ENRICH",null,"WARN",error.getMessage(),null);
             }
         }
-        return failedBatches;
+        return new CatalogEnrichment(failedBatches,failedBatchGtins);
     }
     private boolean needsCatalogMetadata(Product product){
         return missing(product.productName())||missing(product.tnVed());
