@@ -12,6 +12,7 @@ public record ZnackPurchasePipelineState(long id, int shopId, String gtin, int q
                 && stage != PurchaseStage.FAILED
                 && stage != PurchaseStage.INTRODUCTION_FAILED
                 && stage != PurchaseStage.INTRODUCTION_SKIPPED_MISSING_DOCUMENTS
-                && stage != PurchaseStage.INTRODUCTION_SKIPPED_MISSING_METADATA;
+                && stage != PurchaseStage.INTRODUCTION_SKIPPED_MISSING_METADATA
+                && stage != PurchaseStage.WAITING_INTRODUCTION_DOCUMENTS;
     }
 }

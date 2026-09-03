@@ -25,6 +25,7 @@ public final class ZnackSchemaSupport {
         addPurchaseIdempotencyColumns(connection);
         addCryptoProColumns(connection);
         addIntroductionColumns(connection);
+        migrateMissingDocumentWaitStages(connection);
         addInventoryColumns(connection);
         migrateInventoryStatuses(connection);
         enforceGlobalCodeUniqueness(connection);
@@ -157,7 +158,7 @@ public final class ZnackSchemaSupport {
                     certificate_number TEXT,certificate_date TEXT,production_date TEXT,good_mark_flag INTEGER,
                     good_turn_flag INTEGER,card_status TEXT,card_detailed_status TEXT,category TEXT,
                     readiness_checked_at TEXT,deleted_at TEXT,identity_archived_at TEXT,cis_type TEXT,
-                    permit_documents_json TEXT,synced_at TEXT NOT NULL,
+                    permit_documents_json TEXT,gender TEXT,size TEXT,synced_at TEXT NOT NULL,
                     PRIMARY KEY(shop_id,gtin),FOREIGN KEY(shop_id) REFERENCES shops(id) ON DELETE CASCADE)
                     """);
             st.execute("""
@@ -321,6 +322,37 @@ public final class ZnackSchemaSupport {
             if (!hasColumn(c, "znack_products", "permit_documents_json")) {
                 st.execute("ALTER TABLE znack_products ADD COLUMN permit_documents_json TEXT");
             }
+            if (!hasColumn(c, "znack_products", "gender")) {
+                st.execute("ALTER TABLE znack_products ADD COLUMN gender TEXT");
+            }
+            if (!hasColumn(c, "znack_products", "size")) {
+                st.execute("ALTER TABLE znack_products ADD COLUMN size TEXT");
+            }
+        }
+    }
+
+    private static void migrateMissingDocumentWaitStages(Connection c) throws SQLException {
+        if (!tableExists(c, "znack_purchase_pipelines") || !tableExists(c, "kiz_orders")) return;
+        try (Statement st = c.createStatement()) {
+            st.executeUpdate("""
+                    UPDATE kiz_orders
+                    SET local_status='WAITING_INTRODUCTION_DOCUMENTS'
+                    WHERE local_status='WAITING_INTRODUCTION_READINESS'
+                      AND id IN (
+                        SELECT order_id FROM znack_purchase_pipelines
+                        WHERE order_id IS NOT NULL
+                          AND stage='WAITING_INTRODUCTION_READINESS'
+                          AND lower(COALESCE(error_message,''))
+                            LIKE '%no active national catalog declaration or certificate%'
+                      )
+                    """);
+            st.executeUpdate("""
+                    UPDATE znack_purchase_pipelines
+                    SET stage='WAITING_INTRODUCTION_DOCUMENTS'
+                    WHERE stage='WAITING_INTRODUCTION_READINESS'
+                      AND lower(COALESCE(error_message,''))
+                        LIKE '%no active national catalog declaration or certificate%'
+                    """);
         }
     }
 

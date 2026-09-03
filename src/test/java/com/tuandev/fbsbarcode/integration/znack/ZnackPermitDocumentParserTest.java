@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ZnackPermitDocumentParserTest {
     @Test
@@ -44,6 +46,38 @@ class ZnackPermitDocumentParserTest {
                 new GoodsDocument("CONFORMITY_CERTIFICATE", "RU С-RU.АБ01.В.00002/26", "2026-03-11"),
                 new GoodsDocument("STATE_REGISTRATION_CERTIFICATE", "RU.77.99.88.003.R.000003.04.26", "2026-04-12")
         ), documents);
+    }
+
+    @Test
+    void catalogUiCardReadsDisplayedCertificateInsteadOfInternalValue() {
+        var card = JsonParser.parseString("""
+                {
+                  "gtin": "4627877922363",
+                  "status": "published",
+                  "businessLayer": {
+                    "attrGroup": [{
+                      "name": "Разрешительная документация",
+                      "attributes": [
+                        {"id": 23557, "name": "Декларация о соответствии", "value": null},
+                        {
+                          "id": 23561,
+                          "name": "Сертификат соответствия",
+                          "value": "11555611",
+                          "valueId": 12048866169,
+                          "showValue": {
+                            "number": "ЕАЭС RU С-CN.АБ47.В.03492/24",
+                            "dateFrom": "2024-01-26"
+                          }
+                        }
+                      ]
+                    }]
+                  }
+                }
+                """).getAsJsonObject();
+
+        assertEquals(List.of(new GoodsDocument(
+                        "CONFORMITY_CERTIFICATE", "ЕАЭС RU С-CN.АБ47.В.03492/24", "2024-01-26")),
+                ZnackPermitDocumentParser.fromProductCard(card));
     }
 
     @Test
@@ -109,6 +143,19 @@ class ZnackPermitDocumentParserTest {
                 new GoodsDocument("CONFORMITY_CERTIFICATE", "ACTIVE-STATUS", "2026-02-11"),
                 new GoodsDocument("STATE_REGISTRATION_CERTIFICATE", "ACTIVE-FLAG", "2026-03-12")
         ), documents);
+    }
+
+    @Test
+    void registryLookupCodes18And19MeanPendingRatherThanMissingDocuments() {
+        assertTrue(ZnackPermitDocumentParser.registryLookupPending(JsonParser.parseString("""
+                {"result":{"documents":[],"errors":[{"error_code":"18"}]}}
+                """)));
+        assertTrue(ZnackPermitDocumentParser.registryLookupPending(JsonParser.parseString("""
+                {"errors":[{"code":19}]}
+                """)));
+        assertFalse(ZnackPermitDocumentParser.registryLookupPending(JsonParser.parseString("""
+                {"result":{"documents":[],"errors":[{"error_code":"09"}]}}
+                """)));
     }
 
     @Test

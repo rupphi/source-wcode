@@ -51,6 +51,8 @@ import com.tuandev.fbsbarcode.ui.kizmapping.OzonGtinMappingEditor;
 import com.tuandev.fbsbarcode.ui.kizmapping.OzonKizPolicyEditor;
 import com.tuandev.fbsbarcode.ui.license.LicenseDialogService;
 import com.tuandev.fbsbarcode.ui.znack.ZnackInsufficientFundsDialogService;
+import com.tuandev.fbsbarcode.ui.znack.ZnackMissingDocumentsDialogService;
+import com.tuandev.fbsbarcode.ui.znack.ZnackOperatorTermsDialogService;
 import java.awt.Desktop;
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -957,6 +959,8 @@ public final class OzonDashboardController {
             startPendingGtinSync();
             ZnackInsufficientFundsDialogService.promptIfNeeded(
                     currentRepository, task.getValue(), this::refreshGtinInventory);
+            ZnackOperatorTermsDialogService.promptIfNeeded(currentRepository, task.getValue());
+            ZnackMissingDocumentsDialogService.promptIfNeeded(currentRepository, task.getValue());
         });
         task.setOnFailed(event -> {
             if (generation != shopGeneration) return;
@@ -1199,6 +1203,7 @@ public final class OzonDashboardController {
         String normalized = status.toUpperCase(Locale.ROOT);
         if ("FAILED".equals(normalized) || "CANCELLED".equals(normalized)
                 || "INTRODUCTION_FAILED".equals(normalized)) return "badge-red";
+        if ("WAITING_INTRODUCTION_DOCUMENTS".equals(normalized)) return "badge-warning";
         return isActivePipeline(normalized) ? "badge-warning" : "badge-green";
     }
 

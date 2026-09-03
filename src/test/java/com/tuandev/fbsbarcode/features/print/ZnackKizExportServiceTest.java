@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.tuandev.fbsbarcode.config.Database;
+import com.tuandev.fbsbarcode.features.kiz.KizService;
 import com.tuandev.fbsbarcode.features.kizmapping.KizMappingRepository;
 import com.tuandev.fbsbarcode.integration.znack.ZnackGtinInventoryService;
 import com.tuandev.fbsbarcode.models.Kiz;
@@ -16,9 +17,18 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.awt.image.BufferedImage;
 import java.util.List;
+import com.google.zxing.BinaryBitmap;
+import com.google.zxing.LuminanceSource;
+import com.google.zxing.Result;
+import com.google.zxing.client.j2se.BufferedImageLuminanceSource;
+import com.google.zxing.common.HybridBinarizer;
+import com.google.zxing.datamatrix.DataMatrixReader;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.rendering.ImageType;
+import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,8 +45,8 @@ class ZnackKizExportServiceTest {
         Database.initDatabase();
         try (Connection connection = Database.getConnection(); Statement statement = connection.createStatement()) {
             statement.execute("INSERT INTO shops(id,name,api_key) VALUES(1,'Shop','secret')");
-            statement.execute("INSERT INTO znack_products(shop_id,gtin,product_name,synced_at) "
-                    + "VALUES(1,'" + GTIN + "','Sports pants','2026-09-03T00:00:00Z')");
+            statement.execute("INSERT INTO znack_products(shop_id,gtin,product_name,gender,size,synced_at) "
+                    + "VALUES(1,'" + GTIN + "','Sports pants','МУЖСКОЙ','50-52','2026-09-03T00:00:00Z')");
             statement.execute("INSERT INTO kiz_orders(id,shop_id,gtin,quantity,local_status,created_at,updated_at) "
                     + "VALUES(1,1,'" + GTIN + "',3,'INTRODUCED','2026-09-03T00:00:00Z','2026-09-03T00:00:00Z')");
             statement.execute("INSERT INTO wb_product_cards(shop_id,nm_id,subject_name,need_kiz,synced_at) "
@@ -82,8 +92,17 @@ class ZnackKizExportServiceTest {
                     document.getPage(0).getMediaBox().getHeight(), 0.1f);
             String text = new PDFTextStripper().getText(document);
             assertTrue(text.contains("Sports pants"));
-            assertTrue(text.contains("Female"));
-            assertTrue(text.contains("M"));
+            assertTrue(text.contains("МУЖСКОЙ"));
+            assertTrue(text.contains("50-52"));
+            assertFalse(text.contains("Female"), "GTIN card metadata must win over WB mapping metadata");
+            assertFalse(text.contains("Gender:"));
+            assertFalse(text.contains("Giới tính:"));
+            assertFalse(text.contains("Size:"));
+            Result decoded = decodeLeftDataMatrix(document, 0, 600);
+            assertEquals(KizService.scannerSafeCode(repositoryCode(1)),
+                    KizService.scannerSafeCode(decoded.getText()));
+            assertTrue(document.getPage(0).getResources().getXObjectNames().iterator().hasNext(),
+                    "The Chestny ZNAK logo must be embedded");
         }
     }
 
@@ -124,5 +143,19 @@ class ZnackKizExportServiceTest {
         } catch (Exception error) {
             throw new RuntimeException(error);
         }
+    }
+
+    private String repositoryCode(long id) throws Exception {
+        try (Connection connection = Database.getConnection(); ResultSet result = connection.createStatement()
+                .executeQuery("SELECT raw_code FROM kiz_codes WHERE id=" + id)) {
+            return result.next() ? result.getString(1) : "";
+        }
+    }
+
+    private static Result decodeLeftDataMatrix(PDDocument document, int pageIndex, int dpi) throws Exception {
+        BufferedImage page = new PDFRenderer(document).renderImageWithDPI(pageIndex, dpi, ImageType.GRAY);
+        BufferedImage left = page.getSubimage(0, 0, (int) (page.getWidth() * 0.55), page.getHeight());
+        LuminanceSource source = new BufferedImageLuminanceSource(left);
+        return new DataMatrixReader().decode(new BinaryBitmap(new HybridBinarizer(source)));
     }
 }

@@ -3,6 +3,7 @@ package com.tuandev.fbsbarcode.integration.znack;
 import com.google.gson.*;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels.GoodsDocument;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels.Product;
+import com.tuandev.fbsbarcode.features.kizmapping.ZnackKizLabelMetadata;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -41,8 +42,9 @@ public class ZnackProductService {
             if(needsCatalogMetadata(persisted))incompleteGtins.add(persisted.gtin());
         }
         Map<String,List<GoodsDocument>> permitDocumentSnapshots=new LinkedHashMap<>();
+        Map<String,ZnackKizLabelMetadata> labelMetadataSnapshots=new LinkedHashMap<>();
         int failedCatalogBatches=enrichFromNationalCatalog(
-                settings,token,byGtin,incompleteGtins,permitDocumentSnapshots);
+                settings,token,byGtin,incompleteGtins,permitDocumentSnapshots,labelMetadataSnapshots);
         List<Product> publishable=new ArrayList<>();List<String> unpublished=new ArrayList<>();
         for(Product p:byGtin.values()){if(ZnackCardStatus.isErrored(p.cardStatus(),p.cardDetailedStatus()))unpublished.add(p.gtin());else publishable.add(p);}
         List<Product> catalogVerified=publishable.stream()
@@ -52,8 +54,15 @@ public class ZnackProductService {
         for(Product product:catalogVerified){
             List<GoodsDocument> documents=permitDocumentSnapshots.get(product.gtin());
             repository.updateProductDocuments(product.gtin(),documents);
+            ZnackKizLabelMetadata labelMetadata=labelMetadataSnapshots.get(product.gtin());
+            if(labelMetadata!=null)repository.updateProductLabelMetadata(
+                    product.gtin(),labelMetadata.gender(),labelMetadata.size());
             if(documents.isEmpty())missingDocuments.add(product.gtin());
         }
+        List<String> withDocuments=catalogVerified.stream()
+                .filter(product->!permitDocumentSnapshots.get(product.gtin()).isEmpty())
+                .map(Product::gtin).toList();
+        repository.restoreProducts(withDocuments);
         repository.softDeleteProducts(missingDocuments);
         int removed=repository.pruneTechnicalProducts();int unpublishedRemoved=repository.deleteUnpublishedProducts(unpublished);
         String message="Verified "+catalogVerified.size()+" catalog GTINs; moved "+missingDocuments.size()+
@@ -67,7 +76,8 @@ public class ZnackProductService {
     }
     private int enrichFromNationalCatalog(ZnackModels.Settings settings,String token,Map<String,Product> byGtin,
                                           Set<String> incompleteGtins,
-                                          Map<String,List<GoodsDocument>> permitDocumentSnapshots){
+                                          Map<String,List<GoodsDocument>> permitDocumentSnapshots,
+                                          Map<String,ZnackKizLabelMetadata> labelMetadataSnapshots){
         int failedBatches=0;
         List<String> gtins=new ArrayList<>(byGtin.keySet());
         gtins.sort(Comparator.comparing((String gtin)->!incompleteGtins.contains(gtin)));
@@ -84,19 +94,26 @@ public class ZnackProductService {
                     String tnVed=tnVed(card);
                     String category=categories(card);
                     List<GoodsDocument> permitDocuments=ZnackPermitDocumentParser.fromProductCard(card);
+                    ZnackKizLabelMetadata labelMetadata=ZnackProductLabelMetadataParser.fromProductCard(card);
+                    List<String> cardGtins=new ArrayList<>();
+                    String directGtin=text(card,"gtin","productGtin");
+                    if(!directGtin.isBlank())cardGtins.add(directGtin);
                     JsonArray identifiers=array(card,"identified_by");
-                    if(identifiers==null)continue;
-                    for(JsonElement identifier:identifiers){
+                    if(identifiers!=null)for(JsonElement identifier:identifiers){
                         if(!identifier.isJsonObject())continue;
                         JsonObject object=identifier.getAsJsonObject();
                         String type=text(object,"type");
                         String value=text(object,"value","gtin");
                         if(!type.isBlank()&&!"gtin".equalsIgnoreCase(type))continue;
+                        if(!value.isBlank())cardGtins.add(value);
+                    }
+                    for(String value:cardGtins){
                         try{
                             String gtin=GtinNormalizer.normalize(value);
                             Product current=byGtin.get(gtin);
                             if(current!=null){
                                 permitDocumentSnapshots.put(gtin,permitDocuments);
+                                labelMetadataSnapshots.put(gtin,labelMetadata);
                                 byGtin.put(gtin,new Product(gtin,first(name,current.productName()),
                                     first(tnVed,current.tnVed()),current.certificateType(),current.certificateNumber(),
                                     current.certificateDate(),current.productionDate(),
@@ -150,14 +167,9 @@ public class ZnackProductService {
         return compact(first(fullCode,first(direct,group)));
     }
     private String attribute(JsonObject product,int id,String...names){
-        JsonArray attributes=array(product,"good_attrs");
-        if(attributes==null)attributes=array(product,"goodAttrs");
-        if(attributes==null)return "";
-        for(JsonElement element:attributes){
-            if(!element.isJsonObject())continue;
-            JsonObject attribute=element.getAsJsonObject();
-            String attrId=text(attribute,"attr_id","attrId");
-            String attrName=text(attribute,"attr_name","attrName");
+        for(JsonObject attribute:ZnackProductCardAttributes.from(product)){
+            String attrId=ZnackProductCardAttributes.id(attribute);
+            String attrName=ZnackProductCardAttributes.name(attribute);
             boolean matchesId=String.valueOf(id).equals(attrId);
             boolean matchesName=java.util.Arrays.stream(names).anyMatch(name->name.equalsIgnoreCase(attrName));
             if(matchesId||matchesName)return text(attribute,"attr_value","attrValue","value");

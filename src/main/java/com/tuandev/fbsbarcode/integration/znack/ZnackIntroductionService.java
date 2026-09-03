@@ -17,12 +17,18 @@ public class ZnackIntroductionService {
         if(product.tnVed()==null||product.tnVed().isBlank())throw new IllegalStateException("TN VED is required before introduction.");
         String participant=required(auth.resolvedParticipantInn(s),"Participant INN is required for introduction.");
         String producer=valueOr(s.producerInn(),participant),owner=valueOr(s.ownerInn(),participant);
+        String registryOwner=s.ownerInn()==null?"":s.ownerInn().trim();
         String token=auth.trueApiToken(s);
         List<GoodsDocument> goodsDocuments;
         try{
-            JsonElement registry=api.permitDocuments(s.resolvedTrueApiBaseUrl(),token,product.gtin(),owner);
+            JsonElement registry=api.permitDocuments(s.resolvedTrueApiBaseUrl(),token,product.gtin(),registryOwner);
+            if(ZnackPermitDocumentParser.registryLookupPending(registry))throw new PermitDocumentsUnavailableException(
+                    "National Catalog is still resolving documents for GTIN "+product.gtin()+". The introduction will retry automatically.",
+                    new IllegalStateException("National Catalog registry lookup is pending"));
             goodsDocuments=ZnackPermitDocumentParser.selectForCirculation(
                     ZnackPermitDocumentParser.activeFromRegistry(registry));
+        }catch(PermitDocumentsUnavailableException error){
+            throw error;
         }catch(Exception error){
             throw new PermitDocumentsUnavailableException(
                     "Could not verify active National Catalog documents for GTIN "+product.gtin()+". The introduction will retry automatically.",error);
@@ -44,8 +50,10 @@ public class ZnackIntroductionService {
         }catch(Exception e){repository.updateDocument(documentId,null,e instanceof ZnackApiClient.ZnackApiException?"REJECTED":"FAILED",e.getMessage());throw e;}
     }
     public static final class PermitDocumentsUnavailableException extends Exception{
-        public PermitDocumentsUnavailableException(String message){super(message);}
-        public PermitDocumentsUnavailableException(String message,Throwable cause){super(message,cause);}
+        private final boolean confirmedMissing;
+        public PermitDocumentsUnavailableException(String message){super(message);this.confirmedMissing=true;}
+        public PermitDocumentsUnavailableException(String message,Throwable cause){super(message,cause);this.confirmedMissing=false;}
+        public boolean confirmedMissing(){return confirmedMissing;}
     }
     /** Outcome of a document confirmation poll. */
     public enum ConfirmStatus{INTRODUCED,PENDING,FAILED}

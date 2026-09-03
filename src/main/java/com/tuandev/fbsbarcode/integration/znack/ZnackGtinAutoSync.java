@@ -18,4 +18,9 @@ public final class ZnackGtinAutoSync {
     public static boolean shouldAutoSync(int shopId) {
         return AUTO_SYNCED_SHOPS.add(shopId);
     }
+
+    /** Records a successful background recovery sync so another pane does not immediately repeat it. */
+    public static void markAutoSynced(int shopId) {
+        AUTO_SYNCED_SHOPS.add(shopId);
+    }
 }

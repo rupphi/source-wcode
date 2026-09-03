@@ -16,11 +16,15 @@ import java.util.regex.Pattern;
  */
 public final class ZnackErrorMessages {
     private static final String WAITING_INTRODUCTION_READINESS = "WAITING_INTRODUCTION_READINESS";
+    private static final String WAITING_INTRODUCTION_DOCUMENTS = "WAITING_INTRODUCTION_DOCUMENTS";
+    private static final String LEGACY_MISSING_DOCUMENTS = "INTRODUCTION_SKIPPED_MISSING_DOCUMENTS";
     private static final String READINESS_PROGRESS_PREFIX = "True API readiness:";
     private static final Pattern HTTP_STATUS = Pattern.compile("\\(HTTP (\\d{3})\\)");
     private static final Pattern ERROR_CODE = Pattern.compile("\"?errorCode\"?\\s*[:=]\\s*\"?(\\d+)\"?");
     private static final Pattern INSUFFICIENT_FUNDS_CODE = Pattern.compile(
             "(?i)(?:HTTP\\s*400\\)?\\s*:\\s*|(?:error[_\\s-]?code|code)\"?\\s*[:=]\\s*\"?)3590(?!\\d)");
+    private static final Pattern EMISSION_TYPE_BLOCKED_CODE = Pattern.compile(
+            "(?i)(?:HTTP\\s*400\\)?\\s*:\\s*|(?:error[_\\s-]?code|code)\"?\\s*[:=]\\s*\"?)3055(?!\\d)");
     private static final Set<String> MESSAGE_KEYS = Set.of(
             "error_message", "errormessage", "message", "description", "error_description",
             "detail", "reason", "globalerrors", "fielderrors", "errors");
@@ -58,13 +62,19 @@ public final class ZnackErrorMessages {
     }
 
     /**
-     * User-facing pipeline detail. Readiness polling progress is an expected transient state, not
-     * an actionable error, so the UI represents it with the localized pipeline status only. The
-     * raw diagnostic remains stored for audit and retry decisions.
+     * User-facing pipeline detail. Expected readiness progress and missing-document waits are
+     * represented by their localized status/dialog instead of a long diagnostic under every GTIN.
+     * The raw diagnostic remains stored for audit and retry decisions.
      */
     public static String displayForPipeline(String stage, String raw) {
-        if (isExpectedReadinessProgress(stage, raw)) return "";
+        if (isExpectedReadinessProgress(stage, raw) || isMissingDocumentsStage(stage)) return "";
         return display(raw);
+    }
+
+    /** True when KIZ introduction is paused until the GTIN has an active catalog document. */
+    public static boolean isMissingDocumentsStage(String stage) {
+        return WAITING_INTRODUCTION_DOCUMENTS.equalsIgnoreCase(stage)
+                || LEGACY_MISSING_DOCUMENTS.equalsIgnoreCase(stage);
     }
 
     /** True only for Znack's insufficient-account-balance response. */
@@ -72,6 +82,15 @@ public final class ZnackErrorMessages {
         if (raw == null || raw.isBlank()) return false;
         return INSUFFICIENT_FUNDS_CODE.matcher(raw).find()
                 || raw.toLowerCase(java.util.Locale.ROOT).contains("notenoughmoneyexception");
+    }
+
+    /**
+     * True when Honest Sign has blocked the participant from using the selected emission type.
+     * Error 3055 requires the participant to sign the operator's updated agreement; repeatedly
+     * submitting the same KIZ order cannot resolve it.
+     */
+    public static boolean requiresOperatorTermsSignature(String raw) {
+        return raw != null && !raw.isBlank() && EMISSION_TYPE_BLOCKED_CODE.matcher(raw).find();
     }
 
     private static boolean isExpectedReadinessProgress(String stage, String raw) {

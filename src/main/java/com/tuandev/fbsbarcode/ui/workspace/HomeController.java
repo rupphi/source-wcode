@@ -18,10 +18,16 @@ import com.tuandev.fbsbarcode.integration.wb.WbSupplyNotEmptyException;
 import com.tuandev.fbsbarcode.integration.license.LicenseService;
 import com.tuandev.fbsbarcode.integration.license.LicenseState;
 import com.tuandev.fbsbarcode.integration.znack.ZnackPurchaseCoordinator;
+import com.tuandev.fbsbarcode.integration.znack.ZnackApiClient;
+import com.tuandev.fbsbarcode.integration.znack.ZnackAuthService;
+import com.tuandev.fbsbarcode.integration.znack.ZnackGtinAutoSync;
 import com.tuandev.fbsbarcode.integration.znack.ZnackGtinInventoryService;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels;
+import com.tuandev.fbsbarcode.integration.znack.ZnackProductService;
 import com.tuandev.fbsbarcode.integration.znack.ZnackRepository;
 import com.tuandev.fbsbarcode.integration.znack.ZnackSigningSession;
+import com.tuandev.fbsbarcode.integration.znack.signature.CryptoProSignatureProvider;
+import com.tuandev.fbsbarcode.integration.znack.signature.ZnackSignatureProvider;
 import com.tuandev.fbsbarcode.integration.wb.WbSyncReport;
 import com.tuandev.fbsbarcode.integration.wb.WbSyncWorkflow;
 import com.tuandev.fbsbarcode.integration.wb.WbTokenInspector;
@@ -97,6 +103,7 @@ import java.net.URL;
 import java.sql.SQLException;
 import java.text.MessageFormat;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -1079,12 +1086,13 @@ public class HomeController implements Initializable {
         selectShop(shop);
         Task<Void> resume = new Task<>() {
             @Override
-            protected Void call() {
+            protected Void call() throws Exception {
                 ZnackRepository repository = new ZnackRepository(
                         new ZnackModels.ShopContext(shop.getId(), shop.getName()));
                 ZnackPurchaseCoordinator coordinator = ZnackPurchaseCoordinator.create(repository);
                 var settings = repository.getSettings();
                 coordinator.resume(settings);
+                syncGtinsForWaitingIntroductions(repository, settings);
                 coordinator.resumeEligibleIntroductions(settings);
                 return null;
             }
@@ -1105,10 +1113,18 @@ public class HomeController implements Initializable {
     }
 
     private void resumeAllPersistedZnackPipelines() {
+        Shop selectedShop = state.getSelectedShop();
         Task<Void> resume = new Task<>() {
             @Override
-            protected Void call() {
+            protected Void call() throws Exception {
                 ZnackPurchaseCoordinator.resumeAllPersisted();
+                if (selectedShop != null) {
+                    ZnackRepository repository = new ZnackRepository(
+                            new ZnackModels.ShopContext(selectedShop.getId(), selectedShop.getName()));
+                    var settings = repository.getSettings();
+                    syncGtinsForWaitingIntroductions(repository, settings);
+                    ZnackPurchaseCoordinator.create(repository).resumeEligibleIntroductions(settings);
+                }
                 return null;
             }
         };
@@ -1116,6 +1132,23 @@ public class HomeController implements Initializable {
                 "Could not resume persisted Znack pipelines after selecting the initial shop.",
                 resume.getException()));
         AppTaskExecutor.execute(resume);
+    }
+
+    private static void syncGtinsForWaitingIntroductions(
+            ZnackRepository repository, ZnackModels.Settings settings) throws Exception {
+        if (repository.findWaitingIntroductionDocumentPipelines().isEmpty()
+                || settings == null
+                || settings.signerCertificate() == null
+                || settings.signerCertificate().isBlank()
+                || settings.signerTestedAt() == null) {
+            return;
+        }
+        ZnackSignatureProvider signer = new CryptoProSignatureProvider(
+                settings.cryptcpPath(), settings.signerCertificate(),
+                Duration.ofSeconds(settings.resolvedCryptoProTimeoutSeconds()));
+        ZnackApiClient api = new ZnackApiClient();
+        new ZnackProductService(api, new ZnackAuthService(api, signer), repository).sync(settings);
+        ZnackGtinAutoSync.markAutoSynced(repository.shop().shopId());
     }
 
     private void selectShop(Shop shop) {

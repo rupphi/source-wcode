@@ -3,6 +3,7 @@ package com.tuandev.fbsbarcode.integration.znack;
 import com.google.gson.*;
 import com.sun.net.httpserver.HttpServer;
 import com.tuandev.fbsbarcode.config.Database;
+import com.tuandev.fbsbarcode.features.kizmapping.KizMappingRepository;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels.*;
 import com.tuandev.fbsbarcode.integration.znack.signature.*;
 import org.junit.jupiter.api.*;
@@ -73,12 +74,21 @@ class ZnackModuleTest {
     @Test void waitingIntroductionReadinessHidesExpectedPollingDetailsButKeepsRealErrors() {
         String pollingDetail = "True API readiness: 0/100 KIZ ready, 100 pending. "
                 + "KIZ is not APPLIED yet: EMITTED";
+        String missingDocuments = "GTIN 04627877922387 has no active National Catalog "
+                + "declaration or certificate. Publish or reactivate the GTIN document; "
+                + "the introduction will retry automatically.";
 
         assertEquals("", ZnackErrorMessages.displayForPipeline(
                 "WAITING_INTRODUCTION_READINESS", pollingDetail));
+        assertEquals("", ZnackErrorMessages.displayForPipeline(
+                "WAITING_INTRODUCTION_DOCUMENTS", missingDocuments));
+        assertEquals("", ZnackErrorMessages.displayForPipeline(
+                "INTRODUCTION_SKIPPED_MISSING_DOCUMENTS", missingDocuments));
         assertEquals("temporary readiness failure", ZnackErrorMessages.displayForPipeline(
                 "WAITING_INTRODUCTION_READINESS", "temporary readiness failure"));
         assertEquals(pollingDetail, ZnackErrorMessages.displayForPipeline("FAILED", pollingDetail));
+        assertEquals(missingDocuments, ZnackErrorMessages.displayForPipeline(
+                "FAILED", missingDocuments));
     }
 
     @Test void identifiesInsufficientFundsOnlyFromZnackError3590OrItsExceptionType() {
@@ -91,6 +101,21 @@ class ZnackModuleTest {
         assertFalse(ZnackErrorMessages.isInsufficientFunds("HTTP 400: 35901; unrelated"));
         assertFalse(ZnackErrorMessages.isInsufficientFunds("HTTP 400: 3055; emission is blocked"));
         assertFalse(ZnackErrorMessages.isInsufficientFunds(null));
+    }
+
+    @Test void identifiesEmissionTypeBlockedError3055WithoutMatchingSimilarCodes() {
+        String exactError = "HTTP 400: 3055; Значение параметра \"Способ выпуска товаров в оборот\" "
+                + "\"Произведен в РФ\" не соответствует допустимому для участника по причине "
+                + "блокировки данного типа эмиссии";
+
+        assertTrue(ZnackErrorMessages.requiresOperatorTermsSignature(exactError));
+        assertTrue(ZnackErrorMessages.requiresOperatorTermsSignature(
+                "Znack API request failed (HTTP 400): {\"errorCode\":3055}"));
+        assertTrue(ZnackErrorMessages.requiresOperatorTermsSignature(
+                "{\"error_code\":\"3055\",\"message\":\"blocked\"}"));
+        assertFalse(ZnackErrorMessages.requiresOperatorTermsSignature("HTTP 400: 30550; unrelated"));
+        assertFalse(ZnackErrorMessages.requiresOperatorTermsSignature("HTTP 400: 13055; unrelated"));
+        assertFalse(ZnackErrorMessages.requiresOperatorTermsSignature(null));
     }
 
     @Test void sanitizerRedactsJsonAndHeaderStyleSecrets() {
@@ -891,6 +916,8 @@ class ZnackModuleTest {
                           {"cat_id":30718,"cat_name":"Обувь детская"}
                         ],
                         "good_attrs":[
+                          {"attr_id":35,"attr_name":"Размер одежды / изделия","attr_value":"XL"},
+                          {"attr_id":14013,"attr_name":"Целевой пол","attr_value":"МУЖСКОЙ"},
                           {"attr_id":3959,"attr_name":"Группа ТНВЭД","attr_value":"6202"},
                           {"attr_id":13933,"attr_name":"Код ТНВЭД","attr_value":"6202 30 00 00"},
                           {"attr_id":23557,"certificate_number":"DECLARATION-1","certificate_issued_date":"2026-01-10"},
@@ -917,6 +944,9 @@ class ZnackModuleTest {
                 synced.permitDocuments());
         assertEquals("21.06.2024",synced.productionDate());
         assertEquals("BUNDLE",synced.cisType());
+        var labelMetadata=new KizMappingRepository().findLabelMetadata(1,synced.gtin());
+        assertEquals("МУЖСКОЙ",labelMetadata.gender());
+        assertEquals("XL",labelMetadata.size());
 
         repository.updateProductMetadata(new Product(synced.gtin(),synced.productName(),"manual-tnved",
                 synced.certificateType(),synced.certificateNumber(),synced.certificateDate(),synced.productionDate()));
@@ -958,6 +988,49 @@ class ZnackModuleTest {
         assertEquals("2026-03-11",synced.certificateDate());
         assertEquals(List.of(new GoodsDocument("CONFORMITY_CERTIFICATE","CERTIFICATE-ONLY","2026-03-11")),
                 synced.permitDocuments());
+    }
+
+    @Test void productSyncAcceptsCatalogUiCardShapeForCertificateAndLabelMetadata() throws Exception {
+        ZnackRepository repository=repository(1,"Shop A");
+        repository.upsertProducts(List.of(new Product(
+                "04627877922363","Old product","6107110000",null,null,null,null)));
+        repository.softDeleteProducts(List.of("04627877922363"));
+        ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonElement products(String base,String token){
+                return JsonParser.parseString("""
+                        {"results":[{"gtin":"04627877922363","productName":"Product",
+                        "tnVedCode10":"6107110000"}]}
+                        """);
+            }
+            @Override public JsonElement productCards(String base,String token,String gtins){
+                return JsonParser.parseString("""
+                        {"result":[{
+                          "gtin":"4627877922363",
+                          "status":"published",
+                          "businessLayer":{"attrGroup":[{"attributes":[
+                            {"id":23561,"name":"Сертификат соответствия","value":"11555611",
+                             "showValue":{"number":"ЕАЭС RU С-CN.АБ47.В.03492/24","dateFrom":"2024-01-26"}},
+                            {"id":14013,"name":"Целевой пол","value":"МУЖСКОЙ"},
+                            {"id":35,"name":"Размер одежды / изделия","value":"48-56"}
+                          ]}]}
+                        }]}
+                        """);
+            }
+        };
+        ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+            @Override public String trueApiToken(Settings s){return "token";}
+        };
+
+        new ZnackProductService(api,auth,repository).sync(testedSettings("","","","connection",""));
+
+        Product synced=repository.findProduct("04627877922363").orElseThrow();
+        assertEquals(List.of("04627877922363"),repository.findProducts().stream().map(Product::gtin).toList(),
+                "a complete document must restore a GTIN hidden by the no-document sync rule");
+        assertEquals(List.of(new GoodsDocument("CONFORMITY_CERTIFICATE",
+                "ЕАЭС RU С-CN.АБ47.В.03492/24","2024-01-26")),synced.permitDocuments());
+        var metadata=new KizMappingRepository().findLabelMetadata(1,synced.gtin());
+        assertEquals("МУЖСКОЙ",metadata.gender());
+        assertEquals("48-56",metadata.size());
     }
 
     @Test void productSyncFetchesEveryReportedPage() throws Exception {
@@ -1365,7 +1438,7 @@ class ZnackModuleTest {
                 .map(JsonElement::getAsJsonObject).map(c->c.get("certificate_date").getAsString()).toList());
         assertTrue(certificates.asList().stream().noneMatch(c->c.getAsJsonObject().has("certificate_expiration_date")));
         assertEquals("04601234567890",registryGtin.get());
-        assertEquals("7701234567",registryInn.get());
+        assertEquals("",registryInn.get());
         assertEquals(List.of("DECLARATION-1"),repository.findProduct(product.gtin()).orElseThrow()
                 .permitDocuments().stream().map(GoodsDocument::number).toList());
         assertEquals("doc",repository.findLatestDocument(orderId).orElseThrow().externalDocumentId());
@@ -1443,6 +1516,43 @@ class ZnackModuleTest {
         assertEquals(0,createCalls.get());
         assertTrue(repository.findLatestDocument(orderId).isEmpty());
         assertTrue(repository.findProduct(product.gtin()).orElseThrow().permitDocuments().isEmpty());
+    }
+
+    @Test void pendingRegistryLookupRetriesWithoutClearingTheLastDocumentSnapshot() {
+        ZnackRepository repository=repository(1,"Shop A");
+        Product product=new Product("04601234567890","Product","6201000000",null,null,null,null);
+        repository.upsertProducts(List.of(product));
+        List<GoodsDocument> snapshot=List.of(
+                new GoodsDocument("CONFORMITY_CERTIFICATE","CERTIFICATE-1","2026-01-10"));
+        repository.updateProductDocuments(product.gtin(),snapshot);
+        long orderId=repository.createDraft(product.gtin(),1);
+        repository.insertCodes(orderId,product.gtin(),new DownloadedCodes(List.of("pending-registry-code"),"block"));
+        AtomicInteger createCalls=new AtomicInteger();
+        ZnackApiClient api=new ZnackApiClient(){
+            @Override public JsonElement permitDocuments(String base,String token,String gtin,String inn){
+                return JsonParser.parseString("""
+                        {"result":{"documents":[],"errors":[{"code":"18",
+                        "message":"Поиск сведений инициирован"}]}}
+                        """);
+            }
+            @Override public String createDocument(String base,String token,JsonObject body){
+                createCalls.incrementAndGet();return "must-not-submit";
+            }
+        };
+        ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+            @Override public String trueApiToken(Settings s){return "token";}
+            @Override public String resolvedParticipantInn(Settings s){return "7701234567";}
+        };
+
+        ZnackIntroductionService.PermitDocumentsUnavailableException error=assertThrows(
+                ZnackIntroductionService.PermitDocumentsUnavailableException.class,
+                ()->new ZnackIntroductionService(api,auth,testSigner(),repository).submit(
+                        settingsWithDocument("",true,"","",""),
+                        repository.findOrder(orderId).orElseThrow(),product,repository.findCodes(orderId)));
+
+        assertFalse(error.confirmedMissing());
+        assertEquals(0,createCalls.get());
+        assertEquals(snapshot,repository.findProduct(product.gtin()).orElseThrow().permitDocuments());
     }
 
     @Test void definitiveIntroductionApiRejectionIsNotMarkedAsAmbiguous() {
@@ -1525,6 +1635,13 @@ class ZnackModuleTest {
             assertFalse(bundle.getString("znack.insufficient_funds.header").isBlank());
             assertFalse(bundle.getString("znack.insufficient_funds.content").isBlank());
             assertFalse(bundle.getString("znack.insufficient_funds.retry").isBlank());
+            assertFalse(bundle.getString("znack.operator_terms.title").isBlank());
+            assertFalse(bundle.getString("znack.operator_terms.header").isBlank());
+            assertFalse(bundle.getString("znack.operator_terms.content").isBlank());
+            assertFalse(bundle.getString("znack.missing_documents.title").isBlank());
+            assertFalse(bundle.getString("znack.missing_documents.header").isBlank());
+            assertFalse(bundle.getString("znack.missing_documents.intro").isBlank());
+            assertFalse(bundle.getString("znack.missing_documents.action").isBlank());
         }
         assertEquals("Получите omsConnection в СУЗ: Управление заказами → Устройства → Идентификатор соединения.",
                 ResourceBundle.getBundle("com.tuandev.fbsbarcode.i18n.messages",Locale.forLanguageTag("ru")).getString("znack.oms_connection_help"));

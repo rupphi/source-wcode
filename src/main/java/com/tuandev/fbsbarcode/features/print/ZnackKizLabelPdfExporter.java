@@ -7,21 +7,25 @@ import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfPage;
 import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.kernel.pdf.canvas.PdfCanvas;
+import com.itextpdf.io.image.ImageDataFactory;
 import com.itextpdf.layout.Canvas;
+import com.itextpdf.layout.element.Image;
 import com.itextpdf.layout.element.Paragraph;
 import com.tuandev.fbsbarcode.features.kiz.KizService;
 import com.tuandev.fbsbarcode.features.kizmapping.ZnackKizLabelMetadata;
 import com.tuandev.fbsbarcode.models.Kiz;
-import com.tuandev.fbsbarcode.shared.I18nService;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
 
 public class ZnackKizLabelPdfExporter {
     private static final float WIDTH = (float) PrintTemplateService.PAGE_WIDTH;
     private static final float HEIGHT = (float) PrintTemplateService.PAGE_HEIGHT;
     private static final PageSize PAGE_SIZE = new PageSize(WIDTH, HEIGHT);
-    private static final float MATRIX_SIDE = 70f;
+    private static final float MATRIX_SIDE = 78f;
+    private static final String CHESTNY_ZNAK_LOGO =
+            "/com/tuandev/fbsbarcode/assets/images/chestniy-znak.png";
 
     public void write(List<Kiz> codes, ZnackKizLabelMetadata metadata, File target) throws IOException {
         if (codes == null || codes.isEmpty()) throw new IllegalArgumentException("KIZ list must not be empty.");
@@ -39,16 +43,14 @@ public class ZnackKizLabelPdfExporter {
         if (code == null || code.isBlank()) throw new IOException("KIZ cannot be encoded as DataMatrix.");
         PdfPage page = document.addNewPage(PAGE_SIZE);
         drawDataMatrix(page, code);
-        I18nService i18n = I18nService.getInstance();
         try (Canvas canvas = new Canvas(page, PAGE_SIZE)) {
             canvas.setFont(GenerateBarcode.getArialFont());
-            float textX = 82f;
+            float textX = 87f;
             float textWidth = WIDTH - textX - 5f;
-            canvas.add(text(compact(metadata.productName(), 55), textX, 78, textWidth, 8.3f, true));
-            canvas.add(text(i18n.tr("kiz_export.pdf.gender") + ": " + compact(metadata.gender(), 28),
-                    textX, 43, textWidth, 7.2f, false));
-            canvas.add(text(i18n.tr("kiz_export.pdf.size") + ": " + compact(metadata.size(), 28),
-                    textX, 22, textWidth, 7.2f, true));
+            canvas.add(chestnyZnakLogo());
+            canvas.add(text(compact(metadata.productName(), 52), textX, 50, textWidth, 8.8f, true));
+            canvas.add(text(compact(metadata.gender(), 28), textX, 27, textWidth, 8.2f, true));
+            canvas.add(text(compact(metadata.size(), 28), textX, 9, textWidth, 9f, true));
         }
     }
 
@@ -66,6 +68,15 @@ public class ZnackKizLabelPdfExporter {
         canvas.saveState().concatMatrix(1, 0, 0, 1, 5f, (HEIGHT - renderedHeight) / 2f);
         matrix.placeBarcode(canvas, ColorConstants.BLACK, moduleSide);
         canvas.restoreState();
+    }
+
+    private static Image chestnyZnakLogo() throws IOException {
+        try (InputStream stream = ZnackKizLabelPdfExporter.class.getResourceAsStream(CHESTNY_ZNAK_LOGO)) {
+            if (stream == null) throw new IOException("Chestny ZNAK logo resource is missing.");
+            return new Image(ImageDataFactory.create(stream.readAllBytes()))
+                    .scaleToFit(70f, 20f)
+                    .setFixedPosition(87f, 89f);
+        }
     }
 
     private static Paragraph text(String value, float x, float y, float width, float size, boolean bold) {

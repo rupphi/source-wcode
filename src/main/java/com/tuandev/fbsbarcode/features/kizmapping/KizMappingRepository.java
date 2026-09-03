@@ -123,17 +123,26 @@ public class KizMappingRepository {
     public ZnackKizLabelMetadata findLabelMetadata(int shopId, String gtin) {
         String normalized = GtinNormalizer.normalize(gtin);
         String productName = "";
+        String directGender = "";
+        String directSize = "";
         Set<String> genders = new LinkedHashSet<>();
         Set<String> sizes = new LinkedHashSet<>();
         try (Connection c = Database.getConnection()) {
             try (PreparedStatement product = c.prepareStatement("""
-                    SELECT COALESCE(product_name,'') FROM znack_products
+                    SELECT COALESCE(product_name,''),COALESCE(gender,''),COALESCE(size,'')
+                    FROM znack_products
                     WHERE shop_id=? AND gtin=? AND deleted_at IS NULL
                     """)) {
                 product.setInt(1, shopId);
                 product.setString(2, normalized);
                 try (ResultSet rs = product.executeQuery()) {
-                    if (rs.next()) productName = rs.getString(1);
+                    if (rs.next()) {
+                        productName = rs.getString(1);
+                        directGender = rs.getString(2);
+                        directSize = rs.getString(3);
+                        if (directGender != null && !directGender.isBlank()) genders.add(directGender.strip());
+                        if (directSize != null && !directSize.isBlank()) sizes.add(directSize.strip());
+                    }
                 }
             }
             try (PreparedStatement variants = c.prepareStatement("""
@@ -164,10 +173,13 @@ public class KizMappingRepository {
                     while (rs.next()) {
                         String gender = rs.getString(1);
                         String size = rs.getString(2);
-                        if (gender != null && !gender.isBlank() && !UNSPECIFIED_GENDER.equals(gender)) {
+                        if ((directGender == null || directGender.isBlank())
+                                && gender != null && !gender.isBlank()
+                                && !UNSPECIFIED_GENDER.equals(gender)) {
                             genders.add(gender.strip());
                         }
-                        if (size != null && !size.isBlank()) sizes.add(size.strip());
+                        if ((directSize == null || directSize.isBlank())
+                                && size != null && !size.isBlank()) sizes.add(size.strip());
                     }
                 }
             }

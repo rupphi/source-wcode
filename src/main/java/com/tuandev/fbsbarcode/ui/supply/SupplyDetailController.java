@@ -27,6 +27,8 @@ import com.tuandev.fbsbarcode.shared.I18nService;
 import com.tuandev.fbsbarcode.ui.kizmapping.KizGtinMappingEditor;
 import com.tuandev.fbsbarcode.ui.license.LicenseDialogService;
 import com.tuandev.fbsbarcode.ui.znack.ZnackInsufficientFundsDialogService;
+import com.tuandev.fbsbarcode.ui.znack.ZnackMissingDocumentsDialogService;
+import com.tuandev.fbsbarcode.ui.znack.ZnackOperatorTermsDialogService;
 import com.tuandev.fbsbarcode.ui.znack.ZnackKizInventoryActionService;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
@@ -357,6 +359,8 @@ public class SupplyDetailController {
             startPendingGtinSync();
             ZnackInsufficientFundsDialogService.promptIfNeeded(
                     currentRepository, task.getValue(), this::refreshGtinInventory);
+            ZnackOperatorTermsDialogService.promptIfNeeded(currentRepository, task.getValue());
+            ZnackMissingDocumentsDialogService.promptIfNeeded(currentRepository, task.getValue());
         });
         task.setOnFailed(event -> {
             if (generation != shopGeneration) {
@@ -894,6 +898,7 @@ public class SupplyDetailController {
                 || "INTRODUCTION_FAILED".equals(normalized)) {
             return "badge-red";
         }
+        if ("WAITING_INTRODUCTION_DOCUMENTS".equals(normalized)) return "badge-warning";
         return isActivePipeline(normalized) ? "badge-warning" : "badge-green";
     }
 

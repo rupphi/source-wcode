@@ -15,6 +15,8 @@ import com.tuandev.fbsbarcode.shared.I18nService;
 import com.tuandev.fbsbarcode.ui.controls.CategoryFilterMenu;
 import com.tuandev.fbsbarcode.ui.license.LicenseDialogService;
 import com.tuandev.fbsbarcode.ui.znack.ZnackInsufficientFundsDialogService;
+import com.tuandev.fbsbarcode.ui.znack.ZnackMissingDocumentsDialogService;
+import com.tuandev.fbsbarcode.ui.znack.ZnackOperatorTermsDialogService;
 import com.tuandev.fbsbarcode.ui.znack.ZnackKizInventoryActionService;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
@@ -185,6 +187,8 @@ public class KizMappingController {
             applyFilter();
             setLoadingState();
             ZnackInsufficientFundsDialogService.promptIfNeeded(current, summaries, this::refresh);
+            ZnackOperatorTermsDialogService.promptIfNeeded(current, summaries);
+            ZnackMissingDocumentsDialogService.promptIfNeeded(current, summaries);
         });
         task.setOnFailed(event -> {
             if (generation != shopGeneration) return;
@@ -221,6 +225,8 @@ public class KizMappingController {
                 setLoading(false);
                 ZnackInsufficientFundsDialogService.promptIfNeeded(
                         currentRepository, summaries, this::refresh);
+                ZnackOperatorTermsDialogService.promptIfNeeded(currentRepository, summaries);
+                ZnackMissingDocumentsDialogService.promptIfNeeded(currentRepository, summaries);
             }
         });
         task.setOnFailed(e -> {

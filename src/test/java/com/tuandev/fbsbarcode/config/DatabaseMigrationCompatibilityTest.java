@@ -192,7 +192,40 @@ class DatabaseMigrationCompatibilityTest {
             assertTrue(tableExists("ozon_fbo_supply_items"));
             assertTrue(tableExists("ozon_fbo_sync_state"));
             assertTrue(columnExists("znack_products", "permit_documents_json"));
+            assertTrue(columnExists("znack_products", "gender"));
+            assertTrue(columnExists("znack_products", "size"));
         }
+    }
+
+    @Test
+    void parksOnlyLegacyReadinessPipelinesWithConfirmedMissingDocuments() throws Exception {
+        System.setProperty("wcode.appdata.dir", temp.toString());
+        Database.initDatabase();
+        try (Connection connection = Database.getConnection(); Statement statement = connection.createStatement()) {
+            statement.execute("INSERT INTO shops(id,name,api_key) VALUES(1,'Shop','secret')");
+            statement.execute("INSERT INTO znack_products(shop_id,gtin,product_name,synced_at) VALUES"
+                    + "(1,'04600000000001','Missing document','2026-09-03T00:00:00Z'),"
+                    + "(1,'04600000000002','Temporary error','2026-09-03T00:00:00Z')");
+            statement.execute("INSERT INTO kiz_orders(id,shop_id,gtin,quantity,local_status,error_message,created_at,updated_at) VALUES"
+                    + "(1,1,'04600000000001',1,'WAITING_INTRODUCTION_READINESS','old','2026-09-03T00:00:00Z','2026-09-03T00:00:00Z'),"
+                    + "(2,1,'04600000000002',1,'WAITING_INTRODUCTION_READINESS','old','2026-09-03T00:00:00Z','2026-09-03T00:00:00Z')");
+            statement.execute("INSERT INTO znack_purchase_pipelines(id,shop_id,gtin,quantity,order_id,request_key,stage,error_message,created_at,updated_at) VALUES"
+                    + "(1,1,'04600000000001',1,1,'missing-doc','WAITING_INTRODUCTION_READINESS',"
+                    + "'GTIN 04600000000001 has no active National Catalog declaration or certificate.','2026-09-03T00:00:00Z','2026-09-03T00:00:00Z'),"
+                    + "(2,1,'04600000000002',1,2,'temporary','WAITING_INTRODUCTION_READINESS',"
+                    + "'Could not verify active National Catalog documents.','2026-09-03T00:00:00Z','2026-09-03T00:00:00Z')");
+        }
+
+        Database.initDatabase();
+
+        assertEquals("WAITING_INTRODUCTION_DOCUMENTS",
+                scalarText("SELECT stage FROM znack_purchase_pipelines WHERE id=1"));
+        assertEquals("WAITING_INTRODUCTION_DOCUMENTS",
+                scalarText("SELECT local_status FROM kiz_orders WHERE id=1"));
+        assertEquals("WAITING_INTRODUCTION_READINESS",
+                scalarText("SELECT stage FROM znack_purchase_pipelines WHERE id=2"));
+        assertEquals("WAITING_INTRODUCTION_READINESS",
+                scalarText("SELECT local_status FROM kiz_orders WHERE id=2"));
     }
 
     private void assertV119Migration(int legacySchemaVersion) throws Exception {

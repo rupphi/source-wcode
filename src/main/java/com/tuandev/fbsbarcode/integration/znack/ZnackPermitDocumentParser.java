@@ -30,17 +30,15 @@ final class ZnackPermitDocumentParser {
     }
 
     static List<GoodsDocument> fromProductCard(JsonObject card) {
-        JsonArray attributes = array(card, "good_attrs");
-        if (attributes == null) attributes = array(card, "goodAttrs");
-        if (attributes == null) return List.of();
         LinkedHashSet<GoodsDocument> documents = new LinkedHashSet<>();
-        for (JsonElement element : attributes) {
-            if (!element.isJsonObject()) continue;
-            JsonObject attribute = element.getAsJsonObject();
-            String type = TYPES.get(text(attribute, "attr_id", "attrId"));
+        for (JsonObject attribute : ZnackProductCardAttributes.from(card)) {
+            String type = TYPES.get(ZnackProductCardAttributes.id(attribute));
             if (type == null) continue;
-            String number = text(attribute, "certificate_number", "certificateNumber");
-            String date = text(attribute, "certificate_issued_date", "certificateIssuedDate");
+            JsonObject displayed = object(attribute, "showValue");
+            String number = text(displayed, "number");
+            String date = text(displayed, "dateFrom", "date_from");
+            if (number.isBlank()) number = text(attribute, "certificate_number", "certificateNumber");
+            if (date.isBlank()) date = text(attribute, "certificate_issued_date", "certificateIssuedDate");
             if (number.isBlank() || date.isBlank()) {
                 String[] legacy = text(attribute, "attr_value", "attrValue").split(":::", 2);
                 if (legacy.length == 2) {
@@ -51,6 +49,23 @@ final class ZnackPermitDocumentParser {
             addComplete(documents, type, number, date);
         }
         return List.copyOf(documents);
+    }
+
+    static boolean registryLookupPending(JsonElement response) {
+        if (response == null || response.isJsonNull()) return false;
+        if (response.isJsonObject()) {
+            JsonObject object = response.getAsJsonObject();
+            String code = text(object, "error_code", "errorCode", "code").strip();
+            if ("18".equals(code) || "19".equals(code)) return true;
+            for (Map.Entry<String, JsonElement> entry : object.entrySet()) {
+                if (registryLookupPending(entry.getValue())) return true;
+            }
+        } else if (response.isJsonArray()) {
+            for (JsonElement element : response.getAsJsonArray()) {
+                if (registryLookupPending(element)) return true;
+            }
+        }
+        return false;
     }
 
     static List<GoodsDocument> activeFromRegistry(JsonElement response) {
@@ -135,6 +150,7 @@ final class ZnackPermitDocumentParser {
     }
 
     private static JsonElement value(JsonObject object, String... keys) {
+        if (object == null) return null;
         for (String key : keys) {
             if (object.has(key) && !object.get(key).isJsonNull()) return object.get(key);
         }

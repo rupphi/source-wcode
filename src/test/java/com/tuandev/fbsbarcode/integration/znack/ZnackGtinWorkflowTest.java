@@ -564,6 +564,8 @@ class ZnackGtinWorkflowTest {
                 base.certificateListExecutable(), base.certificateListArgumentsJson(), base.certificateMetadataJson(),
                 base.signerTestedAt(), base.certmgrPath(), base.cryptcpPath(), base.csptestPath(),
                 base.cryptoProTimeoutSeconds(), "");
+        repository.updateProductDocuments(A,
+                List.of(new GoodsDocument("CONFORMITY_DECLARATION", "DECL-1", "01.09.2026")));
         ZnackKizOrderService orderService = new ZnackKizOrderService(null,null,null,repository) {
             @Override public KizOrder buy(Settings ignored, String gtin, int quantity) {
                 long id = repository.createDraft(gtin, quantity);
@@ -599,6 +601,8 @@ class ZnackGtinWorkflowTest {
                 base.signerTestedAt(), base.certmgrPath(), base.cryptcpPath(), base.csptestPath(),
                 base.cryptoProTimeoutSeconds(), "20.06.2029", "CONFORMITY_DECLARATION");
         repository.updateProductMetadata(new Product(A, "A", "6201000000", null, null, null, "21.06.2024"));
+        repository.updateProductDocuments(A,
+                List.of(new GoodsDocument("CONFORMITY_DECLARATION", "DOC-1", "20.06.2024")));
         long order = repository.createDraft(A, 1);
         repository.insertCodes(order, A, new DownloadedCodes(List.of("resume-introduction"), "block"));
         long pipeline = repository.createPipeline(A, 1);
@@ -632,6 +636,8 @@ class ZnackGtinWorkflowTest {
                 base.signerTestedAt(), base.certmgrPath(), base.cryptcpPath(), base.csptestPath(),
                 base.cryptoProTimeoutSeconds(), "20.06.2029", "CONFORMITY_DECLARATION");
         repository.updateProductMetadata(new Product(A, "A", "6201000000", null, null, null, "21.06.2024"));
+        repository.updateProductDocuments(A,
+                List.of(new GoodsDocument("CONFORMITY_DECLARATION", "DOC-1", "20.06.2024")));
         long order = repository.createDraft(A, 1);
         repository.insertCodes(order, A, new DownloadedCodes(List.of("retry-introduction"), "block"));
         long pipeline = repository.createPipeline(A, 1);
@@ -663,6 +669,8 @@ class ZnackGtinWorkflowTest {
                 base.signerTestedAt(), base.certmgrPath(), base.cryptcpPath(), base.csptestPath(),
                 base.cryptoProTimeoutSeconds(), "", "CONFORMITY_DECLARATION");
         repository.updateProductMetadata(new Product(A, "A", "6201000000", null, null, null, null));
+        repository.updateProductDocuments(A,
+                List.of(new GoodsDocument("CONFORMITY_DECLARATION", "DECL-STALE", "01.09.2026")));
         long order = repository.createDraft(A, 1);
         repository.insertCodes(order, A, new DownloadedCodes(List.of("legacy-http-422"), "block"));
         long pipeline = repository.createPipeline(A, 1);
@@ -913,7 +921,7 @@ class ZnackGtinWorkflowTest {
         assertEquals(0, new ZnackGtinInventoryService().availableCount(1, A));
     }
 
-    @Test void unavailableGtinDocumentsReturnIntroductionToAutomaticRetryWithoutLosingCodes() throws Exception {
+    @Test void unavailableGtinDocumentsParkIntroductionWithoutLosingCodesOrSchedulingPolls() throws Exception {
         Settings base = testedSettings();
         Settings auto = new Settings(base.trueApiBaseUrl(), base.suzBaseUrl(), base.omsId(), base.omsConnection(),
                 base.participantInn(), base.producerInn(), base.ownerInn(), base.signerExecutable(),
@@ -922,6 +930,8 @@ class ZnackGtinWorkflowTest {
                 base.signerTestedAt(), base.certmgrPath(), base.cryptcpPath(), base.csptestPath(),
                 base.cryptoProTimeoutSeconds(), "", "CONFORMITY_DECLARATION");
         repository.updateProductMetadata(new Product(A, "A", "6201000000", null, null, null, null));
+        repository.updateProductDocuments(A,
+                List.of(new GoodsDocument("CONFORMITY_DECLARATION", "DECL-STALE", "01.09.2026")));
         long order = repository.createDraft(A, 1);
         repository.insertCodes(order, A, new DownloadedCodes(List.of("document-retry-code"), "block"));
         long pipeline = repository.createPipeline(A, 1);
@@ -932,19 +942,70 @@ class ZnackGtinWorkflowTest {
                 throw new PermitDocumentsUnavailableException("No active GTIN document; retry automatically.");
             }
         };
+        ZnackPurchaseCoordinator coordinator = new ZnackPurchaseCoordinator(repository, null, null, introduction);
+
+        assertThrows(PermitDocumentsUnavailableException.class, () -> coordinator.advance(auto, pipeline));
+
+        ZnackPurchasePipelineState persisted = repository.findPipeline(pipeline).orElseThrow();
+        assertEquals(PurchaseStage.WAITING_INTRODUCTION_DOCUMENTS, persisted.stage());
+        assertEquals(OrderStatus.WAITING_INTRODUCTION_DOCUMENTS,
+                repository.findOrder(order).orElseThrow().localStatus());
+        assertTrue(repository.findLatestDocument(order).isEmpty());
+        assertEquals(0, new ZnackGtinInventoryService().availableCount(1, A));
+        coordinator.schedule(pipeline);
+        assertFalse(ZnackPurchaseCoordinator.isScheduledForTests(1, pipeline));
+    }
+
+    @Test void parkedIntroductionResumesWithExistingCodesAfterDocumentsAreSynced() throws Exception {
+        Settings auto = withAutoIntroduction(testedSettings());
+        repository.updateProductMetadata(new Product(A, "A", "6201000000", null, null, null, null));
+        long order = repository.createDraft(A, 1);
+        repository.insertCodes(order, A, new DownloadedCodes(List.of("parked-code"), "block"));
+        long pipeline = repository.createPipeline(A, 1);
+        repository.updatePipeline(pipeline, order, PurchaseStage.WAITING_INTRODUCTION_DOCUMENTS,
+                "No active declaration or certificate");
+        AtomicInteger submissions = new AtomicInteger();
+        ZnackIntroductionService introduction = new ZnackIntroductionService(null, null, null, repository) {
+            @Override public long submit(Settings ignored, KizOrder ignoredOrder, Product ignoredProduct,
+                                         List<KizCode> ignoredCodes) {
+                submissions.incrementAndGet();
+                return 1;
+            }
+        };
         ZnackPurchaseCoordinator coordinator = new ZnackPurchaseCoordinator(repository, null, null, introduction) {
             @Override void schedule(long ignoredPipeline) {
             }
         };
 
-        assertThrows(PermitDocumentsUnavailableException.class, () -> coordinator.advance(auto, pipeline));
+        coordinator.resumeEligibleIntroductions(auto);
+        assertEquals(0, submissions.get());
+        assertEquals(PurchaseStage.WAITING_INTRODUCTION_DOCUMENTS,
+                repository.findPipeline(pipeline).orElseThrow().stage());
 
-        ZnackPurchasePipelineState persisted = repository.findPipeline(pipeline).orElseThrow();
-        assertEquals(PurchaseStage.WAITING_INTRODUCTION_READINESS, persisted.stage());
-        assertEquals(OrderStatus.WAITING_INTRODUCTION_READINESS,
-                repository.findOrder(order).orElseThrow().localStatus());
-        assertTrue(repository.findLatestDocument(order).isEmpty());
-        assertEquals(0, new ZnackGtinInventoryService().availableCount(1, A));
+        repository.updateProductDocuments(A,
+                List.of(new GoodsDocument("CONFORMITY_DECLARATION", "DECL-1", "01.09.2026")));
+        repository.softDeleteProducts(List.of(A));
+        IllegalStateException duplicate = assertThrows(IllegalStateException.class,
+                () -> coordinator.validatePrerequisites(auto, A, 1));
+        assertTrue(duplicate.getMessage().contains("existing purchase"));
+        coordinator.resumeEligibleIntroductions(auto);
+
+        assertEquals(1, submissions.get());
+        assertEquals(PurchaseStage.POLLING_INTRODUCTION,
+                repository.findPipeline(pipeline).orElseThrow().stage());
+        assertEquals(1, repository.findCodes(order).size(), "Recovery must reuse the purchased KIZ");
+    }
+
+    @Test void automaticPurchaseWithoutGtinPermitDocumentIsRejectedBeforeCreatingPipeline() throws Exception {
+        Settings auto = withAutoIntroduction(testedSettings());
+        repository.updateProductMetadata(new Product(A, "A", "6201000000", null, null, null, null));
+        ZnackPurchaseCoordinator coordinator = new ZnackPurchaseCoordinator(repository, null, null, null);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> coordinator.validatePrerequisites(auto, A, 1));
+
+        assertTrue(error.getMessage().contains("declaration or certificate"));
+        assertTrue(repository.findActivePipelines().isEmpty());
     }
 
     @Test void readinessStageCompletesIdempotentlyWhenCodesWereIntroducedManually() throws Exception {
@@ -1140,6 +1201,8 @@ class ZnackGtinWorkflowTest {
                 base.signerTestedAt(), base.certmgrPath(), base.cryptcpPath(), base.csptestPath(),
                 base.cryptoProTimeoutSeconds(), "20.06.2029", "CONFORMITY_DECLARATION");
         repository.updateProductMetadata(new Product(A, "A", "6201000000", null, null, null, "21.06.2024"));
+        repository.updateProductDocuments(A,
+                List.of(new GoodsDocument("CONFORMITY_DECLARATION", "DOC-1", "20.06.2024")));
         long order = repository.createDraft(A, 1);
         repository.insertCodes(order, A, new DownloadedCodes(List.of(RAW_CIS), "block"));
         long pipeline = repository.createPipeline(A, 1);
@@ -1205,6 +1268,8 @@ class ZnackGtinWorkflowTest {
                 base.signerTestedAt(), base.certmgrPath(), base.cryptcpPath(), base.csptestPath(),
                 base.cryptoProTimeoutSeconds(), "20.06.2029", "CONFORMITY_DECLARATION");
         repository.updateProductMetadata(new Product(A, "A", "6201000000", null, null, null, "21.06.2024"));
+        repository.updateProductDocuments(A,
+                List.of(new GoodsDocument("CONFORMITY_DECLARATION", "DOC-1", "20.06.2024")));
         long order = repository.createDraft(A, 1);
         repository.insertCodes(order, A, new DownloadedCodes(List.of(RAW_CIS), "block"));
         long pipeline = repository.createPipeline(A, 1);
@@ -1267,6 +1332,8 @@ class ZnackGtinWorkflowTest {
         Settings base = testedSettings();
         Settings auto = withAutoIntroduction(base);
         repository.updateProductMetadata(new Product(A, "A", "6201000000", null, null, null, null));
+        repository.updateProductDocuments(A,
+                List.of(new GoodsDocument("CONFORMITY_DECLARATION", "DECL-1", "01.09.2026")));
         long order = repository.createDraft(A, 1);
         repository.insertCodes(order, A, new DownloadedCodes(List.of("recovered-signing-code"), "block"));
         long pipeline = repository.createPipeline(A, 1);
@@ -1306,6 +1373,8 @@ class ZnackGtinWorkflowTest {
         Settings base = testedSettings();
         Settings auto = withAutoIntroduction(base);
         repository.updateProductMetadata(new Product(A, "A", "6201000000", null, null, null, null));
+        repository.updateProductDocuments(A,
+                List.of(new GoodsDocument("CONFORMITY_DECLARATION", "DECL-1", "01.09.2026")));
         ZnackKizOrderService orderService = readyOrderService();
         ZnackKizCodeService codeService = new ZnackKizCodeService(null, null, repository) {
             @Override public int download(Settings ignored, long id) {

@@ -275,10 +275,13 @@ public class ZnackPurchaseCoordinator {
         List<ZnackPurchasePipelineState> candidates = new java.util.ArrayList<>(repository.findSkippedIntroductionPipelines());
         candidates.addAll(repository.findLegacyRejectedIntroductionPipelines());
         candidates.addAll(repository.findLegacyPrimitiveDocumentResponsePipelines());
+        candidates.addAll(repository.findWaitingIntroductionDocumentPipelines());
         for (ZnackPurchasePipelineState pipeline : candidates) {
             Product product = repository.findProduct(pipeline.gtin()).orElse(null);
             if (product == null || pipeline.orderId() == null || repository.findCodes(pipeline.orderId()).isEmpty()
-                    || product.tnVed() == null || product.tnVed().isBlank()) {
+                    || product.tnVed() == null || product.tnVed().isBlank()
+                    || (pipeline.stage() == PurchaseStage.WAITING_INTRODUCTION_DOCUMENTS
+                        && !hasCompletePermit(product))) {
                 continue;
             }
             synchronized (CREATE_LOCK) {
@@ -351,12 +354,18 @@ public class ZnackPurchaseCoordinator {
                         || current == PurchaseStage.POLLING_INTRODUCTION) {
                     repository.updatePipeline(pipelineId, null, current, e.getMessage());
                 } else if (current == PurchaseStage.SUBMITTING_INTRODUCTION) {
-                    if (e instanceof ZnackIntroductionService.PermitDocumentsUnavailableException) {
+                    if (e instanceof ZnackIntroductionService.PermitDocumentsUnavailableException unavailable) {
                         Long orderId=repository.findPipeline(pipelineId).map(ZnackPurchasePipelineState::orderId).orElse(null);
+                        OrderStatus waitingOrder = unavailable.confirmedMissing()
+                                ? OrderStatus.WAITING_INTRODUCTION_DOCUMENTS
+                                : OrderStatus.WAITING_INTRODUCTION_READINESS;
+                        PurchaseStage waitingStage = unavailable.confirmedMissing()
+                                ? PurchaseStage.WAITING_INTRODUCTION_DOCUMENTS
+                                : PurchaseStage.WAITING_INTRODUCTION_READINESS;
                         if(orderId!=null)repository.updateOrder(orderId,null,null,
-                                OrderStatus.WAITING_INTRODUCTION_READINESS,e.getMessage());
+                                waitingOrder,e.getMessage());
                         repository.updatePipeline(pipelineId, orderId,
-                                PurchaseStage.WAITING_INTRODUCTION_READINESS, e.getMessage());
+                                waitingStage, e.getMessage());
                     } else {
                         // Codes are already bought; keep a definitive local/signature failure available
                         // for an explicit retry without risking a duplicate introduction document.
@@ -385,8 +394,21 @@ public class ZnackPurchaseCoordinator {
     public void validatePrerequisites(Settings settings, String gtin, int quantity) throws Exception {
         if (quantity <= 0) throw new IllegalArgumentException("Quantity must be positive.");
         String normalized = GtinNormalizer.requireProductionOrderable(gtin);
-        if (repository.findProducts().stream().noneMatch(p -> normalized.equals(p.gtin()))) {
+        boolean hasParkedPurchase = repository.findWaitingIntroductionDocumentPipelines().stream()
+                .anyMatch(pipeline -> normalized.equals(pipeline.gtin()));
+        if (hasParkedPurchase) {
+            throw new IllegalStateException("This GTIN already has purchased KIZ waiting for circulation. "
+                    + "Synchronize its National Catalog document to resume the existing purchase.");
+        }
+        Product product = repository.findProducts().stream()
+                .filter(candidate -> normalized.equals(candidate.gtin()))
+                .findFirst().orElse(null);
+        if (product == null) {
             throw new IllegalArgumentException("GTIN is not registered for the selected shop.");
+        }
+        if (settings.autoIntroduction() && !hasCompletePermit(product)) {
+            throw new IllegalStateException("GTIN has no active National Catalog declaration or certificate. "
+                    + "Synchronize the GTIN after publishing its goods document before buying KIZ.");
         }
         ZnackSafety.requireSigned(settings, true);
         if (settings.omsId() == null || settings.omsId().isBlank()) {
@@ -520,6 +542,7 @@ public class ZnackPurchaseCoordinator {
 
     private void submitIntroduction(Settings settings, ZnackPurchasePipelineState pipeline) throws Exception {
         KizOrder order = repository.findOrder(requiredOrderId(pipeline)).orElseThrow();
+        Product product = product(pipeline.gtin());
         ZnackModels.Document existing = repository.findLatestDocument(order.id()).orElse(null);
         if (existing != null
                 && ("CHECKED_NOT_OK".equals(existing.status()) || "REJECTED".equals(existing.status()))) {
@@ -552,7 +575,15 @@ public class ZnackPurchaseCoordinator {
             repository.updatePipeline(pipeline.id(), order.id(), PurchaseStage.FAILED, error);
             throw new IllegalStateException(error);
         }
-        introduction.submit(settings, order, product(pipeline.gtin()), repository.findCodes(order.id()));
+        if (!hasCompletePermit(product)) {
+            String message = "GTIN " + pipeline.gtin()
+                    + " has no active National Catalog declaration or certificate. "
+                    + "Synchronize the GTIN after publishing or reactivating its goods document.";
+            repository.updateOrder(order.id(), null, null, OrderStatus.WAITING_INTRODUCTION_DOCUMENTS, message);
+            repository.updatePipeline(pipeline.id(), order.id(), PurchaseStage.WAITING_INTRODUCTION_DOCUMENTS, message);
+            return;
+        }
+        introduction.submit(settings, order, product, repository.findCodes(order.id()));
         repository.updatePipeline(pipeline.id(), order.id(), PurchaseStage.POLLING_INTRODUCTION, null);
     }
 
@@ -573,6 +604,13 @@ public class ZnackPurchaseCoordinator {
 
     private Product product(String gtin) {
         return repository.findProduct(gtin).orElseThrow();
+    }
+
+    private static boolean hasCompletePermit(Product product) {
+        if (product == null) return false;
+        if (!ZnackPermitDocumentParser.selectForCirculation(product.permitDocuments()).isEmpty()) return true;
+        return new ZnackModels.GoodsDocument(product.certificateType(), product.certificateNumber(),
+                product.certificateDate()).complete();
     }
 
     private long requiredOrderId(ZnackPurchasePipelineState pipeline) {
