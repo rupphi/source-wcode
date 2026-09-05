@@ -74,6 +74,7 @@ import com.tuandev.fbsbarcode.ui.supply.SupplyDetailController;
 import com.tuandev.fbsbarcode.ui.supply.SupplyListController;
 import com.tuandev.fbsbarcode.ui.supply.SupplyManagementController;
 import com.tuandev.fbsbarcode.ui.znack.ZnackAutomationController;
+import com.tuandev.fbsbarcode.ui.znackregistration.ZnackCardRegistrationController;
 import javafx.concurrent.Task;
 import javafx.animation.FadeTransition;
 import javafx.animation.PauseTransition;
@@ -157,6 +158,7 @@ public class HomeController implements Initializable {
     private VBox ozonDashboardView;
     private Node kizMappingView;
     private Node znackAutomationView;
+    private Node znackRegistrationView;
     private SupplyManagementController supplyManagementController;
     private FinanceDashboardController financeDashboardController;
     private PrintHistoryController printHistoryController;
@@ -166,6 +168,7 @@ public class HomeController implements Initializable {
     private OzonDashboardController ozonDashboardController;
     private KizMappingController kizMappingController;
     private ZnackAutomationController znackAutomationController;
+    private ZnackCardRegistrationController znackRegistrationController;
 
     private FileChooser fileChooser;
     private ShopSidebarController shopSidebarController;
@@ -279,6 +282,11 @@ public class HomeController implements Initializable {
         znackAutomationView = FxmlViewLoader.load(znackLoader);
         znackAutomationController = znackLoader.getController();
 
+        FXMLLoader znackRegistrationLoader = FxmlViewLoader.loader(
+                ZnackCardRegistrationController.class, "znack-card-registration-view.fxml");
+        znackRegistrationView = FxmlViewLoader.load(znackRegistrationLoader);
+        znackRegistrationController = znackRegistrationLoader.getController();
+
         FXMLLoader ozonLoader = FxmlViewLoader.loader(OzonDashboardController.class, "ozon-dashboard-view.fxml");
         ozonDashboardView = FxmlViewLoader.load(ozonLoader);
         ozonDashboardController = ozonLoader.getController();
@@ -337,6 +345,12 @@ public class HomeController implements Initializable {
         clearKizDraft();
         setDynamicContent(znackAutomationView);
         znackAutomationController.setShop(state.getSelectedShop());
+    }
+
+    private void showZnackRegistration() {
+        clearKizDraft();
+        setDynamicContent(znackRegistrationView);
+        znackRegistrationController.setShop(state.getSelectedShop());
     }
 
     private void refreshPrintHistory() {
@@ -1123,7 +1137,7 @@ public class HomeController implements Initializable {
                             new ZnackModels.ShopContext(selectedShop.getId(), selectedShop.getName()));
                     var settings = repository.getSettings();
                     syncGtinsForWaitingIntroductions(repository, settings);
-                    ZnackPurchaseCoordinator.create(repository).resumeEligibleIntroductions(settings);
+                    ZnackPurchaseCoordinator.create(repository).resumeEligibleIntroductionsAsync(settings);
                 }
                 return null;
             }
@@ -1159,6 +1173,9 @@ public class HomeController implements Initializable {
         workspaceHeaderController.setMarketplace(shop.getMarketplace());
         if (znackAutomationController != null) {
             znackAutomationController.setShop(shop);
+        }
+        if (znackRegistrationController != null && isZnackRegistrationVisible()) {
+            znackRegistrationController.setShop(shop);
         }
         if (kizMappingController != null) {
             kizMappingController.setShop(shop);
@@ -1393,8 +1410,8 @@ public class HomeController implements Initializable {
             String message = refreshTask.getException() == null ? "" : refreshTask.getException().getMessage();
             if (message != null && message.startsWith("Sản phẩm không tồn tại trên WB:")) {
                 AlertService.showWarning(
-                        "Sản phẩm không tồn tại",
-                        "Không thể khôi phục thông tin sản phẩm từ WB",
+                        i18nService.tr("workspace.product_not_found.title"),
+                        i18nService.tr("workspace.product_not_found.header"),
                         message
                 );
             }
@@ -1473,6 +1490,7 @@ public class HomeController implements Initializable {
         shopSidebarController.setOnFboOrders(this::showFboSupplyOrders);
         shopSidebarController.setOnKizMapping(this::showKizMapping);
         shopSidebarController.setOnZnackAutomation(this::showZnackAutomation);
+        shopSidebarController.setOnZnackRegistration(this::showZnackRegistration);
         shopSidebarController.setOnPrintHistory(this::showPrintHistory);
         shopSidebarController.setOnCheckVersion(this::checkVersionManually);
         shopSidebarController.setOnActivation(this::showLicenseDialog);
@@ -1560,6 +1578,9 @@ public class HomeController implements Initializable {
         }
         if (znackAutomationController != null) {
             znackAutomationController.applyTranslations();
+        }
+        if (znackRegistrationController != null) {
+            znackRegistrationController.applyTranslations();
         }
         if (printHistoryController != null) {
             printHistoryController.applyTranslations();
@@ -1763,6 +1784,10 @@ public class HomeController implements Initializable {
 
     private boolean isZnackAutomationVisible() {
         return znackAutomationView != null && dynamicContentContainer.getChildren().contains(znackAutomationView);
+    }
+
+    private boolean isZnackRegistrationVisible() {
+        return znackRegistrationView != null && dynamicContentContainer.getChildren().contains(znackRegistrationView);
     }
 
     private boolean isOzonSelected() {

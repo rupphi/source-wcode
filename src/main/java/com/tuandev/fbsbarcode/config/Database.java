@@ -18,6 +18,7 @@ import com.tuandev.fbsbarcode.integration.wb.WbSchemaSupport;
 import com.tuandev.fbsbarcode.integration.ozon.OzonSchemaSupport;
 import com.tuandev.fbsbarcode.integration.znack.ZnackMappingLifecycle;
 import com.tuandev.fbsbarcode.integration.znack.ZnackSchemaSupport;
+import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationSchema;
 
 public class Database {
     private static final Logger LOGGER = LoggerFactory.getLogger(Database.class);
@@ -185,6 +186,7 @@ public class Database {
             createIndexIfNotExists(conn, "idx_image_cache_last_used_at", "image_cache", "last_used_at");
             WbSchemaSupport.initialize(conn);
             ZnackSchemaSupport.initialize(conn);
+            ZnackCardRegistrationSchema.initialize(conn);
             OzonSchemaSupport.initialize(conn);
             int inactiveMappings = ZnackMappingLifecycle.removeInactiveMappings(conn);
             if (inactiveMappings > 0) {

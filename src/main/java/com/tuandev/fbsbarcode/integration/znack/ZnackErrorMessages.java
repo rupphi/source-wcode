@@ -42,6 +42,9 @@ public final class ZnackErrorMessages {
     /** Human-readable form of a stored error; falls back to the raw text when nothing better is found. */
     public static String display(String raw) {
         if (raw == null || raw.isBlank()) return "";
+        if (isSuzAuthError(raw)) {
+            return com.tuandev.fbsbarcode.shared.I18nService.getInstance().tr("znack.error.suz_auth_invalid");
+        }
         int json = jsonStart(raw);
         if (json < 0) return raw.trim();
         List<String> messages = new ArrayList<>();
@@ -88,6 +91,14 @@ public final class ZnackErrorMessages {
         String normalized = raw.toLowerCase(java.util.Locale.ROOT);
         return normalized.contains("declaration or certificate")
                 && (normalized.contains("no active") || normalized.contains("missing"));
+    }
+
+    /** True when the error is caused by invalid SUZ authentication (HTTP 400 Ошибка аутентификации СУЗ). */
+    public static boolean isSuzAuthError(String raw) {
+        if (raw == null || raw.isBlank()) return false;
+        String lower = raw.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("ошибка аутентификации суз")
+                || (lower.contains("аутентификаци") && lower.contains("уз"));
     }
 
     /** True only for Znack's insufficient-account-balance response. */

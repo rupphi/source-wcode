@@ -8,6 +8,7 @@ import com.tuandev.fbsbarcode.models.Shop;
 import com.tuandev.fbsbarcode.shared.AlertService;
 import com.tuandev.fbsbarcode.shared.AppTaskExecutor;
 import com.tuandev.fbsbarcode.shared.AppPaths;
+import com.tuandev.fbsbarcode.shared.FriendlyErrorService;
 import com.tuandev.fbsbarcode.shared.I18nService;
 import javafx.beans.property.ReadOnlyObjectWrapper;
 import javafx.beans.property.SimpleStringProperty;
@@ -231,7 +232,7 @@ public class PackingController {
             if (!isCurrent(selectedShop, generation)
                     || ShopOperationCoordinator.isShopUnavailable(task.getException())) return;
             LOGGER.error("Не удалось загрузить упаковку для shop {}", selectedShop.getId(), task.getException());
-            AlertService.showError(task.getException().getMessage());
+            AlertService.showError(FriendlyErrorService.format(task.getException()));
         });
         AppTaskExecutor.execute(task);
     }
@@ -267,7 +268,7 @@ public class PackingController {
                 refresh();
                 return;
             }
-            AlertService.showError(failure.getMessage());
+            AlertService.showError(FriendlyErrorService.format(failure));
         });
         AppTaskExecutor.execute(task);
     }
@@ -311,7 +312,7 @@ public class PackingController {
             setLoading(false);
             if (ShopOperationCoordinator.isShopUnavailable(task.getException())) return;
             LOGGER.error("WB write action failed", task.getException());
-            AlertService.showError(task.getException().getMessage());
+            AlertService.showError(FriendlyErrorService.format(task.getException()));
         });
         AppTaskExecutor.execute(task);
     }
@@ -665,7 +666,7 @@ public class PackingController {
         task.setOnFailed(e -> {
             if (!isCurrent(selectedShop, generation)
                     || ShopOperationCoordinator.isShopUnavailable(task.getException())) return;
-            AlertService.showError(task.getException().getMessage());
+            AlertService.showError(FriendlyErrorService.format(task.getException()));
         });
         AppTaskExecutor.execute(task);
     }

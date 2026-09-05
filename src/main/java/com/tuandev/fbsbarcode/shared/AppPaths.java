@@ -14,6 +14,9 @@ import java.util.stream.Stream;
 public final class AppPaths {
     private static final String APP_DIR_NAME = "WCode";
     private static final String WINDOWS_DATA_DIR_NAME = "WCodeData";
+    private static final String DATA_PROFILE_PROPERTY = "wcode.data.profile";
+    private static final String ZNACK_REGISTRATION_TEST_PROFILE = "znack-registration-test";
+    private static final String ZNACK_REGISTRATION_TEST_DIR_NAME = "WCodeZnackRegistrationTestData";
 
     private AppPaths() {
     }
@@ -25,12 +28,19 @@ public final class AppPaths {
         }
         Path base = windowsLocalAppData()
                 .orElseGet(() -> Paths.get(System.getProperty("user.home", ".")));
+        if (isZnackRegistrationTestProfile()) {
+            return base.resolve(ZNACK_REGISTRATION_TEST_DIR_NAME);
+        }
         return base.resolve(isWindows() ? WINDOWS_DATA_DIR_NAME : APP_DIR_NAME);
     }
 
     public static List<Path> legacyAppDataDirs() {
         String override = System.getProperty("wcode.appdata.dir");
         if (override != null && !override.isBlank()) {
+            return List.of();
+        }
+        // Test packages must never discover, copy or migrate a production WCode database.
+        if (isZnackRegistrationTestProfile()) {
             return List.of();
         }
         Path base = windowsLocalAppData()
@@ -62,6 +72,11 @@ public final class AppPaths {
 
     public static Path safeUserHomeDir() {
         return safeSystemDir().resolve("home");
+    }
+
+    public static boolean isZnackRegistrationTestProfile() {
+        return ZNACK_REGISTRATION_TEST_PROFILE.equalsIgnoreCase(
+                System.getProperty(DATA_PROFILE_PROPERTY, "").trim());
     }
 
     public static Path nativeTempDir() {
@@ -184,11 +199,14 @@ public final class AppPaths {
     }
 
     private static Path safeSystemDir() {
+        String directoryName = isZnackRegistrationTestProfile()
+                ? ZNACK_REGISTRATION_TEST_DIR_NAME
+                : APP_DIR_NAME;
         return windowsProgramData()
-                .map(path -> path.resolve(APP_DIR_NAME))
+                .map(path -> path.resolve(directoryName))
                 .orElseGet(() -> windowsTemp()
-                        .map(path -> path.resolve(APP_DIR_NAME))
-                        .orElseGet(() -> Paths.get(System.getProperty("java.io.tmpdir", "."), APP_DIR_NAME)));
+                        .map(path -> path.resolve(directoryName))
+                        .orElseGet(() -> Paths.get(System.getProperty("java.io.tmpdir", "."), directoryName)));
     }
 
     private static boolean isWindows() {

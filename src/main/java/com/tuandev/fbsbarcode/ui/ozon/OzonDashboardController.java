@@ -45,6 +45,7 @@ import com.tuandev.fbsbarcode.models.Shop;
 import com.tuandev.fbsbarcode.shared.AlertService;
 import com.tuandev.fbsbarcode.shared.AppPaths;
 import com.tuandev.fbsbarcode.shared.AppTaskExecutor;
+import com.tuandev.fbsbarcode.shared.FriendlyErrorService;
 import com.tuandev.fbsbarcode.shared.I18nService;
 import com.tuandev.fbsbarcode.ui.kizmapping.KizGtinMappingEditor;
 import com.tuandev.fbsbarcode.ui.kizmapping.OzonGtinMappingEditor;
@@ -53,6 +54,7 @@ import com.tuandev.fbsbarcode.ui.license.LicenseDialogService;
 import com.tuandev.fbsbarcode.ui.znack.ZnackInsufficientFundsDialogService;
 import com.tuandev.fbsbarcode.ui.znack.ZnackMissingDocumentsDialogService;
 import com.tuandev.fbsbarcode.ui.znack.ZnackOperatorTermsDialogService;
+import com.tuandev.fbsbarcode.ui.znack.ZnackSuzAuthDialogService;
 import java.awt.Desktop;
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -960,6 +962,7 @@ public final class OzonDashboardController {
             ZnackInsufficientFundsDialogService.promptIfNeeded(
                     currentRepository, task.getValue(), this::refreshGtinInventory);
             ZnackOperatorTermsDialogService.promptIfNeeded(currentRepository, task.getValue());
+            ZnackSuzAuthDialogService.promptIfNeeded(currentRepository, task.getValue());
             ZnackMissingDocumentsDialogService.promptIfNeeded(currentRepository, task.getValue());
         });
         task.setOnFailed(event -> {
@@ -1187,7 +1190,7 @@ public final class OzonDashboardController {
                         Duration.ofSeconds(settings.resolvedCryptoProTimeoutSeconds()));
         ZnackApiClient api = new ZnackApiClient();
         new ZnackProductService(api, new ZnackAuthService(api, signer), repository).sync(settings);
-        ZnackPurchaseCoordinator.create(repository).resumeEligibleIntroductions(settings);
+        ZnackPurchaseCoordinator.create(repository).resumeEligibleIntroductionsAsync(settings);
     }
 
     private static boolean hasVerifiedSignature(Settings settings) {
@@ -1212,36 +1215,7 @@ public final class OzonDashboardController {
     }
 
     private String friendlyError(Throwable error) {
-        if (error instanceof CryptoProException crypto) {
-            String message = tr("znack.signature.error." + switch (crypto.code()) {
-                case CRYPTOPRO_MISSING -> "cryptopro_missing";
-                case CRYPTCP_MISSING -> "cryptcp_missing";
-                case CRYPTCP_LICENSE_INVALID -> "cryptcp_license";
-                case CERTMGR_MISSING -> "certmgr_missing";
-                case CADESCOM_MISSING -> "cadescom_missing";
-                case TOKEN_OR_CERTIFICATE_ABSENT -> "certificate_absent";
-                case PRIVATE_KEY_UNAVAILABLE -> "private_key";
-                case CERTIFICATE_EXPIRED -> "expired";
-                case CANCELLED -> "cancelled";
-                case TIMEOUT -> "timeout";
-                case INVALID_SIGNATURE_OUTPUT -> "invalid_output";
-                default -> "failed";
-            });
-            String details = ZnackSanitizer.message(crypto.getMessage());
-            return crypto.code() == CryptoProErrorCode.SIGNING_FAILED && !details.isBlank()
-                    ? message + "\n\n" + tr("znack.signature.error.details") + ": " + details : message;
-        }
-        String message = error == null ? "" : value(error.getMessage());
-        if (ZnackSafety.UNVERIFIED_SIGNATURE.equals(message)) return tr("znack.signature.not_verified");
-        if (ZnackSafety.MISSING_SHOP_CONFIGURATION.equals(message)) return tr("znack.error.shop_configuration");
-        if (message.startsWith("A KIZ purchase pipeline is already active")) {
-            return tr("supply.gtin_inventory.error.pipeline_active");
-        }
-        if ("omsId is required before buying KIZ.".equals(message)) return tr("supply.gtin_inventory.error.oms_id");
-        if (GtinNormalizer.TECHNICAL_GTIN_PURCHASE_UNSUPPORTED.equals(message)) {
-            return tr("supply.gtin_inventory.error.technical_gtin");
-        }
-        return message.isBlank() ? tr("znack.signature.error.failed") : message;
+        return FriendlyErrorService.format(error);
     }
 
     private static String batchReadinessBlockedText(OzonBatchPrintReadiness readiness) {

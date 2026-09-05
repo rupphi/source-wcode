@@ -50,4 +50,28 @@ class AppPathsTest {
             }
         }
     }
+
+    @Test
+    void znackRegistrationTestProfileNeverUsesOrMigratesProductionData() {
+        String previousOs = System.getProperty("os.name");
+        String previousOverride = System.getProperty("wcode.appdata.dir");
+        String previousProfile = System.getProperty("wcode.data.profile");
+        System.setProperty("os.name", "Windows 11");
+        System.clearProperty("wcode.appdata.dir");
+        System.setProperty("wcode.data.profile", "znack-registration-test");
+        try {
+            assertEquals("WCodeZnackRegistrationTestData", AppPaths.appDataDir().getFileName().toString());
+            assertTrue(AppPaths.isZnackRegistrationTestProfile());
+            assertTrue(AppPaths.legacyAppDataDirs().isEmpty());
+        } finally {
+            restore("os.name", previousOs);
+            restore("wcode.appdata.dir", previousOverride);
+            restore("wcode.data.profile", previousProfile);
+        }
+    }
+
+    private static void restore(String key, String value) {
+        if (value == null) System.clearProperty(key);
+        else System.setProperty(key, value);
+    }
 }

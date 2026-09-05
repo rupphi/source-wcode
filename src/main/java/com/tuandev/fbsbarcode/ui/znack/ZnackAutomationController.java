@@ -1021,7 +1021,7 @@ public class ZnackAutomationController {
         ZnackRepository currentRepository = repository;
         Task<Void> task = new Task<>() {
             @Override protected Void call() {
-                ZnackPurchaseCoordinator.create(currentRepository).resumeEligibleIntroductions(settings);
+                ZnackPurchaseCoordinator.create(currentRepository).resumeEligibleIntroductionsAsync(settings);
                 return null;
             }
         };

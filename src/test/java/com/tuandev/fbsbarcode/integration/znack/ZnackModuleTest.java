@@ -55,7 +55,8 @@ class ZnackModuleTest {
     }
 
     @Test void errorDisplayExtractsHumanMessageFromApiJsonPayloads() {
-        assertEquals("HTTP 400: Ошибка аутентификации СУЗ: Сервис вернул пустой ответ",
+        assertTrue(ZnackErrorMessages.isSuzAuthError("Znack API request failed (HTTP 400): {\"error_message\":\"Ошибка аутентификации СУЗ: Сервис вернул пустой ответ\"}"));
+        assertEquals(com.tuandev.fbsbarcode.shared.I18nService.getInstance().tr("znack.error.suz_auth_invalid"),
                 ZnackErrorMessages.display(
                         "Znack API request failed (HTTP 400): {\"error_message\":\"Ошибка аутентификации СУЗ: Сервис вернул пустой ответ\"}"));
         assertEquals("HTTP 422: Подпись не соответствует данным документа",

@@ -60,6 +60,36 @@ public class ZnackApiClient {
         if(inn!=null&&!inn.isBlank())body.addProperty("inn",inn.trim());
         return post(nationalCatalogBase(base),"/v4/rd-info-by-gtin",token,body);
     }
+    public JsonElement generatedGtins(String base, String token) throws IOException {
+        return get(nationalCatalogBase(base), "/v3/generate-gtins?exist=1", token);
+    }
+    public JsonElement generateGtins(String base, String token, int quantity) throws IOException {
+        if (quantity < 1 || quantity > 500) throw new IllegalArgumentException("GTIN quantity must be between 1 and 500.");
+        // Despite using GET, this endpoint allocates new numbers and is not idempotent.
+        // Never let the generic safe-GET retry policy allocate a second batch implicitly.
+        return getWithoutRetry(nationalCatalogBase(base), "/v3/generate-gtins?quantity=" + quantity, token);
+    }
+    public JsonElement nationalCatalogCategories(String base, String token, String tnved) throws IOException {
+        return get(nationalCatalogBase(base), "/v3/categories?tnved=" + url(tnved), token);
+    }
+    public JsonElement nationalCatalogAttributes(String base, String token, long categoryId) throws IOException {
+        return get(nationalCatalogBase(base), "/v3/attributes?cat_id=" + categoryId + "&attr_type=m", token);
+    }
+    public JsonElement submitNationalCatalogFeed(String base, String token, JsonElement feed) throws IOException {
+        return post(nationalCatalogBase(base), "/v3/feed", token, feed);
+    }
+    public JsonElement nationalCatalogFeedStatus(String base, String token, String feedId) throws IOException {
+        return get(nationalCatalogBase(base), "/v3/feed-status?verbose=true&feed_id=" + url(feedId), token);
+    }
+    public JsonElement nationalCatalogSigningDocument(String base, String token, JsonObject body) throws IOException {
+        return post(nationalCatalogBase(base), "/v3/feed-product-document", token, body);
+    }
+    public JsonElement signNationalCatalogProduct(String base, String token, JsonArray body) throws IOException {
+        if (body == null || body.isEmpty() || body.size() > 10) {
+            throw new IllegalArgumentException("National Catalog signing accepts 1 to 10 cards per batch.");
+        }
+        return post(nationalCatalogBase(base), "/v3/feed-product-sign-pkcs", token, body);
+    }
     public JsonObject createOrder(String base,String token,String omsId,byte[] body,String signature)throws IOException{
         Request request=new Request.Builder().url(join(base,"/api/v3/order?omsId="+url(omsId))).headers(suzHeaders(token).newBuilder().add("X-Signature",signature).build())
                 .post(RequestBody.create(body,JSON)).build();
@@ -98,6 +128,7 @@ public class ZnackApiClient {
     }
 
     private JsonElement get(String base,String path,String token)throws IOException{return execute(new Request.Builder().url(join(base,path)).headers(headers(token)).get().build());}
+    private JsonElement getWithoutRetry(String base,String path,String token)throws IOException{return execute(new Request.Builder().url(join(base,path)).headers(headers(token)).get().build(),false,false);}
     private JsonElement suzGet(String base,String path,String token)throws IOException{return execute(new Request.Builder().url(join(base,path)).headers(suzHeaders(token)).get().build());}
     private JsonElement post(String base,String path,String token,Object body)throws IOException{return execute(new Request.Builder().url(join(base,path)).headers(headers(token)).post(RequestBody.create(gson.toJson(body),JSON)).build());}
     private Headers headers(String token){Headers.Builder h=new Headers.Builder().add("Accept","application/json");if(token!=null&&!token.isBlank())h.add("Authorization","Bearer "+token);return h.build();}
@@ -110,20 +141,21 @@ public class ZnackApiClient {
     private static final long UOT_CREDENTIAL_RETRY_BASE_DELAY_MS=900;
 
     private JsonElement execute(Request request)throws IOException{return execute(request,false);}
-    private JsonElement execute(Request request,boolean allowNotFoundBody)throws IOException{
+    private JsonElement execute(Request request,boolean allowNotFoundBody)throws IOException{return execute(request,allowNotFoundBody,true);}
+    private JsonElement execute(Request request,boolean allowNotFoundBody,boolean allowRetry)throws IOException{
         long rateLimitDelayUsed=0;
         for(int attempt=1;;attempt++){
             try(Response response=client.newCall(request).execute()){
                 String body=response.body()==null?"":response.body().string();
                 if(!response.isSuccessful()&&!(allowNotFoundBody&&response.code()==404&&!body.isBlank())){
-                    if(attempt<UOT_CREDENTIAL_RETRY_ATTEMPTS
+                    if(allowRetry&&attempt<UOT_CREDENTIAL_RETRY_ATTEMPTS
                             &&UOT_CREDENTIAL_ERROR_CODE.equals(ZnackErrorMessages.errorCode(body))){
                         LOGGER.warn("Znack УОТ credential check failed (errorCode 1090); retrying {}/{}. method={}, url={}",
                                 attempt,UOT_CREDENTIAL_RETRY_ATTEMPTS-1,request.method(),request.url());
                         sleepBeforeRetry(attempt);
                         continue;
                     }
-                    if(response.code()==429&&isIdempotent(request)&&attempt<RATE_LIMIT_MAX_ATTEMPTS){
+                    if(allowRetry&&response.code()==429&&isIdempotent(request)&&attempt<RATE_LIMIT_MAX_ATTEMPTS){
                         long delay=rateLimitDelay(response.header("Retry-After"),attempt);
                         if(delay<=RATE_LIMIT_MAX_TOTAL_DELAY_MS-rateLimitDelayUsed){
                             LOGGER.warn("Znack API rate limit reached; retrying safe request after {} ms. method={}, attempt={}/{}",

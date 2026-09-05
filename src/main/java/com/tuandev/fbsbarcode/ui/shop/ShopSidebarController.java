@@ -34,6 +34,8 @@ public class ShopSidebarController {
     @FXML
     private Button znackAutomationButton;
     @FXML
+    private Button znackRegistrationButton;
+    @FXML
     private MenuButton settingsMenuButton;
     @FXML
     private Menu languageMenu;
@@ -66,6 +68,7 @@ public class ShopSidebarController {
     private Runnable onFboOrders;
     private Runnable onKizMapping;
     private Runnable onZnackAutomation;
+    private Runnable onZnackRegistration;
     private Runnable onPrintHistory;
     private Runnable onAddShop;
     private Runnable onOpenSettings;
@@ -118,6 +121,10 @@ public class ShopSidebarController {
 
     public void setOnZnackAutomation(Runnable onZnackAutomation) {
         this.onZnackAutomation = onZnackAutomation;
+    }
+
+    public void setOnZnackRegistration(Runnable onZnackRegistration) {
+        this.onZnackRegistration = onZnackRegistration;
     }
 
     public void setOnAddShop(Runnable onAddShop) {
@@ -183,6 +190,7 @@ public class ShopSidebarController {
         setAvailable(fboPackingButton, true);
         setAvailable(fboOrdersButton, true);
         setAvailable(kizMappingButton, true);
+        setAvailable(znackRegistrationButton, this.marketplace == Marketplace.WILDBERRIES);
         applyMarketplaceTexts();
     }
 
@@ -203,6 +211,7 @@ public class ShopSidebarController {
         fboOrdersButton.setText(" " + i18n.tr("sidebar.fbo_orders"));
         kizMappingButton.setText(" " + i18n.tr("sidebar.kiz_mapping"));
         znackAutomationButton.setText(" " + i18n.tr("sidebar.znack_automation"));
+        znackRegistrationButton.setText(" " + i18n.tr("sidebar.znack_registration"));
         settingsMenuButton.setText(" " + i18n.tr("settings.menu"));
         languageMenu.setText(i18n.tr("sidebar.language"));
         themeMenu.setText(i18n.tr("settings.theme"));
@@ -270,6 +279,13 @@ public class ShopSidebarController {
     private void onZnackAutomation() {
         if (onZnackAutomation != null) {
             onZnackAutomation.run();
+        }
+    }
+
+    @FXML
+    private void onZnackRegistration() {
+        if (onZnackRegistration != null) {
+            onZnackRegistration.run();
         }
     }
 

@@ -145,8 +145,7 @@ public class ZnackPurchaseCoordinator {
             pipelineId = repository.enqueuePipeline(gtin, quantity, requestKey);
         }
         ZnackSigningSession.authorizePipeline(repository.shop().shopId(), pipelineId);
-        Thread.ofVirtual().name("wcode-znack-purchase-" + repository.shop().shopId() + "-" + pipelineId)
-                .start(() -> advanceEnqueued(pipelineId));
+        ZnackPipelineQueueExecutor.submit(repository.shop().shopId(), gtin, () -> advanceEnqueued(pipelineId));
         return pipelineId;
     }
 
@@ -263,6 +262,22 @@ public class ZnackPurchaseCoordinator {
         }
     }
 
+    public void resumeAsync(Settings settings) {
+        for (ZnackPurchasePipelineState pipeline : repository.findActivePipelines()) {
+            ZnackPipelineQueueExecutor.submit(repository.shop().shopId(), pipeline.gtin(), () -> {
+                try {
+                    advance(settings, pipeline.id());
+                } catch (Exception e) {
+                    if (!(e instanceof ZnackSigningSession.SigningDeferredException)) {
+                        repository.log("PURCHASE_PIPELINE_RESUME", pipeline.gtin(), "ERROR", e.getMessage(), null);
+                    }
+                } finally {
+                    schedule(pipeline.id());
+                }
+            });
+        }
+    }
+
     public void resumeEligibleIntroductions(Settings settings) {
         if (settings == null || !settings.autoIntroduction()) return;
         try {
@@ -303,6 +318,51 @@ public class ZnackPurchaseCoordinator {
             } finally {
                 schedule(pipeline.id());
             }
+        }
+    }
+
+    public void resumeEligibleIntroductionsAsync(Settings settings) {
+        if (settings == null || !settings.autoIntroduction()) return;
+        try {
+            ZnackSafety.requireSigned(settings, true);
+            CryptoProSignatureProvider.requireAvailable(settings.cryptcpPath(),
+                    Duration.ofSeconds(settings.resolvedCryptoProTimeoutSeconds()));
+        } catch (Exception unavailable) {
+            return;
+        }
+        List<ZnackPurchasePipelineState> candidates = new java.util.ArrayList<>(repository.findSkippedIntroductionPipelines());
+        candidates.addAll(repository.findLegacyRejectedIntroductionPipelines());
+        candidates.addAll(repository.findLegacyPrimitiveDocumentResponsePipelines());
+        candidates.addAll(repository.findWaitingIntroductionDocumentPipelines());
+        for (ZnackPurchasePipelineState pipeline : candidates) {
+            Product product = repository.findProduct(pipeline.gtin()).orElse(null);
+            if (product == null || pipeline.orderId() == null || repository.findCodes(pipeline.orderId()).isEmpty()
+                    || product.tnVed() == null || product.tnVed().isBlank()
+                    || (ZnackErrorMessages.isMissingDocumentsWait(
+                                pipeline.stage().name(), pipeline.errorMessage())
+                        && !hasCompletePermit(product))) {
+                continue;
+            }
+            ZnackPipelineQueueExecutor.submit(repository.shop().shopId(), pipeline.gtin(), () -> {
+                synchronized (CREATE_LOCK) {
+                    repository.updatePipeline(pipeline.id(), pipeline.orderId(), PurchaseStage.WAITING_INTRODUCTION_READINESS, null);
+                }
+                try {
+                    advance(settings, pipeline.id());
+                } catch (Exception e) {
+                    PurchaseStage current = repository.findPipeline(pipeline.id())
+                            .map(ZnackPurchasePipelineState::stage).orElse(pipeline.stage());
+                    if (current != PurchaseStage.WAITING_INTRODUCTION_READINESS
+                            && repository.findLatestDocument(pipeline.orderId()).isEmpty()) {
+                        repository.updatePipeline(pipeline.id(), pipeline.orderId(), pipeline.stage(), e.getMessage());
+                    }
+                    if (!(e instanceof ZnackSigningSession.SigningDeferredException)) {
+                        repository.log("INTRODUCTION_RESUME", pipeline.gtin(), "ERROR", e.getMessage(), null);
+                    }
+                } finally {
+                    schedule(pipeline.id());
+                }
+            });
         }
     }
 

@@ -136,6 +136,25 @@ test("Windows CI builds a versioned downloadable JavaFX EXE without publishing a
   assert.doesNotMatch(workflow, /gh release|RELEASE_TOKEN/);
 });
 
+test("Znack registration test EXE is isolated and cannot update WB", async () => {
+  const [workflow, buildScript, appPaths, registrationWorkflow, updateService] = await Promise.all([
+    readFile(new URL(".github/workflows/build-znack-registration-test.yml", root), "utf8"),
+    readFile(new URL("build.bat", root), "utf8"),
+    readFile(new URL("src/main/java/com/tuandev/fbsbarcode/shared/AppPaths.java", root), "utf8"),
+    readFile(new URL("src/main/java/com/tuandev/fbsbarcode/integration/znack/registration/ZnackCardRegistrationWorkflow.java", root), "utf8"),
+    readFile(new URL("src/main/java/com/tuandev/fbsbarcode/integration/update/UpdateService.java", root), "utf8"),
+  ]);
+
+  assert.match(workflow, /WCODE_BUILD_PROFILE:\s*znack-registration-test/);
+  assert.match(workflow, /build\.bat exe/);
+  assert.match(buildScript, /--install-dir WCodeZnackRegistrationTestApp/);
+  assert.match(buildScript, /-Dwcode\.data\.profile=znack-registration-test/);
+  assert.match(appPaths, /WCodeZnackRegistrationTestData/);
+  assert.match(appPaths, /if \(isZnackRegistrationTestProfile\(\)\) \{\s*return List\.of\(\);/);
+  assert.match(updateService, /if \(AppPaths\.isZnackRegistrationTestProfile\(\)\) \{\s*return null;/);
+  assert.doesNotMatch(registrationWorkflow, /WbApiClient|cards\/update|appendGtin/);
+});
+
 test("CI builds downloadable macOS test packages for Intel and Apple Silicon", async () => {
   const workflow = await readFile(new URL(".github/workflows/build-java.yml", root), "utf8");
 

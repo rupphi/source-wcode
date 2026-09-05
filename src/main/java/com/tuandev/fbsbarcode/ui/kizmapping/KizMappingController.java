@@ -11,12 +11,14 @@ import com.tuandev.fbsbarcode.integration.znack.signature.ZnackSignatureProvider
 import com.tuandev.fbsbarcode.models.Shop;
 import com.tuandev.fbsbarcode.shared.AlertService;
 import com.tuandev.fbsbarcode.shared.AppTaskExecutor;
+import com.tuandev.fbsbarcode.shared.FriendlyErrorService;
 import com.tuandev.fbsbarcode.shared.I18nService;
 import com.tuandev.fbsbarcode.ui.controls.CategoryFilterMenu;
 import com.tuandev.fbsbarcode.ui.license.LicenseDialogService;
 import com.tuandev.fbsbarcode.ui.znack.ZnackInsufficientFundsDialogService;
 import com.tuandev.fbsbarcode.ui.znack.ZnackMissingDocumentsDialogService;
 import com.tuandev.fbsbarcode.ui.znack.ZnackOperatorTermsDialogService;
+import com.tuandev.fbsbarcode.ui.znack.ZnackSuzAuthDialogService;
 import com.tuandev.fbsbarcode.ui.znack.ZnackKizInventoryActionService;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
@@ -188,6 +190,7 @@ public class KizMappingController {
             setLoadingState();
             ZnackInsufficientFundsDialogService.promptIfNeeded(current, summaries, this::refresh);
             ZnackOperatorTermsDialogService.promptIfNeeded(current, summaries);
+            ZnackSuzAuthDialogService.promptIfNeeded(current, summaries);
             ZnackMissingDocumentsDialogService.promptIfNeeded(current, summaries);
         });
         task.setOnFailed(event -> {
@@ -405,28 +408,7 @@ public class KizMappingController {
     }
 
     private String friendlyError(Throwable error) {
-        if (error instanceof CryptoProException crypto) {
-            String message = tr("znack.signature.error." + switch (crypto.code()) {
-                case CRYPTOPRO_MISSING -> "cryptopro_missing";
-                case CRYPTCP_MISSING -> "cryptcp_missing";
-                case CRYPTCP_LICENSE_INVALID -> "cryptcp_license";
-                case CERTMGR_MISSING -> "certmgr_missing";
-                case CADESCOM_MISSING -> "cadescom_missing";
-                case TOKEN_OR_CERTIFICATE_ABSENT -> "certificate_absent";
-                case PRIVATE_KEY_UNAVAILABLE -> "private_key";
-                case CERTIFICATE_EXPIRED -> "expired";
-                case CANCELLED -> "cancelled";
-                case TIMEOUT -> "timeout";
-                case INVALID_SIGNATURE_OUTPUT -> "invalid_output";
-                default -> "failed";
-            });
-            String details = ZnackSanitizer.message(crypto.getMessage());
-            return crypto.code() == CryptoProErrorCode.SIGNING_FAILED && !details.isBlank()
-                    ? message + "\n\n" + tr("znack.signature.error.details") + ": " + details : message;
-        }
-        if (ZnackSafety.UNVERIFIED_SIGNATURE.equals(error.getMessage())) return tr("znack.signature.not_verified");
-        if (ZnackSafety.MISSING_SHOP_CONFIGURATION.equals(error.getMessage())) return tr("znack.error.shop_configuration");
-        return error.getMessage();
+        return FriendlyErrorService.format(error);
     }
 
     private String localizeStatus(String status) {
@@ -508,7 +490,7 @@ public class KizMappingController {
                 Duration.ofSeconds(settings.resolvedCryptoProTimeoutSeconds()));
         ZnackApiClient api = new ZnackApiClient();
         new ZnackProductService(api, new ZnackAuthService(api, signer), repository).sync(settings);
-        ZnackPurchaseCoordinator.create(repository).resumeEligibleIntroductions(settings);
+        ZnackPurchaseCoordinator.create(repository).resumeEligibleIntroductionsAsync(settings);
     }
 
     private boolean hasVerifiedSignature(Settings settings) {

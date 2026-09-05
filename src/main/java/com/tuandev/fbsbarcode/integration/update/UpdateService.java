@@ -2,6 +2,7 @@ package com.tuandev.fbsbarcode.integration.update;
 
 import com.tuandev.fbsbarcode.BuildConfig;
 import com.tuandev.fbsbarcode.shared.ConfigService;
+import com.tuandev.fbsbarcode.shared.AppPaths;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -11,6 +12,10 @@ public class UpdateService {
     private final UpdateApiClient apiClient = new UpdateApiClient();
 
     public UpdateInfo checkForUpdate() {
+        // A test installer has its own identity and data. Never offer a production update over it.
+        if (AppPaths.isZnackRegistrationTestProfile()) {
+            return null;
+        }
         try {
             UpdateInfo info = apiClient.fetchLatestVersion();
             if (info == null || info.getVersion() == null) return null;

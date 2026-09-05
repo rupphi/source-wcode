@@ -102,6 +102,10 @@
             <styleClass><String fx:value="button" /><String fx:value="btn-primary" /></styleClass>
             <graphic><FontIcon iconLiteral="fth-tag" iconSize="16"/></graphic>
         </Button>
+        <Button fx:id="znackRegistrationButton" alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onZnackRegistration" prefHeight="30.0" prefWidth="190.0" text=" Đăng ký Znack">
+            <styleClass><String fx:value="button" /><String fx:value="btn-primary" /></styleClass>
+            <graphic><FontIcon iconLiteral="fth-file-plus" iconSize="16"/></graphic>
+        </Button>
         <Button fx:id="btnPrintHistory" alignment="CENTER_LEFT" mnemonicParsing="false" onAction="#onPrintHistory" prefHeight="30.0" prefWidth="190.0" text=" История печати">
             <styleClass>
                 <String fx:value="button" />
