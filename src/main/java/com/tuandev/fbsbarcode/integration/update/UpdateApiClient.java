@@ -6,6 +6,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.tuandev.fbsbarcode.BuildConfig;
+import com.tuandev.fbsbarcode.shared.AppPaths;
 import com.tuandev.fbsbarcode.shared.ConfigService;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -23,6 +24,8 @@ public class UpdateApiClient {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(UpdateApiClient.class);
     private static final Gson GSON = new Gson();
+    static final String ZNACK_TEST_UPDATE_SOURCE = "https://api.github.com/repos/rupphi/test-wcode";
+    static final String ZNACK_TEST_TAG_PREFIX = "znack-registration-test-v";
 
     private static final OkHttpClient CLIENT = new OkHttpClient.Builder()
             .connectTimeout(5, TimeUnit.SECONDS)
@@ -43,8 +46,11 @@ public class UpdateApiClient {
             return null;
         }
         boolean githubSource = isGitHubRepoApi(sourceUrl);
+        boolean testChannel = AppPaths.isZnackRegistrationTestProfile();
         Request request = new Request.Builder()
-                .url(githubSource ? sourceUrl + "/releases/latest" : sourceUrl + "/api/versions/latest")
+                .url(githubSource
+                        ? sourceUrl + (testChannel ? "/releases?per_page=30" : "/releases/latest")
+                        : sourceUrl + "/api/versions/latest")
                 .header("User-Agent", "WCode/" + BuildConfig.getAppVersion())
                 .header("Accept", githubSource ? "application/vnd.github+json" : "application/json")
                 .header("X-GitHub-Api-Version", "2022-11-28")
@@ -64,7 +70,12 @@ public class UpdateApiClient {
             }
             String body = response.body() != null ? response.body().string() : "";
             if (body.isEmpty()) return null;
-            return githubSource ? parseGitHubRelease(body) : GSON.fromJson(body, UpdateInfo.class);
+            if (!githubSource) {
+                return GSON.fromJson(body, UpdateInfo.class);
+            }
+            return testChannel
+                    ? parseGitHubReleaseList(body, ZNACK_TEST_TAG_PREFIX)
+                    : parseGitHubRelease(body);
         } catch (IOException e) {
             if (attempt < 1) {
                 LOGGER.debug("Update check attempt {} failed, retrying...", attempt + 1);
@@ -80,14 +91,49 @@ public class UpdateApiClient {
     }
 
     static UpdateInfo parseGitHubRelease(String body) {
-        JsonObject root = JsonParser.parseString(body).getAsJsonObject();
+        return parseGitHubRelease(JsonParser.parseString(body).getAsJsonObject(), "");
+    }
+
+    static UpdateInfo parseGitHubReleaseList(String body, String tagPrefix) {
+        JsonElement parsed = JsonParser.parseString(body);
+        if (!parsed.isJsonArray()) {
+            return null;
+        }
+        UpdateInfo latest = null;
+        for (JsonElement element : parsed.getAsJsonArray()) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            JsonObject release = element.getAsJsonObject();
+            if (release.has("draft") && release.get("draft").getAsBoolean()) {
+                continue;
+            }
+            UpdateInfo candidate = parseGitHubRelease(release, tagPrefix);
+            if (candidate != null
+                    && candidate.getDownloadUrls() != null
+                    && candidate.getDownloadUrls().containsKey("exe")
+                    && (latest == null
+                    || VersionComparator.compare(candidate.getVersion(), latest.getVersion()) > 0)) {
+                latest = candidate;
+            }
+        }
+        return latest;
+    }
+
+    private static UpdateInfo parseGitHubRelease(JsonObject root, String tagPrefix) {
         String tagName = getString(root, "tag_name");
         if (tagName == null || tagName.isBlank()) {
             return null;
         }
+        String prefix = tagPrefix == null ? "" : tagPrefix;
+        if (!prefix.isBlank() && !tagName.startsWith(prefix)) {
+            return null;
+        }
 
         UpdateInfo info = new UpdateInfo();
-        info.setVersion(stripLeadingV(tagName));
+        info.setVersion(prefix.isBlank()
+                ? stripLeadingV(tagName)
+                : stripLeadingV(tagName.substring(prefix.length())));
         info.setReleaseDate(getString(root, "published_at"));
         info.setChangelog(getString(root, "body"));
         info.setMandatory(false);
@@ -116,6 +162,10 @@ public class UpdateApiClient {
     }
 
     private String getEffectiveUpdateUrl() {
+        // The isolated test package must never read a configured production update URL.
+        if (AppPaths.isZnackRegistrationTestProfile()) {
+            return ZNACK_TEST_UPDATE_SOURCE;
+        }
         try {
             String dbUrl = ConfigService.getConfigValue("update_api_url");
             if (dbUrl != null && !dbUrl.isBlank()) return dbUrl;

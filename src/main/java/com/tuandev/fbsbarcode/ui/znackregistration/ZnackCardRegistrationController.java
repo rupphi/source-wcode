@@ -5,6 +5,7 @@ import com.tuandev.fbsbarcode.integration.znack.ZnackApiClient;
 import com.tuandev.fbsbarcode.integration.znack.ZnackAuthService;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels;
 import com.tuandev.fbsbarcode.integration.znack.ZnackRepository;
+import com.tuandev.fbsbarcode.integration.znack.ZnackErrorDetails;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Attribute;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Category;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Draft;
@@ -18,6 +19,7 @@ import com.tuandev.fbsbarcode.integration.znack.signature.CryptoProSignatureProv
 import com.tuandev.fbsbarcode.integration.znack.signature.ZnackSignatureProvider;
 import com.tuandev.fbsbarcode.models.Shop;
 import com.tuandev.fbsbarcode.shared.AppTaskExecutor;
+import com.tuandev.fbsbarcode.shared.AlertService;
 import com.tuandev.fbsbarcode.shared.I18nService;
 import javafx.animation.PauseTransition;
 import javafx.application.Platform;
@@ -338,7 +340,7 @@ public final class ZnackCardRegistrationController {
     private void startWorkflow(Sku sku, Draft draft) {
         boolean started = workflow.start(shop, sku, draft, (status, detail) -> Platform.runLater(() -> {
             reload();
-            if (status == Status.ERROR) showWarning(detail);
+            if (status == Status.ERROR) showWorkflowError(detail);
             else if (status == Status.PUBLISHED && !detail.isBlank()) {
                 showInfo(tr("znack.registration.completed") + " " + detail);
             }
@@ -352,7 +354,7 @@ public final class ZnackCardRegistrationController {
         for (Sku sku : values) {
             if (!isBusy(sku.status()) || sku.gtin() == null || sku.gtin().isBlank()) continue;
             workflow.resume(shop, sku, (status, detail) -> Platform.runLater(() -> {
-                if (status == Status.ERROR) showWarning(detail);
+                if (status == Status.ERROR) showWorkflowError(detail);
                 if (status == Status.PUBLISHED && !detail.isBlank()) {
                     showInfo(tr("znack.registration.completed") + " " + detail);
                 }
@@ -507,7 +509,15 @@ public final class ZnackCardRegistrationController {
     private static String value(String value) { return value == null ? "" : value; }
     private static void add(List<String> values, String value) { if (value != null && !value.isBlank() && !"арт.".equals(value)) values.add(value.trim()); }
     private static String tr(String key) { return I18nService.getInstance().tr(key); }
-    private static void showError(Throwable error) { showWarning(error == null ? "Unknown error" : first(error.getMessage(), error.toString())); }
+    private static void showError(Throwable error) {
+        AlertService.showDetailedError(ZnackErrorDetails.summary(error), ZnackErrorDetails.format(error));
+    }
+    private static void showWorkflowError(String detail) {
+        String full = ZnackErrorDetails.formatStored(detail);
+        String summary = detail == null || detail.isBlank() ? "Unknown error"
+                : detail.lines().filter(line -> !line.isBlank()).findFirst().orElse(detail).replaceFirst("^Summary:\\s*", "");
+        AlertService.showDetailedError(summary, full);
+    }
     private static void showWarning(String message) { Alert alert = new Alert(Alert.AlertType.WARNING, message, ButtonType.OK); alert.setHeaderText(null); alert.showAndWait(); }
     private static void showInfo(String message) { Alert alert = new Alert(Alert.AlertType.INFORMATION, message, ButtonType.OK); alert.setHeaderText(null); alert.showAndWait(); }
 

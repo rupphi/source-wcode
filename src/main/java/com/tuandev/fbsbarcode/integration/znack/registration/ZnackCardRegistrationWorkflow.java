@@ -6,6 +6,7 @@ import com.tuandev.fbsbarcode.integration.znack.ZnackApiClient;
 import com.tuandev.fbsbarcode.integration.znack.ZnackAuthService;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels;
 import com.tuandev.fbsbarcode.integration.znack.ZnackRepository;
+import com.tuandev.fbsbarcode.integration.znack.ZnackErrorDetails;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Draft;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Sku;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Status;
@@ -158,9 +159,9 @@ public final class ZnackCardRegistrationWorkflow {
     }
 
     private void fail(Shop shop, Sku sku, Exception error, BiConsumer<Status, String> listener) {
-        String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+        String message = ZnackErrorDetails.summary(error);
         registrations.updateProgress(shop.getId(), sku.chrtId(), Status.ERROR, null, null, message, null);
-        notify(listener, Status.ERROR, message);
+        notify(listener, Status.ERROR, ZnackErrorDetails.format(error));
     }
 
     private static void notify(BiConsumer<Status, String> listener, Status status, String detail) {

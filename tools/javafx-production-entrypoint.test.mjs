@@ -136,13 +136,14 @@ test("Windows CI builds a versioned downloadable JavaFX EXE without publishing a
   assert.doesNotMatch(workflow, /gh release|RELEASE_TOKEN/);
 });
 
-test("Znack registration test EXE is isolated and cannot update WB", async () => {
-  const [workflow, buildScript, appPaths, registrationWorkflow, updateService] = await Promise.all([
+test("Znack registration test EXE is isolated, has its own update channel, and cannot update WB", async () => {
+  const [workflow, buildScript, appPaths, registrationWorkflow, updateService, updateClient] = await Promise.all([
     readFile(new URL(".github/workflows/build-znack-registration-test.yml", root), "utf8"),
     readFile(new URL("build.bat", root), "utf8"),
     readFile(new URL("src/main/java/com/tuandev/fbsbarcode/shared/AppPaths.java", root), "utf8"),
     readFile(new URL("src/main/java/com/tuandev/fbsbarcode/integration/znack/registration/ZnackCardRegistrationWorkflow.java", root), "utf8"),
     readFile(new URL("src/main/java/com/tuandev/fbsbarcode/integration/update/UpdateService.java", root), "utf8"),
+    readFile(new URL("src/main/java/com/tuandev/fbsbarcode/integration/update/UpdateApiClient.java", root), "utf8"),
   ]);
 
   assert.match(workflow, /WCODE_BUILD_PROFILE:\s*znack-registration-test/);
@@ -151,7 +152,10 @@ test("Znack registration test EXE is isolated and cannot update WB", async () =>
   assert.match(buildScript, /-Dwcode\.data\.profile=znack-registration-test/);
   assert.match(appPaths, /WCodeZnackRegistrationTestData/);
   assert.match(appPaths, /if \(isZnackRegistrationTestProfile\(\)\) \{\s*return List\.of\(\);/);
-  assert.match(updateService, /if \(AppPaths\.isZnackRegistrationTestProfile\(\)\) \{\s*return null;/);
+  assert.doesNotMatch(updateService, /isZnackRegistrationTestProfile/);
+  assert.match(updateClient, /https:\/\/api\.github\.com\/repos\/rupphi\/test-wcode/);
+  assert.match(updateClient, /znack-registration-test-v/);
+  assert.match(workflow, /gh release create/);
   assert.doesNotMatch(registrationWorkflow, /WbApiClient|cards\/update|appendGtin/);
 });
 

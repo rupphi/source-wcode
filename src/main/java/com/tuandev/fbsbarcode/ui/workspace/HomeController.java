@@ -762,7 +762,9 @@ public class HomeController implements Initializable {
         task.setOnFailed(e -> {
             progressDialog.close();
             LOGGER.error("Không thể tải bản cập nhật {}", info.getVersion(), task.getException());
-            AlertService.showError(i18nService.tr("update.error.download_generic"));
+            AlertService.showDetailedError(
+                    i18nService.tr("update.error.download_generic"),
+                    com.tuandev.fbsbarcode.integration.znack.ZnackErrorDetails.format(task.getException()));
         });
         task.setOnSucceeded(e -> {
             progressDialog.close();
@@ -771,7 +773,9 @@ public class HomeController implements Initializable {
                 Platform.exit();
             } catch (IOException ex) {
                 LOGGER.error("Không thể khởi chạy installer cập nhật {}", info.getVersion(), ex);
-                AlertService.showError(i18nService.tr("update.error.launch_failed"));
+                AlertService.showDetailedError(
+                        i18nService.tr("update.error.launch_failed"),
+                        com.tuandev.fbsbarcode.integration.znack.ZnackErrorDetails.format(ex));
             }
         });
         progressDialog.show();

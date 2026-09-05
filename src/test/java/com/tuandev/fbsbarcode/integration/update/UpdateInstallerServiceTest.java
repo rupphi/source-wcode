@@ -19,4 +19,21 @@ class UpdateInstallerServiceTest {
         assertTrue(command.contains(currentInstall));
         assertTrue(command.indexOf(currentInstall) < command.indexOf(legacyInstall));
     }
+
+    @Test
+    void testProfileRelaunchesTheIsolatedExecutable() {
+        String originalProfile = System.getProperty("wcode.data.profile");
+        try {
+            System.setProperty("wcode.data.profile", "znack-registration-test");
+
+            String command = new UpdateInstallerService()
+                    .buildWindowsInstallCommand(Path.of("C:\\Temp\\WCode-test-update.exe"));
+
+            assertTrue(command.contains("Join-Path $env:LOCALAPPDATA 'WCodeZnackRegistrationTestApp\\WCodeZnackTest.exe'"));
+            assertTrue(command.contains("Programs\\WCodeZnackTest\\WCodeZnackTest.exe"));
+        } finally {
+            if (originalProfile == null) System.clearProperty("wcode.data.profile");
+            else System.setProperty("wcode.data.profile", originalProfile);
+        }
+    }
 }

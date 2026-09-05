@@ -16,9 +16,6 @@ import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 public class UpdateInstallerService {
-    private static final String APP_NAME = "WCode";
-    private static final String APP_EXECUTABLE = APP_NAME + ".exe";
-
     private static final OkHttpClient CLIENT = new OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
@@ -90,6 +87,10 @@ public class UpdateInstallerService {
 
     String buildWindowsInstallCommand(Path installerFile) {
         String escapedInstaller = escapePowerShellSingleQuoted(installerFile.toAbsolutePath().toString());
+        boolean testProfile = AppPaths.isZnackRegistrationTestProfile();
+        String appName = testProfile ? "WCodeZnackTest" : "WCode";
+        String appExecutable = appName + ".exe";
+        String installDirectory = testProfile ? "WCodeZnackRegistrationTestApp" : "WCodeApp";
         return """
                 $ErrorActionPreference = 'SilentlyContinue';
                 Start-Sleep -Seconds 2;
@@ -103,7 +104,7 @@ public class UpdateInstallerService {
                 if ($null -eq $process -or $process.ExitCode -eq 0) {
                     Start-Sleep -Seconds 1;
                     $candidates = @(
-                        (Join-Path $env:LOCALAPPDATA 'WCodeApp\\%s'),
+                        (Join-Path $env:LOCALAPPDATA '%s\\%s'),
                         (Join-Path $env:LOCALAPPDATA 'Programs\\%s\\%s'),
                         (Join-Path $env:ProgramFiles '%s\\%s'),
                         (Join-Path ${env:ProgramFiles(x86)} '%s\\%s')
@@ -117,10 +118,10 @@ public class UpdateInstallerService {
                 }
                 """.formatted(
                 escapedInstaller,
-                APP_EXECUTABLE,
-                APP_NAME, APP_EXECUTABLE,
-                APP_NAME, APP_EXECUTABLE,
-                APP_NAME, APP_EXECUTABLE
+                installDirectory, appExecutable,
+                appName, appExecutable,
+                appName, appExecutable,
+                appName, appExecutable
         );
     }
 

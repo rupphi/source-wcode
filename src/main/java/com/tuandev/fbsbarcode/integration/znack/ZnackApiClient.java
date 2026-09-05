@@ -179,7 +179,8 @@ public class ZnackApiClient {
                     LOGGER.error("Znack API request failed. method={}, url={}, httpStatus={}, contentType={}, responseBody={}",
                             request.method(),request.url(),response.code(),response.header("Content-Type",""),
                             ZnackSanitizer.diagnostic(body));
-                    throw new ZnackApiException("Znack API request failed",response.code(),body);
+                    throw new ZnackApiException("Znack API request failed",response.code(),body,
+                            request.method(),request.url().toString());
                 }
                 if(body.isBlank())return JsonNull.INSTANCE;
                 try{
@@ -237,8 +238,27 @@ public class ZnackApiClient {
 
     public static class ZnackApiException extends IOException {
         private final int statusCode;
-        public ZnackApiException(String message,int statusCode,String body){super(message+" (HTTP "+statusCode+"): "+ZnackSanitizer.message(body));this.statusCode=statusCode;}
+        private final String responseBody;
+        private final String method;
+        private final String url;
+        public ZnackApiException(String message,int statusCode,String body){this(message,statusCode,body,"","");}
+        public ZnackApiException(String message,int statusCode,String body,String method,String url){
+            super(message+" (HTTP "+statusCode+"): "+ZnackSanitizer.message(body));
+            this.statusCode=statusCode;
+            this.responseBody=ZnackSanitizer.diagnostic(body);
+            this.method=method==null?"":method;
+            this.url=ZnackSanitizer.diagnostic(url);
+        }
         public int statusCode(){return statusCode;}
+        public String responseBody(){return responseBody;}
+        public String method(){return method;}
+        public String url(){return url;}
+        public String diagnosticDetails(){
+            return "HTTP status: "+statusCode
+                    +(method.isBlank()?"":"\nMethod: "+method)
+                    +(url.isBlank()?"":"\nURL: "+url)
+                    +(responseBody.isBlank()?"":"\nResponse body:\n"+responseBody);
+        }
     }
 
     @FunctionalInterface interface Sleeper { void sleep(long millis)throws InterruptedException; }
