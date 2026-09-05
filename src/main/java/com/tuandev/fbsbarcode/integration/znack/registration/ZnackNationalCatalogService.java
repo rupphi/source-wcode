@@ -43,7 +43,7 @@ public final class ZnackNationalCatalogService {
         }
         String token = auth.trueApiToken(settings);
         Gs1Status gs1 = parseGs1(api.generatedGtins(settings.resolvedTrueApiBaseUrl(), token));
-        if (!gs1.canGenerate()) {
+        if (gs1.quotaKnown() && !gs1.canGenerate()) {
             throw new IllegalStateException("GS1/GTIN quota is unavailable or exhausted (" + gs1.usage()
                     + "/" + gs1.limit() + "). Check the active GS1 RUS membership in National Catalog.");
         }
@@ -189,7 +189,8 @@ public final class ZnackNationalCatalogService {
         JsonObject monthly = object(result.get("monthly-limit"));
         long limit = number(monthly, "limit");
         long usage = number(monthly, "usage");
-        return new Gs1Status(limit, usage, array(result.get("drafts")).size());
+        boolean quotaKnown = monthly.has("limit") && monthly.has("usage");
+        return new Gs1Status(limit, usage, array(result.get("drafts")).size(), quotaKnown);
     }
 
     static List<Category> parseCategories(JsonElement response) {

@@ -736,6 +736,27 @@ class ZnackModuleTest {
         } finally { server.stop(0); }
     }
 
+    @Test void missingGeneratedGtinDraftsAreAnEmptyLookupInsteadOfARegistrationError() throws Exception {
+        AtomicReference<String> path=new AtomicReference<>(),authorization=new AtomicReference<>();
+        HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/v3/generate-gtins",exchange->{
+            path.set(exchange.getRequestURI().toString());
+            authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            exchange.sendResponseHeaders(404,-1);
+            exchange.close();
+        });
+        server.start();
+        try {
+            String base="http://127.0.0.1:"+server.getAddress().getPort();
+
+            JsonElement response=new ZnackApiClient().generatedGtins(base,"true-api-token");
+
+            assertTrue(response.isJsonNull());
+            assertEquals("/v3/generate-gtins?exist=1",path.get());
+            assertEquals("Bearer true-api-token",authorization.get());
+        } finally { server.stop(0); }
+    }
+
     @Test void introductionConfirmationAcceptsDirectDocumentStatusResponseWithoutRepeatedDocumentId() throws Exception {
         ZnackRepository repository=repository(1,"Shop A");
         long orderId=orderWithCodes(repository);

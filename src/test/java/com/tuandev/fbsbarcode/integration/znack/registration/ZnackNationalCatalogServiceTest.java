@@ -18,6 +18,17 @@ class ZnackNationalCatalogServiceTest {
         assertEquals(83, status.remaining());
         assertEquals(1, status.existingDrafts());
         assertTrue(status.canGenerate());
+        assertTrue(status.quotaKnown());
+    }
+
+    @Test
+    void allowsPreflightToContinueWhenExistingDraftLookupHasNoQuotaBlock() {
+        var status = ZnackNationalCatalogService.parseGs1(JsonParser.parseString("""
+                {"result":{"drafts":[]}}
+                """));
+        assertFalse(status.quotaKnown());
+        assertEquals(0, status.existingDrafts());
+        assertTrue(status.canGenerate());
     }
 
     @Test

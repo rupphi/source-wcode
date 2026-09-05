@@ -49,9 +49,13 @@ public final class ZnackCardRegistrationModels {
         }
     }
 
-    public record Gs1Status(long limit, long usage, int existingDrafts) {
+    public record Gs1Status(long limit, long usage, int existingDrafts, boolean quotaKnown) {
+        public Gs1Status(long limit, long usage, int existingDrafts) {
+            this(limit, usage, existingDrafts, true);
+        }
+
         public long remaining() { return Math.max(0L, limit - usage); }
-        public boolean canGenerate() { return remaining() > 0; }
+        public boolean canGenerate() { return !quotaKnown || remaining() > 0; }
     }
 
     public record Draft(String tnved, long categoryId, String goodName, String brand,

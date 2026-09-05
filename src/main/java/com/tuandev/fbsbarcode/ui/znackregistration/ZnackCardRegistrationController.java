@@ -254,7 +254,9 @@ public final class ZnackCardRegistrationController {
         dialog.setTitle(tr("znack.registration.create"));
         dialog.setHeaderText(category.name() + "\n"
                 + java.text.MessageFormat.format(tr("znack.registration.gs1_remaining"),
-                data.preflight.gs1().remaining()));
+                data.preflight.gs1().quotaKnown()
+                        ? data.preflight.gs1().remaining()
+                        : tr("znack.registration.gs1_check_on_create")));
         ButtonType create = new ButtonType(tr("znack.registration.create"), ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().setAll(create, ButtonType.CANCEL);
 

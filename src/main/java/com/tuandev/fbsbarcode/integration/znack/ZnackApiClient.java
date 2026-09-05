@@ -61,7 +61,11 @@ public class ZnackApiClient {
         return post(nationalCatalogBase(base),"/v4/rd-info-by-gtin",token,body);
     }
     public JsonElement generatedGtins(String base, String token) throws IOException {
-        return get(nationalCatalogBase(base), "/v3/generate-gtins?exist=1", token);
+        // exist=1 is only a read-only lookup for previously allocated draft GTINs. National
+        // Catalog returns 404 when the account has none, so that response must not abort the
+        // registration form. The real quantity request still performs the authoritative GS1
+        // eligibility/quota check immediately before allocating a new GTIN.
+        return getEmptyOnNotFound(nationalCatalogBase(base), "/v3/generate-gtins?exist=1", token);
     }
     public JsonElement generateGtins(String base, String token, int quantity) throws IOException {
         if (quantity < 1 || quantity > 500) throw new IllegalArgumentException("GTIN quantity must be between 1 and 500.");
@@ -128,6 +132,7 @@ public class ZnackApiClient {
     }
 
     private JsonElement get(String base,String path,String token)throws IOException{return execute(new Request.Builder().url(join(base,path)).headers(headers(token)).get().build());}
+    private JsonElement getEmptyOnNotFound(String base,String path,String token)throws IOException{return execute(new Request.Builder().url(join(base,path)).headers(headers(token)).get().build(),false,true,true);}
     private JsonElement getWithoutRetry(String base,String path,String token)throws IOException{return execute(new Request.Builder().url(join(base,path)).headers(headers(token)).get().build(),false,false);}
     private JsonElement suzGet(String base,String path,String token)throws IOException{return execute(new Request.Builder().url(join(base,path)).headers(suzHeaders(token)).get().build());}
     private JsonElement post(String base,String path,String token,Object body)throws IOException{return execute(new Request.Builder().url(join(base,path)).headers(headers(token)).post(RequestBody.create(gson.toJson(body),JSON)).build());}
@@ -142,11 +147,17 @@ public class ZnackApiClient {
 
     private JsonElement execute(Request request)throws IOException{return execute(request,false);}
     private JsonElement execute(Request request,boolean allowNotFoundBody)throws IOException{return execute(request,allowNotFoundBody,true);}
-    private JsonElement execute(Request request,boolean allowNotFoundBody,boolean allowRetry)throws IOException{
+    private JsonElement execute(Request request,boolean allowNotFoundBody,boolean allowRetry)throws IOException{return execute(request,allowNotFoundBody,allowRetry,false);}
+    private JsonElement execute(Request request,boolean allowNotFoundBody,boolean allowRetry,boolean emptyOnNotFound)throws IOException{
         long rateLimitDelayUsed=0;
         for(int attempt=1;;attempt++){
             try(Response response=client.newCall(request).execute()){
                 String body=response.body()==null?"":response.body().string();
+                if(emptyOnNotFound&&response.code()==404){
+                    LOGGER.info("Znack API returned no existing resource; continuing with an empty result. method={}, url={}",
+                            request.method(),request.url());
+                    return JsonNull.INSTANCE;
+                }
                 if(!response.isSuccessful()&&!(allowNotFoundBody&&response.code()==404&&!body.isBlank())){
                     if(allowRetry&&attempt<UOT_CREDENTIAL_RETRY_ATTEMPTS
                             &&UOT_CREDENTIAL_ERROR_CODE.equals(ZnackErrorMessages.errorCode(body))){
