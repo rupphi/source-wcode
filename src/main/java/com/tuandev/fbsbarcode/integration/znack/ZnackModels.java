@@ -130,6 +130,14 @@ public final class ZnackModels {
             return cryptoProTimeoutSeconds <= 0 ? 60 : Math.min(cryptoProTimeoutSeconds, 600);
         }
 
+        public Settings withDefaultGoodsDocument(String type, String number, String date) {
+            return new Settings(trueApiBaseUrl, suzBaseUrl, omsId, omsConnection, participantInn, producerInn,
+                    ownerInn, signerExecutable, signerCertificate, signerArgumentsJson, number, date, pdfFolder,
+                    autoIntroduction, certificateListExecutable, certificateListArgumentsJson,
+                    certificateMetadataJson, signerTestedAt, certmgrPath, cryptcpPath, csptestPath,
+                    cryptoProTimeoutSeconds, documentExpiryDate, type);
+        }
+
         public boolean hasDefaultGoodsDocument() {
             return defaultGoodsDocument().complete();
         }

@@ -19,7 +19,7 @@ public final class ZnackCardRegistrationModels {
         ERROR
     }
 
-    public record Sku(long nmId, long chrtId, String vendorCode, String subjectName, String brand,
+    public record Sku(long nmId, long chrtId, int subjectId, String vendorCode, String subjectName, String brand,
                       String title, String color, String size, List<String> barcodes, String imageUrl,
                       boolean needKiz, String gtin, Long goodId, String feedId, Status status,
                       String errorMessage, boolean wbUpdated) {
@@ -31,6 +31,19 @@ public final class ZnackCardRegistrationModels {
         public String sourceBarcode() {
             return barcodes.stream().filter(value -> value != null && !value.isBlank()).findFirst().orElse("");
         }
+    }
+
+    public record WbCharacteristic(int id, String name, List<String> values) {
+        public WbCharacteristic {
+            name = name == null ? "" : name;
+            values = values == null ? List.of() : List.copyOf(values);
+        }
+
+        public String joinedValue() { return String.join(", ", values); }
+    }
+
+    public record Subject(int id, String name) {
+        @Override public String toString() { return name + " (" + id + ")"; }
     }
 
     public record SearchCriteria(int shopId, String query, List<String> subjects, String status,
@@ -58,10 +71,16 @@ public final class ZnackCardRegistrationModels {
         public boolean canGenerate() { return !quotaKnown || remaining() > 0; }
     }
 
-    public record Draft(String tnved, long categoryId, String goodName, String brand,
+    public record Draft(String tnved, String feedTnved, long categoryId, String goodName, String brand,
                         Map<Long, String> attributes) {
         public Draft {
+            feedTnved = feedTnved == null || feedTnved.isBlank() ? tnved : feedTnved;
             attributes = attributes == null ? Map.of() : Map.copyOf(attributes);
+        }
+
+        public Draft(String tnved, long categoryId, String goodName, String brand,
+                     Map<Long, String> attributes) {
+            this(tnved, tnved, categoryId, goodName, brand, attributes);
         }
     }
 }

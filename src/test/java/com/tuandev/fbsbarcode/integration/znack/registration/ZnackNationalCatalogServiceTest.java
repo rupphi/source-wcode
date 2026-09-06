@@ -104,4 +104,27 @@ class ZnackNationalCatalogServiceTest {
         assertEquals("6104", result.categoryTnved());
         assertEquals(30933, result.categories().get(0).id());
     }
+
+    @Test
+    void sendsTheRegisteredGroupAndKeepsTheFullTnvedOnlyAsAttribute() {
+        Draft draft = new Draft("6204510000", "6204", 30933, "Брюки", "Brand",
+                Map.of(13933L, "6204510000"));
+
+        JsonObject payload = ZnackNationalCatalogService.buildPayload("04631993764363", draft, "");
+
+        assertEquals("6204", payload.get("tnved").getAsString());
+        assertTrue(payload.getAsJsonArray("good_attrs").asList().stream()
+                .anyMatch(item -> item.getAsJsonObject().get("attr_id").getAsLong() == 13933L));
+        assertFalse(payload.has("good_images"));
+    }
+
+    @Test
+    void automaticallyChoosesTheLightIndustryLeaf() {
+        var selected = ZnackNationalCatalogService.selectLightIndustryCategory(List.of(
+                new ZnackCardRegistrationModels.Category(1, "Прочие товары"),
+                new ZnackCardRegistrationModels.Category(2, "Одежда второго и третьего слоя")
+        ), "Брюки");
+
+        assertEquals(2, selected.id());
+    }
 }

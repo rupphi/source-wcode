@@ -11,6 +11,7 @@
         <Label fx:id="titleLabel" text="Đăng ký Znack" styleClass="h2"/>
         <Pane HBox.hgrow="ALWAYS"/>
         <Label fx:id="loadingLabel" text="Đang tải..." visible="false" managed="false" styleClass="text-muted"/>
+        <Button fx:id="configButton" text="Cấu hình" onAction="#onConfig" styleClass="btn-secondary"/>
         <Button fx:id="refreshButton" text="Làm mới" onAction="#onRefresh" styleClass="btn-secondary"/>
     </HBox>
     <HBox alignment="CENTER_LEFT" spacing="8">

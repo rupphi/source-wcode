@@ -6,6 +6,8 @@ import com.tuandev.fbsbarcode.config.Database;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.SearchCriteria;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Sku;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Status;
+import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Subject;
+import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.WbCharacteristic;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -14,18 +16,17 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 
 public class ZnackCardRegistrationRepository {
     private static final String SELECT = """
-            SELECT c.nm_id, s.chrt_id, c.vendor_code, c.subject_name, c.brand, c.title,
+            SELECT c.nm_id, s.chrt_id, COALESCE(c.subject_id, 0) AS subject_id,
+                   c.vendor_code, c.subject_name, c.brand, c.title,
                    COALESCE(c.need_kiz, 0) AS need_kiz,
                    s.tech_size, s.wb_size,
                    GROUP_CONCAT(sku.sku, char(31)) AS barcodes,
-                   p.c246x328_url, p.square_url, p.big_url, p.hq_url, p.tm_url,
+                   p.c246x328_url, p.c516x688_url, p.square_url, p.big_url, p.hq_url, p.tm_url,
                    (SELECT COALESCE(json_extract(ch.value_json, '$[0]'), json_extract(ch.value_json, '$'))
                     FROM wb_product_characteristics ch
                     WHERE ch.shop_id=c.shop_id AND ch.nm_id=c.nm_id
@@ -51,6 +52,25 @@ public class ZnackCardRegistrationRepository {
             try (ResultSet result = statement.executeQuery()) {
                 List<String> values = new ArrayList<>();
                 while (result.next()) values.add(result.getString(1));
+                return values;
+            }
+        } catch (SQLException error) {
+            throw new RuntimeException(error);
+        }
+    }
+
+    public List<Subject> findSubjectOptions(int shopId) {
+        try (Connection connection = Database.getConnection();
+             PreparedStatement statement = connection.prepareStatement("""
+                     SELECT COALESCE(subject_id, 0), subject_name FROM wb_product_cards
+                     WHERE shop_id=? AND TRIM(COALESCE(subject_name, ''))<>''
+                     GROUP BY COALESCE(subject_id, 0), subject_name
+                     ORDER BY subject_name COLLATE NOCASE
+                     """)) {
+            statement.setInt(1, shopId);
+            try (ResultSet result = statement.executeQuery()) {
+                List<Subject> values = new ArrayList<>();
+                while (result.next()) values.add(new Subject(result.getInt(1), result.getString(2)));
                 return values;
             }
         } catch (SQLException error) {
@@ -105,19 +125,86 @@ public class ZnackCardRegistrationRepository {
         }
     }
 
-    public Map<String, List<String>> characteristics(int shopId, long nmId) {
+    public List<WbCharacteristic> characteristics(int shopId, long nmId) {
         try (Connection connection = Database.getConnection();
              PreparedStatement statement = connection.prepareStatement("""
-                     SELECT name,value_json FROM wb_product_characteristics
+                     SELECT characteristic_id,name,value_json FROM wb_product_characteristics
                      WHERE shop_id=? AND nm_id=? ORDER BY characteristic_id
                      """)) {
             statement.setInt(1, shopId);
             statement.setLong(2, nmId);
             try (ResultSet result = statement.executeQuery()) {
-                Map<String, List<String>> values = new LinkedHashMap<>();
-                while (result.next()) values.put(value(result.getString(1)), jsonValues(result.getString(2)));
+                List<WbCharacteristic> values = new ArrayList<>();
+                while (result.next()) values.add(new WbCharacteristic(result.getInt(1),
+                        value(result.getString(2)), jsonValues(result.getString(3))));
                 return values;
             }
+        } catch (SQLException error) {
+            throw new RuntimeException(error);
+        }
+    }
+
+    public String tnvedRule(int shopId, int subjectId) {
+        try (Connection connection = Database.getConnection();
+             PreparedStatement statement = connection.prepareStatement("""
+                     SELECT tnved FROM znack_card_registration_tnved_rules
+                     WHERE shop_id=? AND subject_id=?
+                     """)) {
+            statement.setInt(1, shopId);
+            statement.setInt(2, subjectId);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next() ? value(result.getString(1)) : "";
+            }
+        } catch (SQLException error) {
+            throw new RuntimeException(error);
+        }
+    }
+
+    public String suggestedTnved(int shopId, int subjectId) {
+        try (Connection connection = Database.getConnection();
+             PreparedStatement statement = connection.prepareStatement("""
+                     SELECT ch.name,ch.value_json
+                     FROM wb_product_cards c
+                     JOIN wb_product_characteristics ch ON ch.shop_id=c.shop_id AND ch.nm_id=c.nm_id
+                     WHERE c.shop_id=? AND COALESCE(c.subject_id,0)=?
+                     ORDER BY c.updated_at DESC LIMIT 500
+                     """)) {
+            statement.setInt(1, shopId);
+            statement.setInt(2, subjectId);
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) {
+                    String name = value(result.getString(1)).toLowerCase(Locale.ROOT)
+                            .replace("ё", "е").replaceAll("[\\s_]", "");
+                    if (!name.contains("тнвэд")) continue;
+                    for (String item : jsonValues(result.getString(2))) {
+                        String digits = value(item).replaceAll("\\D", "");
+                        if (digits.length() == 10) return digits;
+                    }
+                }
+                return "";
+            }
+        } catch (SQLException error) {
+            throw new RuntimeException(error);
+        }
+    }
+
+    public void saveTnvedRule(int shopId, Subject subject, String tnved) {
+        String normalized = value(tnved).replaceAll("\\D", "");
+        if (normalized.length() != 10) throw new IllegalArgumentException("TN VED must contain exactly 10 digits.");
+        try (Connection connection = Database.getConnection();
+             PreparedStatement statement = connection.prepareStatement("""
+                     INSERT INTO znack_card_registration_tnved_rules
+                         (shop_id,subject_id,subject_name,tnved,updated_at)
+                     VALUES(?,?,?,?,?)
+                     ON CONFLICT(shop_id,subject_id) DO UPDATE SET
+                         subject_name=excluded.subject_name,tnved=excluded.tnved,updated_at=excluded.updated_at
+                     """)) {
+            statement.setInt(1, shopId);
+            statement.setInt(2, subject.id());
+            statement.setString(3, subject.name());
+            statement.setString(4, normalized);
+            statement.setString(5, Instant.now().toString());
+            statement.executeUpdate();
         } catch (SQLException error) {
             throw new RuntimeException(error);
         }
@@ -193,11 +280,12 @@ public class ZnackCardRegistrationRepository {
 
     private static Sku map(ResultSet result) throws SQLException {
         String status = result.getString("status");
-        return new Sku(result.getLong("nm_id"), result.getLong("chrt_id"), result.getString("vendor_code"),
+        return new Sku(result.getLong("nm_id"), result.getLong("chrt_id"), result.getInt("subject_id"),
+                result.getString("vendor_code"),
                 result.getString("subject_name"), result.getString("brand"), result.getString("title"),
-                result.getString("color_value"), first(result.getString("tech_size"), result.getString("wb_size")),
-                split(result.getString("barcodes")), first(result.getString("c246x328_url"), result.getString("square_url"),
-                result.getString("big_url"), result.getString("hq_url"), result.getString("tm_url")),
+                result.getString("color_value"), preferredSize(result.getString("tech_size"), result.getString("wb_size")),
+                split(result.getString("barcodes")), first(result.getString("c516x688_url"), result.getString("big_url"),
+                result.getString("c246x328_url"), result.getString("square_url"), result.getString("hq_url"), result.getString("tm_url")),
                 result.getInt("need_kiz") != 0, result.getString("gtin"), nullableLong(result, "good_id"),
                 result.getString("feed_id"), parseStatus(status),
                 result.getString("error_message"), result.getInt("wb_updated") != 0);
@@ -233,6 +321,13 @@ public class ZnackCardRegistrationRepository {
     private static String first(String... values) {
         for (String item : values) if (item != null && !item.isBlank()) return item;
         return "";
+    }
+
+
+    private static String preferredSize(String techSize, String wbSize) {
+        String technical = value(techSize).trim();
+        if (!technical.isBlank() && !"0".equals(technical)) return technical;
+        return first(wbSize, technical);
     }
 
     private static String value(String value) { return value == null ? "" : value; }

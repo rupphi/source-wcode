@@ -16,7 +16,11 @@ import com.tuandev.fbsbarcode.integration.znack.signature.ZnackSignatureProvider
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 /** National Catalog card workflow primitives. All methods are blocking and must run off the FX thread. */
 public final class ZnackNationalCatalogService {
@@ -157,7 +161,7 @@ public final class ZnackNationalCatalogService {
     public static JsonObject buildPayload(String gtin, Draft draft, String imageUrl) {
         JsonObject payload = new JsonObject();
         payload.addProperty("gtin", gtin);
-        payload.addProperty("tnved", draft.tnved());
+        payload.addProperty("tnved", draft.feedTnved());
         payload.addProperty("moderation", 1);
         payload.addProperty("brand", draft.brand());
         payload.addProperty("good_name", draft.goodName());
@@ -197,6 +201,39 @@ public final class ZnackNationalCatalogService {
         });
         payload.add("good_attrs", attributes);
         return payload;
+    }
+
+    /** Picks the closest active light-industry catalog leaf without asking on every SKU. */
+    public static Category selectLightIndustryCategory(List<Category> categories, String wbSubject) {
+        if (categories == null || categories.isEmpty()) {
+            throw new IllegalArgumentException("No National Catalog category is available.");
+        }
+        if (categories.size() == 1) return categories.get(0);
+        Set<String> subjectWords = words(wbSubject);
+        return categories.stream()
+                .max(Comparator.comparingInt(category -> categoryScore(category.name(), subjectWords)))
+                .orElse(categories.get(0));
+    }
+
+    private static int categoryScore(String categoryName, Set<String> subjectWords) {
+        String normalized = normalize(categoryName);
+        int score = 0;
+        for (String keyword : List.of("легк", "одежд", "бель", "трикотаж", "текстил", "обув",
+                "брюк", "юбк", "плать", "куртк", "носк", "чул", "головн", "перчат")) {
+            if (normalized.contains(keyword)) score += 10;
+        }
+        for (String word : subjectWords) if (word.length() > 3 && normalized.contains(word)) score += 100;
+        return score;
+    }
+
+    private static Set<String> words(String value) {
+        Set<String> words = new LinkedHashSet<>();
+        for (String word : normalize(value).split("[^\\p{L}\\p{N}]+")) if (!word.isBlank()) words.add(word);
+        return words;
+    }
+
+    private static String normalize(String value) {
+        return value == null ? "" : value.toLowerCase(Locale.ROOT).replace('ё', 'е').trim();
     }
 
     static Gs1Status parseGs1(JsonElement response) {

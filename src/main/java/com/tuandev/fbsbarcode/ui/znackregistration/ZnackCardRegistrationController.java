@@ -6,6 +6,7 @@ import com.tuandev.fbsbarcode.integration.znack.ZnackAuthService;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels;
 import com.tuandev.fbsbarcode.integration.znack.ZnackRepository;
 import com.tuandev.fbsbarcode.integration.znack.ZnackErrorDetails;
+import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Attribute;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Category;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Draft;
@@ -15,6 +16,7 @@ import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrati
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationRepository;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationWorkflow;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackNationalCatalogService;
+import com.tuandev.fbsbarcode.integration.znack.registration.ZnackWbAttributeMapper;
 import com.tuandev.fbsbarcode.integration.znack.signature.CryptoProSignatureProvider;
 import com.tuandev.fbsbarcode.integration.znack.signature.ZnackSignatureProvider;
 import com.tuandev.fbsbarcode.models.Shop;
@@ -28,12 +30,9 @@ import javafx.beans.property.ReadOnlyStringWrapper;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
 import javafx.geometry.Pos;
-import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
-import javafx.scene.layout.GridPane;
-import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.util.Duration;
@@ -42,11 +41,8 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
 
 public final class ZnackCardRegistrationController {
     private static final int PAGE_SIZE = 500;
@@ -67,6 +63,7 @@ public final class ZnackCardRegistrationController {
     @FXML private ComboBox<StatusFilter> statusFilter;
     @FXML private Button clearFiltersButton;
     @FXML private Button refreshButton;
+    @FXML private Button configButton;
     @FXML private TableView<Sku> productTable;
     @FXML private TableColumn<Sku, Sku> imageColumn;
     @FXML private TableColumn<Sku, String> nameColumn;
@@ -102,6 +99,7 @@ public final class ZnackCardRegistrationController {
         titleLabel.setText(i18n.tr("znack.registration.title"));
         searchField.setPromptText(i18n.tr("znack.registration.search"));
         refreshButton.setText(i18n.tr("znack.registration.refresh"));
+        configButton.setText(i18n.tr("znack.registration.config"));
         clearFiltersButton.setText(i18n.tr("znack.registration.clear"));
         loadingLabel.setText(i18n.tr("znack.registration.loading"));
         emptyLabel.setText(i18n.tr("znack.registration.empty"));
@@ -118,6 +116,83 @@ public final class ZnackCardRegistrationController {
     }
 
     @FXML private void onRefresh() { reload(); }
+
+    @FXML
+    private void onConfig() {
+        if (shop == null) return;
+        List<ZnackCardRegistrationModels.Subject> subjects = repository.findSubjectOptions(shop.getId());
+        if (subjects.isEmpty()) {
+            showWarning(tr("znack.registration.no_wb_products"));
+            return;
+        }
+        ZnackModels.Settings current = settings();
+        Dialog<Boolean> dialog = new Dialog<>();
+        dialog.setTitle(tr("znack.registration.config"));
+        dialog.setHeaderText(tr("znack.registration.config_header"));
+        ButtonType save = new ButtonType(tr("common.save"), ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().setAll(save, ButtonType.CANCEL);
+
+        javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        ComboBox<DocumentType> documentType = new ComboBox<>();
+        documentType.getItems().setAll(DocumentType.values());
+        documentType.setValue(DocumentType.from(current.documentType()));
+        TextField documentNumber = new TextField(value(current.documentNumber()));
+        TextField documentDate = new TextField(value(current.documentDate()));
+        documentDate.setPromptText("dd.MM.yyyy");
+        ComboBox<ZnackCardRegistrationModels.Subject> subject = new ComboBox<>();
+        subject.getItems().setAll(subjects);
+        subject.setMaxWidth(Double.MAX_VALUE);
+        Sku selected = productTable.getSelectionModel().getSelectedItem();
+        subject.setValue(subjects.stream().filter(item -> selected != null && item.id() == selected.subjectId())
+                .findFirst().orElse(subjects.get(0)));
+        TextField tnved = new TextField();
+        tnved.setPromptText("10 digits");
+        Runnable loadRule = () -> {
+            var item = subject.getValue();
+            tnved.setText(item == null ? "" : first(repository.tnvedRule(shop.getId(), item.id()),
+                    repository.suggestedTnved(shop.getId(), item.id())));
+        };
+        subject.valueProperty().addListener((obs, old, item) -> loadRule.run());
+        loadRule.run();
+
+        grid.addRow(0, new Label(tr("znack.registration.document_type") + " *"), documentType);
+        grid.addRow(1, new Label(tr("znack.registration.document_number") + " *"), documentNumber);
+        grid.addRow(2, new Label(tr("znack.registration.document_date") + " *"), documentDate);
+        grid.addRow(3, new Label(tr("znack.registration.wb_subject") + " *"), subject);
+        grid.addRow(4, new Label("TN VED (10) *"), tnved);
+        Label note = new Label(tr("znack.registration.config_note"));
+        note.setWrapText(true);
+        note.setMaxWidth(560);
+        grid.add(note, 0, 5, 2, 1);
+        grid.getColumnConstraints().addAll(new javafx.scene.layout.ColumnConstraints(220),
+                new javafx.scene.layout.ColumnConstraints(360));
+        dialog.getDialogPane().setContent(grid);
+
+        dialog.getDialogPane().lookupButton(save).addEventFilter(javafx.event.ActionEvent.ACTION, event -> {
+            try {
+                if (documentNumber.getText().isBlank() || documentDate.getText().isBlank()
+                        || subject.getValue() == null || tnved.getText().replaceAll("\\D", "").length() != 10) {
+                    throw new IllegalArgumentException(tr("znack.registration.config_required"));
+                }
+                LocalDate parsed = LocalDate.parse(normalizedDocumentDate(documentDate.getText()));
+                documentDate.setText(parsed.format(RU_DATE));
+            } catch (IllegalArgumentException error) {
+                event.consume();
+                showWarning(error.getMessage());
+            }
+        });
+        dialog.setResultConverter(button -> button == save);
+        if (dialog.showAndWait().orElse(false)) {
+            DocumentType type = documentType.getValue();
+            ZnackRepository znack = new ZnackRepository(new ZnackModels.ShopContext(shop.getId(), shop.getName()));
+            znack.saveSettings(current.withDefaultGoodsDocument(type.settingsCode,
+                    documentNumber.getText().trim(), documentDate.getText().trim()));
+            repository.saveTnvedRule(shop.getId(), subject.getValue(), tnved.getText());
+            showInfo(tr("znack.registration.config_saved"));
+        }
+    }
 
     @FXML
     private void onClearFilters() {
@@ -192,149 +267,65 @@ public final class ZnackCardRegistrationController {
     }
 
     private void createCard(Sku sku) {
-        if (shop == null || isBusy(sku.status())) return;
-        Map<String, List<String>> characteristics = repository.characteristics(shop.getId(), sku.nmId());
-        TextInputDialog tnvedDialog = new TextInputDialog(findTnved(characteristics));
-        tnvedDialog.setTitle(tr("znack.registration.create"));
-        tnvedDialog.setHeaderText(sku.vendorCode() + " · " + sku.color() + " · " + sku.size());
-        tnvedDialog.setContentText("TN VED:");
-        Optional<String> tnved = tnvedDialog.showAndWait();
-        if (tnved.isEmpty()) return;
+        boolean retryWithoutGtin = sku.status() == Status.CHECKING
+                && (sku.gtin() == null || sku.gtin().isBlank());
+        if (shop == null || (isBusy(sku.status()) && !retryWithoutGtin)) return;
+        List<ZnackCardRegistrationModels.WbCharacteristic> characteristics =
+                repository.characteristics(shop.getId(), sku.nmId());
+        String configuredTnved = repository.tnvedRule(shop.getId(), sku.subjectId());
+        String productTnved = ZnackWbAttributeMapper.findTnved(characteristics);
+        String tnved = first(configuredTnved, productTnved);
+        if (tnved.isBlank()) {
+            showWarning(java.text.MessageFormat.format(tr("znack.registration.missing_tnved"), sku.subjectName()));
+            return;
+        }
+        ZnackModels.Settings current = settings();
+        if (!current.hasDefaultGoodsDocument()) {
+            showWarning(tr("znack.registration.missing_document_config"));
+            return;
+        }
+        final String documentDate;
+        try {
+            documentDate = normalizedDocumentDate(current.documentDate());
+        } catch (IllegalArgumentException error) {
+            showWarning(error.getMessage());
+            return;
+        }
         setLoading(true);
-        Task<FormData> task = new Task<>() {
-            @Override protected FormData call() throws Exception {
-                ZnackModels.Settings settings = settings();
-                ZnackSignatureProvider signer = signer(settings);
+        Task<AutomaticDraft> task = new Task<>() {
+            @Override protected AutomaticDraft call() throws Exception {
+                ZnackSignatureProvider signer = signer(current);
                 ZnackApiClient api = new ZnackApiClient();
                 ZnackAuthService auth = new ZnackAuthService(api, signer);
-                ZnackNationalCatalogService service = new ZnackNationalCatalogService(api, auth, signer, settings);
-                ZnackNationalCatalogService.Preflight preflight = service.preflight(tnved.get());
-                return new FormData(settings, service, preflight, characteristics);
+                ZnackNationalCatalogService service = new ZnackNationalCatalogService(api, auth, signer, current);
+                ZnackNationalCatalogService.Preflight preflight = service.preflight(tnved);
+                Category category = ZnackNationalCatalogService.selectLightIndustryCategory(
+                        preflight.categories(), sku.subjectName());
+                List<Attribute> required = service.requiredAttributes(category.id(), preflight.token());
+                ZnackModels.GoodsDocument document = new ZnackModels.GoodsDocument(current.documentType(),
+                        current.documentNumber(), documentDate);
+                ZnackWbAttributeMapper.MappingResult mapped = new ZnackWbAttributeMapper().map(sku,
+                        characteristics, required, preflight.tnved(), preflight.categoryTnved(), document);
+                Draft draft = new Draft(preflight.tnved(), preflight.categoryTnved(), category.id(),
+                        mapped.goodName(), mapped.brand(), mapped.attributes());
+                return new AutomaticDraft(draft, mapped.missingFields());
             }
         };
         task.setOnSucceeded(event -> {
             setLoading(false);
-            chooseCategoryAndOpenForm(sku, task.getValue());
-        });
-        task.setOnFailed(event -> {
-            setLoading(false);
-            showError(task.getException());
-        });
-        AppTaskExecutor.execute(task);
-    }
-
-    private void chooseCategoryAndOpenForm(Sku sku, FormData data) {
-        Category category;
-        if (data.preflight.categories().size() == 1) category = data.preflight.categories().get(0);
-        else {
-            ChoiceDialog<Category> dialog = new ChoiceDialog<>(data.preflight.categories().get(0), data.preflight.categories());
-            dialog.setTitle(tr("znack.registration.create"));
-            dialog.setHeaderText(tr("znack.registration.choose_category"));
-            Optional<Category> result = dialog.showAndWait();
-            if (result.isEmpty()) return;
-            category = result.get();
-        }
-        setLoading(true);
-        Task<List<Attribute>> task = new Task<>() {
-            @Override protected List<Attribute> call() throws Exception {
-                return data.service.requiredAttributes(category.id(), data.preflight.token());
-            }
-        };
-        task.setOnSucceeded(event -> {
-            setLoading(false);
-            showAttributeForm(sku, data, category, task.getValue()).ifPresent(draft -> startWorkflow(sku, draft));
-        });
-        task.setOnFailed(event -> {
-            setLoading(false);
-            showError(task.getException());
-        });
-        AppTaskExecutor.execute(task);
-    }
-
-    private Optional<Draft> showAttributeForm(Sku sku, FormData data, Category category, List<Attribute> attributes) {
-        Dialog<Draft> dialog = new Dialog<>();
-        dialog.setTitle(tr("znack.registration.create"));
-        dialog.setHeaderText(category.name() + "\n"
-                + java.text.MessageFormat.format(tr("znack.registration.gs1_remaining"),
-                data.preflight.gs1().quotaKnown()
-                        ? data.preflight.gs1().remaining()
-                        : tr("znack.registration.gs1_check_on_create")));
-        ButtonType create = new ButtonType(tr("znack.registration.create"), ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().setAll(create, ButtonType.CANCEL);
-
-        GridPane grid = new GridPane();
-        grid.setHgap(10);
-        grid.setVgap(8);
-        TextField goodName = new TextField(defaultName(sku));
-        TextField brand = new TextField(value(sku.brand()));
-        grid.addRow(0, new Label(tr("znack.registration.good_name") + " *"), goodName);
-        grid.addRow(1, new Label(tr("znack.registration.brand") + " *"), brand);
-
-        ComboBox<DocumentType> documentType = new ComboBox<>();
-        documentType.getItems().setAll(DocumentType.values());
-        documentType.getSelectionModel().select(data.settings.documentType().contains("CERTIFICATE")
-                ? DocumentType.CERTIFICATE : DocumentType.DECLARATION);
-        TextField documentNumber = new TextField(value(data.settings.documentNumber()));
-        TextField documentDate = new TextField(value(data.settings.documentDate()));
-        documentDate.setPromptText("dd.MM.yyyy / yyyy-MM-dd");
-        grid.addRow(2, new Label(tr("znack.registration.document_type") + " *"), documentType);
-        grid.addRow(3, new Label(tr("znack.registration.document_number") + " *"), documentNumber);
-        grid.addRow(4, new Label(tr("znack.registration.document_date") + " *"), documentDate);
-
-        Map<Attribute, Control> controls = new LinkedHashMap<>();
-        int row = 5;
-        for (Attribute attribute : attributes) {
-            if (attribute.id() == 2478 || attribute.id() == 2504
-                    || attribute.id() == ZnackNationalCatalogService.DECLARATION_ATTRIBUTE_ID
-                    || attribute.id() == ZnackNationalCatalogService.CERTIFICATE_ATTRIBUTE_ID) continue;
-            String automatic = autoValue(attribute, sku, data.characteristics, data.preflight.tnved());
-            Control control;
-            if (!attribute.presets().isEmpty()) {
-                ComboBox<String> combo = new ComboBox<>();
-                combo.getItems().setAll(attribute.presets());
-                combo.setEditable(!attribute.presetOnly());
-                selectValue(combo, automatic);
-                control = combo;
-            } else {
-                TextField field = new TextField(automatic);
-                if ("date".equalsIgnoreCase(attribute.fieldType())) field.setPromptText("yyyy-MM-dd");
-                control = field;
-            }
-            control.setMaxWidth(Double.MAX_VALUE);
-            controls.put(attribute, control);
-            grid.addRow(row++, new Label(attribute.name() + " [" + attribute.id() + "] *"), control);
-        }
-        grid.getColumnConstraints().addAll(new javafx.scene.layout.ColumnConstraints(250),
-                new javafx.scene.layout.ColumnConstraints(380));
-        ScrollPane scroll = new ScrollPane(grid);
-        scroll.setFitToWidth(true);
-        scroll.setPrefViewportWidth(690);
-        scroll.setPrefViewportHeight(620);
-        dialog.getDialogPane().setContent(scroll);
-        Node createButton = dialog.getDialogPane().lookupButton(create);
-        createButton.addEventFilter(javafx.event.ActionEvent.ACTION, event -> {
-            if (goodName.getText().isBlank() || brand.getText().isBlank()
-                    || documentNumber.getText().isBlank() || documentDate.getText().isBlank()
-                    || controls.values().stream().anyMatch(control -> controlValue(control).isBlank())) {
-                event.consume();
-                showWarning(tr("znack.registration.required"));
+            AutomaticDraft result = task.getValue();
+            if (!result.missingFields().isEmpty()) {
+                showWarning(java.text.MessageFormat.format(tr("znack.registration.missing_wb_fields"),
+                        sku.vendorCode(), String.join("\n• ", result.missingFields())));
                 return;
             }
-            try { normalizedDocumentDate(documentDate.getText()); }
-            catch (IllegalArgumentException error) { event.consume(); showWarning(error.getMessage()); }
+            startWorkflow(sku, result.draft());
         });
-        dialog.setResultConverter(button -> {
-            if (button != create) return null;
-            Map<Long, String> values = new LinkedHashMap<>();
-            values.put(2478L, goodName.getText().trim());
-            values.put(2504L, brand.getText().trim());
-            controls.forEach((attribute, control) -> values.put(attribute.id(), controlValue(control)));
-            values.put(documentType.getValue().attributeId,
-                    documentNumber.getText().trim() + ":::" + normalizedDocumentDate(documentDate.getText()));
-            return new Draft(data.preflight.tnved(), category.id(), goodName.getText().trim(),
-                    brand.getText().trim(), values);
+        task.setOnFailed(event -> {
+            setLoading(false);
+            showError(task.getException());
         });
-        return dialog.showAndWait();
+        AppTaskExecutor.execute(task);
     }
 
     private void startWorkflow(Sku sku, Draft draft) {
@@ -423,45 +414,6 @@ public final class ZnackCardRegistrationController {
         });
     }
 
-    private static String autoValue(Attribute attribute, Sku sku, Map<String, List<String>> characteristics,
-                                    String tnved) {
-        String name = normalize(attribute.name());
-        if (attribute.id() == 2478 || name.contains("полное наименование")) return defaultName(sku);
-        if (attribute.id() == 2504 || name.contains("товарный знак") || name.equals("бренд")) return value(sku.brand());
-        if (attribute.id() == 13933L) return value(tnved);
-        if (attribute.id() == 3959L && value(tnved).length() >= 4) return tnved.substring(0, 4);
-        if (name.contains("цвет")) return value(sku.color());
-        if (name.contains("размер")) return value(sku.size());
-        if (name.contains("артикул") || name.contains("модель")) return value(sku.vendorCode());
-        for (Map.Entry<String, List<String>> entry : characteristics.entrySet()) {
-            String sourceName = normalize(entry.getKey());
-            if (sourceName.equals(name) || sourceName.contains(name) || name.contains(sourceName)) {
-                return String.join(", ", entry.getValue());
-            }
-        }
-        return "";
-    }
-
-    private static String defaultName(Sku sku) {
-        List<String> parts = new ArrayList<>();
-        add(parts, first(sku.title(), sku.subjectName()));
-        add(parts, sku.brand());
-        add(parts, "арт. " + value(sku.vendorCode()));
-        if (!value(sku.color()).isBlank()) add(parts, "цвет " + sku.color());
-        if (!value(sku.size()).isBlank()) add(parts, "размер " + sku.size());
-        return String.join(", ", parts).replaceAll("\\s+", " ").trim();
-    }
-
-    private static String findTnved(Map<String, List<String>> characteristics) {
-        for (Map.Entry<String, List<String>> entry : characteristics.entrySet()) {
-            String name = normalize(entry.getKey());
-            if (name.contains("тн вэд") || name.contains("тнвэд")) {
-                return entry.getValue().stream().findFirst().orElse("").replaceAll("\\D", "");
-            }
-        }
-        return "";
-    }
-
     private static String normalizedDocumentDate(String input) {
         String value = input == null ? "" : input.trim();
         try { return LocalDate.parse(value).toString(); }
@@ -471,21 +423,6 @@ public final class ZnackCardRegistrationController {
                 throw new IllegalArgumentException(tr("znack.registration.invalid_document_date"));
             }
         }
-    }
-
-    private static void selectValue(ComboBox<String> combo, String value) {
-        if (value == null || value.isBlank()) return;
-        combo.getItems().stream().filter(item -> item.equalsIgnoreCase(value)).findFirst()
-                .ifPresentOrElse(combo::setValue, () -> { if (combo.isEditable()) combo.getEditor().setText(value); });
-    }
-
-    private static String controlValue(Control control) {
-        if (control instanceof TextField field) return value(field.getText()).trim();
-        if (control instanceof ComboBox<?> combo) {
-            if (combo.isEditable()) return value(combo.getEditor().getText()).trim();
-            return combo.getValue() == null ? "" : combo.getValue().toString().trim();
-        }
-        return "";
     }
 
     private void setLoading(boolean value) {
@@ -507,10 +444,8 @@ public final class ZnackCardRegistrationController {
         return sku.gtin() == null || sku.gtin().isBlank() ? source : source + (source.isBlank() ? "" : "\n") + "GTIN: " + sku.gtin();
     }
     private static String statusText(Status status) { return tr("znack.registration.status." + status.name().toLowerCase(Locale.ROOT)); }
-    private static String normalize(String value) { return value(value).toLowerCase(Locale.ROOT).replace('ё', 'е').trim(); }
     private static String first(String... values) { for (String value : values) if (value != null && !value.isBlank()) return value; return ""; }
     private static String value(String value) { return value == null ? "" : value; }
-    private static void add(List<String> values, String value) { if (value != null && !value.isBlank() && !"арт.".equals(value)) values.add(value.trim()); }
     private static String tr(String key) { return I18nService.getInstance().tr(key); }
     private static void showError(Throwable error) {
         AlertService.showDetailedError(ZnackErrorDetails.summary(error), ZnackErrorDetails.format(error));
@@ -525,10 +460,14 @@ public final class ZnackCardRegistrationController {
     private static void showInfo(String message) { Alert alert = new Alert(Alert.AlertType.INFORMATION, message, ButtonType.OK); alert.setHeaderText(null); alert.showAndWait(); }
 
     private enum DocumentType {
-        DECLARATION("Декларация о соответствии", ZnackNationalCatalogService.DECLARATION_ATTRIBUTE_ID),
-        CERTIFICATE("Сертификат соответствия", ZnackNationalCatalogService.CERTIFICATE_ATTRIBUTE_ID);
-        private final String label; private final long attributeId;
-        DocumentType(String label, long attributeId) { this.label = label; this.attributeId = attributeId; }
+        DECLARATION("Декларация о соответствии", "CONFORMITY_DECLARATION"),
+        CERTIFICATE("Сертификат соответствия", "CONFORMITY_CERTIFICATE");
+        private final String label; private final String settingsCode;
+        DocumentType(String label, String settingsCode) { this.label = label; this.settingsCode = settingsCode; }
+        static DocumentType from(String value) {
+            return value != null && value.toUpperCase(Locale.ROOT).contains("CERTIFICATE")
+                    ? CERTIFICATE : DECLARATION;
+        }
         @Override public String toString() { return label; }
     }
 
@@ -539,7 +478,5 @@ public final class ZnackCardRegistrationController {
         @Override public String toString() { return tr("znack.registration.filter." + name().toLowerCase(Locale.ROOT)); }
     }
 
-    private record FormData(ZnackModels.Settings settings, ZnackNationalCatalogService service,
-                            ZnackNationalCatalogService.Preflight preflight,
-                            Map<String, List<String>> characteristics) { }
+    private record AutomaticDraft(Draft draft, List<String> missingFields) { }
 }

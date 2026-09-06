@@ -117,10 +117,23 @@ public final class ZnackCardRegistrationWorkflow {
 
         Long goodId = sku.goodId();
         boolean published = sku.status() == Status.PUBLISHED;
+        boolean retriedWithoutImage = false;
         for (int attempt = 0; !published && attempt < POLL_ATTEMPTS; attempt++) {
             ZnackNationalCatalogService.FeedProgress progress = catalog.progress(token, feedId, gtin);
             if (progress.goodId() != null) goodId = progress.goodId();
             if (progress.failed()) {
+                if (!retriedWithoutImage && payload.has("good_images") && onlyImageErrors(progress.errors())) {
+                    retriedWithoutImage = true;
+                    payload.remove("good_images");
+                    registrations.saveGenerated(shop.getId(), sku, gtin, draft.tnved(), draft.categoryId(),
+                            draft.goodName(), payload.toString());
+                    feedId = catalog.submit(token, payload);
+                    registrations.updateProgress(shop.getId(), sku.chrtId(), Status.FEED_SUBMITTED, feedId,
+                            null, null, null);
+                    notify(listener, Status.FEED_SUBMITTED, feedId);
+                    attempt = -1;
+                    continue;
+                }
                 throw new IllegalStateException(progress.errorMessage().isBlank()
                         ? "National Catalog rejected feed " + feedId : progress.errorMessage());
             }
@@ -166,6 +179,14 @@ public final class ZnackCardRegistrationWorkflow {
 
     private static void notify(BiConsumer<Status, String> listener, Status status, String detail) {
         if (listener != null) listener.accept(status, detail == null ? "" : detail);
+    }
+
+    private static boolean onlyImageErrors(java.util.List<String> errors) {
+        return errors != null && !errors.isEmpty() && errors.stream().allMatch(error -> {
+            String normalized = error == null ? "" : error.toLowerCase(java.util.Locale.ROOT);
+            return normalized.contains("изображен") || normalized.contains("photo")
+                    || normalized.contains("image") || normalized.contains("url");
+        });
     }
 
 }

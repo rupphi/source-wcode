@@ -42,6 +42,17 @@ public final class ZnackCardRegistrationSchema {
                     ON znack_card_registrations(shop_id, gtin)
                     WHERE gtin IS NOT NULL AND TRIM(gtin) <> ''
                     """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS znack_card_registration_tnved_rules(
+                        shop_id INTEGER NOT NULL,
+                        subject_id INTEGER NOT NULL,
+                        subject_name TEXT NOT NULL DEFAULT '',
+                        tnved TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY(shop_id, subject_id),
+                        FOREIGN KEY(shop_id) REFERENCES shops(id) ON DELETE CASCADE
+                    )
+                    """);
         }
     }
 }
