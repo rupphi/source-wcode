@@ -42,10 +42,6 @@ public final class ZnackCardRegistrationModels {
         public String joinedValue() { return String.join(", ", values); }
     }
 
-    public record Subject(int id, String name) {
-        @Override public String toString() { return name + " (" + id + ")"; }
-    }
-
     public record SearchCriteria(int shopId, String query, List<String> subjects, String status,
                                  int limit, int offset) {
     }

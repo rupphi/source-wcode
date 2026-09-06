@@ -6,13 +6,13 @@ import com.tuandev.fbsbarcode.integration.znack.ZnackAuthService;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels;
 import com.tuandev.fbsbarcode.integration.znack.ZnackRepository;
 import com.tuandev.fbsbarcode.integration.znack.ZnackErrorDetails;
-import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Attribute;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Category;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Draft;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.SearchCriteria;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Sku;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Status;
+import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.WbCharacteristic;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationRepository;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationWorkflow;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackNationalCatalogService;
@@ -120,11 +120,6 @@ public final class ZnackCardRegistrationController {
     @FXML
     private void onConfig() {
         if (shop == null) return;
-        List<ZnackCardRegistrationModels.Subject> subjects = repository.findSubjectOptions(shop.getId());
-        if (subjects.isEmpty()) {
-            showWarning(tr("znack.registration.no_wb_products"));
-            return;
-        }
         ZnackModels.Settings current = settings();
         Dialog<Boolean> dialog = new Dialog<>();
         dialog.setTitle(tr("znack.registration.config"));
@@ -141,39 +136,21 @@ public final class ZnackCardRegistrationController {
         TextField documentNumber = new TextField(value(current.documentNumber()));
         TextField documentDate = new TextField(value(current.documentDate()));
         documentDate.setPromptText("dd.MM.yyyy");
-        ComboBox<ZnackCardRegistrationModels.Subject> subject = new ComboBox<>();
-        subject.getItems().setAll(subjects);
-        subject.setMaxWidth(Double.MAX_VALUE);
-        Sku selected = productTable.getSelectionModel().getSelectedItem();
-        subject.setValue(subjects.stream().filter(item -> selected != null && item.id() == selected.subjectId())
-                .findFirst().orElse(subjects.get(0)));
-        TextField tnved = new TextField();
-        tnved.setPromptText("10 digits");
-        Runnable loadRule = () -> {
-            var item = subject.getValue();
-            tnved.setText(item == null ? "" : first(repository.tnvedRule(shop.getId(), item.id()),
-                    repository.suggestedTnved(shop.getId(), item.id())));
-        };
-        subject.valueProperty().addListener((obs, old, item) -> loadRule.run());
-        loadRule.run();
 
         grid.addRow(0, new Label(tr("znack.registration.document_type") + " *"), documentType);
         grid.addRow(1, new Label(tr("znack.registration.document_number") + " *"), documentNumber);
         grid.addRow(2, new Label(tr("znack.registration.document_date") + " *"), documentDate);
-        grid.addRow(3, new Label(tr("znack.registration.wb_subject") + " *"), subject);
-        grid.addRow(4, new Label("TN VED (10) *"), tnved);
         Label note = new Label(tr("znack.registration.config_note"));
         note.setWrapText(true);
         note.setMaxWidth(560);
-        grid.add(note, 0, 5, 2, 1);
+        grid.add(note, 0, 3, 2, 1);
         grid.getColumnConstraints().addAll(new javafx.scene.layout.ColumnConstraints(220),
                 new javafx.scene.layout.ColumnConstraints(360));
         dialog.getDialogPane().setContent(grid);
 
         dialog.getDialogPane().lookupButton(save).addEventFilter(javafx.event.ActionEvent.ACTION, event -> {
             try {
-                if (documentNumber.getText().isBlank() || documentDate.getText().isBlank()
-                        || subject.getValue() == null || tnved.getText().replaceAll("\\D", "").length() != 10) {
+                if (documentNumber.getText().isBlank() || documentDate.getText().isBlank()) {
                     throw new IllegalArgumentException(tr("znack.registration.config_required"));
                 }
                 LocalDate parsed = LocalDate.parse(normalizedDocumentDate(documentDate.getText()));
@@ -189,7 +166,6 @@ public final class ZnackCardRegistrationController {
             ZnackRepository znack = new ZnackRepository(new ZnackModels.ShopContext(shop.getId(), shop.getName()));
             znack.saveSettings(current.withDefaultGoodsDocument(type.settingsCode,
                     documentNumber.getText().trim(), documentDate.getText().trim()));
-            repository.saveTnvedRule(shop.getId(), subject.getValue(), tnved.getText());
             showInfo(tr("znack.registration.config_saved"));
         }
     }
@@ -270,13 +246,11 @@ public final class ZnackCardRegistrationController {
         boolean retryWithoutGtin = sku.status() == Status.CHECKING
                 && (sku.gtin() == null || sku.gtin().isBlank());
         if (shop == null || (isBusy(sku.status()) && !retryWithoutGtin)) return;
-        List<ZnackCardRegistrationModels.WbCharacteristic> characteristics =
-                repository.characteristics(shop.getId(), sku.nmId());
-        String configuredTnved = repository.tnvedRule(shop.getId(), sku.subjectId());
-        String productTnved = ZnackWbAttributeMapper.findTnved(characteristics);
-        String tnved = first(configuredTnved, productTnved);
+        List<WbCharacteristic> characteristics = repository.characteristics(shop.getId(), sku.nmId());
+        String tnved = ZnackWbAttributeMapper.findTnved(characteristics);
         if (tnved.isBlank()) {
-            showWarning(java.text.MessageFormat.format(tr("znack.registration.missing_tnved"), sku.subjectName()));
+            showWarning(java.text.MessageFormat.format(tr("znack.registration.missing_tnved"),
+                    sku.vendorCode(), first(sku.sourceBarcode(), Long.toString(sku.chrtId())), sku.subjectName()));
             return;
         }
         ZnackModels.Settings current = settings();

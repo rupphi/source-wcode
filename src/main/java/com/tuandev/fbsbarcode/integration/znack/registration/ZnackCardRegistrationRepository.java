@@ -6,7 +6,6 @@ import com.tuandev.fbsbarcode.config.Database;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.SearchCriteria;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Sku;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Status;
-import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Subject;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.WbCharacteristic;
 
 import java.sql.Connection;
@@ -52,25 +51,6 @@ public class ZnackCardRegistrationRepository {
             try (ResultSet result = statement.executeQuery()) {
                 List<String> values = new ArrayList<>();
                 while (result.next()) values.add(result.getString(1));
-                return values;
-            }
-        } catch (SQLException error) {
-            throw new RuntimeException(error);
-        }
-    }
-
-    public List<Subject> findSubjectOptions(int shopId) {
-        try (Connection connection = Database.getConnection();
-             PreparedStatement statement = connection.prepareStatement("""
-                     SELECT COALESCE(subject_id, 0), subject_name FROM wb_product_cards
-                     WHERE shop_id=? AND TRIM(COALESCE(subject_name, ''))<>''
-                     GROUP BY COALESCE(subject_id, 0), subject_name
-                     ORDER BY subject_name COLLATE NOCASE
-                     """)) {
-            statement.setInt(1, shopId);
-            try (ResultSet result = statement.executeQuery()) {
-                List<Subject> values = new ArrayList<>();
-                while (result.next()) values.add(new Subject(result.getInt(1), result.getString(2)));
                 return values;
             }
         } catch (SQLException error) {
@@ -139,72 +119,6 @@ public class ZnackCardRegistrationRepository {
                         value(result.getString(2)), jsonValues(result.getString(3))));
                 return values;
             }
-        } catch (SQLException error) {
-            throw new RuntimeException(error);
-        }
-    }
-
-    public String tnvedRule(int shopId, int subjectId) {
-        try (Connection connection = Database.getConnection();
-             PreparedStatement statement = connection.prepareStatement("""
-                     SELECT tnved FROM znack_card_registration_tnved_rules
-                     WHERE shop_id=? AND subject_id=?
-                     """)) {
-            statement.setInt(1, shopId);
-            statement.setInt(2, subjectId);
-            try (ResultSet result = statement.executeQuery()) {
-                return result.next() ? value(result.getString(1)) : "";
-            }
-        } catch (SQLException error) {
-            throw new RuntimeException(error);
-        }
-    }
-
-    public String suggestedTnved(int shopId, int subjectId) {
-        try (Connection connection = Database.getConnection();
-             PreparedStatement statement = connection.prepareStatement("""
-                     SELECT ch.name,ch.value_json
-                     FROM wb_product_cards c
-                     JOIN wb_product_characteristics ch ON ch.shop_id=c.shop_id AND ch.nm_id=c.nm_id
-                     WHERE c.shop_id=? AND COALESCE(c.subject_id,0)=?
-                     ORDER BY c.updated_at DESC LIMIT 500
-                     """)) {
-            statement.setInt(1, shopId);
-            statement.setInt(2, subjectId);
-            try (ResultSet result = statement.executeQuery()) {
-                while (result.next()) {
-                    String name = value(result.getString(1)).toLowerCase(Locale.ROOT)
-                            .replace("ё", "е").replaceAll("[\\s_]", "");
-                    if (!name.contains("тнвэд")) continue;
-                    for (String item : jsonValues(result.getString(2))) {
-                        String digits = value(item).replaceAll("\\D", "");
-                        if (digits.length() == 10) return digits;
-                    }
-                }
-                return "";
-            }
-        } catch (SQLException error) {
-            throw new RuntimeException(error);
-        }
-    }
-
-    public void saveTnvedRule(int shopId, Subject subject, String tnved) {
-        String normalized = value(tnved).replaceAll("\\D", "");
-        if (normalized.length() != 10) throw new IllegalArgumentException("TN VED must contain exactly 10 digits.");
-        try (Connection connection = Database.getConnection();
-             PreparedStatement statement = connection.prepareStatement("""
-                     INSERT INTO znack_card_registration_tnved_rules
-                         (shop_id,subject_id,subject_name,tnved,updated_at)
-                     VALUES(?,?,?,?,?)
-                     ON CONFLICT(shop_id,subject_id) DO UPDATE SET
-                         subject_name=excluded.subject_name,tnved=excluded.tnved,updated_at=excluded.updated_at
-                     """)) {
-            statement.setInt(1, shopId);
-            statement.setInt(2, subject.id());
-            statement.setString(3, subject.name());
-            statement.setString(4, normalized);
-            statement.setString(5, Instant.now().toString());
-            statement.executeUpdate();
         } catch (SQLException error) {
             throw new RuntimeException(error);
         }

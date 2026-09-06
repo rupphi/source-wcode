@@ -21,7 +21,8 @@ class ZnackWbAttributeMapperTest {
         List<WbCharacteristic> characteristics = List.of(
                 new WbCharacteristic(1, "Состав", List.of("полиэстер 20%, лайкра 5%, хлопок 75%")),
                 new WbCharacteristic(2, "Пол", List.of("Женский")),
-                new WbCharacteristic(3, "ТН ВЭД", List.of("6204510000"))
+                new WbCharacteristic(3, "ТНВЭД", List.of("6204510000")),
+                new WbCharacteristic(4, "Страна производства", List.of("Россия"))
         );
         List<Attribute> required = List.of(
                 attribute(2478, "Полное наименование товара"),
@@ -34,6 +35,7 @@ class ZnackWbAttributeMapperTest {
                 attribute(2483, "Состав"),
                 preset(14013, "Целевой пол", "МУЖСКОЙ", "ЖЕНСКИЙ"),
                 preset(12, "Вид товара", "ЮБКИ", "БРЮКИ"),
+                preset(90002, "Страна производства", "РОССИЯ", "КИТАЙ"),
                 preset(13836, "Номер технического регламента", "ТР ТС 017/2011 О безопасности продукции легкой промышленности"),
                 attribute(ZnackNationalCatalogService.DECLARATION_ATTRIBUTE_ID, "Декларация")
         );
@@ -48,8 +50,10 @@ class ZnackWbAttributeMapperTest {
         assertEquals("ЧЕРНЫЙ", result.attributes().get(36L));
         assertEquals("ЖЕНСКИЙ", result.attributes().get(14013L));
         assertEquals("БРЮКИ", result.attributes().get(12L));
+        assertEquals("РОССИЯ", result.attributes().get(90002L));
         assertEquals("6204510000", result.attributes().get(13933L));
         assertFalse(result.attributes().containsKey(3959L));
+        assertEquals("6204510000", ZnackWbAttributeMapper.findTnved(characteristics));
     }
 
     @Test
