@@ -47,13 +47,22 @@ public final class ZnackNationalCatalogService {
             throw new IllegalStateException("GS1/GTIN quota is unavailable or exhausted (" + gs1.usage()
                     + "/" + gs1.limit() + "). Check the active GS1 RUS membership in National Catalog.");
         }
-        List<Category> categories = parseCategories(api.nationalCatalogCategories(
-                settings.resolvedTrueApiBaseUrl(), token, normalized));
+        List<Category> categories = List.of();
+        String categoryTnved = normalized;
+        for (String lookupTnved : categoryLookupCodes(normalized)) {
+            categories = parseCategories(api.nationalCatalogCategories(
+                    settings.resolvedTrueApiBaseUrl(), token, lookupTnved));
+            if (!categories.isEmpty()) {
+                categoryTnved = lookupTnved;
+                break;
+            }
+        }
         if (categories.isEmpty()) {
             throw new IllegalArgumentException("No active National Catalog category was found for TN VED "
-                    + normalized + ".");
+                    + normalized + (normalized.length() == 10 ? " or its four-digit group "
+                    + normalized.substring(0, 4) : "") + ".");
         }
-        return new Preflight(normalized, gs1, categories, token);
+        return new Preflight(normalized, categoryTnved, gs1, categories, token);
     }
 
     public List<Attribute> requiredAttributes(long categoryId, String token) throws Exception {
@@ -214,6 +223,16 @@ public final class ZnackNationalCatalogService {
         return active.isEmpty() ? all : active;
     }
 
+    static List<String> categoryLookupCodes(String tnved) {
+        if (tnved != null && tnved.length() == 10) {
+            // National Catalog API v5.62 allows a product with a ten-digit TN VED to use the
+            // registered four-digit group. During /v3/feed it stores the group in attribute
+            // 3959 and the original ten-digit value in attribute 13933.
+            return List.of(tnved, tnved.substring(0, 4));
+        }
+        return List.of(tnved);
+    }
+
     static List<Attribute> parseAttributes(JsonElement response) {
         List<Attribute> values = new ArrayList<>();
         for (JsonElement element : resultArray(response)) {
@@ -288,7 +307,8 @@ public final class ZnackNationalCatalogService {
         return value == null ? "" : value.replaceAll("\\D", "");
     }
 
-    public record Preflight(String tnved, Gs1Status gs1, List<Category> categories, String token) { }
+    public record Preflight(String tnved, String categoryTnved, Gs1Status gs1,
+                            List<Category> categories, String token) { }
     public record FeedProgress(String status, Long goodId, List<String> errors) {
         public boolean failed() { return "Rejected".equalsIgnoreCase(status) || !errors.isEmpty(); }
         public boolean readyToSign() { return "Moderated".equalsIgnoreCase(status) && errors.isEmpty(); }

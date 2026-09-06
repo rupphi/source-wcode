@@ -1,10 +1,17 @@
 package com.tuandev.fbsbarcode.integration.znack.registration;
 
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.tuandev.fbsbarcode.integration.znack.ZnackApiClient;
+import com.tuandev.fbsbarcode.integration.znack.ZnackAuthService;
+import com.tuandev.fbsbarcode.integration.znack.ZnackModels;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Draft;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -58,5 +65,43 @@ class ZnackNationalCatalogServiceTest {
                 """));
         assertEquals(1, categories.size());
         assertEquals(30933, categories.get(0).id());
+    }
+
+    @Test
+    void looksUpTheRegisteredFourDigitGroupAfterAnUnmappedTenDigitTnved() {
+        assertEquals(List.of("6104690001", "6104"),
+                ZnackNationalCatalogService.categoryLookupCodes("6104690001"));
+        assertEquals(List.of("6104"), ZnackNationalCatalogService.categoryLookupCodes("6104"));
+    }
+
+    @Test
+    void preflightRetainsTheFullTnvedWhenItsFourDigitGroupProvidesTheCategory() throws Exception {
+        List<String> lookups = new ArrayList<>();
+        ZnackApiClient api = new ZnackApiClient() {
+            @Override public JsonElement generatedGtins(String base, String token) {
+                return JsonParser.parseString("{\"result\":{\"drafts\":[]}}");
+            }
+
+            @Override public JsonElement nationalCatalogCategories(String base, String token, String tnved)
+                    throws IOException {
+                lookups.add(tnved);
+                return "6104".equals(tnved)
+                        ? JsonParser.parseString("{\"result\":[{\"cat_id\":30933,\"cat_name\":\"Брюки\",\"category_active\":true}]}")
+                        : JsonParser.parseString("{\"result\":[]}");
+            }
+        };
+        ZnackAuthService auth = new ZnackAuthService(api, null) {
+            @Override public String trueApiToken(ZnackModels.Settings settings) {
+                return "shop-token";
+            }
+        };
+        var service = new ZnackNationalCatalogService(api, auth, null, ZnackModels.Settings.empty());
+
+        var result = service.preflight("6104 69 000 1");
+
+        assertEquals(List.of("6104690001", "6104"), lookups);
+        assertEquals("6104690001", result.tnved());
+        assertEquals("6104", result.categoryTnved());
+        assertEquals(30933, result.categories().get(0).id());
     }
 }

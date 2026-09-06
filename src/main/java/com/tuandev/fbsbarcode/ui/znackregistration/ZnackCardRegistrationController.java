@@ -287,7 +287,7 @@ public final class ZnackCardRegistrationController {
             if (attribute.id() == 2478 || attribute.id() == 2504
                     || attribute.id() == ZnackNationalCatalogService.DECLARATION_ATTRIBUTE_ID
                     || attribute.id() == ZnackNationalCatalogService.CERTIFICATE_ATTRIBUTE_ID) continue;
-            String automatic = autoValue(attribute, sku, data.characteristics);
+            String automatic = autoValue(attribute, sku, data.characteristics, data.preflight.tnved());
             Control control;
             if (!attribute.presets().isEmpty()) {
                 ComboBox<String> combo = new ComboBox<>();
@@ -423,10 +423,13 @@ public final class ZnackCardRegistrationController {
         });
     }
 
-    private static String autoValue(Attribute attribute, Sku sku, Map<String, List<String>> characteristics) {
+    private static String autoValue(Attribute attribute, Sku sku, Map<String, List<String>> characteristics,
+                                    String tnved) {
         String name = normalize(attribute.name());
         if (attribute.id() == 2478 || name.contains("полное наименование")) return defaultName(sku);
         if (attribute.id() == 2504 || name.contains("товарный знак") || name.equals("бренд")) return value(sku.brand());
+        if (attribute.id() == 13933L) return value(tnved);
+        if (attribute.id() == 3959L && value(tnved).length() >= 4) return tnved.substring(0, 4);
         if (name.contains("цвет")) return value(sku.color());
         if (name.contains("размер")) return value(sku.size());
         if (name.contains("артикул") || name.contains("модель")) return value(sku.vendorCode());
