@@ -57,7 +57,13 @@ public final class ZnackNationalCatalogService {
     }
 
     public List<Attribute> requiredAttributes(long categoryId, String token) throws Exception {
-        return parseAttributes(api.nationalCatalogAttributes(settings.resolvedTrueApiBaseUrl(), token, categoryId));
+        List<Attribute> attributes = parseAttributes(api.nationalCatalogAttributes(
+                settings.resolvedTrueApiBaseUrl(), token, categoryId));
+        if (attributes.isEmpty()) {
+            throw new IllegalStateException("National Catalog returned no mandatory attribute model for category "
+                    + categoryId + ". Check that the category is active and try again.");
+        }
+        return attributes;
     }
 
     public String generateOne(String token) throws Exception {

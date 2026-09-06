@@ -374,18 +374,46 @@ class ZnackModuleTest {
     }
 
     @Test void apiUsesDocumentedProductPathAndBearerHeader() throws Exception {
-        AtomicReference<String> path=new AtomicReference<>(),catalogPath=new AtomicReference<>(),authorization=new AtomicReference<>();
+        AtomicReference<String> path=new AtomicReference<>(),catalogPath=new AtomicReference<>(),
+                categoriesPath=new AtomicReference<>(),attributesPath=new AtomicReference<>(),
+                authorization=new AtomicReference<>(),categoriesAuthorization=new AtomicReference<>(),
+                attributesAuthorization=new AtomicReference<>();
         HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
         server.createContext("/api/v4/true-api/product/gtin",exchange->{path.set(exchange.getRequestURI().toString());authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));byte[] body="[]".getBytes();exchange.sendResponseHeaders(200,body.length);exchange.getResponseBody().write(body);exchange.close();});
         server.createContext("/api/v3/true-api/nk/feed-product",exchange->{catalogPath.set(exchange.getRequestURI().toString());respond(exchange,"{\"result\":[]}");});
+        server.createContext("/api/v3/true-api/nk/categories",exchange->{categoriesPath.set(exchange.getRequestURI().toString());categoriesAuthorization.set(exchange.getRequestHeaders().getFirst("Authorization"));respond(exchange,"{\"result\":[]}");});
+        server.createContext("/api/v3/true-api/nk/attributes",exchange->{attributesPath.set(exchange.getRequestURI().toString());attributesAuthorization.set(exchange.getRequestHeaders().getFirst("Authorization"));respond(exchange,"{\"result\":[]}");});
         server.start();
         try {
             String base="http://127.0.0.1:"+server.getAddress().getPort();
             new ZnackApiClient().products(base,"abc");
             new ZnackApiClient().productCards(base,"abc","04601234567890;04601234567891");
+            new ZnackApiClient().nationalCatalogCategories(base,"abc","6104690001");
+            new ZnackApiClient().nationalCatalogAttributes(base,"abc",30933);
             assertEquals("/api/v4/true-api/product/gtin?includeSubaccount=false&limit=10000&page=0&pg=lp",path.get());
             assertEquals("/api/v3/true-api/nk/feed-product?gtins=04601234567890%3B04601234567891",catalogPath.get());
+            assertEquals("/api/v3/true-api/nk/categories?tnved=6104690001",categoriesPath.get());
+            assertEquals("/api/v3/true-api/nk/attributes?cat_id=30933&attr_type=m",attributesPath.get());
             assertEquals("Bearer abc",authorization.get());
+            assertEquals("Bearer abc",categoriesAuthorization.get());
+            assertEquals("Bearer abc",attributesAuthorization.get());
+        } finally { server.stop(0); }
+    }
+
+    @Test void missingNationalCatalogCategoryLookupBecomesAnEmptyResult() throws Exception {
+        HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/api/v3/true-api/nk/categories",exchange->{
+            exchange.sendResponseHeaders(404,-1);
+            exchange.close();
+        });
+        server.start();
+        try {
+            String base="http://127.0.0.1:"+server.getAddress().getPort();
+
+            JsonElement response=new ZnackApiClient().nationalCatalogCategories(
+                    base,"true-api-token","6104690001");
+
+            assertTrue(response.isJsonNull());
         } finally { server.stop(0); }
     }
 

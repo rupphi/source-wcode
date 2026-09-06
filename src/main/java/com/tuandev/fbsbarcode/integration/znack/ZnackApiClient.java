@@ -74,10 +74,15 @@ public class ZnackApiClient {
         return getWithoutRetry(nationalCatalogBase(base), "/v3/generate-gtins?quantity=" + quantity, token);
     }
     public JsonElement nationalCatalogCategories(String base, String token, String tnved) throws IOException {
-        return get(nationalCatalogBase(base), "/v3/categories?tnved=" + url(tnved), token);
+        // Use the National Catalog gateway exposed by True API. The bearer token is issued by
+        // this same GIS MT environment, and the official True API documentation publishes the
+        // lookup as /nk/categories. Calling the standalone production host directly can return
+        // an empty 404 for an otherwise valid GIS MT token/account combination.
+        return getEmptyOnNotFound(trueApiBase(base, 3), "/nk/categories?tnved=" + url(tnved), token);
     }
     public JsonElement nationalCatalogAttributes(String base, String token, long categoryId) throws IOException {
-        return get(nationalCatalogBase(base), "/v3/attributes?cat_id=" + categoryId + "&attr_type=m", token);
+        return getEmptyOnNotFound(trueApiBase(base, 3),
+                "/nk/attributes?cat_id=" + categoryId + "&attr_type=m", token);
     }
     public JsonElement submitNationalCatalogFeed(String base, String token, JsonElement feed) throws IOException {
         return post(nationalCatalogBase(base), "/v3/feed", token, feed);

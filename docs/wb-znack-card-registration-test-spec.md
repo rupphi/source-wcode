@@ -9,8 +9,8 @@
 ## Guarded test workflow
 
 1. Read synchronized WB cards and show one row per `chrtID`.
-2. Ask for TN VED and resolve active National Catalog categories through `GET /v3/categories?tnved=...`.
-3. Load the current mandatory attribute model through `GET /v3/attributes?cat_id=...&attr_type=m`; do not hard-code one apparel schema.
+2. Ask for TN VED and resolve active National Catalog categories through the authenticated True API gateway `GET /api/v3/true-api/nk/categories?tnved=...`.
+3. Load the current mandatory attribute model through `GET /api/v3/true-api/nk/attributes?cat_id=...&attr_type=m`; do not hard-code one apparel schema.
 4. Authenticate using the certificate assigned to the selected shop and call `GET /v3/generate-gtins?exist=1` to check the current monthly GS1/GTIN quota without consuming a new number.
 5. Auto-fill values from the WB card. The user completes every missing mandatory value and chooses either declaration attribute `23557` or certificate attribute `23561` with `number:::YYYY-MM-DD`.
 6. Generate one GTIN. Persist it locally before the first feed request so a timeout or restart cannot generate a duplicate.
