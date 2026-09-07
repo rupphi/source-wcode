@@ -17,6 +17,7 @@ import java.util.Set;
 
 /** Maps the official WB cards/list schema to mandatory National Catalog attributes. */
 public final class ZnackWbAttributeMapper {
+    static final String NO_BRAND = "Нет бренда";
     private static final long GOOD_NAME = 2478L;
     private static final long BRAND = 2504L;
     private static final long FULL_TNVED = 13933L;
@@ -31,13 +32,11 @@ public final class ZnackWbAttributeMapper {
     public MappingResult map(Sku sku, List<WbCharacteristic> characteristics, List<Attribute> required,
                              String fullTnved, String feedTnved, ZnackModels.GoodsDocument document) {
         String goodName = defaultName(sku);
-        String brand = clean(sku.brand());
+        String brand = brand(sku, characteristics);
         Map<Long, String> values = new LinkedHashMap<>();
         List<String> missing = new ArrayList<>();
 
         if (goodName.isBlank()) missing.add("Наименование товара");
-        if (brand.isBlank()) missing.add("Товарный знак / бренд");
-
         for (Attribute attribute : required) {
             long id = attribute.id();
             if (id == TNVED_GROUP) {
@@ -75,7 +74,9 @@ public final class ZnackWbAttributeMapper {
         String name = normalize(attribute.name());
         long id = attribute.id();
         if (id == GOOD_NAME || name.contains("полное наименование")) return defaultName(sku);
-        if (id == BRAND || name.contains("товарный знак") || name.equals("бренд")) return clean(sku.brand());
+        if (id == BRAND || name.contains("товарный знак") || name.equals("бренд")) {
+            return brand(sku, characteristics);
+        }
         if (id == FULL_TNVED && clean(feedTnved).length() == 4) return digits(fullTnved);
         if (id == MODEL || name.contains("артикул производителя") || name.contains("модель")) {
             return clean(sku.vendorCode());
@@ -161,6 +162,12 @@ public final class ZnackWbAttributeMapper {
         if (source.contains("мужск") || source.contains("мальчик")) return "МУЖСКОЙ";
         if (source.contains("унисекс")) return "УНИСЕКС";
         return "";
+    }
+
+    private static String brand(Sku sku, List<WbCharacteristic> characteristics) {
+        String wbBrand = clean(sku.brand());
+        if (!wbBrand.isBlank()) return wbBrand;
+        return firstCharacteristic(characteristics, List.of("бренд", "товарный знак"), NO_BRAND);
     }
 
     private static String presetContaining(Attribute attribute, String needle) {

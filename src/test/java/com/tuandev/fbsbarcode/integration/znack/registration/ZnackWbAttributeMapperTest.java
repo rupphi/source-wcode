@@ -68,6 +68,20 @@ class ZnackWbAttributeMapperTest {
         assertTrue(result.missingFields().stream().anyMatch(value -> value.contains("Giấy tờ")));
     }
 
+    @Test
+    void usesRussianNoBrandValueWhenWbHasNoBrand() {
+        Sku sku = new Sku(1, 2, 3, "ART-1", "Брюки", "", "Брюки",
+                "", "44", List.of(), "", true, "", null, "", Status.NOT_CREATED, "", false);
+
+        var result = new ZnackWbAttributeMapper().map(sku, List.of(),
+                List.of(attribute(2504, "Товарный знак")), "6204510000", "6204",
+                new ZnackModels.GoodsDocument("CONFORMITY_DECLARATION", "DOC-1", "2026-09-07"));
+
+        assertTrue(result.complete(), result.missingFields().toString());
+        assertEquals(ZnackWbAttributeMapper.NO_BRAND, result.brand());
+        assertEquals(ZnackWbAttributeMapper.NO_BRAND, result.attributes().get(2504L));
+    }
+
     private static Attribute attribute(long id, String name) {
         return new Attribute(id, name, "text", false, false, true, false, List.of());
     }
