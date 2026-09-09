@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.tuandev.fbsbarcode.integration.ozon.OzonProductDto;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class OzonGtinMappingEditorTest {
@@ -31,6 +32,18 @@ class OzonGtinMappingEditorTest {
                 products,
                 Map.of("DRESS-RED", "04645588781154", "retired-article", "04645588781154"),
                 "04645588781154"));
+    }
+
+    @Test
+    void categoryFilterAcceptsMultipleSelectedCategories() {
+        List<OzonProductDto> products = List.of(
+                product("1", "SKU-1", "dress-red", "Dresses", "Women"),
+                product("2", "SKU-2", "shirt-blue", "Shirts", "Men"),
+                product("3", "SKU-3", "hat-black", "Hats", "Men"));
+
+        assertEquals(List.of("dress-red", "shirt-blue"), OzonGtinMappingEditor.visibleProducts(
+                        products, "", Set.of("Dresses", "Shirts"), "")
+                .stream().map(OzonProductDto::article).toList());
     }
 
     private static OzonProductDto product(

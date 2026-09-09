@@ -37,9 +37,9 @@ class OzonFboWorkflowTest {
                     + "VALUES(1,'Ozon','OZON','client','secret')");
         }
         new OzonCatalogRepository().upsertPage(1, List.of(
-                product("101", "SKU-42", "BARCODE-42", "42", false),
-                product("102", "SKU-44", "BARCODE-44", "44", false),
-                product("103", "SKU-OLD", "BARCODE-OLD", "46", true)), "cursor");
+                product("101", "SKU-42", "BARCODE-42", "42", "Jackets", false),
+                product("102", "SKU-44", "BARCODE-44", "44", "Trousers", false),
+                product("103", "SKU-OLD", "BARCODE-OLD", "46", "Archived", true)), "cursor");
         new OzonProductKizPolicyRepository().setRequired(1, "SKU-44", false);
 
         ZnackRepository znack = new ZnackRepository(new ShopContext(1, "Ozon"));
@@ -73,6 +73,19 @@ class OzonFboWorkflowTest {
     }
 
     @Test
+    void categoryFilterSupportsSelectingMoreThanOneOzonCategory() {
+        OzonFboProductRepository repository = new OzonFboProductRepository();
+
+        assertEquals(List.of("Jackets", "Trousers"), repository.findCategories(1));
+        assertEquals(List.of("SKU-44"), repository.search(
+                        new FboProductSearchCriteria(1, "", List.of("Trousers"), 10, 0))
+                .stream().map(FboProductSku::catalogSku).toList());
+        assertEquals(List.of("SKU-42", "SKU-44"), repository.search(
+                        new FboProductSearchCriteria(1, "", List.of("Jackets", "Trousers"), 10, 0))
+                .stream().map(FboProductSku::catalogSku).sorted().toList());
+    }
+
+    @Test
     void printsTwoBarcodePagesThenOneKizPageForEachRequiredSize() {
         FboProductSku required = new OzonFboProductRepository().search(
                 new FboProductSearchCriteria(1, "SKU-42", List.of(), 10, 0)).getFirst();
@@ -103,9 +116,10 @@ class OzonFboWorkflowTest {
     }
 
     private static OzonProductDto product(
-            String productId, String sku, String barcode, String size, boolean archived) {
+            String productId, String sku, String barcode, String size, String category, boolean archived) {
         return new OzonProductDto(
                 productId, "offer-" + size, sku, "Jacket " + size, "https://example.test/" + size + ".png",
-                "ART-" + size, "Black", size, archived, "2026-08-25T00:00:00Z", List.of(barcode));
+                "ART-" + size, "Black", size, category, "Men",
+                archived, "2026-08-25T00:00:00Z", List.of(barcode));
     }
 }

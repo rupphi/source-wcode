@@ -7,6 +7,7 @@ import com.tuandev.fbsbarcode.integration.ozon.OzonProductGtinMappingRepository;
 import com.tuandev.fbsbarcode.shared.AlertService;
 import com.tuandev.fbsbarcode.shared.AppTaskExecutor;
 import com.tuandev.fbsbarcode.shared.I18nService;
+import com.tuandev.fbsbarcode.ui.controls.CategoryFilterMenu;
 import java.text.MessageFormat;
 import java.io.ByteArrayInputStream;
 import java.util.LinkedHashSet;
@@ -22,6 +23,7 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuButton;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
 import javafx.scene.image.Image;
@@ -67,11 +69,14 @@ public final class OzonGtinMappingEditor {
         TextField search = new TextField();
         search.setPromptText(tr("ozon.mapping.search"));
         String all = tr("ozon.mapping.filter.all");
-        ComboBox<String> category = filterBox(all, data.products().stream()
-                .map(OzonProductDto::category).filter(value -> !value.isBlank()).toList());
+        MenuButton category = new MenuButton();
+        Runnable[] refreshAction = {() -> { }};
+        CategoryFilterMenu categoryFilter = new CategoryFilterMenu(category, () -> refreshAction[0].run());
+        categoryFilter.setTexts(tr("ozon.mapping.filter.category"),
+                tr("znack.filter.no_category"), tr("znack.filter.clear"));
+        categoryFilter.rebuild(data.products().stream().map(OzonProductDto::category).toList());
         ComboBox<String> gender = filterBox(all, data.products().stream()
                 .map(OzonProductDto::gender).filter(value -> !value.isBlank()).toList());
-        category.setPromptText(tr("ozon.mapping.filter.category"));
         gender.setPromptText(tr("ozon.mapping.filter.gender"));
         CheckBox selectAll = new CheckBox(tr("ozon.mapping.select_all"));
         Label selectedLabel = new Label();
@@ -85,14 +90,14 @@ public final class OzonGtinMappingEditor {
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
 
         Runnable refresh = () -> renderRows(
-                gtin, data, search.getText(), filterValue(category, all), filterValue(gender, all),
+                gtin, data, search.getText(), categoryFilter.selectedCategories(), filterValue(gender, all),
                 selected, rows, selectedLabel, selectAll);
+        refreshAction[0] = refresh;
         search.textProperty().addListener((ignored, oldValue, newValue) -> refresh.run());
-        category.valueProperty().addListener((ignored, oldValue, newValue) -> refresh.run());
         gender.valueProperty().addListener((ignored, oldValue, newValue) -> refresh.run());
         selectAll.setOnAction(event -> {
             List<OzonProductDto> visible = visibleProducts(
-                    data.products(), search.getText(), filterValue(category, all), filterValue(gender, all));
+                    data.products(), search.getText(), categoryFilter.selectedCategories(), filterValue(gender, all));
             if (selectAll.isSelected()) visible.forEach(product -> selected.add(articleKey(product.article())));
             else visible.forEach(product -> selected.remove(articleKey(product.article())));
             refresh.run();
@@ -122,14 +127,14 @@ public final class OzonGtinMappingEditor {
             String gtin,
             Data data,
             String query,
-            String category,
+            Set<String> categories,
             String gender,
             Set<String> selected,
             VBox rows,
             Label selectedLabel,
             CheckBox selectAll) {
         rows.getChildren().clear();
-        List<OzonProductDto> visible = visibleProducts(data.products(), query, category, gender);
+        List<OzonProductDto> visible = visibleProducts(data.products(), query, categories, gender);
         for (OzonProductDto product : visible) {
             CheckBox check = new CheckBox();
             String key = articleKey(product.article());
@@ -229,16 +234,25 @@ public final class OzonGtinMappingEditor {
 
     static List<OzonProductDto> visibleProducts(
             List<OzonProductDto> products, String query, String category, String gender) {
+        Set<String> categories = category == null || category.isBlank()
+                ? Set.of() : Set.of(category.strip());
+        return visibleProducts(products, query, categories, gender);
+    }
+
+    static List<OzonProductDto> visibleProducts(
+            List<OzonProductDto> products, String query, Set<String> categories, String gender) {
         String normalizedQuery = query == null ? "" : query.strip().toLowerCase(Locale.ROOT);
-        String normalizedCategory = category == null ? "" : category.strip();
+        Set<String> normalizedCategories = categories == null ? Set.of() : categories.stream()
+                .map(value -> value == null ? "" : value.strip().toLowerCase(Locale.ROOT))
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
         String normalizedGender = gender == null ? "" : gender.strip();
         Map<String, OzonProductDto> byArticle = new java.util.LinkedHashMap<>();
         if (products == null) return List.of();
         products.stream()
                 .filter(product -> product != null && !product.archived() && !product.article().isBlank())
                 .filter(product -> normalizedQuery.isBlank() || matches(product, normalizedQuery))
-                .filter(product -> normalizedCategory.isBlank()
-                        || normalizedCategory.equalsIgnoreCase(product.category()))
+                .filter(product -> normalizedCategories.isEmpty()
+                        || normalizedCategories.contains(product.category().strip().toLowerCase(Locale.ROOT)))
                 .filter(product -> normalizedGender.isBlank()
                         || normalizedGender.equalsIgnoreCase(product.gender()))
                 .forEach(product -> byArticle.putIfAbsent(

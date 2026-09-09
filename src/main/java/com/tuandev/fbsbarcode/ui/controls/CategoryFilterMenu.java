@@ -66,6 +66,11 @@ public class CategoryFilterMenu {
         return selected.isEmpty() || selected.contains(category == null ? "" : category.trim());
     }
 
+    /** Immutable snapshot of the currently selected category values. */
+    public Set<String> selectedCategories() {
+        return Set.copyOf(selected);
+    }
+
     public void clear() {
         if (selected.isEmpty()) return;
         selected.clear();

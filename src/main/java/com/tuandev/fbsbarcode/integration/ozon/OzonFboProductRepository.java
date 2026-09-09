@@ -9,11 +9,33 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 
 /** Provides one printable FBO row for each active Ozon catalog SKU. */
 public final class OzonFboProductRepository {
+    public List<String> findCategories(int shopId) {
+        if (shopId <= 0) return List.of();
+        try (Connection connection = Database.getConnection();
+                PreparedStatement statement = connection.prepareStatement("""
+                        SELECT DISTINCT TRIM(category)
+                        FROM ozon_products
+                        WHERE shop_id=? AND archived=0
+                          AND category IS NOT NULL AND TRIM(category)<>''
+                        ORDER BY TRIM(category) COLLATE NOCASE
+                        """)) {
+            statement.setInt(1, shopId);
+            try (ResultSet result = statement.executeQuery()) {
+                List<String> categories = new ArrayList<>();
+                while (result.next()) categories.add(result.getString(1));
+                return List.copyOf(categories);
+            }
+        } catch (SQLException exception) {
+            throw new RuntimeException(exception);
+        }
+    }
+
     public List<FboProductSku> search(FboProductSearchCriteria criteria) {
         if (criteria == null || criteria.shopId() <= 0) {
             return List.of();
@@ -22,7 +44,7 @@ public final class OzonFboProductRepository {
         parameters.add(criteria.shopId());
         StringBuilder sql = new StringBuilder("""
                 SELECT p.product_id,p.offer_id,p.sku AS catalog_sku,p.name,p.primary_image_url,
-                       p.article,p.color,p.size,
+                       p.article,p.color,p.size,p.category,
                        COALESCE((
                            SELECT b.barcode FROM ozon_product_barcodes b
                            WHERE b.shop_id=p.shop_id AND b.product_id=p.product_id
@@ -51,6 +73,18 @@ public final class OzonFboProductRepository {
                     )
                     """);
             for (int i = 0; i < 6; i++) parameters.add(like);
+        }
+        List<String> categories = criteria.subjectNames() == null ? List.of()
+                : criteria.subjectNames().stream()
+                .filter(value -> value != null && !value.isBlank())
+                .map(String::trim)
+                .distinct()
+                .toList();
+        if (!categories.isEmpty()) {
+            sql.append(" AND TRIM(p.category) IN (")
+                    .append(String.join(", ", Collections.nCopies(categories.size(), "?")))
+                    .append(")");
+            parameters.addAll(categories);
         }
         sql.append("""
                 ORDER BY p.name COLLATE NOCASE,p.article COLLATE NOCASE,
@@ -82,7 +116,7 @@ public final class OzonFboProductRepository {
         String size = safe(result.getString("size"));
         String barcode = first(result.getString("print_barcode"), result.getString("catalog_sku"));
         return new FboProductSku(
-                numericId(productId), article, name, "", name,
+                numericId(productId), article, safe(result.getString("category")), "", name,
                 safe(result.getString("color")), size, size, barcode,
                 safe(result.getString("primary_image_url")), result.getBoolean("requires_kiz"),
                 safe(result.getString("catalog_sku")));

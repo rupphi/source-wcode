@@ -341,7 +341,7 @@ class FxmlSmokeTest {
     }
 
     @Test
-    void ozonFboPackingShowsCatalogSkuAndHidesWbCategoryFilter() throws Exception {
+    void ozonFboPackingShowsCatalogSkuAndCategoryFilter() throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
         AtomicBoolean valid = new AtomicBoolean(false);
         Platform.runLater(() -> {
@@ -355,7 +355,7 @@ class FxmlSmokeTest {
                 javafx.scene.control.TableColumn<?, ?> catalogSku =
                         (javafx.scene.control.TableColumn<?, ?>) loader.getNamespace().get("catalogSkuColumn");
                 Label title = (Label) loader.getNamespace().get("titleLabel");
-                valid.set(!categories.isVisible() && !categories.isManaged()
+                valid.set(categories.isVisible() && categories.isManaged()
                         && catalogSku.isVisible()
                         && I18nService.getInstance().tr("ozon.fbo.title").equals(title.getText()));
             } finally {
@@ -363,7 +363,7 @@ class FxmlSmokeTest {
             }
         });
         assertTrue(latch.await(5, TimeUnit.SECONDS));
-        assertTrue(valid.get(), "Ozon FBO must show synchronized SKUs without WB-only subject filters");
+        assertTrue(valid.get(), "Ozon FBO must show synchronized SKUs and the multi-category filter");
     }
 
     @Test
@@ -421,6 +421,12 @@ class FxmlSmokeTest {
                                 0, "101", "SKU-101", "offer-101", "Item", 1, "RUB", "100"))));
                 javafx.scene.control.TableColumn<?, ?> selectColumn =
                         (javafx.scene.control.TableColumn<?, ?>) loader.getNamespace().get("newOrderSelectTC");
+                javafx.scene.control.TableColumn<?, ?> newOrderNumber =
+                        (javafx.scene.control.TableColumn<?, ?>) loader.getNamespace().get("newOrderNumberTC");
+                javafx.scene.control.TableColumn<?, ?> packingOrderNumber =
+                        (javafx.scene.control.TableColumn<?, ?>) loader.getNamespace().get("packingOrderNumberTC");
+                javafx.scene.control.TableColumn<?, ?> deliveringOrderNumber =
+                        (javafx.scene.control.TableColumn<?, ?>) loader.getNamespace().get("deliveringOrderNumberTC");
                 CheckBox selectAll = (CheckBox) selectColumn.getGraphic();
                 selectAll.fire();
                 valid.set(tabs != null
@@ -445,6 +451,10 @@ class FxmlSmokeTest {
                         && loader.getNamespace().get("newOrderShipmentTC") == null
                         && loader.getNamespace().get("packingOrderShipmentTC") == null
                         && loader.getNamespace().get("deliveringOrderShipmentTC") == null
+                        && loader.getNamespace().get("accountLabel") == null
+                        && newOrderNumber.getPrefWidth() == 100.0
+                        && packingOrderNumber.getPrefWidth() == 100.0
+                        && deliveringOrderNumber.getPrefWidth() == 100.0
                         && loader.getNamespace().get("printAllButton") != null
                         && loader.getNamespace().get("sortByProductCheckBox") != null
                         && loader.getNamespace().get("sortByArticleCheckBox") != null

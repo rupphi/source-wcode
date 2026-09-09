@@ -28,7 +28,6 @@
                 <VBox spacing="3.0">
                     <children>
                         <Label fx:id="titleLabel" styleClass="h2" text="FBS orders" />
-                        <Label fx:id="accountLabel" styleClass="text-muted" />
                     </children>
                 </VBox>
                 <Region HBox.hgrow="ALWAYS" />
@@ -59,7 +58,7 @@
                                             <columns>
                                                 <TableColumn fx:id="newOrderSelectTC" maxWidth="46.0" minWidth="46.0" prefWidth="46.0" resizable="false" text="" />
                                                 <TableColumn fx:id="newOrderImageTC" maxWidth="58.0" minWidth="58.0" prefWidth="58.0" resizable="false" text="" />
-                                                <TableColumn fx:id="newOrderNumberTC" minWidth="120.0" prefWidth="170.0" text="Order" />
+                                                <TableColumn fx:id="newOrderNumberTC" maxWidth="110.0" minWidth="100.0" prefWidth="100.0" resizable="false" text="Order" />
                                                 <TableColumn fx:id="newOrderItemsTC" minWidth="140.0" prefWidth="270.0" text="Items" />
                                             </columns>
                                         </TableView>
@@ -88,7 +87,7 @@
                                             <columnResizePolicy><TableView fx:constant="CONSTRAINED_RESIZE_POLICY" /></columnResizePolicy>
                                             <columns>
                                                 <TableColumn fx:id="packingOrderImageTC" maxWidth="58.0" minWidth="58.0" prefWidth="58.0" resizable="false" text="" />
-                                                <TableColumn fx:id="packingOrderNumberTC" minWidth="120.0" prefWidth="165.0" text="Order" />
+                                                <TableColumn fx:id="packingOrderNumberTC" maxWidth="110.0" minWidth="100.0" prefWidth="100.0" resizable="false" text="Order" />
                                                 <TableColumn fx:id="packingOrderItemsTC" minWidth="130.0" prefWidth="235.0" text="Items" />
                                                 <TableColumn fx:id="packingLabelTC" maxWidth="54.0" minWidth="54.0" prefWidth="54.0" resizable="false" text="" />
                                             </columns>
@@ -106,7 +105,7 @@
                                             <columnResizePolicy><TableView fx:constant="CONSTRAINED_RESIZE_POLICY" /></columnResizePolicy>
                                             <columns>
                                                 <TableColumn fx:id="deliveringOrderImageTC" maxWidth="58.0" minWidth="58.0" prefWidth="58.0" resizable="false" text="" />
-                                                <TableColumn fx:id="deliveringOrderNumberTC" minWidth="120.0" prefWidth="165.0" text="Order" />
+                                                <TableColumn fx:id="deliveringOrderNumberTC" maxWidth="110.0" minWidth="100.0" prefWidth="100.0" resizable="false" text="Order" />
                                                 <TableColumn fx:id="deliveringOrderItemsTC" minWidth="130.0" prefWidth="230.0" text="Items" />
                                                 <TableColumn fx:id="deliveringOrderStatusTC" minWidth="90.0" prefWidth="120.0" text="Status" />
                                             </columns>

@@ -392,8 +392,9 @@ public class HomeController implements Initializable {
             fboPackingController.replaceProducts(List.of(), false);
             return;
         }
-        fboPackingController.setSubjects(shop.getMarketplace() == Marketplace.WILDBERRIES
-                ? fboProductRepository.findSubjects(shop.getId()) : List.of());
+        fboPackingController.setSubjects(shop.getMarketplace() == Marketplace.OZON
+                ? ozonFboProductRepository.findCategories(shop.getId())
+                : fboProductRepository.findSubjects(shop.getId()));
         reloadFboProducts();
     }
 

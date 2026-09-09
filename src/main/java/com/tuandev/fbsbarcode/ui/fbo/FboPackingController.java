@@ -119,8 +119,8 @@ public class FboPackingController {
     public void setMarketplace(Marketplace marketplace) {
         this.marketplace = marketplace == null ? Marketplace.WILDBERRIES : marketplace;
         boolean ozon = this.marketplace == Marketplace.OZON;
-        categoryMenuButton.setVisible(!ozon);
-        categoryMenuButton.setManaged(!ozon);
+        categoryMenuButton.setVisible(true);
+        categoryMenuButton.setManaged(true);
         catalogSkuColumn.setVisible(ozon);
         applyTranslations();
     }

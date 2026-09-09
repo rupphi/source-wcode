@@ -10,7 +10,6 @@ import com.tuandev.fbsbarcode.features.supply.OrderSortPreferenceService;
 import com.tuandev.fbsbarcode.integration.marketplace.Marketplace;
 import com.tuandev.fbsbarcode.integration.ozon.OzonBatchPrintReadiness;
 import com.tuandev.fbsbarcode.integration.ozon.OzonCatalogRepository;
-import com.tuandev.fbsbarcode.integration.ozon.OzonConnectionCheck;
 import com.tuandev.fbsbarcode.integration.ozon.OzonPostingDto;
 import com.tuandev.fbsbarcode.integration.ozon.OzonPostingItemDto;
 import com.tuandev.fbsbarcode.integration.ozon.OzonPostingRepository;
@@ -18,9 +17,7 @@ import com.tuandev.fbsbarcode.integration.ozon.OzonPrintBundleService;
 import com.tuandev.fbsbarcode.integration.ozon.OzonPrintReadiness;
 import com.tuandev.fbsbarcode.integration.ozon.OzonPrintReadinessService;
 import com.tuandev.fbsbarcode.integration.ozon.OzonProductDto;
-import com.tuandev.fbsbarcode.integration.ozon.OzonProductKizPolicyRepository;
 import com.tuandev.fbsbarcode.integration.ozon.OzonShipService;
-import com.tuandev.fbsbarcode.integration.ozon.OzonSyncReport;
 import com.tuandev.fbsbarcode.integration.ozon.OzonSyncWorkflow;
 import com.tuandev.fbsbarcode.integration.znack.GtinNormalizer;
 import com.tuandev.fbsbarcode.integration.znack.ZnackApiClient;
@@ -112,7 +109,6 @@ public final class OzonDashboardController {
     private final OzonShipService shipService = new OzonShipService();
     private final OzonPrintBundleService printBundleService = new OzonPrintBundleService();
     private final OzonPrintReadinessService printReadinessService = new OzonPrintReadinessService();
-    private final OzonProductKizPolicyRepository kizPolicies = new OzonProductKizPolicyRepository();
     private final FboProductImageService imageService = new FboProductImageService();
     private final OzonPostingSortingService sortingService = new OzonPostingSortingService();
     private final OrderSortPreferenceService sortPreferences = new OrderSortPreferenceService();
@@ -122,7 +118,6 @@ public final class OzonDashboardController {
     private final CheckBox selectAllCheckBox = new CheckBox();
 
     @FXML private Label titleLabel;
-    @FXML private Label accountLabel;
     @FXML private Label statusLabel;
     @FXML private ProgressIndicator loadingIndicator;
     @FXML private Button refreshButton;
@@ -170,7 +165,6 @@ public final class OzonDashboardController {
     private long requestToken;
     private Map<String, String> productImageUrls = Map.of();
     private List<OzonProductDto> catalogProducts = List.of();
-    private Set<String> kizExemptSkus = Set.of();
     private List<OzonPostingDto> packingOrdersRaw = List.of();
     private boolean updatingSortControls;
     private BiConsumer<Integer, Boolean> onBusy = (ignoredShop, ignoredBusy) -> { };
@@ -211,8 +205,6 @@ public final class OzonDashboardController {
             clear();
             return;
         }
-        accountLabel.setText(I18nService.getInstance().tr("ozon.dashboard.client_id") + ": "
-                + safeIdentity(this.shop.getClientId()));
         loadLocal();
         syncGtinInventoryOnOpen();
         if (syncRemote) sync();
@@ -222,12 +214,12 @@ public final class OzonDashboardController {
         Shop selected = shop;
         if (selected == null || busy) return;
         long token = ++requestToken;
-        Task<SyncResult> task = new Task<>() {
-            @Override protected SyncResult call() throws Exception {
+        Task<Void> task = new Task<>() {
+            @Override protected Void call() throws Exception {
                 return ShopOperationCoordinator.withActiveShop(selected.getId(), () -> {
-                    OzonConnectionCheck connection = syncWorkflow.checkConnection(selected);
-                    OzonSyncReport report = syncWorkflow.syncOverview(selected);
-                    return new SyncResult(connection, report);
+                    syncWorkflow.checkConnection(selected);
+                    syncWorkflow.syncOverview(selected);
+                    return null;
                 });
             }
         };
@@ -235,9 +227,6 @@ public final class OzonDashboardController {
         task.setOnSucceeded(event -> {
             if (token != requestToken || !isCurrent(selected)) return;
             setBusy(false);
-            SyncResult result = task.getValue();
-            accountLabel.setText(I18nService.getInstance().tr("ozon.dashboard.client_id") + ": "
-                    + safeIdentity(result.connection().clientId()));
             statusLabel.setText(I18nService.getInstance().tr("ozon.dashboard.sync_done"));
             loadLocal();
         });
@@ -517,7 +506,6 @@ public final class OzonDashboardController {
         List<OzonPostingDto> packingOrders = postings.findByStatus(selected.getId(), "awaiting_deliver", 500, 0);
         List<OzonPostingDto> deliveringOrders = postings.findByStatus(selected.getId(), "delivering", 500, 0);
         catalogProducts = catalog.findAll(selected.getId());
-        kizExemptSkus = kizPolicies.findExemptSkus(selected.getId());
         productImageUrls = catalogProducts.stream()
                 .filter(product -> !product.sku().isBlank() && !product.primaryImageUrl().isBlank())
                 .collect(java.util.stream.Collectors.toUnmodifiableMap(
@@ -792,12 +780,10 @@ public final class OzonDashboardController {
         selectedPostingNumbers.clear();
         productImageUrls = Map.of();
         catalogProducts = List.of();
-        kizExemptSkus = Set.of();
         packingOrdersRaw = List.of();
         newOrdersTable.getItems().clear();
         packingOrdersTable.getItems().clear();
         deliveringOrdersTable.getItems().clear();
-        accountLabel.setText("");
         statusLabel.setText("");
         setBusy(false);
         updateEmptyStates();
@@ -1279,12 +1265,6 @@ public final class OzonDashboardController {
                 && Objects.equals(first.getApiKey(), second.getApiKey());
     }
 
-    private static String safeIdentity(String value) {
-        if (value == null || value.isBlank()) return "-";
-        String safe = value.replaceAll("\\p{Cntrl}", " ").strip();
-        return safe.length() <= 80 ? safe : safe.substring(0, 80);
-    }
-
     private static String safeFilename(String value) {
         String safe = value == null ? "posting" : value.replaceAll("[^A-Za-z0-9._-]", "_");
         return safe.isBlank() ? "posting" : safe;
@@ -1363,20 +1343,7 @@ public final class OzonDashboardController {
             variants.getStyleClass().add("text-muted");
             variants.setVisible(!details.isEmpty());
             variants.setManaged(!details.isEmpty());
-            Label kizBadge = new Label();
-            kizBadge.getStyleClass().add("badge");
-            boolean mandatory = posting.requirements().mandatoryMarkProductIds().contains(item.productId());
-            boolean exempt = !mandatory && !item.sku().isBlank() && kizExemptSkus.contains(item.sku());
-            if (!exempt) {
-                kizBadge.setText(tr("ozon.dashboard.kiz.required"));
-                kizBadge.getStyleClass().add("badge-red");
-            } else {
-                kizBadge.setText(tr("ozon.dashboard.kiz.not_required"));
-                kizBadge.getStyleClass().add("badge-green");
-            }
-            HBox variantRow = new HBox(8, variants, kizBadge);
-            variantRow.setAlignment(Pos.CENTER_LEFT);
-            VBox itemBox = new VBox(3, titleRow, metadata, variantRow);
+            VBox itemBox = new VBox(3, titleRow, metadata, variants);
             itemBox.setAlignment(Pos.CENTER_LEFT);
             return itemBox;
         }
@@ -1391,7 +1358,6 @@ public final class OzonDashboardController {
                 .findFirst().orElse(null);
     }
 
-    private record SyncResult(OzonConnectionCheck connection, OzonSyncReport report) { }
     private record BatchTransitionResult(int requested, List<String> completed, List<String> failed) { }
     private record PrintOutput(String message, List<File> files, List<String> postingNumbers) {
         private PrintOutput {
