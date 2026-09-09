@@ -1167,9 +1167,7 @@ public class HomeController implements Initializable {
         Task<Void> resume = new Task<>() {
             @Override
             protected Void call() throws Exception {
-                if (com.tuandev.fbsbarcode.shared.AppPaths.isZnackRegistrationTestProfile()) {
-                    com.tuandev.fbsbarcode.integration.znack.registration.RegistrationRunner.start();
-                }
+                com.tuandev.fbsbarcode.integration.znack.registration.RegistrationRunner.start();
                 ZnackPurchaseCoordinator.resumeAllPersisted();
                 if (selectedShop != null) {
                     ZnackRepository repository = new ZnackRepository(

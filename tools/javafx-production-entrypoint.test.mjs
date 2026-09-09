@@ -136,6 +136,12 @@ test("Windows CI builds a versioned downloadable JavaFX EXE without publishing a
   assert.doesNotMatch(workflow, /gh release|RELEASE_TOKEN/);
 });
 
+test("production starts persisted registration monitoring without requiring the test profile", async () => {
+  const home = await readFile(new URL("src/main/java/com/tuandev/fbsbarcode/ui/workspace/HomeController.java", root), "utf8");
+  assert.match(home, /RegistrationRunner\.start\(\)/);
+  assert.doesNotMatch(home, /isZnackRegistrationTestProfile\(\)/);
+});
+
 test("Znack registration test EXE is isolated, has its own update channel, and separates registration from WB publication", async () => {
   const [workflow, buildScript, appPaths, registrationWorkflow, updateService, updateClient] = await Promise.all([
     readFile(new URL(".github/workflows/build-znack-registration-test.yml", root), "utf8"),

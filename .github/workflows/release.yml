@@ -411,6 +411,11 @@ jobs:
         run: |
           if ($env:UPDATE_MANIFEST_ENABLED -ceq 'true') {
             $env:RELEASE_NOTES_JSON = ConvertTo-Json -Compress -InputObject @(
+              'Đăng ký thẻ Znack hàng loạt từ SKU WB, hỗ trợ cả giấy công bố và giấy chứng nhận',
+              'Tự thêm GTIN đúng size trên WB sau khi thẻ được người dùng ký và xuất bản',
+              'Tự mua KIZ thiếu khi chủ động in đơn WB và chờ lưu thông trước khi cấp mã',
+              'Nhãn Ozon theo thứ tự barcode, KIZ, vận đơn; file nhặt hàng cùng thứ tự',
+              'Bổ sung lọc nhiều danh mục cho đóng hàng FBO và mapping Ozon',
               'Chỉ hiển thị và cấp phát KIZ đã lưu thông thành công cho WB và Ozon',
               'Hỗ trợ giấy chứng nhận phù hợp khi GTIN không có giấy công bố phù hợp',
               'Thông báo rõ khi tài khoản Znack không đủ tiền và cho phép thử lại đúng pipeline cũ',
@@ -615,6 +620,12 @@ jobs:
           notes="$(cat <<EOF
           WCode ${APP_VERSION}
 
+          - Đăng ký thẻ Znack từ SKU Wildberries: tự điền thuộc tính, chọn từng SKU hoặc tất cả kết quả theo bộ lọc, kiểm tra dữ liệu và đăng ký hàng loạt qua hàng đợi có khôi phục.
+          - Cấu hình riêng Декларация о соответствии và Сертификат соответствия; nếu nhập cả hai thì gửi cả hai vào thẻ.
+          - Khi người dùng đã ký và thẻ được xuất bản trên Znack, WCode xác minh chủ sở hữu rồi thêm GTIN đúng size trên WB, giữ nguyên barcode và các size hiện có.
+          - Khi chủ động in đơn WB, tự mua KIZ thiếu cho các SKU đã đăng ký và chờ lưu thông thành công trước khi cấp mã; giữ lại pipeline để tránh mua trùng.
+          - Nhãn Ozon theo thứ tự barcode sản phẩm → KIZ cho từng đơn vị → vận đơn. File nhặt hàng cùng thứ tự, có ảnh, size, màu, article và định danh vận đơn; không gửi KIZ lên Ozon.
+          - Giao diện Ozon gọn hơn và hỗ trợ lọc nhiều danh mục trong đóng hàng FBO và mapping.
           - Chỉ KIZ có trạng thái pháp lý IN_CIRCULATION mới được hiển thị là khả dụng và cấp cho WB/Ozon; KIZ đang chờ hoặc lưu thông lỗi được giữ lại để xử lý nhưng không thể dùng nhầm.
           - Thêm nút xuất tem KIZ 58×40: chọn số lượng, lưu PDF gồm DataMatrix, tên sản phẩm, giới tính và size, sau đó tự mở file.
           - Thêm thao tác lưu trữ KIZ lỗi; chỉ KIZ thuộc pipeline INTRODUCTION_FAILED mới được phép lưu trữ, không ảnh hưởng KIZ đang chờ hay còn có thể tiếp tục.
@@ -628,7 +639,9 @@ jobs:
           - Trạng thái kiểm tra KIZ EMITTED được hiển thị gọn là “Đang chờ lưu thông”.
           - Tự xoá supply WB cũ khỏi danh sách khi WB xác nhận supply không còn tồn tại bằng 404; lỗi tạm thời không làm mất dữ liệu.
 
-          Khi nâng cấp từ 1.1.9, dữ liệu hiện có được sao chép an toàn sang thư mục WCodeData trước khi áp dụng schema mới. Các gói macOS hiện chưa được Apple notarize.${windows_trust_note}
+          Tự động theo dõi hoạt động khi app mở và tài khoản cửa hàng đã được kích hoạt trong phiên. Người dùng tự ký thẻ trên Znack; WCode không ký thẻ thay người dùng. Cập nhật GTIN lên WB và mua KIZ là thao tác thật trên tài khoản đã cấu hình. Hủy chuẩn bị in không hủy đơn KIZ đã gửi.
+
+          Khi nâng cấp từ 1.1.9, dữ liệu hiện có được sao chép an toàn sang thư mục WCodeData trước khi áp dụng schema mới. Bản chính không dùng chung dữ liệu hay kênh cập nhật với bản test. Các gói macOS hiện chưa được Apple notarize.${windows_trust_note}
           EOF
           )"
           if gh release view "$RELEASE_TAG" --repo "$RELEASE_REPO" >/dev/null 2>&1; then
