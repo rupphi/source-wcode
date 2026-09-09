@@ -34,6 +34,7 @@ public final class ZnackWbAttributeMapper {
         String goodName = defaultName(sku);
         String brand = brand(sku, characteristics);
         Map<Long, String> values = new LinkedHashMap<>();
+        Map<Long, String> types = new LinkedHashMap<>();
         List<String> missing = new ArrayList<>();
 
         if (goodName.isBlank()) missing.add("Наименование товара");
@@ -53,7 +54,14 @@ public final class ZnackWbAttributeMapper {
             String automatic = automaticValue(attribute, sku, characteristics, fullTnved, feedTnved);
             String resolved = resolvePreset(attribute, automatic);
             if (resolved.isBlank()) missing.add(attribute.name() + " [" + attribute.id() + "]");
-            else values.put(id, resolved);
+            else {
+                values.put(id, resolved);
+                String type = resolveValueType(attribute, resolved, sku.wbSize());
+                if (type == null) {
+                    missing.add(attribute.name() + " [" + id + "]: attr_value_type "
+                            + attribute.valueTypes());
+                } else types.put(id, type);
+            }
         }
 
         if (document == null || !document.complete()) {
@@ -66,7 +74,36 @@ public final class ZnackWbAttributeMapper {
         }
         values.put(GOOD_NAME, goodName);
         values.put(BRAND, brand);
-        return new MappingResult(goodName, brand, Map.copyOf(values), List.copyOf(new LinkedHashSet<>(missing)));
+        return new MappingResult(goodName, brand, Map.copyOf(values),
+                List.copyOf(new LinkedHashSet<>(missing)), Map.copyOf(types));
+    }
+
+    /** Return the literal type from the catalog schema, never the attr_field_type. */
+    static String resolveValueType(Attribute attribute, String value, String wbSize) {
+        List<String> types = attribute.valueTypes();
+        if (types.isEmpty()) return "";
+        if (attribute.id() == MODEL) {
+            for (String type : types) if (normalize(type).contains("артикул")) return type;
+        }
+        if (attribute.id() == SIZE) {
+            String size = clean(value).toUpperCase(Locale.ROOT);
+            boolean international = size.matches("(?:[2-9]?[XSML]+)(?:[-/](?:[2-9]?[XSML]+))*");
+            for (String type : types) {
+                String normalized = normalize(type);
+                if (international && (normalized.contains("международ") || normalized.equals("int"))) return type;
+                if (!international && !clean(wbSize).isBlank() && clean(wbSize).equalsIgnoreCase(clean(value))
+                        && normalized.contains("росси")) return type;
+            }
+            // Numeric techSize alone cannot distinguish Russian, EU, US or other sizing.
+            // Do not label an international size as Russian just because it is the sole option.
+            if (types.contains("")) return "";
+            if (types.contains("---")) return "---";
+            return null;
+        }
+        if (types.size() == 1) return types.getFirst();
+        if (types.contains("")) return "";
+        if (types.contains("---")) return "---";
+        return null;
     }
 
     static String automaticValue(Attribute attribute, Sku sku, List<WbCharacteristic> characteristics,
@@ -262,7 +299,7 @@ public final class ZnackWbAttributeMapper {
     private static void add(List<String> values, String value) { if (!clean(value).isBlank()) values.add(clean(value)); }
 
     public record MappingResult(String goodName, String brand, Map<Long, String> attributes,
-                                List<String> missingFields) {
+                                List<String> missingFields, Map<Long, String> attributeTypes) {
         public boolean complete() { return missingFields.isEmpty(); }
     }
 

@@ -20,6 +20,68 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ZnackNationalCatalogServiceTest {
     @Test
+    void retainsSchemaValueTypesAndSendsThemWithArticleAndSize() {
+        var schema = ZnackNationalCatalogService.parseAttributes(JsonParser.parseString("""
+                {"result":[
+                  {"attr_id":13914,"attr_name":"Модель / артикул производителя",
+                   "attr_field_type":"text","attr_value_type":["МОДЕЛЬ","АРТИКУЛ"]},
+                  {"attr_id":35,"attr_name":"Размер одежды / изделия",
+                   "attr_field_type":"text","attr_value_type":["РОССИЙСКИЙ","МЕЖДУНАРОДНЫЙ"]}
+                ]}
+                """));
+        assertEquals(List.of("МОДЕЛЬ", "АРТИКУЛ"), schema.getFirst().valueTypes());
+        Draft legacy = new Draft("6204510000", "6204", 30933, "Брюки", "Brand",
+                Map.of(13914L, "01-besang", 35L, "L", 13933L, "6204510000"));
+        Draft repaired = ZnackCardRegistrationWorkflow.withSchemaTypes(legacy, schema, "48");
+        JsonObject payload = ZnackNationalCatalogService.buildPayload("4689039063727", repaired, "");
+        Map<Long, String> types = new java.util.HashMap<>();
+        payload.getAsJsonArray("good_attrs").forEach(item -> {
+            JsonObject attr = item.getAsJsonObject();
+            types.put(attr.get("attr_id").getAsLong(), attr.get("attr_value_type").getAsString());
+        });
+        assertEquals("АРТИКУЛ", types.get(13914L));
+        assertEquals("МЕЖДУНАРОДНЫЙ", types.get(35L));
+        assertEquals("", types.get(13933L));
+        Draft restored = ZnackCardRegistrationWorkflow.draftFromPayload(payload);
+        assertEquals("6204510000", restored.tnved());
+        assertEquals("6204", restored.feedTnved());
+        assertEquals(repaired.attributes(), restored.attributes());
+        assertEquals("МЕЖДУНАРОДНЫЙ", restored.attributeTypes().get(35L));
+        assertEquals("4689039063727", payload.get("gtin").getAsString());
+    }
+
+    @Test
+    void usesRussianSizeTypeOnlyWhenTheWbRussianSizeConfirmsIt() {
+        var schema = ZnackNationalCatalogService.parseAttributes(JsonParser.parseString("""
+                {"result":[{"attr_id":35,"attr_name":"Размер одежды / изделия",
+                "attr_value_type":["ЕВРОПЕЙСКИЙ","РОССИЙСКИЙ","МЕЖДУНАРОДНЫЙ"]}]}
+                """));
+        Draft draft = new Draft("6204", 30933, "Брюки", "Brand", Map.of(35L, "48"));
+        assertEquals("РОССИЙСКИЙ", ZnackCardRegistrationWorkflow.withSchemaTypes(draft, schema, "48")
+                .attributeTypes().get(35L));
+        assertThrows(IllegalArgumentException.class,
+                () -> ZnackCardRegistrationWorkflow.withSchemaTypes(draft, schema, "52"));
+        var russianOnly = ZnackNationalCatalogService.parseAttributes(JsonParser.parseString("""
+                {"result":[{"attr_id":35,"attr_name":"Размер одежды / изделия",
+                "attr_value_type":["РОССИЙСКИЙ"]}]}
+                """));
+        Draft international = new Draft("6204", 30933, "Брюки", "Brand", Map.of(35L, "L"));
+        assertThrows(IllegalArgumentException.class,
+                () -> ZnackCardRegistrationWorkflow.withSchemaTypes(international, russianOnly, "48"));
+    }
+
+    @Test
+    void mixedAttributeAndPhotoErrorsDoNotReintroduceTheRejectedPhotoOnRetry() {
+        String url = "https://basket-26.wbbasket.ru/vol4858/part48586/485860001/images/big/1.webp";
+        String mixed = "Не заполнено значение обязательного параметра Размер одежды; "
+                + "Изображение не доступно по URL " + url
+                + ". В ответе на запрос получен код отличный от кода 200.";
+        assertEquals("", ZnackCardRegistrationWorkflow.retryImageUrl(url, mixed));
+        assertEquals(url, ZnackCardRegistrationWorkflow.retryImageUrl(url, "Размер одежды не заполнен"));
+        assertEquals(url, ZnackCardRegistrationWorkflow.retryImageUrl(url, null));
+    }
+
+    @Test
     void parsesDocumentedGeneratedGtinResponse() throws Exception {
         ZnackApiClient api = new ZnackApiClient() {
             @Override public JsonElement generatedGtins(String base, String token) {

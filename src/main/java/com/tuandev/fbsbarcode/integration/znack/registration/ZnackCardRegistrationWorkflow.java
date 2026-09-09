@@ -61,18 +61,26 @@ public final class ZnackCardRegistrationWorkflow {
         String stored = registrations.payload(shop.getId(), sku.chrtId());
         if (stored.isBlank()) return false;
         JsonObject payload = JsonParser.parseString(stored).getAsJsonObject();
+        return start(shop, sku, draftFromPayload(payload), listener);
+    }
+
+    static Draft draftFromPayload(JsonObject payload) {
         var categoryValue = payload.getAsJsonArray("categories").get(0);
         long categoryId = categoryValue.isJsonObject()
                 ? categoryValue.getAsJsonObject().get("cat_id").getAsLong()
                 : categoryValue.getAsLong();
         Map<Long, String> attributes = new LinkedHashMap<>();
+        Map<Long, String> types = new LinkedHashMap<>();
         if (payload.has("good_attrs")) payload.getAsJsonArray("good_attrs").forEach(element -> {
             JsonObject attribute = element.getAsJsonObject();
             attributes.put(attribute.get("attr_id").getAsLong(), attribute.get("attr_value").getAsString());
+            if (attribute.has("attr_value_type") && !attribute.get("attr_value_type").isJsonNull()) {
+                types.put(attribute.get("attr_id").getAsLong(), attribute.get("attr_value_type").getAsString());
+            }
         });
-        Draft draft = new Draft(payload.get("tnved").getAsString(), categoryId,
-                payload.get("good_name").getAsString(), payload.get("brand").getAsString(), attributes);
-        return start(shop, sku, draft, listener);
+        String feedTnved = payload.get("tnved").getAsString();
+        return new Draft(attributes.getOrDefault(13933L, feedTnved), feedTnved, categoryId,
+                payload.get("good_name").getAsString(), payload.get("brand").getAsString(), attributes, types);
     }
 
     private void execute(Shop shop, Sku sku, Draft draft, BiConsumer<Status, String> listener) throws Exception {
@@ -87,6 +95,13 @@ public final class ZnackCardRegistrationWorkflow {
 
         String gtin = sku.gtin();
         String feedId = sku.feedId();
+        String stored = registrations.payload(shop.getId(), sku.chrtId());
+        boolean rebuildPayload = gtin == null || gtin.isBlank() || sku.status() == Status.ERROR
+                || sku.status() == Status.GTIN_GENERATED || feedId == null || feedId.isBlank() || stored.isBlank();
+        if (rebuildPayload) {
+            draft = withSchemaTypes(draft, catalog.requiredAttributes(draft.categoryId(), token), sku.wbSize());
+        }
+        String imageUrl = retryImageUrl(sku.imageUrl(), sku.errorMessage());
         JsonObject payload;
         if (gtin == null || gtin.isBlank()) {
             update(shop, sku, Status.CHECKING, null, null, listener);
@@ -95,15 +110,14 @@ public final class ZnackCardRegistrationWorkflow {
             // workers. Otherwise both can observe the same reusable catalog draft GTIN.
             synchronized (GTIN_CHECKPOINT_LOCK) {
                 gtin = catalog.generateOne(preflight.token(), registrations.claimedGtins(shop.getId()));
-                payload = ZnackNationalCatalogService.buildPayload(gtin, draft, sku.imageUrl());
+                payload = ZnackNationalCatalogService.buildPayload(gtin, draft, imageUrl);
                 registrations.saveGenerated(shop.getId(), sku, gtin, draft.tnved(), draft.categoryId(),
                         draft.goodName(), payload.toString());
             }
             notify(listener, Status.GTIN_GENERATED, gtin);
         } else {
-            String stored = registrations.payload(shop.getId(), sku.chrtId());
-            if (sku.status() == Status.ERROR || stored.isBlank()) {
-                payload = ZnackNationalCatalogService.buildPayload(gtin, draft, sku.imageUrl());
+            if (rebuildPayload) {
+                payload = ZnackNationalCatalogService.buildPayload(gtin, draft, imageUrl);
                 registrations.saveGenerated(shop.getId(), sku, gtin, draft.tnved(), draft.categoryId(),
                         draft.goodName(), payload.toString());
                 notify(listener, Status.GTIN_GENERATED, gtin);
@@ -173,6 +187,36 @@ public final class ZnackCardRegistrationWorkflow {
                         BiConsumer<Status, String> listener) {
         registrations.updateProgress(shop.getId(), sku.chrtId(), status, feedId, goodId, null, null);
         notify(listener, status, "");
+    }
+
+    static Draft withSchemaTypes(Draft draft,
+            java.util.List<ZnackCardRegistrationModels.Attribute> schema, String wbSize) {
+        Map<Long, String> types = new LinkedHashMap<>(draft.attributeTypes());
+        for (var attribute : schema) {
+            String value = draft.attributes().get(attribute.id());
+            if (value == null || value.isBlank()) continue;
+            String type = types.get(attribute.id());
+            if (type == null || (!attribute.valueTypes().isEmpty() && !attribute.valueTypes().contains(type))) {
+                type = ZnackWbAttributeMapper.resolveValueType(attribute, value, wbSize);
+            }
+            if (type == null) {
+                throw new IllegalArgumentException("Không xác định được hệ/loại giá trị cho "
+                        + attribute.name() + " [" + attribute.id() + "]: " + value
+                        + ". Znack cho phép: " + attribute.valueTypes());
+            }
+            types.put(attribute.id(), type);
+        }
+        return new Draft(draft.tnved(), draft.feedTnved(), draft.categoryId(), draft.goodName(),
+                draft.brand(), draft.attributes(), types);
+    }
+
+    // Photos are optional in /v3/feed. A WB CDN URL rejected by the catalog must not
+    // be reintroduced when retrying a feed that also had attribute errors.
+    static String retryImageUrl(String imageUrl, String previousError) {
+        String error = previousError == null ? "" : previousError.toLowerCase(java.util.Locale.ROOT);
+        boolean unavailableImage = error.contains("изображение не доступно по url")
+                || error.contains("изображение недоступно по url");
+        return unavailableImage ? "" : imageUrl;
     }
 
     private void fail(Shop shop, Sku sku, Exception error, BiConsumer<Status, String> listener) {

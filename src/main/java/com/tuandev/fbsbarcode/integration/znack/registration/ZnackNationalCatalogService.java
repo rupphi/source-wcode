@@ -248,6 +248,7 @@ public final class ZnackNationalCatalogService {
             JsonObject attribute = new JsonObject();
             attribute.addProperty("attr_id", entry.getKey());
             attribute.addProperty("attr_value", entry.getValue().trim());
+            attribute.addProperty("attr_value_type", draft.attributeTypes().getOrDefault(entry.getKey(), ""));
             attributes.add(attribute);
         });
         payload.add("good_attrs", attributes);
@@ -384,9 +385,13 @@ public final class ZnackNationalCatalogService {
             for (JsonElement preset : array(value.get("attr_preset"))) {
                 if (preset.isJsonPrimitive()) presets.add(preset.getAsString());
             }
+            List<String> valueTypes = new ArrayList<>();
+            for (JsonElement type : array(value.get("attr_value_type"))) {
+                if (type.isJsonPrimitive()) valueTypes.add(type.getAsString());
+            }
             values.add(new Attribute(id, string(value, "attr_name"), string(value, "attr_field_type"),
                     bool(value, "attr_preset_only"), bool(value, "attr_multiplicity"),
-                    bool(value, "first_layer"), bool(value, "second_layer"), presets));
+                    bool(value, "first_layer"), bool(value, "second_layer"), presets, valueTypes));
         }
         return List.copyOf(values);
     }

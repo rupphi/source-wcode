@@ -286,7 +286,7 @@ public final class ZnackCardRegistrationController {
                 ZnackWbAttributeMapper.MappingResult mapped = new ZnackWbAttributeMapper().map(sku,
                         characteristics, required, preflight.tnved(), preflight.categoryTnved(), document);
                 Draft draft = new Draft(preflight.tnved(), preflight.categoryTnved(), category.id(),
-                        mapped.goodName(), mapped.brand(), mapped.attributes());
+                        mapped.goodName(), mapped.brand(), mapped.attributes(), mapped.attributeTypes());
                 return new AutomaticDraft(draft, mapped.missingFields());
             }
         };

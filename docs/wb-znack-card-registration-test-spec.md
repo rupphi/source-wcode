@@ -36,6 +36,23 @@ The value is editable before creation. This keeps size cards unique and readable
 - No request to `POST /content/v2/cards/update` exists in the test registration workflow.
 - The registration table stores GTIN, payload, feed ID, good ID and status per `(shop_id, chrt_id)`. Opening the tab resumes in-progress rows from the stored checkpoint.
 
+## Feed type and photo recovery (1.1.32)
+
+- Preserve the schema's `attr_value_type[]` separately from `attr_field_type` and serialize
+  the selected literal type in every `good_attrs` entry. Article values use the schema's
+  article type; letter sizes use its international type. Russian sizing is selected when
+  the value matches WB `sizes[].wbSize`; ambiguous systems stop before GTIN allocation.
+- Refresh attribute types before rebuilding failed/legacy feeds, preserving the already
+  allocated GTIN and the distinct full TN VED / feed group on resume.
+- When a failed feed includes an explicit inaccessible-photo error, omit that optional
+  image on retry, including mixed photo + attribute failures. Existing image-only
+  failures retry once without the optional photo. No externally accessible image host
+  is introduced.
+- Regression coverage checks schema parsing, payload types, checkpoint round trips,
+  Russian/international sizing, ambiguous sizing, and mixed photo failures.
+- Remote acceptance still requires testing with the user's authenticated catalog account.
+  Rollback: install the previous test release; no database migration is introduced.
+
 ## Official references
 
 - National Catalog API: https://docs.crpt.ru/gismt/API_%D0%9D%D0%9A/

@@ -221,7 +221,7 @@ public class ZnackCardRegistrationRepository {
                 result.getString("c246x328_url"), result.getString("square_url"), result.getString("hq_url"), result.getString("tm_url")),
                 result.getInt("need_kiz") != 0, result.getString("gtin"), nullableLong(result, "good_id"),
                 result.getString("feed_id"), parseStatus(status),
-                result.getString("error_message"), result.getInt("wb_updated") != 0);
+                result.getString("error_message"), result.getInt("wb_updated") != 0, result.getString("wb_size"));
     }
 
     private static Long nullableLong(ResultSet result, String column) throws SQLException {
