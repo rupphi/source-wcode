@@ -1,5 +1,6 @@
 package com.tuandev.fbsbarcode.ui.znackregistration;
 
+import com.tuandev.fbsbarcode.features.fbo.FboProductImageService;
 import com.tuandev.fbsbarcode.integration.marketplace.Marketplace;
 import com.tuandev.fbsbarcode.integration.znack.ZnackApiClient;
 import com.tuandev.fbsbarcode.integration.znack.ZnackAuthService;
@@ -33,22 +34,26 @@ import javafx.geometry.Pos;
 import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.util.Duration;
 
+import java.io.ByteArrayInputStream;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 
 public final class ZnackCardRegistrationController {
     private static final int PAGE_SIZE = 500;
     private static final DateTimeFormatter RU_DATE = DateTimeFormatter.ofPattern("dd.MM.uuuu");
     private final ZnackCardRegistrationRepository repository = new ZnackCardRegistrationRepository();
     private final ZnackCardRegistrationWorkflow workflow = new ZnackCardRegistrationWorkflow(repository);
+    private final FboProductImageService imageService = new FboProductImageService();
     private final PauseTransition debounce = new PauseTransition(Duration.millis(250));
     private final List<String> selectedSubjects = new ArrayList<>();
     private final List<CheckBox> subjectChecks = new ArrayList<>();
@@ -341,13 +346,42 @@ public final class ZnackCardRegistrationController {
         productTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
         imageColumn.setCellValueFactory(cell -> new ReadOnlyObjectWrapper<>(cell.getValue()));
         imageColumn.setCellFactory(column -> new TableCell<>() {
-            private final ImageView image = new ImageView();
-            private final StackPane pane = new StackPane(image);
-            { image.setFitWidth(44); image.setFitHeight(58); image.setPreserveRatio(true); pane.setMinHeight(62); }
+            private final ImageView imageView = new ImageView();
+            private final Region placeholder = new Region();
+            private final StackPane pane = new StackPane(placeholder, imageView);
+            private String currentUrl;
+            {
+                imageView.setFitWidth(44);
+                imageView.setFitHeight(58);
+                imageView.setPreserveRatio(true);
+                imageView.setSmooth(true);
+                placeholder.setMinSize(44, 58);
+                placeholder.setPrefSize(44, 58);
+                placeholder.setMaxSize(44, 58);
+                placeholder.getStyleClass().add("fbo-image-placeholder");
+                pane.setMinHeight(62);
+            }
             @Override protected void updateItem(Sku item, boolean empty) {
                 super.updateItem(item, empty);
-                if (empty || item == null || item.imageUrl().isBlank()) { image.setImage(null); setGraphic(null); }
-                else { image.setImage(new Image(item.imageUrl(), 44, 58, true, true, true)); setGraphic(pane); }
+                if (empty || item == null) {
+                    currentUrl = null;
+                    imageView.setImage(null);
+                    setGraphic(null);
+                    return;
+                }
+                currentUrl = item.imageUrl() == null ? "" : item.imageUrl().strip();
+                imageView.setImage(null);
+                imageView.setVisible(false);
+                placeholder.setVisible(true);
+                setGraphic(pane);
+                if (currentUrl.isBlank()) return;
+                String requestedUrl = currentUrl;
+                imageService.loadImage(requestedUrl).whenComplete((bytes, error) -> Platform.runLater(() -> {
+                    if (!Objects.equals(currentUrl, requestedUrl) || bytes == null || bytes.length == 0) return;
+                    imageView.setImage(new Image(new ByteArrayInputStream(bytes)));
+                    imageView.setVisible(true);
+                    placeholder.setVisible(false);
+                }));
             }
         });
         nameColumn.setCellValueFactory(cell -> new ReadOnlyStringWrapper(first(cell.getValue().title(), cell.getValue().subjectName())));

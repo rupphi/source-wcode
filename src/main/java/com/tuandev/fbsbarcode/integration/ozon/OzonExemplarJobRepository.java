@@ -92,6 +92,79 @@ public final class OzonExemplarJobRepository {
         }
     }
 
+    /** Creates durable local print slots without requesting exemplar ids from Ozon. */
+    public void persistLocalPrintSlots(
+            OzonExemplarJob job,
+            OzonRequirementGuard.PreparationPlan plan) {
+        try (Connection connection = Database.getConnection();
+                PreparedStatement insert = connection.prepareStatement("""
+                        INSERT INTO ozon_exemplars(job_id,shop_id,posting_number,item_index,product_id,
+                            exemplar_id,exemplar_index,updated_at)
+                        VALUES(?,?,?,?,?,NULL,?,?)
+                        ON CONFLICT(job_id,item_index,exemplar_index) DO UPDATE SET
+                            product_id=excluded.product_id,updated_at=excluded.updated_at
+                        """)) {
+            String now = Instant.now().toString();
+            for (OzonRequirementGuard.RequiredItem item : plan.items()) {
+                for (int exemplarIndex = 0; exemplarIndex < item.quantity(); exemplarIndex++) {
+                    insert.setLong(1, job.id());
+                    insert.setInt(2, job.shopId());
+                    insert.setString(3, job.postingNumber());
+                    insert.setInt(4, item.itemIndex());
+                    insert.setString(5, item.productId());
+                    insert.setInt(6, exemplarIndex);
+                    insert.setString(7, now);
+                    insert.addBatch();
+                }
+            }
+            insert.executeBatch();
+        } catch (SQLException exception) {
+            throw new RuntimeException(exception);
+        }
+    }
+
+    /**
+     * Converts a legacy remote-preparation stage into a local print-ready stage. Existing KIZ
+     * bindings are deliberately retained so an upgrade can print the exact codes already reserved.
+     */
+    public OzonExemplarJob markPrintReady(OzonExemplarJob job) {
+        if (job.stage() == OzonExemplarJobStage.VALIDATED
+                || job.stage() == OzonExemplarJobStage.ACCEPTED) return job;
+        try (Connection connection = Database.getConnection()) {
+            transition(connection, job.id(), job.stage(), OzonExemplarJobStage.VALIDATED,
+                    job.requestFingerprint(), null, false);
+            OzonExemplarJob updated = find(connection, job.shopId(), job.postingNumber());
+            if (updated == null) throw new IllegalStateException("Ozon print job disappeared.");
+            return updated;
+        } catch (SQLException exception) {
+            throw new RuntimeException(exception);
+        }
+    }
+
+    /** Reopens an old, locally released Ozon rejection so its KIZ can be reserved for printing. */
+    public OzonExemplarJob reopenRejectedForPrint(OzonExemplarJob job) {
+        if (job.stage() != OzonExemplarJobStage.REJECTED) return job;
+        try (Connection connection = Database.getConnection()) {
+            connection.setAutoCommit(false);
+            try (PreparedStatement clear = connection.prepareStatement(
+                    "DELETE FROM ozon_exemplars WHERE job_id=?")) {
+                clear.setLong(1, job.id());
+                clear.executeUpdate();
+                transition(connection, job.id(), job.stage(), OzonExemplarJobStage.CREATED,
+                        null, null, false);
+                connection.commit();
+                return find(connection, job.shopId(), job.postingNumber());
+            } catch (RuntimeException | SQLException exception) {
+                connection.rollback();
+                throw exception;
+            } finally {
+                connection.setAutoCommit(true);
+            }
+        } catch (SQLException exception) {
+            throw new RuntimeException(exception);
+        }
+    }
+
     /** Selects, durably reserves and links all KIZ rows in one BEGIN IMMEDIATE transaction. */
     public void reserveAndLink(OzonExemplarJob job, OzonRequirementGuard.PreparationPlan plan) {
         String reservationToken = "ozon:" + job.id();
@@ -235,6 +308,61 @@ public final class OzonExemplarJobRepository {
                 if (consume.executeUpdate() != expected) {
                     throw new IllegalStateException("One or more durable Ozon KIZ reservations are no longer owned by the job.");
                 }
+                transition(connection, job.id(), job.stage(), OzonExemplarJobStage.ACCEPTED,
+                        job.requestFingerprint(), null, false);
+                connection.commit();
+                return find(connection, job.shopId(), job.postingNumber());
+            } catch (RuntimeException | SQLException exception) {
+                connection.rollback();
+                throw exception;
+            } finally {
+                connection.setAutoCommit(true);
+            }
+        } catch (SQLException exception) {
+            throw new RuntimeException(exception);
+        }
+    }
+
+    /** Consumes locally reserved KIZ only after the printable PDF has been published successfully. */
+    public OzonExemplarJob consumePrinted(OzonExemplarJob job) {
+        if (job.stage() == OzonExemplarJobStage.ACCEPTED) return job;
+        if (job.stage() != OzonExemplarJobStage.VALIDATED) {
+            throw new IllegalStateException("Ozon KIZ can only be consumed after it is ready for printing.");
+        }
+        try (Connection connection = Database.getConnection()) {
+            connection.setAutoCommit(false);
+            try (PreparedStatement invalid = connection.prepareStatement("""
+                    SELECT COUNT(*) FROM ozon_exemplars e
+                    JOIN kiz_codes k ON k.id=e.kiz_id
+                    WHERE e.job_id=? AND NOT (
+                        k.status='CONSUMED' OR (k.status='RESERVED' AND k.reservation_token=?))
+                    """);
+                    PreparedStatement printed = connection.prepareStatement("""
+                    UPDATE ozon_exemplars SET check_status='printed',updated_at=? WHERE job_id=?
+                    """);
+                    PreparedStatement consume = connection.prepareStatement("""
+                    UPDATE kiz_codes SET status='CONSUMED',reservation_token=NULL,reserved_at=NULL,
+                        reservation_recoverable=NULL,consumed_at=?,updated_at=?
+                    WHERE id IN (SELECT kiz_id FROM ozon_exemplars WHERE job_id=? AND kiz_id IS NOT NULL)
+                      AND status='RESERVED' AND reservation_token=?
+                    """)) {
+                String token = "ozon:" + job.id();
+                invalid.setLong(1, job.id());
+                invalid.setString(2, token);
+                try (ResultSet result = invalid.executeQuery()) {
+                    if (result.next() && result.getInt(1) > 0) {
+                        throw new IllegalStateException("One or more Ozon KIZ bindings are no longer owned by the print job.");
+                    }
+                }
+                String now = Instant.now().toString();
+                printed.setString(1, now);
+                printed.setLong(2, job.id());
+                printed.executeUpdate();
+                consume.setString(1, now);
+                consume.setString(2, now);
+                consume.setLong(3, job.id());
+                consume.setString(4, token);
+                consume.executeUpdate();
                 transition(connection, job.id(), job.stage(), OzonExemplarJobStage.ACCEPTED,
                         job.requestFingerprint(), null, false);
                 connection.commit();

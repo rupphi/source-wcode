@@ -16,14 +16,17 @@ public final class OzonExemplarStateMachine {
                     OzonExemplarJobStage.REJECTED,
                     OzonExemplarJobStage.RECONCILE_REQUIRED),
             OzonExemplarJobStage.VALIDATED, EnumSet.of(
+                    OzonExemplarJobStage.ACCEPTED,
                     OzonExemplarJobStage.SET_PENDING,
                     OzonExemplarJobStage.REJECTED,
                     OzonExemplarJobStage.RECONCILE_REQUIRED),
             OzonExemplarJobStage.SET_PENDING, EnumSet.of(
+                    OzonExemplarJobStage.VALIDATED,
                     OzonExemplarJobStage.VERIFYING,
                     OzonExemplarJobStage.REJECTED,
                     OzonExemplarJobStage.RECONCILE_REQUIRED),
             OzonExemplarJobStage.VERIFYING, EnumSet.of(
+                    OzonExemplarJobStage.VALIDATED,
                     OzonExemplarJobStage.ACCEPTED,
                     OzonExemplarJobStage.REJECTED,
                     OzonExemplarJobStage.RECONCILE_REQUIRED),
@@ -34,7 +37,7 @@ public final class OzonExemplarStateMachine {
                     OzonExemplarJobStage.ACCEPTED,
                     OzonExemplarJobStage.REJECTED),
             OzonExemplarJobStage.ACCEPTED, EnumSet.noneOf(OzonExemplarJobStage.class),
-            OzonExemplarJobStage.REJECTED, EnumSet.noneOf(OzonExemplarJobStage.class));
+            OzonExemplarJobStage.REJECTED, EnumSet.of(OzonExemplarJobStage.CREATED));
 
     private OzonExemplarStateMachine() {
     }

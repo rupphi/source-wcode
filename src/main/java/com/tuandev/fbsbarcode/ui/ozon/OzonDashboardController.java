@@ -11,11 +11,9 @@ import com.tuandev.fbsbarcode.integration.marketplace.Marketplace;
 import com.tuandev.fbsbarcode.integration.ozon.OzonBatchPrintReadiness;
 import com.tuandev.fbsbarcode.integration.ozon.OzonCatalogRepository;
 import com.tuandev.fbsbarcode.integration.ozon.OzonConnectionCheck;
-import com.tuandev.fbsbarcode.integration.ozon.OzonExemplarService;
 import com.tuandev.fbsbarcode.integration.ozon.OzonPostingDto;
 import com.tuandev.fbsbarcode.integration.ozon.OzonPostingItemDto;
 import com.tuandev.fbsbarcode.integration.ozon.OzonPostingRepository;
-import com.tuandev.fbsbarcode.integration.ozon.OzonPreparationResult;
 import com.tuandev.fbsbarcode.integration.ozon.OzonPrintBundleService;
 import com.tuandev.fbsbarcode.integration.ozon.OzonPrintReadiness;
 import com.tuandev.fbsbarcode.integration.ozon.OzonPrintReadinessService;
@@ -111,7 +109,6 @@ public final class OzonDashboardController {
     private final OzonPostingRepository postings = new OzonPostingRepository();
     private final OzonCatalogRepository catalog = new OzonCatalogRepository();
     private final OzonSyncWorkflow syncWorkflow = new OzonSyncWorkflow();
-    private final OzonExemplarService exemplarService = new OzonExemplarService();
     private final OzonShipService shipService = new OzonShipService();
     private final OzonPrintBundleService printBundleService = new OzonPrintBundleService();
     private final OzonPrintReadinessService printReadinessService = new OzonPrintReadinessService();
@@ -344,11 +341,6 @@ public final class OzonDashboardController {
                 List<String> failed = new ArrayList<>();
                 for (String postingNumber : postingNumbers) {
                     try {
-                        OzonPreparationResult preparation = exemplarService.prepare(selected, postingNumber);
-                        if (!preparation.shipReady()) {
-                            failed.add(postingNumber + " (" + safeStage(preparation.stage()) + ")");
-                            continue;
-                        }
                         shipService.ship(selected, postingNumber, true);
                         completed.add(postingNumber);
                     } catch (Exception exception) {
@@ -491,44 +483,9 @@ public final class OzonDashboardController {
                         I18nService.getInstance().tr("ozon.dashboard.open_files.failed"),
                         exception.getMessage());
             }
-            pushValidatedKizInBackground(selected, output.postingNumbers());
         });
         task.setOnFailed(event -> finishFailure(token, selected, task.getException()));
         AppTaskExecutor.execute(task);
-    }
-
-    /** Opens printable files first; the remote Ozon mutation then continues without blocking FX. */
-    private void pushValidatedKizInBackground(Shop selected, List<String> postingNumbers) {
-        if (postingNumbers == null || postingNumbers.isEmpty()) return;
-        statusLabel.setText(I18nService.getInstance().tr("ozon.dashboard.kiz_push.background"));
-        Task<List<OzonPreparationResult>> pushTask = new Task<>() {
-            @Override protected List<OzonPreparationResult> call() throws Exception {
-                return ShopOperationCoordinator.withActiveShop(selected.getId(), () -> {
-                    List<OzonPreparationResult> results = new ArrayList<>();
-                    for (String postingNumber : postingNumbers.stream().distinct().toList()) {
-                        results.add(exemplarService.prepare(selected, postingNumber));
-                    }
-                    return List.copyOf(results);
-                });
-            }
-        };
-        pushTask.setOnSucceeded(event -> {
-            if (!isCurrent(selected)) return;
-            long failed = pushTask.getValue().stream().filter(result ->
-                    !"ACCEPTED".equals(result.stage()) && !"NOT_REQUIRED".equals(result.stage())).count();
-            statusLabel.setText(failed == 0
-                    ? I18nService.getInstance().tr("ozon.dashboard.kiz_push.complete")
-                    : MessageFormat.format(I18nService.getInstance().tr("ozon.dashboard.kiz_push.pending"), failed));
-            loadLocal();
-            refreshGtinInventory();
-        });
-        pushTask.setOnFailed(event -> {
-            if (!isCurrent(selected)) return;
-            statusLabel.setText(I18nService.getInstance().tr("ozon.dashboard.kiz_push.pending_generic"));
-            loadLocal();
-            refreshGtinInventory();
-        });
-        AppTaskExecutor.execute(pushTask);
     }
 
     private void finishFailure(long token, Shop selected, Throwable failure) {
@@ -1331,10 +1288,6 @@ public final class OzonDashboardController {
     private static String safeFilename(String value) {
         String safe = value == null ? "posting" : value.replaceAll("[^A-Za-z0-9._-]", "_");
         return safe.isBlank() ? "posting" : safe;
-    }
-
-    private static String safeStage(String value) {
-        return value != null && value.matches("[A-Z_]{1,64}") ? value : "NOT_READY";
     }
 
     private static String safeFailure(Throwable failure) {

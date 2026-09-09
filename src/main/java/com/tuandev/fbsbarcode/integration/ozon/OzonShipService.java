@@ -67,14 +67,6 @@ public final class OzonShipService {
             }
             throw new OzonApiException("reconcile_required", 0, false, true, null);
         }
-        OzonRequirementGuard.PreparationPlan plan = OzonRequirementGuard.plan(
-                posting, mappings.findResolvedBySku(shop.getId()), policies.findExemptSkus(shop.getId()));
-        if (plan.exemplarCount() > 0) {
-            OzonExemplarJob job = jobs.find(shop.getId(), posting.postingNumber());
-            if (job == null || job.stage() != OzonExemplarJobStage.ACCEPTED) {
-                throw new IllegalStateException("All required Ozon exemplars must be accepted before shipping.");
-            }
-        }
         if (!posting.canShip()) {
             throw new IllegalStateException("Ozon does not currently allow this posting to be shipped.");
         }

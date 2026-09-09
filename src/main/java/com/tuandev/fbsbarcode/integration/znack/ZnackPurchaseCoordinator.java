@@ -548,13 +548,67 @@ public class ZnackPurchaseCoordinator {
 
     private void downloadCodes(Settings settings, ZnackPurchasePipelineState pipeline) throws Exception {
         long orderId = requiredOrderId(pipeline);
-        codes.download(settings, orderId);
+        if (ZnackErrorMessages.isClosedKizOrder(pipeline.errorMessage())) {
+            recoverClosedOrder(settings, pipeline, pipeline.errorMessage());
+            return;
+        }
+        try {
+            codes.download(settings, orderId);
+        } catch (ZnackApiClient.ZnackApiException error) {
+            if (ZnackErrorMessages.isPendingKizBuffer(error.responseBody())) {
+                // The order exists and remains safe to resume. Poll that same order until SUZ changes
+                // its buffer to ACTIVE; never surface this transient state or create another order.
+                repository.updateOrder(orderId, null, "PENDING", OrderStatus.WAITING_CODES, null);
+                repository.updatePipeline(pipeline.id(), orderId, PurchaseStage.POLLING_ORDER, null);
+                return;
+            }
+            if (ZnackErrorMessages.isClosedKizOrder(error.responseBody())) {
+                recoverClosedOrder(settings, pipeline, error.getMessage());
+                return;
+            }
+            throw error;
+        }
         KizOrder order = repository.findOrder(orderId).orElseThrow();
         int downloaded = repository.findCodes(orderId).size();
         if (downloaded < order.quantity()) {
-            throw new IllegalStateException("Downloaded " + downloaded + " of " + order.quantity()
-                    + " KIZ codes; the pipeline will retry the safe download step.");
+            // A response may contain fewer codes than requested. Keep downloading only the
+            // remainder; partial delivery is progress, not a user-facing purchase failure.
+            repository.updateOrder(orderId, null, null, OrderStatus.WAITING_CODES, null);
+            repository.updatePipeline(pipeline.id(), orderId, PurchaseStage.DOWNLOADING_CODES, null);
+            return;
         }
+        completeDownloadedCodes(settings, pipeline, orderId);
+    }
+
+    private void recoverClosedOrder(Settings settings, ZnackPurchasePipelineState pipeline,
+                                    String closedDiagnostic) throws Exception {
+        long orderId = requiredOrderId(pipeline);
+        KizOrder order = repository.findOrder(orderId).orElseThrow();
+        if (repository.findCodes(orderId).size() < order.quantity()) {
+            try {
+                codes.recoverIssuedBlocks(settings, orderId);
+            } catch (ZnackSigningSession.SigningDeferredException deferred) {
+                throw deferred;
+            } catch (java.io.IOException recoveryUnavailable) {
+                // Some SUZ installations do not expose issued blocks after an order has closed.
+                // Retain the original 2090 diagnostic solely as an internal retry marker; the UI
+                // filters it and the scheduler retries reconciliation without buying another order.
+                repository.log("RECOVER_CODE_BLOCKS", pipeline.gtin(), "WARN",
+                        "CLOSED_ORDER_BLOCK_RECOVERY_PENDING", httpStatus(recoveryUnavailable));
+            }
+        }
+        int downloaded = repository.findCodes(orderId).size();
+        if (downloaded < order.quantity()) {
+            repository.updateOrder(orderId, null, "CLOSED", OrderStatus.WAITING_CODES, null);
+            repository.updatePipeline(pipeline.id(), orderId, PurchaseStage.DOWNLOADING_CODES, closedDiagnostic);
+            return;
+        }
+        repository.updateOrder(orderId, null, "CLOSED", OrderStatus.CODES_DOWNLOADED, null);
+        completeDownloadedCodes(settings, pipeline, orderId);
+    }
+
+    private void completeDownloadedCodes(Settings settings, ZnackPurchasePipelineState pipeline,
+                                         long orderId) throws Exception {
         if (!settings.autoIntroduction()) {
             repository.updatePipeline(pipeline.id(), orderId, PurchaseStage.COMPLETED, null);
             return;
@@ -687,7 +741,8 @@ public class ZnackPurchaseCoordinator {
         if (!SCHEDULED.add(key)) return;
         long delaySeconds = pipeline.stage() == PurchaseStage.WAITING_INTRODUCTION_READINESS
                 || pipeline.stage() == PurchaseStage.RECONCILING_ORDER
-                ? 30 : pipeline.errorMessage() == null || pipeline.errorMessage().isBlank() ? 5 : 30;
+                ? 30 : ZnackErrorMessages.isClosedKizOrder(pipeline.errorMessage())
+                ? 300 : pipeline.errorMessage() == null || pipeline.errorMessage().isBlank() ? 5 : 30;
         PENDING_POLLS.removeIf(java.util.concurrent.Future::isDone);
         PENDING_POLLS.add(POLLER.schedule(() -> {
             try {

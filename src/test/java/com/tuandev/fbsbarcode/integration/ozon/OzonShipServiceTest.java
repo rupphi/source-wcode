@@ -59,6 +59,21 @@ class OzonShipServiceTest {
     }
 
     @Test
+    void markedPostingShipsWithoutUploadingOrCheckingKizOnOzon() throws Exception {
+        server.enqueue(json(markedPosting("awaiting_packaging", true)));
+        server.enqueue(json("{}"));
+        server.enqueue(json(markedPosting("awaiting_deliver", false)));
+
+        OzonShipResult result = service().ship(shop, "POST-1", true);
+
+        assertEquals("awaiting_deliver", result.status());
+        assertEquals("/v3/posting/fbs/get", server.takeRequest(1, TimeUnit.SECONDS).getPath());
+        assertEquals("/v4/posting/fbs/ship", server.takeRequest(1, TimeUnit.SECONDS).getPath());
+        assertEquals("/v3/posting/fbs/get", server.takeRequest(1, TimeUnit.SECONDS).getPath());
+        assertEquals(3, server.getRequestCount());
+    }
+
+    @Test
     void timeoutAfterShipUsesPostingReadbackAndNeverSubmitsShipTwice() throws Exception {
         server.enqueue(json(posting("awaiting_packaging", true)));
         server.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START));
@@ -180,6 +195,13 @@ class OzonShipServiceTest {
         return "{\"result\":{\"posting_number\":\"POST-1\",\"status\":\"" + status
                 + "\",\"products\":[{\"sku\":101,\"offer_id\":\"sku-a\",\"name\":\"Item\",\"quantity\":2}],"
                 + "\"requirements\":{},\"available_actions\":"
+                + (canShip ? "[\"ship\"]" : "[]") + ",\"ship_available\":" + canShip + "}}";
+    }
+
+    private static String markedPosting(String status, boolean canShip) {
+        return "{\"result\":{\"posting_number\":\"POST-1\",\"status\":\"" + status
+                + "\",\"products\":[{\"sku\":101,\"offer_id\":\"sku-a\",\"name\":\"Item\",\"quantity\":2}],"
+                + "\"requirements\":{\"products_requiring_mandatory_mark\":[\"101\"]},\"available_actions\":"
                 + (canShip ? "[\"ship\"]" : "[]") + ",\"ship_available\":" + canShip + "}}";
     }
 }

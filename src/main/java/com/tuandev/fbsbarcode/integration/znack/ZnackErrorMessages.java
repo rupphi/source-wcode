@@ -17,6 +17,7 @@ import java.util.regex.Pattern;
 public final class ZnackErrorMessages {
     private static final String WAITING_INTRODUCTION_READINESS = "WAITING_INTRODUCTION_READINESS";
     private static final String WAITING_INTRODUCTION_DOCUMENTS = "WAITING_INTRODUCTION_DOCUMENTS";
+    private static final String POLLING_INTRODUCTION = "POLLING_INTRODUCTION";
     private static final String LEGACY_MISSING_DOCUMENTS = "INTRODUCTION_SKIPPED_MISSING_DOCUMENTS";
     private static final String READINESS_PROGRESS_PREFIX = "True API readiness:";
     private static final Pattern HTTP_STATUS = Pattern.compile("\\(HTTP (\\d{3})\\)");
@@ -25,6 +26,12 @@ public final class ZnackErrorMessages {
             "(?i)(?:HTTP\\s*400\\)?\\s*:\\s*|(?:error[_\\s-]?code|code)\"?\\s*[:=]\\s*\"?)3590(?!\\d)");
     private static final Pattern EMISSION_TYPE_BLOCKED_CODE = Pattern.compile(
             "(?i)(?:HTTP\\s*400\\)?\\s*:\\s*|(?:error[_\\s-]?code|code)\"?\\s*[:=]\\s*\"?)3055(?!\\d)");
+    private static final Pattern PENDING_BUFFER_CODE = Pattern.compile(
+            "(?i)(?:HTTP\\s*400\\)?\\s*:\\s*|(?:error[_\\s-]?code|code)\"?\\s*[:=]\\s*\"?)3390(?!\\d)");
+    private static final Pattern UOT_CREDENTIAL_ERROR_CODE = Pattern.compile(
+            "(?i)(?:HTTP\\s*400\\)?\\s*:\\s*|(?:error[_\\s-]?code|code)\"?\\s*[:=]\\s*\"?)1090(?!\\d)");
+    private static final Pattern CLOSED_ORDER_CODE = Pattern.compile(
+            "(?i)(?:HTTP\\s*400\\)?\\s*:\\s*|(?:error[_\\s-]?code|code)\"?\\s*[:=]\\s*\"?)2090(?!\\d)");
     private static final Set<String> MESSAGE_KEYS = Set.of(
             "error_message", "errormessage", "message", "description", "error_description",
             "detail", "reason", "globalerrors", "fielderrors", "errors");
@@ -70,8 +77,22 @@ public final class ZnackErrorMessages {
      * The raw diagnostic remains stored for audit and retry decisions.
      */
     public static String displayForPipeline(String stage, String raw) {
-        if (isExpectedReadinessProgress(stage, raw) || isMissingDocumentsWait(stage, raw)) return "";
+        if (isExpectedReadinessProgress(stage, raw) || isMissingDocumentsWait(stage, raw)
+                || isPendingKizBuffer(raw) || isSuzAuthError(raw)
+                || isClosedKizOrder(raw) || isDocumentVisibilityDelay(stage, raw)) return "";
         return display(raw);
+    }
+
+    /**
+     * A newly accepted document can briefly be unavailable through the document-info read model.
+     * While the pipeline is still polling, keep this technical 404 in the audit log and let the
+     * localized pipeline status communicate that WCode is waiting for circulation confirmation.
+     */
+    public static boolean isDocumentVisibilityDelay(String stage, String raw) {
+        if (!POLLING_INTRODUCTION.equalsIgnoreCase(stage) || raw == null || raw.isBlank()) return false;
+        String normalized = raw.toLowerCase(java.util.Locale.ROOT);
+        return normalized.contains("http 404")
+                && normalized.contains("документ не найден в гис мт");
     }
 
     /** True when KIZ introduction is paused until the GTIN has an active catalog document. */
@@ -93,11 +114,17 @@ public final class ZnackErrorMessages {
                 && (normalized.contains("no active") || normalized.contains("missing"));
     }
 
-    /** True when the error is caused by invalid SUZ authentication (HTTP 400 Ошибка аутентификации СУЗ). */
+    /**
+     * True when Honest Sign rejects the UOT/SUZ credentials, including business error 1090.
+     * The API client retries 1090 before the pipeline is marked failed, because this check can
+     * also fail transiently on Honest Sign's side.
+     */
     public static boolean isSuzAuthError(String raw) {
         if (raw == null || raw.isBlank()) return false;
+        if (UOT_CREDENTIAL_ERROR_CODE.matcher(raw).find()) return true;
         String lower = raw.toLowerCase(java.util.Locale.ROOT);
-        return lower.contains("ошибка аутентификации суз")
+        return lower.contains("проверка учетных данных уот не пройдена")
+                || lower.contains("ошибка аутентификации суз")
                 || (lower.contains("аутентификаци") && lower.contains("уз"));
     }
 
@@ -115,6 +142,28 @@ public final class ZnackErrorMessages {
      */
     public static boolean requiresOperatorTermsSignature(String raw) {
         return raw != null && !raw.isBlank() && EMISSION_TYPE_BLOCKED_CODE.matcher(raw).find();
+    }
+
+    /**
+     * SUZ business error 3390 is an expected asynchronous wait when the already-created order's
+     * code buffer is still PENDING. It must not be presented as a failed KIZ purchase.
+     */
+    public static boolean isPendingKizBuffer(String raw) {
+        if (raw == null || raw.isBlank() || !PENDING_BUFFER_CODE.matcher(raw).find()) return false;
+        String normalized = raw.toUpperCase(java.util.Locale.ROOT);
+        return normalized.contains("PENDING") && (normalized.contains("BUFFER") || normalized.contains("БУФЕР"));
+    }
+
+    /**
+     * SUZ error 2090 with order status CLOSED means that the normal code-delivery endpoint can no
+     * longer issue another package from this order. WCode handles it as an internal reconciliation
+     * state and must not present the transport/business diagnostic as a failed purchase.
+     */
+    public static boolean isClosedKizOrder(String raw) {
+        if (raw == null || raw.isBlank() || !CLOSED_ORDER_CODE.matcher(raw).find()) return false;
+        String normalized = raw.toUpperCase(java.util.Locale.ROOT);
+        return normalized.contains("CLOSED")
+                && (normalized.contains("ORDER") || normalized.contains("ЗАКАЗ"));
     }
 
     private static boolean isExpectedReadinessProgress(String stage, String raw) {

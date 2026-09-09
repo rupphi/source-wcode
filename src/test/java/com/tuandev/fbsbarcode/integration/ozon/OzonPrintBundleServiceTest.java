@@ -33,6 +33,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.List;
 import java.util.Map;
@@ -168,7 +169,7 @@ class OzonPrintBundleServiceTest {
     }
 
     @Test
-    void validatedKizCanBePublishedBeforeTheRemoteSetMutationRuns() throws Exception {
+    void locallyReservedKizIsConsumedOnlyAfterThePdfIsPublished() throws Exception {
         seedPosting(1);
         seedValidatedExemplar(RAW_KIZ);
         AtomicBoolean prepared = new AtomicBoolean(false);
@@ -178,14 +179,41 @@ class OzonPrintBundleServiceTest {
         OzonPrintBundleService.ExportResult result = service(prepared).export(
                 shop, "POST-1", labels.toFile(), picking.toFile());
 
-        assertFalse(prepared.get(), "A validated durable job must be printable before remote set");
+        assertFalse(prepared.get(), "A locally reserved KIZ must print without any Ozon exemplar request");
         assertEquals(1, result.kizPages());
         assertTrue(Files.isRegularFile(labels));
         assertTrue(Files.isRegularFile(picking));
+        assertEquals("CONSUMED", scalar("SELECT status FROM kiz_codes WHERE id=100"));
+        assertEquals("ACCEPTED", scalar("SELECT stage FROM ozon_exemplar_jobs WHERE id=51"));
+        assertEquals("printed", scalar("SELECT check_status FROM ozon_exemplars WHERE job_id=51"));
         try (PDDocument document = Loader.loadPDF(labels.toFile())) {
             assertEquals(KizService.scannerSafeCode(RAW_KIZ),
                     KizService.scannerSafeCode(decodeRenderedDataMatrixResult(document, 1, 300).getText()));
         }
+    }
+
+    @Test
+    void failedPdfExportKeepsTheKizReservedForRetry() throws Exception {
+        seedPosting(1);
+        seedValidatedExemplar(RAW_KIZ);
+        OzonPrintBundleService service = new OzonPrintBundleService(
+                new OzonPostingRepository(),
+                new OzonExemplarJobRepository(),
+                (selectedShop, postingNumber) -> {
+                    throw new AssertionError("the existing reservation must be reused");
+                },
+                (selectedShop, postingNumber, target) -> {
+                    throw new IOException("simulated label download failure");
+                });
+
+        assertThrows(IOException.class, () -> service.export(
+                shop,
+                "POST-1",
+                temporaryDirectory.resolve("failed-labels.pdf").toFile(),
+                temporaryDirectory.resolve("failed-picking.pdf").toFile()));
+
+        assertEquals("RESERVED", scalar("SELECT status FROM kiz_codes WHERE id=100"));
+        assertEquals("VALIDATED", scalar("SELECT stage FROM ozon_exemplar_jobs WHERE id=51"));
     }
 
     @Test
@@ -207,7 +235,7 @@ class OzonPrintBundleServiceTest {
         IOException failure = assertThrows(IOException.class, () ->
                 service.export(shop, "POST-1", labels.toFile(), picking.toFile()));
 
-        assertTrue(failure.getMessage().contains("not accepted"));
+        assertTrue(failure.getMessage().contains("not ready for printing"));
         assertFalse(labelDownloaded.get());
         assertFalse(Files.exists(labels));
         assertFalse(Files.exists(picking));
@@ -301,6 +329,13 @@ class OzonPrintBundleServiceTest {
                     Files.copy(officialPdf, target.toPath(), StandardCopyOption.REPLACE_EXISTING);
                     return target;
                 });
+    }
+
+    private String scalar(String sql) throws Exception {
+        try (Connection connection = Database.getConnection();
+                ResultSet result = connection.createStatement().executeQuery(sql)) {
+            return result.next() ? result.getString(1) : null;
+        }
     }
 
     private void seedPosting(int quantity) {

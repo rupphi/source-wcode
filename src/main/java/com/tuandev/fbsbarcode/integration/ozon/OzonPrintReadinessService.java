@@ -102,8 +102,7 @@ public final class OzonPrintReadinessService {
                         entry.getKey(), entry.getValue(), alreadySecured
                                 ? entry.getValue() : inventory.availableCount(shop.getId(), entry.getKey())))
                 .toList();
-        boolean ready = job == null || job.stage() != OzonExemplarJobStage.REJECTED;
-        ready = ready && availability.stream().allMatch(OzonPrintReadiness.GtinAvailability::sufficient);
+        boolean ready = availability.stream().allMatch(OzonPrintReadiness.GtinAvailability::sufficient);
         return result(safePosting, ready, true, requiredKiz, availability, List.of(), List.of(), stage);
     }
 

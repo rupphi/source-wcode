@@ -388,6 +388,74 @@ class ZnackGtinWorkflowTest {
         assertEquals(0, new ZnackGtinInventoryService().availableCount(1, A));
     }
 
+    @Test void closedOrderRecoversIssuedBlocksAndCompletesWithoutSurfacing2090() throws Exception {
+        Settings settings = testedSettings();
+        long order = repository.createDraft(A, 2);
+        repository.updateOrder(order, "closed-order", "READY", OrderStatus.CODES_READY, null);
+        long pipeline = repository.enqueuePipeline(A, 2, null);
+        repository.updatePipeline(pipeline, order, PurchaseStage.DOWNLOADING_CODES, null);
+        AtomicInteger recoveryCalls = new AtomicInteger();
+        ZnackKizCodeService codeService = new ZnackKizCodeService(null,null,repository) {
+            @Override public int download(Settings ignored, long id) throws Exception {
+                throw new ZnackApiClient.ZnackApiException("Znack API request failed", 400,
+                        "{\"globalErrors\":[{\"errorCode\":2090,"
+                                + "\"error\":\"Неверный статус заказа: CLOSED\"}]}");
+            }
+            @Override public int recoverIssuedBlocks(Settings ignored, long id) {
+                recoveryCalls.incrementAndGet();
+                return repository.insertCodes(id, A,
+                        new DownloadedCodes(List.of("closed-recovered-1", "closed-recovered-2"), "block"));
+            }
+        };
+
+        new ZnackPurchaseCoordinator(repository, null, codeService, null).advance(settings, pipeline);
+
+        ZnackPurchasePipelineState completed = repository.findPipeline(pipeline).orElseThrow();
+        assertEquals(PurchaseStage.COMPLETED, completed.stage());
+        assertTrue(completed.errorMessage() == null || completed.errorMessage().isBlank());
+        assertEquals(2, repository.findCodes(order).size());
+        assertEquals(1, recoveryCalls.get());
+        assertEquals("CLOSED", repository.findOrder(order).orElseThrow().remoteStatus());
+    }
+
+    @Test void closedOrderStaysInHiddenSafeRetryWithoutCreatingAnotherOrder() throws Exception {
+        Settings settings = testedSettings();
+        long order = repository.createDraft(A, 2);
+        repository.updateOrder(order, "closed-order", "READY", OrderStatus.CODES_READY, null);
+        repository.insertCodes(order, A, new DownloadedCodes(List.of("already-saved"), "saved-block"));
+        long pipeline = repository.enqueuePipeline(A, 2, null);
+        repository.updatePipeline(pipeline, order, PurchaseStage.DOWNLOADING_CODES, null);
+        AtomicInteger downloads = new AtomicInteger(), recoveries = new AtomicInteger();
+        ZnackKizCodeService codeService = new ZnackKizCodeService(null,null,repository) {
+            @Override public int download(Settings ignored, long id) throws Exception {
+                downloads.incrementAndGet();
+                throw new ZnackApiClient.ZnackApiException("Znack API request failed", 400,
+                        "{\"globalErrors\":[{\"errorCode\":2090,"
+                                + "\"error\":\"Неверный статус заказа: CLOSED\"}]}");
+            }
+            @Override public int recoverIssuedBlocks(Settings ignored, long id) throws java.io.IOException {
+                recoveries.incrementAndGet();
+                throw new ZnackApiClient.ZnackApiException("Znack API request failed", 400,
+                        "{\"globalErrors\":[{\"errorCode\":2090,"
+                                + "\"error\":\"Неверный статус заказа: CLOSED\"}]}");
+            }
+        };
+        ZnackPurchaseCoordinator coordinator = new ZnackPurchaseCoordinator(repository, null, codeService, null);
+
+        coordinator.advance(settings, pipeline);
+        ZnackPurchasePipelineState waiting = repository.findPipeline(pipeline).orElseThrow();
+        assertEquals(PurchaseStage.DOWNLOADING_CODES, waiting.stage());
+        assertTrue(ZnackErrorMessages.isClosedKizOrder(waiting.errorMessage()));
+        assertEquals("", ZnackErrorMessages.displayForPipeline(waiting.stage().name(), waiting.errorMessage()));
+        assertEquals(1, downloads.get());
+        assertEquals(1, recoveries.get());
+
+        coordinator.advance(settings, pipeline);
+        assertEquals(1, downloads.get(), "A closed order must never call normal code delivery again");
+        assertEquals(2, recoveries.get(), "Only idempotent block recovery is retried");
+        assertEquals(1, repository.findCodes(order).size());
+    }
+
     @Test void persistedPurchaseRequestKeyMakesCompletedAndInFlightReplaysIdempotent() throws Exception {
         Settings settings = testedSettings();
         AtomicInteger buys = new AtomicInteger();
@@ -1055,6 +1123,46 @@ class ZnackGtinWorkflowTest {
         coordinator.resume(settings);
         assertEquals(PurchaseStage.COMPLETED, repository.findPipeline(pipeline).orElseThrow().stage());
         assertEquals(0, new ZnackGtinInventoryService().availableCount(1, A));
+    }
+
+    @Test void pendingSuzBufferReturnsToPollingWithoutSurfacingPurchaseError() throws Exception {
+        Settings settings = testedSettings();
+        AtomicInteger downloads = new AtomicInteger();
+        ZnackKizOrderService orderService = readyOrderService();
+        ZnackKizCodeService codeService = new ZnackKizCodeService(null, null, repository) {
+            @Override public int download(Settings ignored, long id) throws Exception {
+                if (downloads.incrementAndGet() == 1) {
+                    throw new ZnackApiClient.ZnackApiException("Znack API request failed", 400,
+                            "{\"globalErrors\":[{\"errorCode\":3390,\"error\":"
+                                    + "\"Буфер не активный. Текущий статус буфера: \\\"PENDING\\\"\"}]}");
+                }
+                KizOrder order = repository.findOrder(id).orElseThrow();
+                int inserted = repository.insertCodes(id, order.gtin(),
+                        new DownloadedCodes(List.of("pending-buffer-code"), "b"));
+                repository.updateOrder(id, null, "ACTIVE", OrderStatus.CODES_DOWNLOADED, null);
+                return inserted;
+            }
+        };
+        ZnackPurchaseCoordinator coordinator = new ZnackPurchaseCoordinator(
+                repository, orderService, codeService, null) {
+            @Override void schedule(long ignoredPipeline) {
+            }
+        };
+
+        long pipeline = coordinator.start(settings, A, 1);
+        coordinator.resume(settings);
+
+        ZnackPurchasePipelineState waiting = repository.findPipeline(pipeline).orElseThrow();
+        assertEquals(PurchaseStage.POLLING_ORDER, waiting.stage());
+        assertTrue(waiting.errorMessage() == null || waiting.errorMessage().isBlank());
+        assertEquals(OrderStatus.WAITING_CODES,
+                repository.findOrder(waiting.orderId()).orElseThrow().localStatus());
+        assertTrue(repository.findLogs().stream().noneMatch(log ->
+                "PURCHASE_PIPELINE".equals(log.action()) && "ERROR".equals(log.severity())));
+
+        coordinator.resume(settings);
+        assertEquals(PurchaseStage.COMPLETED, repository.findPipeline(pipeline).orElseThrow().stage());
+        assertEquals(2, downloads.get());
     }
 
     @Test void samePipelineCannotAdvanceConcurrently() throws Exception {

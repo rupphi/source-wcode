@@ -21,6 +21,10 @@ class OzonExemplarStateMachineTest {
                 OzonExemplarJobStage.SET_PENDING, OzonExemplarJobStage.RECONCILE_REQUIRED));
         assertTrue(OzonExemplarStateMachine.canTransition(
                 OzonExemplarJobStage.RECONCILE_REQUIRED, OzonExemplarJobStage.ACCEPTED));
+        assertTrue(OzonExemplarStateMachine.canTransition(
+                OzonExemplarJobStage.VALIDATED, OzonExemplarJobStage.ACCEPTED));
+        assertTrue(OzonExemplarStateMachine.canTransition(
+                OzonExemplarJobStage.REJECTED, OzonExemplarJobStage.CREATED));
         assertFalse(OzonExemplarStateMachine.canTransition(
                 OzonExemplarJobStage.ACCEPTED, OzonExemplarJobStage.RESERVED));
         assertThrows(IllegalStateException.class, () -> OzonExemplarStateMachine.requireTransition(

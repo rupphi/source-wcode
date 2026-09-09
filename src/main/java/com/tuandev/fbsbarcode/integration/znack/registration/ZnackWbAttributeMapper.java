@@ -86,7 +86,9 @@ public final class ZnackWbAttributeMapper {
                 List.of("цвет"), clean(sku.color()));
         if (id == COMPOSITION || name.contains("состав")) return firstCharacteristic(characteristics,
                 List.of("состав"), "");
-        if (id == GENDER || name.contains("целевой пол") || name.equals("пол")) return gender(sku, characteristics);
+        if (id == GENDER || name.contains("целевой пол") || name.equals("пол")) {
+            return gender(attribute, sku, characteristics);
+        }
         if (id == GOODS_KIND || name.contains("вид товара")) return clean(sku.subjectName());
         if (name.contains("технического регламента") || name.contains("технический регламент")) {
             return presetContaining(attribute, "017/2011");
@@ -153,15 +155,23 @@ public final class ZnackWbAttributeMapper {
         return clean(fallback);
     }
 
-    private static String gender(Sku sku, List<WbCharacteristic> characteristics) {
+    private static String gender(Attribute attribute, Sku sku, List<WbCharacteristic> characteristics) {
         String explicit = firstCharacteristic(characteristics,
-                List.of("пол", "целевой пол", "для кого"), "");
-        if (!explicit.isBlank()) return explicit;
-        String source = normalize(clean(sku.title()) + " " + clean(sku.subjectName()));
-        if (source.contains("женск") || source.contains("девоч")) return "ЖЕНСКИЙ";
-        if (source.contains("мужск") || source.contains("мальчик")) return "МУЖСКОЙ";
-        if (source.contains("унисекс")) return "УНИСЕКС";
-        return "";
+                List.of("пол", "целевой пол", "для кого", "назначение", "целевая аудитория"), "");
+        String source = normalize(explicit + " " + clean(sku.title()) + " "
+                + clean(sku.subjectName()) + " " + clean(sku.vendorCode()));
+        GenderKind kind = genderKind(source);
+        if (kind == GenderKind.UNKNOWN) kind = GenderKind.UNISEX;
+
+        // National Catalog validates preset values literally. Classify the WB wording first,
+        // then return the exact value (including spelling/case) supplied by the Znack schema.
+        for (String preset : attribute.presets()) {
+            if (genderKind(normalize(preset)) == kind) return preset;
+        }
+
+        // Do not guess a binary gender from the grammar of the product name. If this category
+        // explicitly supports a neutral preset, it is the only safe fully automatic fallback.
+        return attribute.presets().isEmpty() ? kind.canonicalValue : "";
     }
 
     private static String brand(Sku sku, List<WbCharacteristic> characteristics) {
@@ -172,6 +182,35 @@ public final class ZnackWbAttributeMapper {
 
     private static String presetContaining(Attribute attribute, String needle) {
         return attribute.presets().stream().filter(value -> value.contains(needle)).findFirst().orElse("");
+    }
+
+    private static GenderKind genderKind(String value) {
+        String source = normalize(value);
+        Set<String> sourceWords = words(source);
+        boolean female = containsAny(source, "женск", "женщин", "девоч", "девуш")
+                || sourceWords.contains("female") || sourceWords.contains("women") || sourceWords.contains("woman");
+        boolean male = containsAny(source, "мужск", "мужчин", "мальчик", "парн")
+                || sourceWords.contains("male") || sourceWords.contains("men") || sourceWords.contains("man");
+        boolean neutral = source.contains("унисекс") || sourceWords.contains("unisex") || female && male;
+        if (neutral) return GenderKind.UNISEX;
+        if (female) return GenderKind.FEMALE;
+        if (male) return GenderKind.MALE;
+        return GenderKind.UNKNOWN;
+    }
+
+    private static boolean containsAny(String source, String... needles) {
+        for (String needle : needles) if (source.contains(needle)) return true;
+        return false;
+    }
+
+    private enum GenderKind {
+        MALE("МУЖСКОЙ"), FEMALE("ЖЕНСКИЙ"), UNISEX("УНИСЕКС"), UNKNOWN("");
+
+        private final String canonicalValue;
+
+        GenderKind(String canonicalValue) {
+            this.canonicalValue = canonicalValue;
+        }
     }
 
     public static String defaultName(Sku sku) {

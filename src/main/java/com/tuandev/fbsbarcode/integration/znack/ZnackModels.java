@@ -257,7 +257,10 @@ public final class ZnackModels {
             if (rejected || "DECLINED".equalsIgnoreCase(remoteStatus) || "REJECTED".equalsIgnoreCase(remoteStatus)) {
                 return OrderStatus.FAILED;
             }
-            if ("READY".equalsIgnoreCase(remoteStatus) || availableCodes > 0) {
+            // SUZ may expose a positive availableCodes count while the buffer itself is still
+            // PENDING. The /codes endpoint rejects that race with business error 3390, so the
+            // buffer status remains the authoritative readiness signal.
+            if ("ACTIVE".equalsIgnoreCase(remoteStatus) || "READY".equalsIgnoreCase(remoteStatus)) {
                 return OrderStatus.CODES_READY;
             }
             return OrderStatus.WAITING_CODES;

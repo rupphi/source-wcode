@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Shows non-repeating guidance when SUZ authentication fails due to invalid omsConnection or settings. */
+/** Shows non-repeating guidance after retries cannot authenticate the shop's UOT/SUZ connection. */
 public final class ZnackSuzAuthDialogService {
     private static final Set<String> PROMPTED_SHOPS = ConcurrentHashMap.newKeySet();
 

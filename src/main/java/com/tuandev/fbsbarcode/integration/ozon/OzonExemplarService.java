@@ -69,16 +69,15 @@ public final class OzonExemplarService {
     }
 
     public OzonPreparationResult prepare(Shop shop, String postingNumber) throws IOException {
-        return execute(shop, postingNumber, false);
+        return executeForPrint(shop, postingNumber);
     }
 
-    /** Reserves and validates KIZ for printing, but deliberately performs no Ozon set mutation. */
+    /** Reserves KIZ locally for printing. No exemplar/KIZ payload is sent to Ozon. */
     public OzonPreparationResult stageForPrint(Shop shop, String postingNumber) throws IOException {
-        return execute(shop, postingNumber, true);
+        return executeForPrint(shop, postingNumber);
     }
 
-    private OzonPreparationResult execute(Shop shop, String postingNumber, boolean stopAfterValidation)
-            throws IOException {
+    private OzonPreparationResult executeForPrint(Shop shop, String postingNumber) throws IOException {
         MarketplaceGuard.requireOzon(shop);
         String safePosting = OzonApiClient.requireExternalId(postingNumber, "posting number");
         String key = shop.getId() + ":" + safePosting;
@@ -89,7 +88,7 @@ public final class OzonExemplarService {
         });
         synchronized (lock.monitor) {
             try {
-                return prepareLocked(shop, safePosting, stopAfterValidation);
+                return prepareForPrintLocked(shop, safePosting);
             } finally {
                 POSTING_LOCKS.computeIfPresent(key, (ignored, current) -> {
                     if (current != lock) return current;
@@ -100,6 +99,53 @@ public final class OzonExemplarService {
         }
     }
 
+    private OzonPreparationResult prepareForPrintLocked(Shop shop, String postingNumber) throws IOException {
+        OzonApiClient api = apiClients.apply(
+                shop.getId(), new OzonCredentials(shop.getClientId(), shop.getApiKey()));
+        OzonPostingDto posting = OzonJson.parsePostingDetail(api.getPosting(postingNumber, true));
+        postings.upsertDetail(shop.getId(), posting);
+        OzonRequirementGuard.PreparationPlan plan = OzonRequirementGuard.plan(
+                posting, mappings.findResolvedBySku(shop.getId()), policies.findExemptSkus(shop.getId()));
+        if (plan.exemplarCount() == 0) {
+            return new OzonPreparationResult(postingNumber, "NOT_REQUIRED", 0,
+                    true, false, "");
+        }
+
+        OzonExemplarJob job = jobs.findOrCreate(shop.getId(), postingNumber);
+        if (job.stage() == OzonExemplarJobStage.ACCEPTED) {
+            return result(job, plan.exemplarCount(), true);
+        }
+        if (job.stage() == OzonExemplarJobStage.REJECTED) {
+            job = jobs.reopenRejectedForPrint(job);
+        }
+
+        List<OzonExemplarJobRepository.KizBinding> bindings = jobs.bindings(job.id());
+        if (bindings.size() == plan.exemplarCount()) {
+            job = jobs.markPrintReady(job);
+            return result(job, plan.exemplarCount(), true);
+        }
+        if (!bindings.isEmpty()) {
+            throw new IOException("The existing Ozon KIZ print reservation is incomplete.");
+        }
+        if (job.stage() != OzonExemplarJobStage.CREATED
+                && job.stage() != OzonExemplarJobStage.RECONCILE_REQUIRED) {
+            throw new IOException("The existing Ozon KIZ print reservation cannot be resumed safely.");
+        }
+
+        jobs.persistLocalPrintSlots(job, plan);
+        try {
+            jobs.reserveAndLink(job, plan);
+        } catch (OzonExemplarJobRepository.InsufficientKizException exception) {
+            job = jobs.transition(job, job.stage(), null, "kiz_unavailable", false);
+            return result(job, plan.exemplarCount(), false);
+        }
+        job = requireJob(shop.getId(), postingNumber);
+        job = jobs.markPrintReady(job);
+        jobs.logAction(shop.getId(), "kiz_print_reserve", postingNumber, "success", null, null);
+        return result(job, plan.exemplarCount(), true);
+    }
+
+    /** Legacy remote workflow retained only for migration/reference; production entry points no longer call it. */
     private OzonPreparationResult prepareLocked(
             Shop shop, String postingNumber, boolean stopAfterValidation) throws IOException {
         OzonApiClient api = apiClients.apply(

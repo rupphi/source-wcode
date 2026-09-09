@@ -82,6 +82,50 @@ class ZnackWbAttributeMapperTest {
         assertEquals(ZnackWbAttributeMapper.NO_BRAND, result.attributes().get(2504L));
     }
 
+    @Test
+    void normalizesWbAudienceValuesToTheNationalCatalogGenderPreset() {
+        Sku sku = new Sku(1, 2, 3, "BAG-1", "Сумки", "Brand", "Сумка",
+                "Черный", "ONE SIZE", List.of(), "", true, "", null, "", Status.NOT_CREATED, "", false);
+
+        var result = new ZnackWbAttributeMapper().map(sku,
+                List.of(new WbCharacteristic(10, "Для кого", List.of("Женщины"))),
+                List.of(preset(14013, "Целевой пол", "Для мужчин", "Для женщин", "Унисекс")),
+                "4202221000", "4202",
+                new ZnackModels.GoodsDocument("CONFORMITY_DECLARATION", "DOC-1", "2026-09-07"));
+
+        assertTrue(result.complete(), result.missingFields().toString());
+        assertEquals("Для женщин", result.attributes().get(14013L));
+    }
+
+    @Test
+    void usesNeutralGenderOnlyWhenTheNationalCatalogCategorySupportsIt() {
+        Sku sku = new Sku(1, 2, 3, "Bag-02/черный", "Сумки", "Brand", "Сумка",
+                "Черный", "ONE SIZE", List.of(), "", true, "", null, "", Status.NOT_CREATED, "", false);
+
+        var result = new ZnackWbAttributeMapper().map(sku, List.of(),
+                List.of(preset(14013, "Целевой пол", "МУЖСКОЙ", "ЖЕНСКИЙ", "УНИСЕКС")),
+                "4202221000", "4202",
+                new ZnackModels.GoodsDocument("CONFORMITY_DECLARATION", "DOC-1", "2026-09-07"));
+
+        assertTrue(result.complete(), result.missingFields().toString());
+        assertEquals("УНИСЕКС", result.attributes().get(14013L));
+    }
+
+    @Test
+    void mapsMultipleWbGenderValuesToTheExactZnackUnisexSpelling() {
+        Sku sku = new Sku(1, 2, 3, "Bag-02/черный", "Сумки", "Brand", "Сумка",
+                "Черный", "ONE SIZE", List.of(), "", true, "", null, "", Status.NOT_CREATED, "", false);
+
+        var result = new ZnackWbAttributeMapper().map(sku,
+                List.of(new WbCharacteristic(10, "Пол", List.of("Женский", "Мужской"))),
+                List.of(preset(14013, "Целевой пол", "Для мужчин", "Для женщин", "Унисекс")),
+                "4202221000", "4202",
+                new ZnackModels.GoodsDocument("CONFORMITY_DECLARATION", "DOC-1", "2026-09-07"));
+
+        assertTrue(result.complete(), result.missingFields().toString());
+        assertEquals("Унисекс", result.attributes().get(14013L));
+    }
+
     private static Attribute attribute(long id, String name) {
         return new Attribute(id, name, "text", false, false, true, false, List.of());
     }

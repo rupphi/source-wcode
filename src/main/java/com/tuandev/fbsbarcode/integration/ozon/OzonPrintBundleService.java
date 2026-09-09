@@ -16,8 +16,8 @@ import java.util.Locale;
 import java.util.Objects;
 
 /**
- * Idempotent Ozon print orchestration: prepare marks, preserve official pages, append physical KIZ
- * labels and create a separate picking list. Printing never ships the posting.
+ * Idempotent Ozon print orchestration: reserve KIZ locally, preserve official pages, append physical
+ * KIZ labels and create a separate picking list. KIZ is never submitted to Ozon.
  */
 public final class OzonPrintBundleService {
     private final OzonPostingRepository postings;
@@ -81,15 +81,20 @@ public final class OzonPrintBundleService {
                 .equals(pickingTarget.toPath().toAbsolutePath().normalize())) {
             throw new IllegalArgumentException("Ozon label bundle and picking list must use different files.");
         }
-        return exportInternal(shop, postingNumber, labelTarget, pickingTarget);
+        return exportInternal(shop, postingNumber, labelTarget, pickingTarget, true);
     }
 
     private ExportResult exportLabelOnly(Shop shop, String postingNumber, File labelTarget) throws IOException {
         requirePdfTarget(labelTarget, "label bundle");
-        return exportInternal(shop, postingNumber, labelTarget, null);
+        return exportInternal(shop, postingNumber, labelTarget, null, false);
     }
 
-    private ExportResult exportInternal(Shop shop, String postingNumber, File labelTarget, File pickingTarget)
+    private ExportResult exportInternal(
+            Shop shop,
+            String postingNumber,
+            File labelTarget,
+            File pickingTarget,
+            boolean consumeAfterPublish)
             throws IOException {
         String safePosting = OzonApiClient.requireExternalId(postingNumber, "posting number");
         OzonPostingDto posting = postings.find(shop.getId(), safePosting);
@@ -105,7 +110,8 @@ public final class OzonPrintBundleService {
             }
             if (!"ACCEPTED".equals(result.stage()) && !"VALIDATED".equals(result.stage())
                     && !"NOT_REQUIRED".equals(result.stage())) {
-                throw new IOException("Ozon KIZ is not accepted yet (stage " + safeStage(result.stage()) + ").");
+                throw new IOException("Ozon KIZ is not ready for printing yet (stage "
+                        + safeStage(result.stage()) + ").");
             }
             posting = Objects.requireNonNullElse(postings.find(shop.getId(), safePosting), posting);
             job = jobs.find(shop.getId(), safePosting);
@@ -134,6 +140,7 @@ public final class OzonPrintBundleService {
             if (pickingStaging != null) pickingLists.export(pickingStaging, shop, posting);
             AtomicFilePublisher.publish(labelStaging, labelTarget);
             labelStaging = null;
+            if (consumeAfterPublish && !bindings.isEmpty()) consumePrinted(job);
             if (pickingStaging != null) {
                 AtomicFilePublisher.publish(pickingStaging, pickingTarget);
                 pickingStaging = null;
@@ -193,6 +200,10 @@ public final class OzonPrintBundleService {
             pickingLists.exportBatch(pickingStaging, shop, batchPostings);
             AtomicFilePublisher.publish(labelStaging, labelTarget);
             labelStaging = null;
+            for (String postingNumber : safePostings) {
+                OzonExemplarJob job = jobs.find(shop.getId(), postingNumber);
+                if (job != null && !jobs.bindings(job.id()).isEmpty()) consumePrinted(job);
+            }
             AtomicFilePublisher.publish(pickingStaging, pickingTarget);
             pickingStaging = null;
             return new BatchExportResult(
@@ -275,9 +286,20 @@ public final class OzonPrintBundleService {
         boolean allBound = summaries.stream().allMatch(value -> value.kizId() != null);
         if (!allBound) throw new IOException("Only locally bound Ozon KIZ exemplars can be printed.");
         if (accepted(job)) {
-            boolean allPassed = summaries.stream()
-                    .allMatch(value -> "passed".equalsIgnoreCase(value.checkStatus()));
-            if (!allPassed) throw new IOException("Only accepted Ozon KIZ exemplars can be reprinted.");
+            boolean allCompleted = summaries.stream().allMatch(value ->
+                    "passed".equalsIgnoreCase(value.checkStatus())
+                            || "printed".equalsIgnoreCase(value.checkStatus()));
+            if (!allCompleted) throw new IOException("Only completed Ozon KIZ labels can be reprinted.");
+        }
+    }
+
+    private void consumePrinted(OzonExemplarJob job) throws IOException {
+        if (job == null) throw new IOException("The durable Ozon KIZ print job is missing.");
+        try {
+            jobs.consumePrinted(job);
+        } catch (RuntimeException exception) {
+            throw new IOException(
+                    "The Ozon label PDF was created, but WCode could not mark its KIZ as printed.", exception);
         }
     }
 

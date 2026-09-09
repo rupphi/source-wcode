@@ -55,10 +55,18 @@ class ZnackModuleTest {
     }
 
     @Test void errorDisplayExtractsHumanMessageFromApiJsonPayloads() {
-        assertTrue(ZnackErrorMessages.isSuzAuthError("Znack API request failed (HTTP 400): {\"error_message\":\"Ошибка аутентификации СУЗ: Сервис вернул пустой ответ\"}"));
+        String legacySuzError = "Znack API request failed (HTTP 400): {\"error_message\":\"Ошибка аутентификации СУЗ: Сервис вернул пустой ответ\"}";
+        String uot1090 = "HTTP 400: 1090; Проверка учетных данных УОТ не пройдена";
+
+        assertTrue(ZnackErrorMessages.isSuzAuthError(legacySuzError));
+        assertTrue(ZnackErrorMessages.isSuzAuthError(uot1090));
+        assertTrue(ZnackErrorMessages.isSuzAuthError(
+                "Znack API request failed (HTTP 400): {\"globalErrors\":[{\"errorCode\":1090,"
+                        + "\"error\":\"Проверка учетных данных УОТ не пройдена\"}]}"));
+        assertFalse(ZnackErrorMessages.isSuzAuthError("HTTP 400: 10901; unrelated"));
         assertEquals(com.tuandev.fbsbarcode.shared.I18nService.getInstance().tr("znack.error.suz_auth_invalid"),
-                ZnackErrorMessages.display(
-                        "Znack API request failed (HTTP 400): {\"error_message\":\"Ошибка аутентификации СУЗ: Сервис вернул пустой ответ\"}"));
+                ZnackErrorMessages.display(legacySuzError));
+        assertEquals("", ZnackErrorMessages.displayForPipeline("FAILED", uot1090));
         assertEquals("HTTP 422: Подпись не соответствует данным документа",
                 ZnackErrorMessages.display(
                         "Znack API request failed (HTTP 422): {\"fieldErrors\":[{\"fieldName\":\"signature\",\"errors\":[\"Подпись не соответствует данным документа\"]}]}"));
@@ -94,6 +102,22 @@ class ZnackModuleTest {
                 "FAILED", missingDocuments));
     }
 
+    @Test void hidesTransientDocumentNotFoundOnlyWhilePollingIntroduction() {
+        String direct = "HTTP 404: Документ не найден в ГИС МТ";
+        String wrapped = "Znack API request failed (HTTP 404): "
+                + "{\"error_message\":\"Документ не найден в ГИС МТ\"}";
+
+        assertTrue(ZnackErrorMessages.isDocumentVisibilityDelay("POLLING_INTRODUCTION", direct));
+        assertTrue(ZnackErrorMessages.isDocumentVisibilityDelay("polling_introduction", wrapped));
+        assertEquals("", ZnackErrorMessages.displayForPipeline("POLLING_INTRODUCTION", direct));
+        assertEquals("", ZnackErrorMessages.displayForPipeline("POLLING_INTRODUCTION", wrapped));
+        assertFalse(ZnackErrorMessages.isDocumentVisibilityDelay("FAILED", direct));
+        assertEquals(direct, ZnackErrorMessages.displayForPipeline("FAILED", direct));
+        assertEquals("HTTP 404: another resource was not found",
+                ZnackErrorMessages.displayForPipeline(
+                        "POLLING_INTRODUCTION", "HTTP 404: another resource was not found"));
+    }
+
     @Test void identifiesInsufficientFundsOnlyFromZnackError3590OrItsExceptionType() {
         String exactError = "HTTP 400: 3590; \"NotEnoughMoneyException: contract_id=[1234567]: "
                 + "Недостаточно средств на лицевом счету\"";
@@ -119,6 +143,30 @@ class ZnackModuleTest {
         assertFalse(ZnackErrorMessages.requiresOperatorTermsSignature("HTTP 400: 30550; unrelated"));
         assertFalse(ZnackErrorMessages.requiresOperatorTermsSignature("HTTP 400: 13055; unrelated"));
         assertFalse(ZnackErrorMessages.requiresOperatorTermsSignature(null));
+    }
+
+    @Test void pendingSuzBuffer3390IsAnExpectedHiddenWait() {
+        String pending = "Znack API request failed (HTTP 400): {\"globalErrors\":[{\"errorCode\":3390,"
+                + "\"error\":\"Буфер не активный. Текущий статус буфера: \\\"PENDING\\\"\"}]}";
+
+        assertTrue(ZnackErrorMessages.isPendingKizBuffer(pending));
+        assertEquals("", ZnackErrorMessages.displayForPipeline("DOWNLOADING_CODES", pending));
+        assertFalse(ZnackErrorMessages.isPendingKizBuffer(
+                "HTTP 400: {\"errorCode\":3390,\"error\":\"Buffer REJECTED\"}"));
+        assertFalse(ZnackErrorMessages.isPendingKizBuffer("HTTP 400: 33901; Buffer PENDING"));
+    }
+
+    @Test void closedSuzOrder2090IsAnInternalHiddenReconciliationState() {
+        String direct = "HTTP 400: 2090; Невозможно получить коды для заказа: \"order-id\". "
+                + "Неверный статус заказа: \"CLOSED\"";
+        String wrapped = "Znack API request failed (HTTP 400): {\"globalErrors\":[{\"errorCode\":2090,"
+                + "\"error\":\"Неверный статус заказа: CLOSED\"}]}";
+
+        assertTrue(ZnackErrorMessages.isClosedKizOrder(direct));
+        assertTrue(ZnackErrorMessages.isClosedKizOrder(wrapped));
+        assertEquals("", ZnackErrorMessages.displayForPipeline("DOWNLOADING_CODES", direct));
+        assertFalse(ZnackErrorMessages.isClosedKizOrder("HTTP 400: 2090; order status ACTIVE"));
+        assertFalse(ZnackErrorMessages.isClosedKizOrder("HTTP 400: 20901; order status CLOSED"));
     }
 
     @Test void sanitizerRedactsJsonAndHeaderStyleSecrets() {
@@ -687,6 +735,96 @@ class ZnackModuleTest {
             assertEquals("/api/v3/codes?omsId=oms-value&orderId=order-value&quantity=12&gtin=04601234567890",path.get());
             assertEquals("dynamic-client-token",clientToken.get());
             assertNull(authorization.get());
+        } finally { server.stop(0); }
+    }
+
+    @Test void codeDownloadRequestsOnlyTheUnpersistedRemainder() throws Exception {
+        AtomicReference<String> path=new AtomicReference<>();
+        HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/api/v3/codes",exchange->{
+            path.set(exchange.getRequestURI().toString());
+            respond(exchange,"{\"blockId\":\"second\",\"codes\":[\"new-1\",\"new-2\"]}");
+        });
+        server.start();
+        try {
+            ZnackRepository repository=repository(1,"Shop A");
+            repository.upsertProducts(List.of(new Product("04601234567890","Product",null,null,null,null,null)));
+            long order=repository.createDraft("04601234567890",3);
+            repository.updateOrder(order,"external-order","ACTIVE",OrderStatus.CODES_READY,null);
+            repository.insertCodes(order,"04601234567890",new DownloadedCodes(List.of("already-saved"),"first"));
+            String base="http://127.0.0.1:"+server.getAddress().getPort();
+            ZnackApiClient api=new ZnackApiClient();
+            ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+                @Override public String suzToken(Settings ignored){return "token";}
+            };
+
+            int inserted=new ZnackKizCodeService(api,auth,repository).download(
+                    testedSettings("",base,"oms","connection",""),order);
+
+            assertEquals(2,inserted);
+            assertEquals(3,repository.findCodes(order).size());
+            assertEquals("/api/v3/codes?omsId=oms&orderId=external-order&quantity=2&gtin=04601234567890",path.get());
+        } finally { server.stop(0); }
+    }
+
+    @Test void issuedBlockRecoverySkipsPersistedBlocksAndIsIdempotent() throws Exception {
+        AtomicInteger retryCalls=new AtomicInteger();
+        AtomicReference<String> retryPath=new AtomicReference<>();
+        HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/api/v3/order/codes/blocks",exchange->respond(exchange,
+                "[{\"gtin\":\"04601234567890\",\"blockIds\":[\"saved\",\"missing\"]}]"));
+        server.createContext("/api/v3/order/codes/retry",exchange->{
+            retryCalls.incrementAndGet();
+            retryPath.set(exchange.getRequestURI().toString());
+            respond(exchange,"{\"blockId\":\"missing\",\"codes\":[\"recovered-1\",\"recovered-2\"]}");
+        });
+        server.start();
+        try {
+            ZnackRepository repository=repository(1,"Shop A");
+            repository.upsertProducts(List.of(new Product("04601234567890","Product",null,null,null,null,null)));
+            long order=repository.createDraft("04601234567890",3);
+            repository.updateOrder(order,"external-order","CLOSED",OrderStatus.WAITING_CODES,null);
+            repository.insertCodes(order,"04601234567890",new DownloadedCodes(List.of("already-saved"),"saved"));
+            String base="http://127.0.0.1:"+server.getAddress().getPort();
+            ZnackApiClient api=new ZnackApiClient();
+            ZnackAuthService auth=new ZnackAuthService(api,testSigner()){
+                @Override public String suzToken(Settings ignored){return "token";}
+            };
+            ZnackKizCodeService service=new ZnackKizCodeService(api,auth,repository);
+            Settings settings=testedSettings("",base,"oms","connection","");
+
+            assertEquals(2,service.recoverIssuedBlocks(settings,order));
+            assertEquals(0,service.recoverIssuedBlocks(settings,order));
+            assertEquals(3,repository.findCodes(order).size());
+            assertEquals(1,retryCalls.get());
+            assertEquals("/api/v3/order/codes/retry?omsId=oms&blockId=missing",retryPath.get());
+        } finally { server.stop(0); }
+    }
+
+    @Test void suzCodeBlockRecoveryUsesDocumentedClientTokenAndQueryParameters() throws Exception {
+        AtomicReference<String> blocksPath=new AtomicReference<>(),retryPath=new AtomicReference<>();
+        AtomicReference<String> blocksToken=new AtomicReference<>(),retryToken=new AtomicReference<>();
+        HttpServer server=HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/api/v3/order/codes/blocks",exchange->{
+            blocksPath.set(exchange.getRequestURI().toString());
+            blocksToken.set(exchange.getRequestHeaders().getFirst("clientToken"));
+            respond(exchange,"{\"blocks\":[]}");
+        });
+        server.createContext("/api/v3/order/codes/retry",exchange->{
+            retryPath.set(exchange.getRequestURI().toString());
+            retryToken.set(exchange.getRequestHeaders().getFirst("clientToken"));
+            respond(exchange,"{\"codes\":[]}");
+        });
+        server.start();
+        try {
+            String base="http://127.0.0.1:"+server.getAddress().getPort();
+            ZnackApiClient api=new ZnackApiClient();
+            api.codeBlocks(base,"dynamic-client-token","oms-value","order-value","04601234567890");
+            api.retryCodeBlock(base,"dynamic-client-token","oms-value","block-value");
+            assertEquals("/api/v3/order/codes/blocks?omsId=oms-value&orderId=order-value&gtin=04601234567890",blocksPath.get());
+            assertEquals("/api/v3/order/codes/retry?omsId=oms-value&blockId=block-value",retryPath.get());
+            assertEquals("dynamic-client-token",blocksToken.get());
+            assertEquals("dynamic-client-token",retryToken.get());
         } finally { server.stop(0); }
     }
 
@@ -1807,6 +1945,8 @@ class ZnackModuleTest {
 
     @Test void mapsBufferStatuses() {
         assertEquals(OrderStatus.WAITING_CODES,new BufferStatus("PENDING",0,false,null).localStatus());
+        assertEquals(OrderStatus.WAITING_CODES,new BufferStatus("PENDING",1,false,null).localStatus());
+        assertEquals(OrderStatus.CODES_READY,new BufferStatus("ACTIVE",1,false,null).localStatus());
         assertEquals(OrderStatus.CODES_READY,new BufferStatus("READY",1,false,null).localStatus());
         assertEquals(OrderStatus.FAILED,new BufferStatus("REJECTED",0,true,"bad").localStatus());
     }

@@ -111,6 +111,12 @@ public class ZnackApiClient {
     public JsonElement codes(String base,String token,String omsId,String orderId,int quantity,String gtin)throws IOException{
         return suzGet(base,"/api/v3/codes?omsId="+url(omsId)+"&orderId="+url(orderId)+"&quantity="+quantity+"&gtin="+url(gtin),token);
     }
+    public JsonElement codeBlocks(String base,String token,String omsId,String orderId,String gtin)throws IOException{
+        return suzGet(base,"/api/v3/order/codes/blocks?omsId="+url(omsId)+"&orderId="+url(orderId)+"&gtin="+url(gtin),token);
+    }
+    public JsonElement retryCodeBlock(String base,String token,String omsId,String blockId)throws IOException{
+        return suzGet(base,"/api/v3/order/codes/retry?omsId="+url(omsId)+"&blockId="+url(blockId),token);
+    }
     public String createDocument(String base,String token,JsonObject body)throws IOException{
         String endpoint=join(trueApiBase(base,3),"/lk/documents/create?pg=lp");
         JsonElement response=post(trueApiBase(base,3),"/lk/documents/create?pg=lp",token,body);

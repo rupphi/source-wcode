@@ -88,5 +88,4 @@ gửi mutation không chắc chắn.
 
 ## License
 
-Phần mềm thương mại © TuanDev. In cơ bản dùng tự do; mua/tự động hóa KIZ cần license hợp lệ từ
-`https://wcode.online`.
+Phần mềm thương mại © TuanDev.
