@@ -27,6 +27,7 @@ import java.util.function.BiConsumer;
 public final class ZnackCardRegistrationWorkflow {
     private static final int POLL_ATTEMPTS = 40;
     private static final long POLL_DELAY_MS = 15_000L;
+    private static final Object GTIN_CHECKPOINT_LOCK = new Object();
     private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(2, runnable -> {
         Thread thread = new Thread(runnable, "znack-card-registration");
         thread.setDaemon(true);
@@ -90,11 +91,14 @@ public final class ZnackCardRegistrationWorkflow {
         if (gtin == null || gtin.isBlank()) {
             update(shop, sku, Status.CHECKING, null, null, listener);
             ZnackNationalCatalogService.Preflight preflight = catalog.preflight(draft.tnved());
-            if (preflight.gs1().remaining() < 1) throw new IllegalStateException("No GTIN quota remains.");
-            gtin = catalog.generateOne(preflight.token());
-            payload = ZnackNationalCatalogService.buildPayload(gtin, draft, sku.imageUrl());
-            registrations.saveGenerated(shop.getId(), sku, gtin, draft.tnved(), draft.categoryId(),
-                    draft.goodName(), payload.toString());
+            // Keep selection and the durable local checkpoint atomic across the two workflow
+            // workers. Otherwise both can observe the same reusable catalog draft GTIN.
+            synchronized (GTIN_CHECKPOINT_LOCK) {
+                gtin = catalog.generateOne(preflight.token(), registrations.claimedGtins(shop.getId()));
+                payload = ZnackNationalCatalogService.buildPayload(gtin, draft, sku.imageUrl());
+                registrations.saveGenerated(shop.getId(), sku, gtin, draft.tnved(), draft.categoryId(),
+                        draft.goodName(), payload.toString());
+            }
             notify(listener, Status.GTIN_GENERATED, gtin);
         } else {
             String stored = registrations.payload(shop.getId(), sku.chrtId());

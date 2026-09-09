@@ -15,8 +15,10 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 public class ZnackCardRegistrationRepository {
     private static final String SELECT = """
@@ -118,6 +120,23 @@ public class ZnackCardRegistrationRepository {
                 while (result.next()) values.add(new WbCharacteristic(result.getInt(1),
                         value(result.getString(2)), jsonValues(result.getString(3))));
                 return values;
+            }
+        } catch (SQLException error) {
+            throw new RuntimeException(error);
+        }
+    }
+
+    public Set<String> claimedGtins(int shopId) {
+        try (Connection connection = Database.getConnection();
+             PreparedStatement statement = connection.prepareStatement("""
+                     SELECT DISTINCT gtin FROM znack_card_registrations
+                     WHERE shop_id=? AND TRIM(COALESCE(gtin, ''))<>''
+                     """)) {
+            statement.setInt(1, shopId);
+            try (ResultSet result = statement.executeQuery()) {
+                Set<String> values = new LinkedHashSet<>();
+                while (result.next()) values.add(result.getString(1));
+                return Set.copyOf(values);
             }
         } catch (SQLException error) {
             throw new RuntimeException(error);

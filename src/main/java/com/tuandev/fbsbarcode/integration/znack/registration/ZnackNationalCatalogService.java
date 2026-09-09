@@ -6,12 +6,15 @@ import com.google.gson.JsonObject;
 import com.tuandev.fbsbarcode.integration.znack.ZnackApiClient;
 import com.tuandev.fbsbarcode.integration.znack.ZnackAuthService;
 import com.tuandev.fbsbarcode.integration.znack.ZnackModels;
+import com.tuandev.fbsbarcode.integration.znack.ZnackSanitizer;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Attribute;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Category;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Draft;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Gs1Status;
 import com.tuandev.fbsbarcode.integration.znack.signature.ZnackSignatureContext;
 import com.tuandev.fbsbarcode.integration.znack.signature.ZnackSignatureProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -24,6 +27,8 @@ import java.util.Set;
 
 /** National Catalog card workflow primitives. All methods are blocking and must run off the FX thread. */
 public final class ZnackNationalCatalogService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ZnackNationalCatalogService.class);
+    private static final Object GTIN_ALLOCATION_LOCK = new Object();
     public static final long DECLARATION_ATTRIBUTE_ID = 23_557L;
     public static final long CERTIFICATE_ATTRIBUTE_ID = 23_561L;
 
@@ -47,7 +52,7 @@ public final class ZnackNationalCatalogService {
         }
         String token = auth.trueApiToken(settings);
         Gs1Status gs1 = parseGs1(api.generatedGtins(settings.resolvedTrueApiBaseUrl(), token));
-        if (gs1.quotaKnown() && !gs1.canGenerate()) {
+        if (gs1.quotaKnown() && !gs1.canGenerate() && gs1.existingDrafts() == 0) {
             throw new IllegalStateException("GS1/GTIN quota is unavailable or exhausted (" + gs1.usage()
                     + "/" + gs1.limit() + "). Check the active GS1 RUS membership in National Catalog.");
         }
@@ -80,12 +85,58 @@ public final class ZnackNationalCatalogService {
     }
 
     public String generateOne(String token) throws Exception {
-        JsonObject result = resultObject(api.generateGtins(settings.resolvedTrueApiBaseUrl(), token, 1));
-        JsonArray drafts = array(result.get("drafts"));
-        if (drafts.isEmpty()) throw new IllegalStateException("National Catalog did not return a generated GTIN.");
-        String gtin = string(drafts.get(0).getAsJsonObject(), "gtin");
-        if (gtin.isBlank()) throw new IllegalStateException("Generated GTIN is empty.");
-        return gtin;
+        return generateOne(token, Set.of());
+    }
+
+    /**
+     * Allocates one unclaimed National Catalog draft GTIN.
+     *
+     * <p>The catalog may already contain unused codes from an earlier interrupted request. Reuse
+     * those first. If a quantity request succeeds without returning {@code result.drafts}, read
+     * the draft list back instead of issuing the state-changing request again.</p>
+     */
+    public String generateOne(String token, Set<String> claimedGtins) throws Exception {
+        Set<String> claimed = normalizedGtins(claimedGtins);
+        synchronized (GTIN_ALLOCATION_LOCK) {
+            JsonElement beforeResponse = api.generatedGtins(settings.resolvedTrueApiBaseUrl(), token);
+            List<String> before = draftGtins(beforeResponse);
+            String reusable = firstUnclaimed(before, claimed);
+            if (!reusable.isBlank()) {
+                LOGGER.info("Reusing an existing unclaimed National Catalog draft GTIN.");
+                return reusable;
+            }
+
+            JsonElement generatedResponse = api.generateGtins(
+                    settings.resolvedTrueApiBaseUrl(), token, 1);
+            String generated = firstUnclaimed(draftGtins(generatedResponse), claimed);
+            if (!generated.isBlank()) return generated;
+
+            // A successful allocation response without drafts is ambiguous. The allocation call
+            // must never be repeated automatically because it can consume another GS1 number.
+            JsonElement readBackResponse = api.generatedGtins(
+                    settings.resolvedTrueApiBaseUrl(), token);
+            List<String> readBack = draftGtins(readBackResponse);
+            Set<String> previous = new LinkedHashSet<>(before);
+            String reconciled = readBack.stream()
+                    .filter(value -> !claimed.contains(value))
+                    .filter(value -> !previous.contains(value))
+                    .findFirst()
+                    .orElseGet(() -> firstUnclaimed(readBack, claimed));
+            if (!reconciled.isBlank()) {
+                LOGGER.warn("National Catalog omitted drafts from the allocation response; "
+                        + "recovered the allocated GTIN through exist=1.");
+                return reconciled;
+            }
+
+            String apiError = firstApiError(generatedResponse);
+            String response = ZnackSanitizer.message(
+                    generatedResponse == null ? "null" : generatedResponse.toString());
+            throw new IllegalStateException(apiError.isBlank()
+                    ? "National Catalog accepted the GTIN allocation request but returned no draft GTIN. "
+                    + "WCode did not repeat the allocation request to avoid consuming a second number. "
+                    + "Response: " + response
+                    : apiError + " Response: " + response);
+        }
     }
 
     public String submit(String token, JsonObject payload) throws Exception {
@@ -242,7 +293,59 @@ public final class ZnackNationalCatalogService {
         long limit = number(monthly, "limit");
         long usage = number(monthly, "usage");
         boolean quotaKnown = monthly.has("limit") && monthly.has("usage");
-        return new Gs1Status(limit, usage, array(result.get("drafts")).size(), quotaKnown);
+        return new Gs1Status(limit, usage, draftGtins(response).size(), quotaKnown);
+    }
+
+    static List<String> draftGtins(JsonElement response) {
+        JsonElement unwrapped = unwrap(response);
+        List<String> values = new ArrayList<>();
+        if (unwrapped != null && unwrapped.isJsonObject()) {
+            collectGtins(unwrapped.getAsJsonObject().get("drafts"), values);
+            // Be tolerant of gateway adapters that expose the generated values as gtins.
+            if (values.isEmpty()) collectGtins(unwrapped.getAsJsonObject().get("gtins"), values);
+        } else if (unwrapped != null && unwrapped.isJsonArray()) {
+            collectGtins(unwrapped, values);
+        }
+        return values.stream().distinct().toList();
+    }
+
+    private static void collectGtins(JsonElement source, List<String> target) {
+        if (source == null || source.isJsonNull()) return;
+        if (source.isJsonArray()) {
+            for (JsonElement item : source.getAsJsonArray()) collectGtins(item, target);
+            return;
+        }
+        String value = "";
+        if (source.isJsonObject()) {
+            JsonElement gtin = source.getAsJsonObject().get("gtin");
+            if (gtin != null && (gtin.isJsonArray() || gtin.isJsonObject())) {
+                collectGtins(gtin, target);
+                return;
+            }
+            if (gtin != null && gtin.isJsonPrimitive()) value = gtin.getAsString();
+        } else if (source.isJsonPrimitive()) value = source.getAsString();
+        String normalized = normalizeGtin(value);
+        if (!normalized.isBlank()) target.add(normalized);
+    }
+
+    private static Set<String> normalizedGtins(Set<String> values) {
+        Set<String> result = new LinkedHashSet<>();
+        if (values == null) return result;
+        for (String value : values) {
+            String normalized = normalizeGtin(value);
+            if (!normalized.isBlank()) result.add(normalized);
+        }
+        return result;
+    }
+
+    private static String firstUnclaimed(List<String> candidates, Set<String> claimed) {
+        if (candidates == null) return "";
+        return candidates.stream().filter(value -> !claimed.contains(value)).findFirst().orElse("");
+    }
+
+    private static String normalizeGtin(String value) {
+        String normalized = value == null ? "" : value.trim();
+        return normalized.matches("\\d{8,14}") ? normalized : "";
     }
 
     static List<Category> parseCategories(JsonElement response) {
@@ -328,11 +431,33 @@ public final class ZnackNationalCatalogService {
     private static String firstError(JsonObject result) {
         for (JsonElement value : array(result.get("errors"))) {
             if (value.isJsonObject()) {
-                String message = string(value.getAsJsonObject(), "message");
+                String message = first(string(value.getAsJsonObject(), "message"),
+                        string(value.getAsJsonObject(), "error"),
+                        string(value.getAsJsonObject(), "text"));
+                if (!message.isBlank()) return message;
+            }
+        }
+        for (JsonElement value : array(result.get("globalErrors"))) {
+            if (value.isJsonObject()) {
+                String message = first(string(value.getAsJsonObject(), "message"),
+                        string(value.getAsJsonObject(), "error"),
+                        string(value.getAsJsonObject(), "text"));
                 if (!message.isBlank()) return message;
             }
         }
         return "";
+    }
+
+    private static String firstApiError(JsonElement response) {
+        JsonObject root = response != null && response.isJsonObject()
+                ? response.getAsJsonObject() : new JsonObject();
+        JsonObject result = resultObject(response);
+        String error = firstError(result);
+        if (!error.isBlank()) return error;
+        error = firstError(root);
+        if (!error.isBlank()) return error;
+        return first(string(result, "message"), string(result, "error"),
+                string(root, "message"), string(root, "error"));
     }
 
     private static String first(String... values) {

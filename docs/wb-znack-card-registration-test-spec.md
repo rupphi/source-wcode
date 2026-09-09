@@ -13,7 +13,10 @@
 3. Load the current mandatory attribute model through `GET /api/v3/true-api/nk/attributes?cat_id=...&attr_type=m`; do not hard-code one apparel schema.
 4. Authenticate using the certificate assigned to the selected shop and call `GET /v3/generate-gtins?exist=1` to check the current monthly GS1/GTIN quota without consuming a new number.
 5. Auto-fill values from the WB card. The user completes every missing mandatory value and chooses either declaration attribute `23557` or certificate attribute `23561` with `number:::YYYY-MM-DD`.
-6. Generate one GTIN. Persist it locally before the first feed request so a timeout or restart cannot generate a duplicate.
+6. Reuse an unused draft GTIN already returned by `exist=1`; only generate one when no unclaimed
+   draft exists. If the allocation response omits `result.drafts`, read `exist=1` back and reconcile
+   the allocated code without repeating the state-changing request. Persist the selected GTIN
+   locally before the first feed request so a timeout or restart cannot generate a duplicate.
 7. Submit one test entry to `POST /v3/feed`, persist `feed_id`, and poll `GET /v3/feed-status?verbose=true&feed_id=...` every 15 seconds.
 8. When moderated, get XML using `POST /v3/feed-product-document`, sign the raw XML with a detached PKCS#7 signature, and submit it with `POST /v3/feed-product-sign-pkcs`.
 9. Mark the local row as `PUBLISHED`, keep its GTIN/feed/good checkpoints, and stop. Updating the WB card is outside this test.

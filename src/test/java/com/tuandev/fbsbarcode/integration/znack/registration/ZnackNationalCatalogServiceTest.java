@@ -13,10 +13,105 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class ZnackNationalCatalogServiceTest {
+    @Test
+    void parsesDocumentedGeneratedGtinResponse() throws Exception {
+        ZnackApiClient api = new ZnackApiClient() {
+            @Override public JsonElement generatedGtins(String base, String token) {
+                return JsonParser.parseString("{\"result\":{\"drafts\":[]}}");
+            }
+
+            @Override public JsonElement generateGtins(String base, String token, int quantity) {
+                return JsonParser.parseString("""
+                        {"apiversion":3,"result":{"monthly-limit":{"limit":100,"usage":1},
+                        "drafts":[{"gtin":"04631993764363"}]}}
+                        """);
+            }
+        };
+
+        var service = service(api);
+
+        assertEquals("04631993764363", service.generateOne("token"));
+    }
+
+    @Test
+    void reusesExistingUnclaimedDraftWithoutGeneratingAnotherGtin() throws Exception {
+        ZnackApiClient api = new ZnackApiClient() {
+            @Override public JsonElement generatedGtins(String base, String token) {
+                return JsonParser.parseString("""
+                        {"result":{"drafts":[{"gtin":"04631993764363"},{"gtin":"04631993764370"}]}}
+                        """);
+            }
+
+            @Override public JsonElement generateGtins(String base, String token, int quantity) {
+                fail("An existing unclaimed draft must be reused before allocating another GTIN.");
+                return null;
+            }
+        };
+
+        var service = service(api);
+
+        assertEquals("04631993764370",
+                service.generateOne("token", Set.of("04631993764363")));
+    }
+
+    @Test
+    void reconcilesAllocationWhenSuccessResponseOmitsDrafts() throws Exception {
+        AtomicInteger reads = new AtomicInteger();
+        AtomicInteger allocations = new AtomicInteger();
+        ZnackApiClient api = new ZnackApiClient() {
+            @Override public JsonElement generatedGtins(String base, String token) {
+                return reads.getAndIncrement() == 0
+                        ? JsonParser.parseString("{\"result\":{\"drafts\":[]}}")
+                        : JsonParser.parseString("""
+                                {"result":{"drafts":[{"gtin":"04631993764363"}]}}
+                                """);
+            }
+
+            @Override public JsonElement generateGtins(String base, String token, int quantity) {
+                allocations.incrementAndGet();
+                return JsonParser.parseString("""
+                        {"result":{"monthly-limit":{"limit":100,"usage":1}}}
+                        """);
+            }
+        };
+
+        var service = service(api);
+
+        assertEquals("04631993764363", service.generateOne("token"));
+        assertEquals(1, allocations.get(), "The state-changing allocation must not be repeated.");
+    }
+
+    @Test
+    void includesResponseAndDoesNotRepeatAmbiguousAllocation() {
+        AtomicInteger allocations = new AtomicInteger();
+        ZnackApiClient api = new ZnackApiClient() {
+            @Override public JsonElement generatedGtins(String base, String token) {
+                return JsonParser.parseString("{\"result\":{\"drafts\":[]}}");
+            }
+
+            @Override public JsonElement generateGtins(String base, String token, int quantity) {
+                allocations.incrementAndGet();
+                return JsonParser.parseString("""
+                        {"result":{"monthly-limit":{"limit":100,"usage":1}}}
+                        """);
+            }
+        };
+
+        var service = service(api);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.generateOne("token"));
+        assertTrue(error.getMessage().contains("did not repeat"));
+        assertTrue(error.getMessage().contains("monthly-limit"));
+        assertEquals(1, allocations.get());
+    }
+
     @Test
     void parsesGs1QuotaWithoutConsumingDrafts() {
         var status = ZnackNationalCatalogService.parseGs1(JsonParser.parseString("""
@@ -126,5 +221,9 @@ class ZnackNationalCatalogServiceTest {
         ), "Брюки");
 
         assertEquals(2, selected.id());
+    }
+
+    private static ZnackNationalCatalogService service(ZnackApiClient api) {
+        return new ZnackNationalCatalogService(api, null, null, ZnackModels.Settings.empty());
     }
 }
