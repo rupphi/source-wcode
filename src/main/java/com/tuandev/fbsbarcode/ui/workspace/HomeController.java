@@ -551,16 +551,18 @@ public class HomeController implements Initializable {
         if (file == null) {
             return;
         }
+        var printLease = com.tuandev.fbsbarcode.shared.PrintRequestGate.tryAcquire(shop.getId());
+        if (printLease == null) return;
         Task<Void> task = new Task<>() {
             @Override
             protected Void call() throws Exception {
-                return ShopOperationCoordinator.withActiveShop(shop.getId(), () -> {
+                try (printLease) { return ShopOperationCoordinator.withActiveShop(shop.getId(), () -> {
                     FboPrintPlan plan = shop.getMarketplace() == Marketplace.OZON
                             ? ozonFboKizPrintPlanner.plan(shop.getId(), items)
-                            : fboKizPrintPlanner.plan(shop.getId(), items);
+                            : fboKizPrintPlanner.planForPrint(shop, items);
                     exportFboPlan(shop.getId(), plan, file);
                     return null;
-                });
+                }); }
             }
         };
         task.setOnFailed(event -> {
@@ -568,6 +570,7 @@ public class HomeController implements Initializable {
             LOGGER.error("Không thể in barcode FBO", task.getException());
             AlertService.showError(task.getException().getMessage());
         });
+        com.tuandev.fbsbarcode.shared.PrintPreparationDialog.attach(task, shop.getName());
         task.setOnSucceeded(event -> {
             fboPackingController.clearQuantities();
             tryOpenFile(file);
@@ -588,17 +591,19 @@ public class HomeController implements Initializable {
         if (file == null) {
             return;
         }
+        var printLease = com.tuandev.fbsbarcode.shared.PrintRequestGate.tryAcquire(shop.getId());
+        if (printLease == null) return;
         Task<Void> task = new Task<>() {
             @Override
             protected Void call() throws Exception {
-                return ShopOperationCoordinator.withActiveShop(shop.getId(), () -> {
+                try (printLease) { return ShopOperationCoordinator.withActiveShop(shop.getId(), () -> {
                     List<FboBarcodePrintItem> items = List.of(new FboBarcodePrintItem(product, 1));
                     FboPrintPlan plan = shop.getMarketplace() == Marketplace.OZON
                             ? ozonFboKizPrintPlanner.plan(shop.getId(), items)
-                            : fboKizPrintPlanner.plan(shop.getId(), items);
+                            : fboKizPrintPlanner.planForPrint(shop, items);
                     exportFboPlan(shop.getId(), plan, file);
                     return null;
-                });
+                }); }
             }
         };
         task.setOnFailed(event -> {
@@ -606,6 +611,7 @@ public class HomeController implements Initializable {
             LOGGER.error("Không thể in nhanh barcode FBO", task.getException());
             AlertService.showError(task.getException().getMessage());
         });
+        com.tuandev.fbsbarcode.shared.PrintPreparationDialog.attach(task, shop.getName());
         task.setOnSucceeded(event -> {
             tryOpenFile(file);
         });
@@ -615,7 +621,9 @@ public class HomeController implements Initializable {
     private void exportFboPlan(int shopId, FboPrintPlan plan, File file) throws IOException {
         boolean[] inventoryConsumed = {false};
         try {
+            if (Thread.currentThread().isInterrupted()) throw new IOException(i18nService.tr("wb.print.stop_waiting"));
             fboBarcodePdfExporter.exportPlan(plan, file, () -> {
+                if (Thread.currentThread().isInterrupted()) throw new IllegalStateException(i18nService.tr("wb.print.stop_waiting"));
                 KizService.deleteKizs(shopId, plan.usedKizs());
                 inventoryConsumed[0] = true;
             });
@@ -854,12 +862,19 @@ public class HomeController implements Initializable {
         List<Order> exportOrders = new ArrayList<>(state.getDisplayedOrders());
         String supplyId = state.getLoadedSupplyId();
         String supplyName = state.getLoadedSupplyName();
-
-        Task<Void> checkTask = new Task<>() {
+        var printLease = com.tuandev.fbsbarcode.shared.PrintRequestGate.tryAcquire(shop.getId());
+        if (printLease == null) return;
+        var preparedReference = new java.util.concurrent.atomic.AtomicReference<OrderExportWorkflow.PreparedPrint>();
+        Task<OrderExportWorkflow.PreparedPrint> checkTask = new Task<>() {
             @Override
-            protected Void call() throws Exception {
-                orderExportWorkflow.verifyKizAvailability(exportOrders, shop);
-                return null;
+            protected OrderExportWorkflow.PreparedPrint call() throws Exception {
+                OrderExportWorkflow.PreparedPrint prepared = null;
+                try {
+                    prepared = orderExportWorkflow.reserveExplicitPrint(exportOrders, shop);
+                    preparedReference.set(prepared);
+                    return prepared;
+                } catch (Exception error) { printLease.close(); throw error; }
+                finally { if (isCancelled()) { if (prepared != null) prepared.close(); printLease.close(); } }
             }
         };
 
@@ -869,7 +884,16 @@ public class HomeController implements Initializable {
                 supplyDetailController.setStickerLoading(true, i18nService.tr("supply.loading_orders"));
             }
         });
+        com.tuandev.fbsbarcode.shared.PrintPreparationDialog.attach(checkTask, shop.getName());
+        checkTask.setOnCancelled(e -> {
+            var prepared = preparedReference.getAndSet(null);
+            if (prepared != null) prepared.close();
+            printLease.close();
+            markShopRunning(shop.getId(), false);
+            if (supplyDetailController != null) supplyDetailController.setStickerLoading(false);
+        });
         checkTask.setOnFailed(e -> {
+            printLease.close();
             markShopRunning(shop.getId(), false);
             if (supplyDetailController != null) {
                 supplyDetailController.setStickerLoading(false);
@@ -879,6 +903,7 @@ public class HomeController implements Initializable {
             AlertService.showError(ex.getMessage());
         });
         checkTask.setOnSucceeded(e -> {
+            var prepared = checkTask.getValue();
             markShopRunning(shop.getId(), false);
             if (supplyDetailController != null) {
                 supplyDetailController.setStickerLoading(false);
@@ -887,12 +912,14 @@ public class HomeController implements Initializable {
             javafx.application.Platform.runLater(() -> {
                 Optional<PrintJobOptions> printOptions = printOptionsDialogService.chooseOptions();
                 if (printOptions.isEmpty()) {
+                    prepared.close(); printLease.close();
                     return;
                 }
 
                 preparePdfSaveChooser();
                 File file = fileChooser.showSaveDialog(null);
                 if (file == null) {
+                    prepared.close(); printLease.close();
                     return;
                 }
 
@@ -900,6 +927,7 @@ public class HomeController implements Initializable {
                 Task<OrderExportWorkflow.ExportResult> exportTask = new Task<>() {
                     @Override
                     protected OrderExportWorkflow.ExportResult call() throws Exception {
+                        try (prepared; printLease) {
                         List<Order> ordersWithStickers = supplyLoadWorkflow.enrichStickers(shop, exportOrders);
                         return orderExportWorkflow.export(
                                 new OrderExportWorkflow.ExportRequest(
@@ -910,8 +938,9 @@ public class HomeController implements Initializable {
                                         printOptions.get(),
                                         file,
                                         orderDetailsFile
-                                )
+                                ), prepared
                         );
+                        }
                     }
                 };
 
@@ -933,9 +962,11 @@ public class HomeController implements Initializable {
                 exportTask.setOnSucceeded(ev -> {
                     markShopRunning(shop.getId(), false);
                     OrderExportWorkflow.ExportResult result = exportTask.getValue();
-                    state.setLoadedOrdersRaw(result.exportedOrders());
-                    applySortAndDisplayOrders();
-                    clearKizDraft();
+                    if (isCurrentShop(shop.getId()) && java.util.Objects.equals(supplyId, state.getLoadedSupplyId())) {
+                        state.setLoadedOrdersRaw(result.exportedOrders());
+                        applySortAndDisplayOrders();
+                        clearKizDraft();
+                    }
                     tryOpenFile(orderDetailsFile);
                     tryOpenFile(file);
                     enqueueBackgroundKizAttachment(shop, supplyId, supplyName, result);
@@ -1136,6 +1167,9 @@ public class HomeController implements Initializable {
         Task<Void> resume = new Task<>() {
             @Override
             protected Void call() throws Exception {
+                if (com.tuandev.fbsbarcode.shared.AppPaths.isZnackRegistrationTestProfile()) {
+                    com.tuandev.fbsbarcode.integration.znack.registration.RegistrationRunner.start();
+                }
                 ZnackPurchaseCoordinator.resumeAllPersisted();
                 if (selectedShop != null) {
                     ZnackRepository repository = new ZnackRepository(

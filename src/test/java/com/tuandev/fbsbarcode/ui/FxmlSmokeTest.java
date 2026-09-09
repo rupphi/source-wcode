@@ -103,6 +103,8 @@ class FxmlSmokeTest {
         assertLoads(PrintTemplateDesignerController.class, "print-template-designer-view.fxml");
         assertLoads(ShopDialogController.class, "shop-dialog.fxml");
         assertLoads(OzonDashboardController.class, "ozon-dashboard-view.fxml");
+        assertLoads(com.tuandev.fbsbarcode.ui.znackregistration.ZnackCardRegistrationController.class,
+                "znack-card-registration-view.fxml");
     }
 
     @Test

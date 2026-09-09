@@ -91,7 +91,7 @@ public class ZnackCardRegistrationRepository {
                 parameters.add(status);
             }
         }
-        sql.append(" GROUP BY c.shop_id,c.nm_id,s.chrt_id ORDER BY c.vendor_code COLLATE NOCASE,s.tech_size COLLATE NOCASE,c.nm_id LIMIT ? OFFSET ?");
+        sql.append(" GROUP BY c.shop_id,c.nm_id,s.chrt_id ORDER BY c.vendor_code COLLATE NOCASE,s.tech_size COLLATE NOCASE,c.nm_id,s.chrt_id LIMIT ? OFFSET ?");
         parameters.add(Math.max(1, criteria.limit()));
         parameters.add(Math.max(0, criteria.offset()));
         try (Connection connection = Database.getConnection();
@@ -123,6 +123,23 @@ public class ZnackCardRegistrationRepository {
             }
         } catch (SQLException error) {
             throw new RuntimeException(error);
+        }
+    }
+
+    public Sku find(int shopId, long chrtId) {
+        try (Connection c = Database.getConnection(); PreparedStatement s = c.prepareStatement(
+                SELECT + " AND s.chrt_id=? GROUP BY c.shop_id,c.nm_id,s.chrt_id")) {
+            s.setInt(1, shopId); s.setLong(2, chrtId);
+            try (ResultSet r = s.executeQuery()) { return r.next() ? map(r) : null; }
+        } catch (SQLException error) { throw new IllegalStateException(error); }
+    }
+
+    public List<Sku> allMatching(SearchCriteria criteria) {
+        List<Sku> result = new ArrayList<>();
+        for (int offset = 0; ; offset += 500) {
+            var page = search(new SearchCriteria(criteria.shopId(), criteria.query(), criteria.subjects(), criteria.status(), 500, offset));
+            result.addAll(page);
+            if (page.size() < 500) return List.copyOf(result);
         }
     }
 

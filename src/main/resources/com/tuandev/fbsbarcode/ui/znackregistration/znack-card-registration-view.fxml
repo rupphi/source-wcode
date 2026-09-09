@@ -23,6 +23,7 @@
     <StackPane VBox.vgrow="ALWAYS">
         <TableView fx:id="productTable">
             <columns>
+                <TableColumn fx:id="selectColumn" text="✓" prefWidth="42" maxWidth="48" sortable="false"/>
                 <TableColumn fx:id="imageColumn" text="Ảnh" prefWidth="72" maxWidth="82"/>
                 <TableColumn fx:id="nameColumn" text="Sản phẩm" prefWidth="230"/>
                 <TableColumn fx:id="articleColumn" text="Article" prefWidth="130"/>
@@ -35,4 +36,14 @@
         </TableView>
         <Label fx:id="emptyLabel" text="Không có SKU" visible="false" managed="false" styleClass="text-muted"/>
     </StackPane>
+    <FlowPane hgap="10" vgap="8" alignment="CENTER_LEFT">
+        <CheckBox fx:id="selectAllCheck" text="Chọn tất cả kết quả đang lọc" onAction="#onSelectAll"/>
+        <Button fx:id="clearSelectionButton" text="Bỏ chọn" onAction="#onClearSelection"/>
+        <Button fx:id="registerSelectedButton" text="Đăng ký đã chọn" onAction="#onRegisterSelected" styleClass="btn-primary"/>
+        <Button fx:id="resumeQueueButton" text="Tiếp tục hàng đợi" onAction="#onResumeQueue"/>
+        <Button fx:id="previousPageButton" text="‹" onAction="#onPreviousPage"/>
+        <Label fx:id="pageLabel" text="1 / 1"/>
+        <Button fx:id="nextPageButton" text="›" onAction="#onNextPage"/>
+    </FlowPane>
+    <Label fx:id="progressLabel" wrapText="true" styleClass="text-muted"/>
 </VBox>

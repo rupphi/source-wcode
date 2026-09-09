@@ -31,8 +31,26 @@ public class OrderExportWorkflow {
     private final PrintHistoryService printHistoryService = new PrintHistoryService();
     private final KizMappingRepository kizMappingRepository = new KizMappingRepository();
     private final ZnackGtinInventoryService inventoryService = new ZnackGtinInventoryService();
+    private final MetadataLoader metadataLoader;
+
+    public OrderExportWorkflow() {
+        this(KizService::getSgtinMetadata);
+    }
+
+    OrderExportWorkflow(MetadataLoader metadataLoader) {
+        this.metadataLoader = java.util.Objects.requireNonNull(metadataLoader);
+    }
+
+    @FunctionalInterface
+    interface MetadataLoader {
+        java.util.Map<Long, KizService.SgtinMetadata> load(String apiKey, List<Long> orderIds) throws IOException;
+    }
 
     public ExportResult export(ExportRequest request) throws IOException, WriterException {
+        return export(request, null);
+    }
+
+    public ExportResult export(ExportRequest request, PreparedPrint prepared) throws IOException, WriterException {
         MarketplaceGuard.requireWildberries(request.shop());
         List<Order> workingOrders = copyOrders(request.orders());
         List<Kiz> usedKizs = List.of();
@@ -44,7 +62,19 @@ public class OrderExportWorkflow {
         File barcodeStaging = null;
         File detailsStaging = null;
         try {
-            KizAssignmentResult assignmentResult = assignKizCodes(workingOrders, request.shop());
+            KizAssignmentResult assignmentResult;
+            if (prepared == null) assignmentResult = assignKizCodes(workingOrders, request.shop());
+            else {
+                if (prepared.shopId != request.shop().getId() || prepared.closed.get())
+                    throw new IllegalStateException("Prepared print no longer belongs to this shop.");
+                if (!workingOrders.stream().map(Order::getId).toList().equals(prepared.orders.stream().map(Order::getId).toList()))
+                    throw new IllegalStateException("Prepared order identities changed.");
+                for (int i = 0; i < workingOrders.size(); i++) {
+                    workingOrders.get(i).setKiz(prepared.orders.get(i).getKiz());
+                    workingOrders.get(i).setRequiresKiz(prepared.orders.get(i).isRequiresKiz());
+                }
+                assignmentResult = prepared.assignment;
+            }
             usedKizs = assignmentResult.usedKizs();
             replaceExistingOrderIds = assignmentResult.replaceExistingOrderIds();
 
@@ -55,6 +85,7 @@ public class OrderExportWorkflow {
                     request.supplyName(), printedAt, workingOrders, request.printOptions());
             inventoryService.consume(request.shop().getId(), usedKizs);
             inventoryConsumed = true;
+            if (prepared != null) prepared.closed.set(true);
             AtomicFilePublisher.publish(barcodeStaging, request.outputFile());
             AtomicFilePublisher.publish(detailsStaging, request.detailsFile());
             long printJobId = printHistoryService.recordSuccessfulJob(request.shop(), request.supplyId(), request.supplyName(), printedAt, template, workingOrders);
@@ -89,6 +120,29 @@ public class OrderExportWorkflow {
         inventoryService.release(shop.getId(), result.usedKizs());
     }
 
+    public void prepareExplicitPrint(List<Order> orders, Shop shop) throws IOException {
+        try (PreparedPrint prepared = reserveExplicitPrint(orders, shop)) { }
+    }
+
+    public PreparedPrint reserveExplicitPrint(List<Order> orders, Shop shop) throws IOException {
+        MarketplaceGuard.requireWildberries(shop);
+        List<Order> copies = copyOrders(orders);
+        return new PreparedPrint(shop.getId(), copies, assignKizCodes(copies, shop, true));
+    }
+
+    public final class PreparedPrint implements AutoCloseable {
+        private final int shopId;
+        private final List<Order> orders;
+        private final KizAssignmentResult assignment;
+        private final java.util.concurrent.atomic.AtomicBoolean closed = new java.util.concurrent.atomic.AtomicBoolean();
+        private PreparedPrint(int shopId, List<Order> orders, KizAssignmentResult assignment) {
+            this.shopId = shopId; this.orders = orders; this.assignment = assignment;
+        }
+        @Override public void close() {
+            if (closed.compareAndSet(false, true)) inventoryService.release(shopId, assignment.usedKizs());
+        }
+    }
+
     private static List<Order> copyOrders(List<Order> orders) {
         List<Order> copies = new ArrayList<>(orders.size());
         for (Order order : orders) {
@@ -120,6 +174,11 @@ public class OrderExportWorkflow {
     }
 
     private KizAssignmentResult assignKizCodes(List<Order> orders, Shop shop) throws IOException {
+        return assignKizCodes(orders, shop, false);
+    }
+
+    private KizAssignmentResult assignKizCodes(List<Order> orders, Shop shop, boolean explicitPrint) throws IOException {
+        if (Thread.currentThread().isInterrupted()) throw new IOException("Print cancelled before preparation.");
         for (Order order : orders) {
             order.setKiz(null);
         }
@@ -131,7 +190,7 @@ public class OrderExportWorkflow {
                 .filter(value -> value != null && value > 0)
                 .distinct()
                 .toList();
-        java.util.Map<Long, KizService.SgtinMetadata> metadataByOrderId = KizService.getSgtinMetadata(shop.getApiKey(), orderIds);
+        java.util.Map<Long, KizService.SgtinMetadata> metadataByOrderId = metadataLoader.load(shop.getApiKey(), orderIds);
         List<Long> nmIds = orders.stream()
                 .map(Order::getNmId)
                 .filter(value -> value != null && value > 0)
@@ -140,10 +199,20 @@ public class OrderExportWorkflow {
         java.util.Map<Long, String> mappingByNmId = kizMappingRepository.findMappings(shop.getId(), nmIds);
         Set<Long> kizRequiredNmIds = kizMappingRepository.findKizRequiredNmIds(shop.getId(), nmIds);
         java.util.Map<String, List<Order>> ordersByGtin = new java.util.LinkedHashMap<>();
+        Set<String> registeredGtins = new LinkedHashSet<>();
         for (int i = 0; i < orders.size(); i++) {
             Order order = orders.get(i);
             KizService.SgtinMetadata sgtinMetadata = order.getId() == null ? null : metadataByOrderId.get(order.getId());
             String gtin = order.getNmId() == null ? null : mappingByNmId.get(order.getNmId());
+            if (sgtinMetadata != null && sgtinMetadata.available() && sgtinMetadata.hasAppliedValue()) {
+                order.setRequiresKiz(true);
+                order.setKiz(sgtinMetadata.appliedValue());
+                continue;
+            }
+            if (order.getNmId() != null) {
+                String registered = kizMappingRepository.registeredGtin(shop.getId(), order.getNmId(), order.getBarcode());
+                if (registered != null) { gtin = registered; registeredGtins.add(gtin); }
+            }
             boolean requiresKiz = order.isRequiresKiz() || isProductKizRequired(order, kizRequiredNmIds)
                     || (sgtinMetadata != null && sgtinMetadata.available());
             if (sgtinMetadata != null && sgtinMetadata.available()) {
@@ -169,6 +238,12 @@ public class OrderExportWorkflow {
         try {
             for (java.util.Map.Entry<String, List<Order>> entry : ordersByGtin.entrySet()) {
                 List<Order> gtinOrders = entry.getValue();
+                if (explicitPrint && registeredGtins.contains(entry.getKey())) {
+                    String demand = "FBS:" + gtinOrders.stream().map(Order::getId).sorted().toList();
+                    new com.tuandev.fbsbarcode.integration.znack.registration.WbPrintDemand()
+                            .awaitAvailable(shop, entry.getKey(), gtinOrders.size(), demand);
+                }
+                if (Thread.currentThread().isInterrupted()) throw new IOException("Print cancelled before KIZ reservation.");
                 List<Kiz> kizList = inventoryService.reserveAvailable(shop.getId(), entry.getKey(), gtinOrders.size());
                 usedKizs.addAll(kizList);
                 for (int i = 0; i < gtinOrders.size(); i++) {
@@ -176,7 +251,7 @@ public class OrderExportWorkflow {
                     gtinOrders.get(i).setKiz(kiz.getCode());
                 }
             }
-        } catch (RuntimeException e) {
+        } catch (RuntimeException | IOException e) {
             inventoryService.release(shop.getId(), usedKizs);
             throw e;
         }

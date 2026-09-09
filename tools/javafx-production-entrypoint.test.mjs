@@ -136,7 +136,7 @@ test("Windows CI builds a versioned downloadable JavaFX EXE without publishing a
   assert.doesNotMatch(workflow, /gh release|RELEASE_TOKEN/);
 });
 
-test("Znack registration test EXE is isolated, has its own update channel, and cannot update WB", async () => {
+test("Znack registration test EXE is isolated, has its own update channel, and separates registration from WB publication", async () => {
   const [workflow, buildScript, appPaths, registrationWorkflow, updateService, updateClient] = await Promise.all([
     readFile(new URL(".github/workflows/build-znack-registration-test.yml", root), "utf8"),
     readFile(new URL("build.bat", root), "utf8"),

@@ -24,6 +24,15 @@ public class FboKizPrintPlanner {
     }
 
     public FboPrintPlan plan(int shopId, List<FboBarcodePrintItem> items) {
+        return plan(shopId, items, null);
+    }
+
+    public FboPrintPlan planForPrint(com.tuandev.fbsbarcode.models.Shop shop, List<FboBarcodePrintItem> items) {
+        com.tuandev.fbsbarcode.integration.marketplace.MarketplaceGuard.requireWildberries(shop);
+        return plan(shop.getId(), items, shop);
+    }
+
+    private FboPrintPlan plan(int shopId, List<FboBarcodePrintItem> items, com.tuandev.fbsbarcode.models.Shop explicitShop) {
         List<FboBarcodePrintItem> safeItems = items == null ? List.of() : items.stream()
                 .filter(item -> item != null && item.product() != null && item.quantity() > 0).toList();
         if (safeItems.isEmpty()) return new FboPrintPlan(List.of(), List.of());
@@ -32,10 +41,15 @@ public class FboKizPrintPlanner {
                 .map(FboBarcodePrintItem::product).filter(FboProductSku::requiresKiz)
                 .map(FboProductSku::nmId).distinct().toList());
         Map<String, Integer> neededByGtin = new LinkedHashMap<>();
+        Map<FboProductSku, String> sizeMappings = new HashMap<>();
+        java.util.Set<String> registeredGtins = new java.util.HashSet<>();
         List<String> missing = new ArrayList<>();
         for (FboBarcodePrintItem item : safeItems) {
             if (!item.product().requiresKiz()) continue;
             String gtin = mappings.get(item.product().nmId());
+            String registered = mappingRepository.registeredGtin(shopId, item.product().nmId(), item.product().sku());
+            if (registered != null) { gtin = registered; registeredGtins.add(gtin); }
+            sizeMappings.put(item.product(), gtin);
             if (gtin == null) {
                 missing.add("nmId " + item.product().nmId() + " | article " + safe(item.product().vendorCode()));
             } else {
@@ -48,6 +62,15 @@ public class FboKizPrintPlanner {
         List<Kiz> allReserved = new ArrayList<>();
         try {
             for (Map.Entry<String, Integer> entry : neededByGtin.entrySet()) {
+                if (explicitShop != null && registeredGtins.contains(entry.getKey())) {
+                    String demand = "FBO:" + safeItems.stream().map(item -> item.product().nmId() + ":"
+                            + item.product().sku() + ":" + item.quantity()).sorted().toList();
+                    try {
+                        new com.tuandev.fbsbarcode.integration.znack.registration.WbPrintDemand()
+                                .awaitAvailable(explicitShop, entry.getKey(), entry.getValue(), demand);
+                    } catch (java.io.IOException error) { throw new IllegalStateException(error.getMessage(), error); }
+                }
+                if (Thread.currentThread().isInterrupted()) throw new IllegalStateException("Print cancelled before KIZ reservation.");
                 List<Kiz> reserved = inventoryService.reserveAvailable(shopId, entry.getKey(), entry.getValue());
                 reservedByGtin.put(entry.getKey(), reserved);
                 allReserved.addAll(reserved);
@@ -64,7 +87,7 @@ public class FboKizPrintPlanner {
             for (int i = 0; i < item.quantity(); i++) {
                 String code = null;
                 if (item.product().requiresKiz()) {
-                    String gtin = mappings.get(item.product().nmId());
+                    String gtin = sizeMappings.get(item.product());
                     code = reservedByGtin.get(gtin).get(nextIndex.merge(gtin, 1, Integer::sum) - 1).getCode();
                 }
                 pages.add(FboPrintPage.barcode(item.product(), pairNumber));

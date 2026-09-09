@@ -9,6 +9,7 @@ public final class ZnackCardRegistrationModels {
 
     public enum Status {
         NOT_CREATED,
+        QUEUED,
         CHECKING,
         GTIN_GENERATED,
         FEED_SUBMITTED,
@@ -16,6 +17,7 @@ public final class ZnackCardRegistrationModels {
         READY_TO_SIGN,
         SIGNING,
         PUBLISHED,
+        WB_UPDATE_PENDING,
         ERROR
     }
 

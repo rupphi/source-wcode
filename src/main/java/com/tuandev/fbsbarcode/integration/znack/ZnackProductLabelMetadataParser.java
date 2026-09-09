@@ -10,11 +10,11 @@ import java.util.List;
 import java.util.Locale;
 
 /** Reads physical-label attributes from the National Catalog product-card schema. */
-final class ZnackProductLabelMetadataParser {
+public final class ZnackProductLabelMetadataParser {
     private ZnackProductLabelMetadataParser() {
     }
 
-    static ZnackKizLabelMetadata fromProductCard(JsonObject card) {
+    public static ZnackKizLabelMetadata fromProductCard(JsonObject card) {
         if (card == null) return new ZnackKizLabelMetadata("", "", "");
         Candidate gender = Candidate.EMPTY;
         Candidate size = Candidate.EMPTY;

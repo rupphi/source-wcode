@@ -25,8 +25,7 @@ import java.util.function.BiConsumer;
 
 /** Durable, one-SKU-at-a-time test workflow. A checkpoint is written before every remote transition. */
 public final class ZnackCardRegistrationWorkflow {
-    private static final int POLL_ATTEMPTS = 40;
-    private static final long POLL_DELAY_MS = 15_000L;
+    private static final int POLL_ATTEMPTS = 1;
     private static final Object GTIN_CHECKPOINT_LOCK = new Object();
     private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(2, runnable -> {
         Thread thread = new Thread(runnable, "znack-card-registration");
@@ -42,18 +41,7 @@ public final class ZnackCardRegistrationWorkflow {
     }
 
     public boolean start(Shop shop, Sku sku, Draft draft, BiConsumer<Status, String> listener) {
-        String key = shop.getId() + ":" + sku.chrtId();
-        if (!running.add(key)) return false;
-        EXECUTOR.execute(() -> {
-            try {
-                execute(shop, sku, draft, listener);
-            } catch (Exception error) {
-                fail(shop, sku, error, listener);
-            } finally {
-                running.remove(key);
-            }
-        });
-        return true;
+        return RegistrationRunner.enqueue(shop, sku, draft, listener);
     }
 
     public boolean resume(Shop shop, Sku sku, BiConsumer<Status, String> listener) {
@@ -61,7 +49,15 @@ public final class ZnackCardRegistrationWorkflow {
         String stored = registrations.payload(shop.getId(), sku.chrtId());
         if (stored.isBlank()) return false;
         JsonObject payload = JsonParser.parseString(stored).getAsJsonObject();
-        return start(shop, sku, draftFromPayload(payload), listener);
+        if (sku.status() == Status.GTIN_GENERATED && new RegistrationQueueStore().phase(shop.getId(), sku.chrtId()).isBlank()) {
+            registrations.updateProgress(shop.getId(), sku.chrtId(), Status.ERROR, null, null, null, null);
+            Sku retry = new Sku(sku.nmId(), sku.chrtId(), sku.subjectId(), sku.vendorCode(), sku.subjectName(),
+                    sku.brand(), sku.title(), sku.color(), sku.size(), sku.barcodes(), sku.imageUrl(), sku.needKiz(),
+                    sku.gtin(), sku.goodId(), sku.feedId(), Status.ERROR, sku.errorMessage(), sku.wbUpdated(), sku.wbSize());
+            return start(shop, retry, draftFromPayload(payload), listener);
+        }
+        RegistrationRunner.start();
+        return true;
     }
 
     static Draft draftFromPayload(JsonObject payload) {
@@ -83,15 +79,12 @@ public final class ZnackCardRegistrationWorkflow {
                 payload.get("good_name").getAsString(), payload.get("brand").getAsString(), attributes, types);
     }
 
-    private void execute(Shop shop, Sku sku, Draft draft, BiConsumer<Status, String> listener) throws Exception {
+    void execute(Shop shop, Sku sku, Draft draft, BiConsumer<Status, String> listener) throws Exception {
         ZnackModels.ShopContext context = new ZnackModels.ShopContext(shop.getId(), shop.getName());
         ZnackModels.Settings settings = new ZnackRepository(context).getSettings();
-        ZnackSignatureProvider signer = new CryptoProSignatureProvider(settings.cryptcpPath(),
-                settings.signerCertificate(), Duration.ofSeconds(settings.resolvedCryptoProTimeoutSeconds()));
-        ZnackApiClient api = new ZnackApiClient();
-        ZnackAuthService auth = new ZnackAuthService(api, signer);
-        ZnackNationalCatalogService catalog = new ZnackNationalCatalogService(api, auth, signer, settings);
-        String token = auth.trueApiToken(settings);
+        var session = RegistrationRunner.session(shop, settings);
+        ZnackNationalCatalogService catalog = session.catalog();
+        String token = session.auth().trueApiToken(settings);
 
         String gtin = sku.gtin();
         String feedId = sku.feedId();
@@ -162,14 +155,9 @@ public final class ZnackCardRegistrationWorkflow {
             }
             if (progress.readyToSign()) {
                 update(shop, sku, Status.READY_TO_SIGN, feedId, goodId, listener);
-                update(shop, sku, Status.SIGNING, feedId, goodId, listener);
-                goodId = catalog.sign(token, gtin);
-                update(shop, sku, Status.PUBLISHED, feedId, goodId, listener);
-                published = true;
-                break;
+                return; // User signs the card in National Catalog; background work only observes.
             }
             update(shop, sku, Status.PROCESSING, feedId, goodId, listener);
-            Thread.sleep(POLL_DELAY_MS);
         }
 
         if (!published) {
@@ -177,7 +165,7 @@ public final class ZnackCardRegistrationWorkflow {
             return;
         }
 
-        // Test scope ends here. GTIN is deliberately NOT written back to Wildberries.
+        // The publication monitor performs a fresh product-state check before WB write-back.
         registrations.updateProgress(shop.getId(), sku.chrtId(), Status.PUBLISHED,
                 feedId, goodId, null, false);
         notify(listener, Status.PUBLISHED, gtin);
@@ -219,7 +207,7 @@ public final class ZnackCardRegistrationWorkflow {
         return unavailableImage ? "" : imageUrl;
     }
 
-    private void fail(Shop shop, Sku sku, Exception error, BiConsumer<Status, String> listener) {
+    void fail(Shop shop, Sku sku, Exception error, BiConsumer<Status, String> listener) {
         String message = ZnackErrorDetails.summary(error);
         registrations.updateProgress(shop.getId(), sku.chrtId(), Status.ERROR, null, null, message, null);
         notify(listener, Status.ERROR, ZnackErrorDetails.format(error));

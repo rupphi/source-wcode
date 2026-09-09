@@ -11,6 +11,27 @@ public final class ZnackCardRegistrationSchema {
     public static void initialize(Connection connection) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             statement.execute("""
+                    CREATE TABLE IF NOT EXISTS wb_print_kiz_demands(
+                        shop_id INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+                        gtin TEXT NOT NULL, demand_key TEXT NOT NULL, quantity INTEGER NOT NULL,
+                        request_key TEXT NOT NULL, created_at TEXT NOT NULL,
+                        PRIMARY KEY(shop_id,gtin,demand_key))
+                    """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS znack_registration_publication(
+                        shop_id INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+                        chrt_id INTEGER NOT NULL, next_check_at TEXT NOT NULL DEFAULT '',
+                        wb_attempt_at TEXT, ready_for_kiz INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY(shop_id,chrt_id))
+                    """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS znack_registration_queue(
+                        shop_id INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+                        chrt_id INTEGER NOT NULL, sku_json TEXT NOT NULL, draft_json TEXT NOT NULL,
+                        credential_fingerprint TEXT NOT NULL, phase TEXT NOT NULL DEFAULT 'QUEUED',
+                        created_at TEXT NOT NULL, PRIMARY KEY(shop_id,chrt_id))
+                    """);
+            statement.execute("""
                     CREATE TABLE IF NOT EXISTS znack_registration_documents(
                         shop_id INTEGER PRIMARY KEY REFERENCES shops(id) ON DELETE CASCADE,
                         declaration_number TEXT, declaration_date TEXT,

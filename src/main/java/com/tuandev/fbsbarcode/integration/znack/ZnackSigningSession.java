@@ -66,6 +66,16 @@ public final class ZnackSigningSession {
         WAITING_PIPELINES.removeIf(key -> key.shopId() == shopId);
     }
 
+    public static boolean isShopAuthorized(int shopId) {
+        return AUTHORIZED_SHOPS.contains(shopId) && !BLOCKED_SHOPS.contains(shopId);
+    }
+
+    /** Snapshot for database filtering, so unopened shops cannot exhaust a bounded work page. */
+    public static Set<Integer> authorizedShopIds() {
+        return AUTHORIZED_SHOPS.stream().filter(id -> !BLOCKED_SHOPS.contains(id))
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
     public static boolean isWaitingForSignature(int shopId, long pipelineId) {
         return WAITING_PIPELINES.contains(new PipelineKey(shopId, pipelineId));
     }

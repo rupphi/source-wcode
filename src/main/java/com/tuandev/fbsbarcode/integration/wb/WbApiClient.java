@@ -59,6 +59,33 @@ public class WbApiClient {
         return getJson(apiKey, url, WbSuppliesResponse.class);
     }
 
+    /** Read the current editable card before appending a registered GTIN. */
+    public JsonObject findProductCard(String apiKey, long nmId) throws IOException {
+        JsonObject response = postJson(apiKey, "https://content-api.wildberries.ru/content/v2/get/cards/list?locale=ru",
+                Map.of("settings", Map.of("filter", Map.of("textSearch", Long.toString(nmId), "withPhoto", -1),
+                        "cursor", Map.of("limit", 100))), JsonObject.class);
+        if (response == null || !response.has("cards") || !response.get("cards").isJsonArray())
+            throw new IOException("WB response is missing product cards.");
+        JsonObject found = null;
+        for (var item : response.getAsJsonArray("cards")) {
+            var card = item.getAsJsonObject();
+            if (card.has("nmID") && card.get("nmID").getAsLong() == nmId) {
+                if (found != null) throw new IOException("WB returned ambiguous product identity.");
+                found = card;
+            }
+        }
+        if (found == null) throw new IOException("The registered WB product is not in this shop's active catalog.");
+        return found;
+    }
+
+    /** One attempt only: callers must read back and reconcile before retrying an uncertain write. */
+    public void updateProductCard(String apiKey, JsonObject card) throws IOException {
+        JsonObject response = postJson(apiKey, "https://content-api.wildberries.ru/content/v2/cards/update",
+                List.of(card), JsonObject.class);
+        if (response == null || !response.has("error") || response.get("error").getAsBoolean())
+            throw new IOException("WB did not accept the card update: " + (response == null ? "empty response" : response));
+    }
+
     public WbOrdersResponse getNewOrders(String apiKey) throws IOException {
         String url = "https://marketplace-api.wildberries.ru/api/v3/orders/new";
         return getJson(apiKey, url, WbOrdersResponse.class);

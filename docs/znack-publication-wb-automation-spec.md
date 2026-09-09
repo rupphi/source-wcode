@@ -1,6 +1,6 @@
 # Spec: dual documents, Ozon packing, and published GTIN automation
 
-Status: approved by user (Implement); implementation in progress.
+Status: implemented locally; offline verification passed; live acceptance pending.
 Date: 2026-09-09. Baseline: test 1.1.32.
 
 ## Objective
@@ -168,5 +168,29 @@ Review checkpoints after document support, WB monitoring/write-back, and printin
 - Test app write-back changes REAL WB data if configured with real tokens. Removing
   the test app will not undo remote barcode additions; disabling automation stops future
   actions only. Keep local checkpoint backups and operation audit details for recovery.
-- Remaining implementation investigation: exact WB editable-field payload and response
-  reconciliation, existing WB print shortage hooks, and Ozon product-barcode selection.
+
+## Implementation and acceptance notes
+
+- Registration selection covers eligible SKUs across all filtered pages. Changing shop
+  or filters clears selection; an aggregate preflight confirmation precedes queue insertion.
+- The durable single-worker queue pauses on account-wide failures. The resume action
+  checks the saved account identity. An interrupted allocation without a saved GTIN is
+  paused for manual reconciliation, never blindly allocated again.
+- Publication monitoring checks the remotely signed/published card and owner, preserves
+  the complete editable WB card, appends only the recorded size's GTIN, and confirms it
+  by read-back. A saved write-attempt cooldown prevents repeated uncertain writes.
+- Explicit WB printing can buy shortages for these registered size mappings. Existing
+  attached KIZ remains usable. Pending purchase intents survive restart; after cancellation
+  or app restart, the user starts printing again to resume preparation. No PDF is silently
+  printed and cancelling preparation does not cancel an already submitted purchase.
+- Only circulated inventory is reserved for printing. Reservations remain held while
+  choosing print settings and the output path; cancelling releases those reservations.
+- Ozon exports share one frozen unit plan for label and picking PDFs. Product barcode
+  and KIZ pages precede all unchanged official shipping pages for that posting. No KIZ
+  attachment API is called on Ozon.
+- Offline verification includes full Maven/FXML tests, release-channel contract tests,
+  temporary-database recovery cases, vector DataMatrix decoding at 300 DPI, multi-unit
+  and multi-posting page ordering, and rendered picking/label inspection.
+- Live acceptance remains user-run: test one SKU, sign it in Znack, verify that only its
+  WB size gained the GTIN, then test shortage purchasing and a physical Ozon print/scan.
+  No live registration, WB update, KIZ purchase, or release was performed by this change.

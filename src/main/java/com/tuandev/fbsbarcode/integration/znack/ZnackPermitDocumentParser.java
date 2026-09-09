@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.Set;
 
 /** Parses permit documents using the National Catalog v5.62 response contract. */
-final class ZnackPermitDocumentParser {
+public final class ZnackPermitDocumentParser {
     private static final Map<String, String> TYPES = Map.of(
             "23557", "CONFORMITY_DECLARATION",
             "23561", "CONFORMITY_CERTIFICATE",
@@ -29,7 +29,7 @@ final class ZnackPermitDocumentParser {
     private ZnackPermitDocumentParser() {
     }
 
-    static List<GoodsDocument> fromProductCard(JsonObject card) {
+    public static List<GoodsDocument> fromProductCard(JsonObject card) {
         LinkedHashSet<GoodsDocument> documents = new LinkedHashSet<>();
         for (JsonObject attribute : ZnackProductCardAttributes.from(card)) {
             String type = TYPES.get(ZnackProductCardAttributes.id(attribute));
@@ -84,7 +84,7 @@ final class ZnackPermitDocumentParser {
         return List.copyOf(documents);
     }
 
-    static List<GoodsDocument> selectForCirculation(List<GoodsDocument> documents) {
+    public static List<GoodsDocument> selectForCirculation(List<GoodsDocument> documents) {
         if (documents == null || documents.isEmpty()) return List.of();
         LinkedHashSet<GoodsDocument> complete = new LinkedHashSet<>();
         for (GoodsDocument document : documents) {

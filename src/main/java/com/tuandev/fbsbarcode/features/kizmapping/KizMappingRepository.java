@@ -375,6 +375,30 @@ public class KizMappingRepository {
         }
     }
 
+    /** Exact registered size wins over legacy category-wide rules, including old order barcodes. */
+    public String registeredGtin(int shopId, long nmId, String barcode) {
+        if (barcode == null || barcode.isBlank()) return null;
+        try (Connection c = Database.getConnection(); PreparedStatement s = c.prepareStatement("""
+                SELECT r.gtin,r.status,r.wb_updated FROM znack_card_registrations r
+                WHERE r.shop_id=? AND r.nm_id=? AND (
+                    r.source_barcode=? OR r.gtin=? OR
+                    EXISTS(SELECT 1 FROM wb_product_size_skus b WHERE b.shop_id=r.shop_id AND b.chrt_id=r.chrt_id AND b.sku=?) OR
+                    EXISTS(SELECT 1 FROM znack_registration_queue q,json_each(q.sku_json,'$.barcodes') b
+                        WHERE q.shop_id=r.shop_id AND q.chrt_id=r.chrt_id AND b.value=?))
+                """)) {
+            s.setInt(1, shopId); s.setLong(2, nmId);
+            for (int i = 3; i <= 6; i++) s.setString(i, barcode);
+            try (ResultSet r = s.executeQuery()) {
+                if (!r.next()) return null;
+                String gtin = r.getString(1);
+                if (!"PUBLISHED".equals(r.getString(2)) || !r.getBoolean(3) || gtin == null || gtin.isBlank())
+                    throw new IllegalStateException("Registered SKU " + barcode + " is awaiting signed publication / WB confirmation.");
+                if (r.next()) throw new IllegalStateException("Ambiguous registered WB barcode: " + barcode);
+                return GtinNormalizer.normalize(gtin);
+            }
+        } catch (SQLException error) { throw new IllegalStateException(error); }
+    }
+
     public Set<Long> findKizRequiredNmIds(int shopId, List<Long> nmIds) {
         if (nmIds == null || nmIds.isEmpty()) return Set.of();
         Set<Long> result = new LinkedHashSet<>();
