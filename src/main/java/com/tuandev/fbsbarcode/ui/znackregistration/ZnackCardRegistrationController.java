@@ -18,6 +18,7 @@ import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrati
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationWorkflow;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackNationalCatalogService;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackWbAttributeMapper;
+import com.tuandev.fbsbarcode.integration.znack.registration.RegistrationDocuments;
 import com.tuandev.fbsbarcode.integration.znack.signature.CryptoProSignatureProvider;
 import com.tuandev.fbsbarcode.integration.znack.signature.ZnackSignatureProvider;
 import com.tuandev.fbsbarcode.models.Shop;
@@ -135,42 +136,43 @@ public final class ZnackCardRegistrationController {
         javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
         grid.setHgap(10);
         grid.setVgap(10);
-        ComboBox<DocumentType> documentType = new ComboBox<>();
-        documentType.getItems().setAll(DocumentType.values());
-        documentType.setValue(DocumentType.from(current.documentType()));
-        TextField documentNumber = new TextField(value(current.documentNumber()));
-        TextField documentDate = new TextField(value(current.documentDate()));
+        var documents = RegistrationDocuments.load(shop.getId(), current);
+        var declaration = documents.stream().filter(d -> !d.type().contains("CERTIFICATE")).findFirst();
+        var certificate = documents.stream().filter(d -> d.type().contains("CERTIFICATE")).findFirst();
+        TextField documentNumber = new TextField(declaration.map(ZnackModels.GoodsDocument::number).orElse(""));
+        TextField documentDate = new TextField(declaration.map(ZnackModels.GoodsDocument::date).orElse(""));
+        TextField certificateNumber = new TextField(certificate.map(ZnackModels.GoodsDocument::number).orElse(""));
+        TextField certificateDate = new TextField(certificate.map(ZnackModels.GoodsDocument::date).orElse(""));
         documentDate.setPromptText("dd.MM.yyyy");
+        certificateDate.setPromptText("dd.MM.yyyy");
 
-        grid.addRow(0, new Label(tr("znack.registration.document_type") + " *"), documentType);
-        grid.addRow(1, new Label(tr("znack.registration.document_number") + " *"), documentNumber);
-        grid.addRow(2, new Label(tr("znack.registration.document_date") + " *"), documentDate);
+        grid.addRow(0, new Label("Декларация о соответствии"));
+        grid.addRow(1, new Label(tr("znack.registration.document_number")), documentNumber);
+        grid.addRow(2, new Label(tr("znack.registration.document_date")), documentDate);
+        grid.addRow(3, new Label("Сертификат соответствия"));
+        grid.addRow(4, new Label(tr("znack.registration.document_number")), certificateNumber);
+        grid.addRow(5, new Label(tr("znack.registration.document_date")), certificateDate);
         Label note = new Label(tr("znack.registration.config_note"));
         note.setWrapText(true);
         note.setMaxWidth(560);
-        grid.add(note, 0, 3, 2, 1);
+        grid.add(note, 0, 6, 2, 1);
         grid.getColumnConstraints().addAll(new javafx.scene.layout.ColumnConstraints(220),
                 new javafx.scene.layout.ColumnConstraints(360));
         dialog.getDialogPane().setContent(grid);
 
         dialog.getDialogPane().lookupButton(save).addEventFilter(javafx.event.ActionEvent.ACTION, event -> {
             try {
-                if (documentNumber.getText().isBlank() || documentDate.getText().isBlank()) {
-                    throw new IllegalArgumentException(tr("znack.registration.config_required"));
-                }
-                LocalDate parsed = LocalDate.parse(normalizedDocumentDate(documentDate.getText()));
-                documentDate.setText(parsed.format(RU_DATE));
+                RegistrationDocuments.parse(documentNumber.getText(), documentDate.getText(),
+                        certificateNumber.getText(), certificateDate.getText());
             } catch (IllegalArgumentException error) {
                 event.consume();
-                showWarning(error.getMessage());
+                showWarning(tr(error.getMessage()));
             }
         });
         dialog.setResultConverter(button -> button == save);
         if (dialog.showAndWait().orElse(false)) {
-            DocumentType type = documentType.getValue();
-            ZnackRepository znack = new ZnackRepository(new ZnackModels.ShopContext(shop.getId(), shop.getName()));
-            znack.saveSettings(current.withDefaultGoodsDocument(type.settingsCode,
-                    documentNumber.getText().trim(), documentDate.getText().trim()));
+            RegistrationDocuments.save(shop.getId(), documentNumber.getText(), documentDate.getText(),
+                    certificateNumber.getText(), certificateDate.getText());
             showInfo(tr("znack.registration.config_saved"));
         }
     }
@@ -259,15 +261,9 @@ public final class ZnackCardRegistrationController {
             return;
         }
         ZnackModels.Settings current = settings();
-        if (!current.hasDefaultGoodsDocument()) {
+        var documents = RegistrationDocuments.load(shop.getId(), current);
+        if (documents.isEmpty()) {
             showWarning(tr("znack.registration.missing_document_config"));
-            return;
-        }
-        final String documentDate;
-        try {
-            documentDate = normalizedDocumentDate(current.documentDate());
-        } catch (IllegalArgumentException error) {
-            showWarning(error.getMessage());
             return;
         }
         setLoading(true);
@@ -281,10 +277,8 @@ public final class ZnackCardRegistrationController {
                 Category category = ZnackNationalCatalogService.selectLightIndustryCategory(
                         preflight.categories(), sku.subjectName());
                 List<Attribute> required = service.requiredAttributes(category.id(), preflight.token());
-                ZnackModels.GoodsDocument document = new ZnackModels.GoodsDocument(current.documentType(),
-                        current.documentNumber(), documentDate);
-                ZnackWbAttributeMapper.MappingResult mapped = new ZnackWbAttributeMapper().map(sku,
-                        characteristics, required, preflight.tnved(), preflight.categoryTnved(), document);
+                ZnackWbAttributeMapper.MappingResult mapped = new ZnackWbAttributeMapper().mapDocuments(sku,
+                        characteristics, required, preflight.tnved(), preflight.categoryTnved(), documents);
                 Draft draft = new Draft(preflight.tnved(), preflight.categoryTnved(), category.id(),
                         mapped.goodName(), mapped.brand(), mapped.attributes(), mapped.attributeTypes());
                 return new AutomaticDraft(draft, mapped.missingFields());

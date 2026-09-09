@@ -31,6 +31,12 @@ public final class ZnackWbAttributeMapper {
 
     public MappingResult map(Sku sku, List<WbCharacteristic> characteristics, List<Attribute> required,
                              String fullTnved, String feedTnved, ZnackModels.GoodsDocument document) {
+        return mapDocuments(sku, characteristics, required, fullTnved, feedTnved,
+                document == null ? List.of() : List.of(document));
+    }
+
+    public MappingResult mapDocuments(Sku sku, List<WbCharacteristic> characteristics, List<Attribute> required,
+                             String fullTnved, String feedTnved, List<ZnackModels.GoodsDocument> documents) {
         String goodName = defaultName(sku);
         String brand = brand(sku, characteristics);
         Map<Long, String> values = new LinkedHashMap<>();
@@ -64,9 +70,13 @@ public final class ZnackWbAttributeMapper {
             }
         }
 
-        if (document == null || !document.complete()) {
+        if (documents == null || documents.isEmpty()) {
             missing.add("Giấy tờ hàng hoá (Декларация/Сертификат соответствия)");
-        } else {
+        } else for (var document : documents) {
+            if (document == null || !document.complete()) {
+                missing.add("Giấy tờ hàng hoá (Декларация/Сертификат соответствия)");
+                continue;
+            }
             long documentAttribute = isCertificate(document.type())
                     ? ZnackNationalCatalogService.CERTIFICATE_ATTRIBUTE_ID
                     : ZnackNationalCatalogService.DECLARATION_ATTRIBUTE_ID;

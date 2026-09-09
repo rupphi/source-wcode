@@ -11,6 +11,12 @@ public final class ZnackCardRegistrationSchema {
     public static void initialize(Connection connection) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             statement.execute("""
+                    CREATE TABLE IF NOT EXISTS znack_registration_documents(
+                        shop_id INTEGER PRIMARY KEY REFERENCES shops(id) ON DELETE CASCADE,
+                        declaration_number TEXT, declaration_date TEXT,
+                        certificate_number TEXT, certificate_date TEXT)
+                    """);
+            statement.execute("""
                     CREATE TABLE IF NOT EXISTS znack_card_registrations(
                         shop_id INTEGER NOT NULL,
                         chrt_id INTEGER NOT NULL,
