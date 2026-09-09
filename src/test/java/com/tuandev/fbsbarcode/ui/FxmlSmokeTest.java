@@ -83,6 +83,8 @@ class FxmlSmokeTest {
 
     @AfterAll
     static void clearAppDataOverride() {
+        com.tuandev.fbsbarcode.features.finance.FinanceSyncScheduler.getInstance().stop();
+        com.tuandev.fbsbarcode.features.finance.FinanceExecutor.shutdown();
         System.clearProperty("wcode.appdata.dir");
     }
 

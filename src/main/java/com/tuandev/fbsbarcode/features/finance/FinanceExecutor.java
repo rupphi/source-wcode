@@ -13,19 +13,37 @@ import java.util.concurrent.atomic.AtomicInteger;
 /** Dedicated, low-priority executors so analytics cannot occupy order/KIZ workers. */
 public final class FinanceExecutor {
     private static final AtomicInteger COUNTER = new AtomicInteger();
-    private static final ScheduledExecutorService SCHEDULER = Executors.newSingleThreadScheduledExecutor(
-            threadFactory("wcode-finance-scheduler-"));
-    private static final ExecutorService SYNC_WORKER = Executors.newSingleThreadExecutor(
-            threadFactory("wcode-finance-sync-"));
-    private static final ExecutorService QUERY_WORKER = Executors.newSingleThreadExecutor(
-            threadFactory("wcode-finance-query-"));
+    private static ScheduledExecutorService scheduler;
+    private static ExecutorService syncWorker;
+    private static ExecutorService queryWorker;
 
     private FinanceExecutor() {
     }
 
+    private static synchronized ScheduledExecutorService getScheduler() {
+        if (scheduler == null || scheduler.isShutdown()) {
+            scheduler = Executors.newSingleThreadScheduledExecutor(threadFactory("wcode-finance-scheduler-"));
+        }
+        return scheduler;
+    }
+
+    private static synchronized ExecutorService getSyncWorker() {
+        if (syncWorker == null || syncWorker.isShutdown()) {
+            syncWorker = Executors.newSingleThreadExecutor(threadFactory("wcode-finance-sync-"));
+        }
+        return syncWorker;
+    }
+
+    private static synchronized ExecutorService getQueryWorker() {
+        if (queryWorker == null || queryWorker.isShutdown()) {
+            queryWorker = Executors.newSingleThreadExecutor(threadFactory("wcode-finance-query-"));
+        }
+        return queryWorker;
+    }
+
     public static void scheduleWithFixedDelay(Runnable task, long initialDelay, long delay, TimeUnit unit) {
         try {
-            SCHEDULER.scheduleWithFixedDelay(task, initialDelay, delay, unit);
+            getScheduler().scheduleWithFixedDelay(task, initialDelay, delay, unit);
         } catch (RejectedExecutionException ignored) {
             // Application is shutting down.
         }
@@ -33,7 +51,7 @@ public final class FinanceExecutor {
 
     public static void executeSync(Runnable task) {
         try {
-            SYNC_WORKER.execute(task);
+            getSyncWorker().execute(task);
         } catch (RejectedExecutionException ignored) {
             // Application is shutting down.
         }
@@ -41,16 +59,25 @@ public final class FinanceExecutor {
 
     public static void executeQuery(Task<?> task) {
         try {
-            QUERY_WORKER.execute(task);
+            getQueryWorker().execute(task);
         } catch (RejectedExecutionException ignored) {
             // Application is shutting down.
         }
     }
 
-    public static void shutdown() {
-        SCHEDULER.shutdownNow();
-        SYNC_WORKER.shutdownNow();
-        QUERY_WORKER.shutdownNow();
+    public static synchronized void shutdown() {
+        if (scheduler != null) {
+            scheduler.shutdownNow();
+            scheduler = null;
+        }
+        if (syncWorker != null) {
+            syncWorker.shutdownNow();
+            syncWorker = null;
+        }
+        if (queryWorker != null) {
+            queryWorker.shutdownNow();
+            queryWorker = null;
+        }
     }
 
     private static ThreadFactory threadFactory(String prefix) {

@@ -102,6 +102,12 @@ public final class FinanceSyncScheduler {
         }
     }
 
+    public void stop() {
+        shops.clear();
+        shopsDatabasePath = null;
+        started.set(false);
+    }
+
     private void tick() {
         Path activePath = shopsDatabasePath;
         if (activePath == null
