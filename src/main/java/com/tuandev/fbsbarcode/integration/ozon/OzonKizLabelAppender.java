@@ -60,6 +60,13 @@ final class OzonKizLabelAppender {
         }
     }
 
+    int appendUnit(PdfDocument document, OzonPackingPlan.Line line, int unit) throws IOException {
+        String code = KizService.scannerSafeCode(line.bindings().get(unit).rawCode());
+        if (code == null || code.isBlank()) throw new IOException("An Ozon unit has no printable KIZ.");
+        appendPage(document, line.item(), line.product(), code);
+        return 1;
+    }
+
     private static OzonProductDto findProduct(List<OzonProductDto> products, OzonPostingItemDto item) {
         return products.stream().filter(product ->
                 (!item.productId().isBlank() && item.productId().equals(product.productId()))

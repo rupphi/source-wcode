@@ -96,6 +96,11 @@ public final class OzonPrintBundleService {
             File pickingTarget,
             boolean consumeAfterPublish)
             throws IOException {
+        return exportInternal(shop, postingNumber, labelTarget, pickingTarget, consumeAfterPublish, null);
+    }
+
+    private ExportResult exportInternal(Shop shop, String postingNumber, File labelTarget,
+            File pickingTarget, boolean consumeAfterPublish, List<OzonPackingPlan> batchPlans) throws IOException {
         String safePosting = OzonApiClient.requireExternalId(postingNumber, "posting number");
         OzonPostingDto posting = postings.find(shop.getId(), safePosting);
         if (posting == null) throw new IOException("The selected Ozon posting is not available locally. Refresh first.");
@@ -125,6 +130,9 @@ public final class OzonPrintBundleService {
         List<OzonExemplarJobRepository.ExemplarSummary> summaries = printable(job)
                 ? jobs.summaries(job.id()) : List.of();
         validatePrintableJob(job, bindings, summaries);
+        OzonPackingPlan plan = OzonPackingPlan.create(posting,
+                new OzonCatalogRepository().findAll(shop.getId()), bindings);
+        if (batchPlans != null) batchPlans.add(plan);
 
         File officialStaging = null;
         File labelStaging = null;
@@ -136,8 +144,8 @@ public final class OzonPrintBundleService {
                 pickingStaging = AtomicFilePublisher.stagingFile(pickingTarget, ".picking.pdf");
             }
             labels.download(shop, safePosting, officialStaging);
-            int officialPages = compose(officialStaging, labelStaging, shop, posting, bindings);
-            if (pickingStaging != null) pickingLists.export(pickingStaging, shop, posting);
+            int officialPages = compose(officialStaging, labelStaging, shop, plan);
+            if (pickingStaging != null) pickingLists.exportPlans(pickingStaging, shop, List.of(plan));
             AtomicFilePublisher.publish(labelStaging, labelTarget);
             labelStaging = null;
             if (consumeAfterPublish && !bindings.isEmpty()) consumePrinted(job);
@@ -146,7 +154,7 @@ public final class OzonPrintBundleService {
                 pickingStaging = null;
             }
             return new ExportResult(
-                    labelTarget, pickingTarget, officialPages, bindings.size(), officialPages + bindings.size());
+                    labelTarget, pickingTarget, officialPages, bindings.size(), officialPages + bindings.size() + plan.units());
         } finally {
             AtomicFilePublisher.deleteQuietly(officialStaging);
             AtomicFilePublisher.deleteQuietly(labelStaging);
@@ -176,7 +184,7 @@ public final class OzonPrintBundleService {
 
         Path temporaryDirectory = Files.createTempDirectory("wcode-ozon-print-");
         List<File> labelParts = new ArrayList<>();
-        List<OzonPostingDto> batchPostings = new ArrayList<>();
+        List<OzonPackingPlan> batchPlans = new ArrayList<>();
         File labelStaging = null;
         File pickingStaging = null;
         int totalPages = 0;
@@ -184,20 +192,15 @@ public final class OzonPrintBundleService {
         try {
             for (int index = 0; index < safePostings.size(); index++) {
                 File labelPart = temporaryDirectory.resolve("labels-" + index + ".pdf").toFile();
-                ExportResult result = exportLabelOnly(shop, safePostings.get(index), labelPart);
+                ExportResult result = exportInternal(shop, safePostings.get(index), labelPart, null, false, batchPlans);
                 labelParts.add(labelPart);
-                OzonPostingDto posting = postings.find(shop.getId(), safePostings.get(index));
-                if (posting == null) {
-                    throw new IOException("An Ozon posting disappeared while composing the picking list.");
-                }
-                batchPostings.add(posting);
                 totalPages += result.totalPages();
                 kizPages += result.kizPages();
             }
             labelStaging = AtomicFilePublisher.stagingFile(labelTarget, ".batch.pdf");
             pickingStaging = AtomicFilePublisher.stagingFile(pickingTarget, ".batch-picking.pdf");
             merge(labelParts, labelStaging);
-            pickingLists.exportBatch(pickingStaging, shop, batchPostings);
+            pickingLists.exportPlans(pickingStaging, shop, batchPlans);
             AtomicFilePublisher.publish(labelStaging, labelTarget);
             labelStaging = null;
             for (String postingNumber : safePostings) {
@@ -240,8 +243,7 @@ public final class OzonPrintBundleService {
             File official,
             File target,
             Shop shop,
-            OzonPostingDto posting,
-            List<OzonExemplarJobRepository.KizBinding> bindings) throws IOException {
+            OzonPackingPlan plan) throws IOException {
         if (!Files.isRegularFile(official.toPath())) {
             throw new IOException("Ozon did not provide an official shipping label PDF.");
         }
@@ -249,24 +251,16 @@ public final class OzonPrintBundleService {
                 PdfDocument destination = new PdfDocument(new PdfWriter(target))) {
             int officialPages = source.getNumberOfPages();
             if (officialPages < 1) throw new IOException("The official Ozon shipping label PDF has no pages.");
-            int bindingIndex = 0;
-            int appended = 0;
-            // Preserve every official 58 x 40 mm page unchanged and place the corresponding
-            // physical KIZ page directly after it whenever one is available.
-            for (int page = 1; page <= officialPages; page++) {
-                source.copyPagesTo(page, page, destination);
-                if (bindingIndex < bindings.size()) {
-                    appended += kizLabels.append(
-                            destination, shop, posting, List.of(bindings.get(bindingIndex++)));
+            for (var line : plan.lines()) {
+                for (int unit = 0; unit < line.item().quantity(); unit++) {
+                    OzonProductBarcodeAppender.append(destination, line);
+                    if (!line.bindings().isEmpty()) {
+                        kizLabels.appendUnit(destination, line, unit);
+                    }
                 }
             }
-            if (bindingIndex < bindings.size()) {
-                appended += kizLabels.append(
-                        destination, shop, posting, bindings.subList(bindingIndex, bindings.size()));
-            }
-            if (appended != bindings.size()) {
-                throw new IOException("The Ozon KIZ label page count is incomplete.");
-            }
+            // All official pages belong to the posting, not an arbitrary item index.
+            source.copyPagesTo(1, officialPages, destination);
             return officialPages;
         } catch (IOException exception) {
             throw exception;

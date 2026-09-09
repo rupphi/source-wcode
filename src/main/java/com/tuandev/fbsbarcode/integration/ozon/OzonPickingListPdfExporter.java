@@ -39,29 +39,48 @@ final class OzonPickingListPdfExporter {
         List<OzonPostingDto> safePostings = postings == null ? List.of() : postings.stream()
                 .filter(java.util.Objects::nonNull)
                 .toList();
+        var products = catalog.findAll(shop.getId());
+        var plans = new java.util.ArrayList<OzonPackingPlan>();
+        for (var posting : safePostings) plans.add(OzonPackingPlan.create(posting, products, List.of()));
+        exportPlans(target, shop, plans);
+    }
+
+    void exportPlans(File target, Shop shop, List<OzonPackingPlan> plans) throws IOException {
         try (PdfWriter writer = new PdfWriter(target);
                 PdfDocument pdf = new PdfDocument(writer);
                 Document document = new Document(pdf, PageSize.A4)) {
             document.setMargins(24, 24, 24, 24);
             document.setFont(GenerateBarcode.getArialFont());
-            List<OzonProductDto> products = catalog.findAll(shop.getId());
-            float[] widths = new float[]{32, 76, 270, 118, 48};
+            document.add(new Paragraph(shop.getName() + " · " + java.time.LocalDateTime.now()
+                    .format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"))
+                    + " · " + tr("fbo.column.quantity") + ": " + plans.stream().mapToInt(OzonPackingPlan::units).sum())
+                    .setFontSize(10).setBold());
+            float[] widths = new float[]{30, 85, 46, 38, 55, 145, 90, 35};
             Table table = new Table(widths);
             table.setWidth(UnitValue.createPercentValue(100));
             header(table, tr("ozon.picking.column.index"));
+            header(table, tr("ozon.dashboard.col.order"));
             header(table, tr("ozon.dashboard.col.image"));
-            header(table, tr("ozon.picking.column.name"));
+            header(table, tr("fbo.column.size"));
+            header(table, tr("fbo.column.color"));
             header(table, tr("ozon.dashboard.item.article"));
+            header(table, tr("supply.col.sticker"));
             header(table, tr("fbo.column.quantity"));
             int rowNumber = 0;
-            for (OzonPostingDto posting : safePostings) {
-                for (OzonPostingItemDto item : posting.items()) {
-                    OzonProductDto product = findProduct(products, item);
-                    table.addCell(cell(String.valueOf(++rowNumber), TextAlignment.CENTER));
+            for (OzonPackingPlan plan : plans) {
+                var posting = plan.posting();
+                for (var line : plan.lines()) {
+                    var item = line.item();
+                    var product = line.product();
+                    int firstUnit = rowNumber + 1;
+                    rowNumber += item.quantity();
+                    table.addCell(cell(firstUnit == rowNumber ? "" + firstUnit : firstUnit + "-" + rowNumber, TextAlignment.CENTER));
+                    table.addCell(cell(posting.postingNumber(), TextAlignment.LEFT));
                     table.addCell(imageCell(imageBytes(product)));
-                    table.addCell(cell(first(item.name(), product == null ? "" : product.name()), TextAlignment.LEFT));
-                    table.addCell(cell(first(
-                            product == null ? "" : product.article(), item.offerId()), TextAlignment.LEFT));
+                    table.addCell(cell(product.size(), TextAlignment.CENTER));
+                    table.addCell(cell(product.color(), TextAlignment.LEFT));
+                    table.addCell(cell(first(product.article(), item.offerId()) + "\n" + first(item.name(), product.name()), TextAlignment.LEFT));
+                    table.addCell(cell(first(posting.upperBarcode(), posting.lowerBarcode()), TextAlignment.LEFT));
                     table.addCell(cell(String.valueOf(item.quantity()), TextAlignment.CENTER, true));
                 }
             }

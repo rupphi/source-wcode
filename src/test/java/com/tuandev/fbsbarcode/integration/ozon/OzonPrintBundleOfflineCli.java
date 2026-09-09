@@ -56,7 +56,10 @@ public final class OzonPrintBundleOfflineCli {
                 shop, selection.postingNumber(), labelOutput.toFile(), pickingOutput.toFile());
         OzonExemplarJob job = new OzonExemplarJobRepository().find(selection.shopId(), selection.postingNumber());
         List<OzonExemplarJobRepository.KizBinding> bindings = new OzonExemplarJobRepository().bindings(job.id());
-        boolean matrixMatches = dataMatricesMatch(labelOutput.toFile(), result.officialPages(), bindings);
+        OzonPackingPlan plan = OzonPackingPlan.create(
+                new OzonPostingRepository().find(selection.shopId(), selection.postingNumber()),
+                new OzonCatalogRepository().findAll(selection.shopId()), bindings);
+        boolean matrixMatches = dataMatricesMatch(labelOutput.toFile(), plan);
         System.out.println("offline_bundle=ok");
         System.out.println("official_pages=" + result.officialPages());
         System.out.println("kiz_pages=" + result.kizPages());
@@ -99,16 +102,18 @@ public final class OzonPrintBundleOfflineCli {
 
     private static boolean dataMatricesMatch(
             File bundle,
-            int officialPages,
-            List<OzonExemplarJobRepository.KizBinding> bindings) throws Exception {
+            OzonPackingPlan plan) throws Exception {
         try (PDDocument document = Loader.loadPDF(bundle)) {
-            for (int index = 0; index < bindings.size(); index++) {
-                int pageIndex = index < officialPages
-                        ? index * 2 + 1
-                        : officialPages * 2 + index - officialPages;
-                String decoded = KizService.scannerSafeCode(decodeDataMatrix(document, pageIndex));
-                String expected = KizService.scannerSafeCode(bindings.get(index).rawCode());
-                if (!expected.equals(decoded)) return false;
+            int pageIndex = 0;
+            for (var line : plan.lines()) {
+                for (int unit = 0; unit < line.item().quantity(); unit++) {
+                    pageIndex++; // Product barcode precedes its optional KIZ.
+                    if (!line.bindings().isEmpty()) {
+                        String decoded = KizService.scannerSafeCode(decodeDataMatrix(document, pageIndex++));
+                        String expected = KizService.scannerSafeCode(line.bindings().get(unit).rawCode());
+                        if (!expected.equals(decoded)) return false;
+                    }
+                }
             }
             return true;
         }
