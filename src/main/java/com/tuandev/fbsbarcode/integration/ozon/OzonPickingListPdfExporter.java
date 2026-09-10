@@ -55,7 +55,7 @@ final class OzonPickingListPdfExporter {
                     .format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"))
                     + " · " + tr("fbo.column.quantity") + ": " + plans.stream().mapToInt(OzonPackingPlan::units).sum())
                     .setFontSize(10).setBold());
-            float[] widths = new float[]{30, 85, 46, 38, 55, 145, 90, 35};
+            float[] widths = new float[]{26, 95, 46, 36, 55, 155, 100, 30};
             Table table = new Table(widths);
             table.setWidth(UnitValue.createPercentValue(100));
             header(table, tr("ozon.picking.column.index"));
@@ -67,20 +67,28 @@ final class OzonPickingListPdfExporter {
             header(table, tr("supply.col.sticker"));
             header(table, tr("fbo.column.quantity"));
             int rowNumber = 0;
+            java.util.Map<String, Long> orderCountMap = plans.stream()
+                    .map(p -> p.posting().orderNumber())
+                    .filter(on -> on != null && !on.isBlank())
+                    .collect(java.util.stream.Collectors.groupingBy(on -> on, java.util.stream.Collectors.counting()));
+
             for (OzonPackingPlan plan : plans) {
                 var posting = plan.posting();
-                for (var line : plan.lines()) {
+                int totalItemsInPosting = plan.lines().size();
+                int orderPostingsCount = orderCountMap.getOrDefault(posting.orderNumber(), 1L).intValue();
+                for (int itemIdx = 0; itemIdx < plan.lines().size(); itemIdx++) {
+                    var line = plan.lines().get(itemIdx);
                     var item = line.item();
                     var product = line.product();
                     int firstUnit = rowNumber + 1;
                     rowNumber += item.quantity();
                     table.addCell(cell(firstUnit == rowNumber ? "" + firstUnit : firstUnit + "-" + rowNumber, TextAlignment.CENTER));
-                    table.addCell(cell(posting.postingNumber(), TextAlignment.LEFT));
+                    table.addCell(orderCell(posting, itemIdx, totalItemsInPosting, orderPostingsCount));
                     table.addCell(imageCell(imageBytes(product)));
                     table.addCell(cell(product.size(), TextAlignment.CENTER));
                     table.addCell(cell(product.color(), TextAlignment.LEFT));
                     table.addCell(cell(first(product.article(), item.offerId()) + "\n" + first(item.name(), product.name()), TextAlignment.LEFT));
-                    table.addCell(cell(first(posting.upperBarcode(), posting.lowerBarcode()), TextAlignment.LEFT));
+                    table.addCell(stickerCell(line.barcode(), posting.postingNumber(), itemIdx, totalItemsInPosting));
                     table.addCell(cell(String.valueOf(item.quantity()), TextAlignment.CENTER, true));
                 }
             }
@@ -146,6 +154,52 @@ final class OzonPickingListPdfExporter {
                 .setTextAlignment(alignment).setVerticalAlignment(VerticalAlignment.MIDDLE);
     }
 
+    private static Cell orderCell(OzonPostingDto posting, int itemIndex, int totalItemsInPosting, int orderPostingsCount) {
+        Paragraph p = new Paragraph().setMargin(0).setMultipliedLeading(1.1f);
+        p.add(new Paragraph(safe(posting.postingNumber())).setFontSize(8).setBold());
+        if (totalItemsInPosting > 1) {
+            p.add(new Paragraph("\n[Đơn " + totalItemsInPosting + " món: " + (itemIndex + 1) + "/" + totalItemsInPosting + "]")
+                    .setFontSize(7).setBold());
+        }
+        if (orderPostingsCount > 1) {
+            p.add(new Paragraph("\n(Chung đơn: " + orderPostingsCount + " kiện)")
+                    .setFontSize(7));
+        }
+        return new Cell().add(p)
+                .setKeepTogether(true)
+                .setTextAlignment(TextAlignment.LEFT)
+                .setVerticalAlignment(VerticalAlignment.MIDDLE);
+    }
+
+    private static Cell stickerCell(String barcode, String postingNumber, int itemIndex, int totalItemsInPosting) {
+        Paragraph p = new Paragraph().setMargin(0).setMultipliedLeading(1.1f);
+        String safeBarcode = safe(barcode);
+        if (!safeBarcode.isBlank()) {
+            p.add(new Paragraph(safeBarcode).setFontSize(8).setBold());
+        }
+        String suffix = postingSuffix(postingNumber);
+        if (!suffix.isBlank()) {
+            String suffixText = "Đuôi tem: " + suffix;
+            if (totalItemsInPosting > 1) {
+                suffixText += " (" + (itemIndex + 1) + "/" + totalItemsInPosting + ")";
+            }
+            p.add(new Paragraph((safeBarcode.isBlank() ? "" : "\n") + suffixText).setFontSize(7));
+        }
+        return new Cell().add(p)
+                .setKeepTogether(true)
+                .setTextAlignment(TextAlignment.LEFT)
+                .setVerticalAlignment(VerticalAlignment.MIDDLE);
+    }
+
+    static String postingSuffix(String postingNumber) {
+        if (postingNumber == null || postingNumber.isBlank()) return "";
+        String[] parts = postingNumber.split("-");
+        if (parts.length >= 2) {
+            return parts[parts.length - 2] + "-" + parts[parts.length - 1];
+        }
+        return postingNumber.length() > 6 ? postingNumber.substring(postingNumber.length() - 6) : postingNumber;
+    }
+
     private static String safe(String value) {
         return value == null ? "" : value.replaceAll("\\p{Cntrl}", " ").strip();
     }
@@ -159,3 +213,4 @@ final class OzonPickingListPdfExporter {
         return I18nService.getInstance().tr(key);
     }
 }
+

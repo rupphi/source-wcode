@@ -18,10 +18,7 @@ record OzonPackingPlan(OzonPostingDto posting, List<Line> lines) {
         for (var item : posting.items()) {
             if (item.quantity() < 1 || !itemIds.add(item.itemIndex()))
                 throw new IOException("Invalid or duplicate Ozon posting item.");
-            var candidates = products.stream().filter(p -> !item.productId().isBlank()
-                    ? item.productId().equals(p.productId())
-                    : (!item.sku().isBlank() ? item.sku().equals(p.sku()) : item.offerId().equals(p.offerId())))
-                    .toList();
+            var candidates = matchCandidates(products, item);
             if (candidates.size() != 1) throw new IOException("Refresh Ozon catalog: product identity is missing or ambiguous: " + item.offerId());
             var product = candidates.getFirst();
             String barcode = product.barcodes().stream().filter(b -> !b.isBlank()).sorted().findFirst().orElse(product.sku());
@@ -44,4 +41,22 @@ record OzonPackingPlan(OzonPostingDto posting, List<Line> lines) {
     }
 
     int units() { return lines.stream().mapToInt(line -> line.item().quantity()).sum(); }
+
+    static List<OzonProductDto> matchCandidates(List<OzonProductDto> products, OzonPostingItemDto item) {
+        if (products == null || item == null) return List.of();
+        List<OzonProductDto> matches = products.stream().filter(p ->
+                (!item.sku().isBlank() && (item.sku().equals(p.sku()) || item.sku().equals(p.productId())))
+                || (!item.productId().isBlank() && (item.productId().equals(p.productId()) || item.productId().equals(p.sku())))
+        ).distinct().toList();
+        if (matches.size() == 1) return matches;
+
+        if (!item.offerId().isBlank()) {
+            List<OzonProductDto> offerMatches = products.stream()
+                    .filter(p -> item.offerId().equals(p.offerId()))
+                    .distinct().toList();
+            if (offerMatches.size() == 1) return offerMatches;
+            if (!offerMatches.isEmpty()) return offerMatches;
+        }
+        return matches;
+    }
 }

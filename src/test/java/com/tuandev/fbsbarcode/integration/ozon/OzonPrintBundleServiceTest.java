@@ -595,4 +595,128 @@ class OzonPrintBundleServiceTest {
             throw new AssertionError(exception);
         }
     }
+
+    @Test
+    void exportMatchesProductWhenPostingItemIdEqualsSkuAndDiffersFromCatalogProductId() throws Exception {
+        String sku = "5549801365";
+        String catalogProductId = "6053833212";
+        String offerId = "917_коричневый/кофейный(L/XL)";
+
+        new OzonPostingRepository().upsertDetail(1, new OzonPostingDto(
+                "POST-REAL", "ORDER-REAL", "ORDER-REAL", "awaiting_deliver", "", "",
+                "", "", "", "", new OzonRequirements(List.of(), List.of(), List.of()), List.of(), false,
+                List.of(new OzonPostingItemDto(0, sku, sku, offerId, "Leggings", 1, "RUB", "100"))));
+
+        new OzonCatalogRepository().upsertPage(1, List.of(new OzonProductDto(
+                catalogProductId, offerId, sku, "Leggings", "", offerId, "brown", "L/XL",
+                false, "", List.of("OZN5549801365"))), "POST-REAL");
+
+        OzonProductKizPolicyRepository policies = new OzonProductKizPolicyRepository();
+        policies.setRequired(1, sku, false);
+
+        Path labels = temporaryDirectory.resolve("real-labels.pdf");
+        Path picking = temporaryDirectory.resolve("real-picking.pdf");
+
+        OzonPrintBundleService.ExportResult result = service(new AtomicBoolean()).export(
+                shop, "POST-REAL", labels.toFile(), picking.toFile());
+
+        assertEquals(3, result.totalPages());
+        assertTrue(Files.isRegularFile(labels));
+        try (PDDocument document = Loader.loadPDF(labels.toFile())) {
+            assertTrue(pageText(document, 0).contains("OZN5549801365"));
+        }
+    }
+
+    @Test
+    void exportPreValidatesCatalogBeforeReservingKiz() throws Exception {
+        new OzonPostingRepository().upsertDetail(1, new OzonPostingDto(
+                "POST-UNKNOWN", "ORDER-U", "ORDER-U", "awaiting_deliver", "", "",
+                "", "", "", "", new OzonRequirements(List.of("9999"), List.of(), List.of()), List.of(), false,
+                List.of(new OzonPostingItemDto(0, "9999", "9999", "missing-offer", "Missing item", 1, "RUB", "100"))));
+
+        AtomicBoolean prepared = new AtomicBoolean(false);
+        OzonPrintBundleService service = new OzonPrintBundleService(
+                new OzonPostingRepository(),
+                new OzonExemplarJobRepository(),
+                (selectedShop, postingNumber) -> {
+                    prepared.set(true);
+                    return new OzonPreparationResult(postingNumber, "VALIDATED", 1, true, false, "");
+                },
+                (selectedShop, postingNumber, target) -> target);
+
+        IOException failure = assertThrows(IOException.class, () ->
+                service.export(shop, "POST-UNKNOWN",
+                        temporaryDirectory.resolve("labels.pdf").toFile(),
+                        temporaryDirectory.resolve("picking.pdf").toFile()));
+
+        assertTrue(failure.getMessage().contains("missing-offer"));
+        assertFalse(prepared.get(), "Preparation/KIZ reservation must NEVER be called if catalog validation fails");
+    }
+
+    @Test
+    void failedPrintReleasesNewlyStagedKizReservationBackToAvailable() throws Exception {
+        seedPosting(1, true);
+        long kizId;
+        try (Connection conn = Database.getConnection(); Statement stmt = conn.createStatement()) {
+            stmt.execute("INSERT OR IGNORE INTO znack_products(shop_id,gtin,product_name,synced_at) "
+                    + "VALUES(1,'04619749527998','Test Product',datetime('now'))");
+            stmt.execute("INSERT OR IGNORE INTO kiz_orders(id,shop_id,gtin,quantity,local_status,created_at,updated_at) "
+                    + "VALUES(1,1,'04619749527998',1,'COMPLETED',datetime('now'),datetime('now'))");
+        }
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(
+                     "INSERT INTO kiz_codes(shop_id, order_id, raw_code, display_code, gtin, status, legal_status, created_at, updated_at) "
+                     + "VALUES(1, 1, 'RAW_TEST_KIZ', 'DISP_TEST', '04619749527998', 'AVAILABLE', 'IN_CIRCULATION', datetime('now'), datetime('now'))",
+                     Statement.RETURN_GENERATED_KEYS)) {
+            ps.executeUpdate();
+            ResultSet rs = ps.getGeneratedKeys();
+            assertTrue(rs.next());
+            kizId = rs.getLong(1);
+        }
+
+        AtomicBoolean prepared = new AtomicBoolean(false);
+        OzonPrintBundleService service = new OzonPrintBundleService(
+                new OzonPostingRepository(),
+                new OzonExemplarJobRepository(),
+                (selectedShop, postingNumber) -> {
+                    prepared.set(true);
+                    OzonExemplarJob job = new OzonExemplarJobRepository().findOrCreate(1, postingNumber);
+                    try {
+                        try (Connection conn = Database.getConnection();
+                             PreparedStatement ps = conn.prepareStatement(
+                                     "UPDATE kiz_codes SET status='RESERVED', reservation_token='ozon:' || ?, updated_at=datetime('now') WHERE id=?")) {
+                            ps.setLong(1, job.id());
+                            ps.setLong(2, kizId);
+                            ps.executeUpdate();
+                        }
+                        try (Connection conn = Database.getConnection();
+                             PreparedStatement ps = conn.prepareStatement(
+                                     "INSERT INTO ozon_exemplars(job_id, shop_id, posting_number, item_index, exemplar_index, kiz_id, updated_at) "
+                                     + "VALUES(?, 1, ?, 0, 0, ?, datetime('now'))")) {
+                            ps.setLong(1, job.id());
+                            ps.setString(2, postingNumber);
+                            ps.setLong(3, kizId);
+                            ps.executeUpdate();
+                        }
+                    } catch (java.sql.SQLException ex) {
+                        throw new IOException(ex);
+                    }
+                    job = new OzonExemplarJobRepository().transition(
+                            job, OzonExemplarJobStage.RESERVED, null, null, false);
+                    new OzonExemplarJobRepository().markPrintReady(job);
+                    return new OzonPreparationResult(postingNumber, "VALIDATED", 1, true, false, "");
+                },
+                (selectedShop, postingNumber, target) -> {
+                    throw new IOException("Simulated network failure while downloading official label");
+                });
+
+        assertThrows(IOException.class, () ->
+                service.export(shop, "POST-1",
+                        temporaryDirectory.resolve("labels.pdf").toFile(),
+                        temporaryDirectory.resolve("picking.pdf").toFile()));
+
+        assertTrue(prepared.get());
+        assertEquals("AVAILABLE", scalar("SELECT status FROM kiz_codes WHERE id=" + kizId));
+        assertEquals("REJECTED", scalar("SELECT stage FROM ozon_exemplar_jobs WHERE posting_number='POST-1'"));
+    }
 }
