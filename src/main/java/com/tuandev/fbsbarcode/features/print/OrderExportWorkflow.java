@@ -7,6 +7,7 @@ import com.tuandev.fbsbarcode.features.kizmapping.KizMappingRepository;
 import com.tuandev.fbsbarcode.features.print.history.PrintHistoryService;
 import com.tuandev.fbsbarcode.integration.wb.WbSupplyWorkflow;
 import com.tuandev.fbsbarcode.integration.znack.ZnackGtinInventoryService;
+import com.tuandev.fbsbarcode.integration.znack.ZnackSigningSession;
 import com.tuandev.fbsbarcode.models.Kiz;
 import com.tuandev.fbsbarcode.models.Order;
 import com.tuandev.fbsbarcode.models.Shop;
@@ -247,6 +248,7 @@ public class OrderExportWorkflow {
                 if (explicitPrint) {
                     int available = inventoryService.availableCount(shop.getId(), entry.getKey());
                     if (available < gtinOrders.size()) {
+                        ZnackSigningSession.authorizeShop(shop.getId());
                         String demand = "FBS:" + gtinOrders.stream().map(Order::getId).sorted().toList();
                         new com.tuandev.fbsbarcode.integration.znack.registration.WbPrintDemand()
                                 .awaitAvailable(shop, entry.getKey(), gtinOrders.size(), demand);

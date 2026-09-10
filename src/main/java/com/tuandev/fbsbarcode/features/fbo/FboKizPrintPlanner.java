@@ -2,6 +2,7 @@ package com.tuandev.fbsbarcode.features.fbo;
 
 import com.tuandev.fbsbarcode.features.kizmapping.KizMappingRepository;
 import com.tuandev.fbsbarcode.integration.znack.ZnackGtinInventoryService;
+import com.tuandev.fbsbarcode.integration.znack.ZnackSigningSession;
 import com.tuandev.fbsbarcode.models.Kiz;
 
 import java.util.ArrayList;
@@ -70,6 +71,7 @@ public class FboKizPrintPlanner {
                 if (explicitShop != null) {
                     int available = inventoryService.availableCount(shopId, entry.getKey());
                     if (available < entry.getValue()) {
+                        ZnackSigningSession.authorizeShop(explicitShop.getId());
                         String demand = "FBO:" + safeItems.stream().map(item -> item.product().nmId() + ":"
                                 + item.product().sku() + ":" + item.quantity()).sorted().toList();
                         try {

@@ -21,6 +21,7 @@ public final class WbPrintDemand {
     public void awaitAvailable(Shop shop, String gtin, int quantity, String demandKey) throws IOException {
         com.tuandev.fbsbarcode.integration.marketplace.MarketplaceGuard.requireWildberries(shop);
         if (quantity < 1 || demandKey == null || demandKey.isBlank()) throw new IllegalArgumentException("Missing print demand.");
+        ZnackSigningSession.authorizeShop(shop.getId());
         var repository = new ZnackRepository(new ZnackModels.ShopContext(shop.getId(), shop.getName()));
         Instant deadline = Instant.now().plus(Duration.ofMinutes(15));
         boolean resumed = false;

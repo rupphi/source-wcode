@@ -621,6 +621,7 @@ jobs:
           notes="$(cat <<EOF
           WCode ${APP_VERSION}
 
+          - Khắc phục lỗi "Waiting for the user to select this shop before signing" khi in đơn Wildberries: tự động ủy quyền phiên ký điện tử CryptoPro cho đúng cửa hàng đang in, cho phép mở cửa sổ nhập PIN / ký mua và lưu thông KIZ mượt mà mà không bị chặn bởi bảo vệ chạy ngầm.
           - Khắc phục lỗi NullPointerException ("cannot invoke java.lang.Long.longValue()") khi in đơn Wildberries có tự động mua KIZ thiếu.
           - Khắc phục triệt để lỗi thiếu dữ liệu catalog Ozon FBS ("product identity is missing or ambiguous"): tự động so khớp 2 chiều giữa SKU và Product ID, kết hợp fallback theo Offer ID.
           - Bảo vệ mã KIZ Ozon: pre-validate đơn hàng trước khi giữ chỗ KIZ, tuyệt đối không trừ oan KIZ khi in thất bại; tự động hoàn trả KIZ về AVAILABLE nếu gặp sự cố tải nhãn hoặc lỗi hệ thống.

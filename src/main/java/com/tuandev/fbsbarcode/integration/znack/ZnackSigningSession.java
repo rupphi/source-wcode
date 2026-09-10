@@ -86,7 +86,7 @@ public final class ZnackSigningSession {
         return new PipelineScope(previous);
     }
 
-    static void resetForTests() {
+    public static void resetForTests() {
         AUTHORIZED_SHOPS.clear();
         BLOCKED_SHOPS.clear();
         AUTHORIZED_PIPELINES.clear();

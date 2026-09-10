@@ -264,6 +264,7 @@ public class ZnackPurchaseCoordinator {
 
     public void resumeAsync(Settings settings) {
         for (ZnackPurchasePipelineState pipeline : repository.findActivePipelines()) {
+            ZnackSigningSession.authorizePipeline(repository.shop().shopId(), pipeline.id());
             ZnackPipelineQueueExecutor.submit(repository.shop().shopId(), pipeline.gtin(), () -> {
                 try {
                     advance(settings, pipeline.id());
