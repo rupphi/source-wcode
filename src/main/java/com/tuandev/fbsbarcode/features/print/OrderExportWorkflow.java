@@ -138,6 +138,7 @@ public class OrderExportWorkflow {
         private PreparedPrint(int shopId, List<Order> orders, KizAssignmentResult assignment) {
             this.shopId = shopId; this.orders = orders; this.assignment = assignment;
         }
+        public List<Order> orders() { return orders; }
         @Override public void close() {
             if (closed.compareAndSet(false, true)) inventoryService.release(shopId, assignment.usedKizs());
         }
@@ -210,8 +211,13 @@ public class OrderExportWorkflow {
                 continue;
             }
             if (order.getNmId() != null) {
-                String registered = kizMappingRepository.registeredGtin(shop.getId(), order.getNmId(), order.getBarcode());
-                if (registered != null) { gtin = registered; registeredGtins.add(gtin); }
+                try {
+                    String registered = kizMappingRepository.registeredGtin(shop.getId(), order.getNmId(), order.getBarcode());
+                    if (registered != null) { gtin = registered; registeredGtins.add(gtin); }
+                } catch (IllegalStateException error) {
+                    // If no category fallback mapping exists, preserve the registration awaiting message
+                    if (gtin == null) throw error;
+                }
             }
             boolean requiresKiz = order.isRequiresKiz() || isProductKizRequired(order, kizRequiredNmIds)
                     || (sgtinMetadata != null && sgtinMetadata.available());
@@ -238,10 +244,13 @@ public class OrderExportWorkflow {
         try {
             for (java.util.Map.Entry<String, List<Order>> entry : ordersByGtin.entrySet()) {
                 List<Order> gtinOrders = entry.getValue();
-                if (explicitPrint && registeredGtins.contains(entry.getKey())) {
-                    String demand = "FBS:" + gtinOrders.stream().map(Order::getId).sorted().toList();
-                    new com.tuandev.fbsbarcode.integration.znack.registration.WbPrintDemand()
-                            .awaitAvailable(shop, entry.getKey(), gtinOrders.size(), demand);
+                if (explicitPrint) {
+                    int available = inventoryService.availableCount(shop.getId(), entry.getKey());
+                    if (available < gtinOrders.size()) {
+                        String demand = "FBS:" + gtinOrders.stream().map(Order::getId).sorted().toList();
+                        new com.tuandev.fbsbarcode.integration.znack.registration.WbPrintDemand()
+                                .awaitAvailable(shop, entry.getKey(), gtinOrders.size(), demand);
+                    }
                 }
                 if (Thread.currentThread().isInterrupted()) throw new IOException("Print cancelled before KIZ reservation.");
                 List<Kiz> kizList = inventoryService.reserveAvailable(shop.getId(), entry.getKey(), gtinOrders.size());

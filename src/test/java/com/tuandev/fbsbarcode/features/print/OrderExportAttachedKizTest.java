@@ -50,6 +50,39 @@ class OrderExportAttachedKizTest {
         assertThrows(java.io.IOException.class, () -> workflow.prepareExplicitPrint(List.of(order()), shop));
     }
 
+    @Test void pendingRegistrationFallsBackToCategoryMappingWhenAvailable() throws Exception {
+        try (var connection = Database.getConnection(); var statement = connection.createStatement()) {
+            statement.execute("INSERT INTO wb_product_cards(shop_id,nm_id,vendor_code,subject_name,synced_at) VALUES(1,10,'ART','Clothes','2026-09-03T00:00:00Z')");
+            statement.execute("INSERT INTO znack_products(shop_id,gtin,product_name,category,synced_at) VALUES(1,'04630000000001','Old Product','Clothes','2026-09-03T00:00:00Z')");
+            statement.execute("INSERT INTO znack_gtin_mapping_rules(shop_id,gtin,subject_name,gender_value,wildcard_gender,created_at,updated_at) VALUES(1,'04630000000001','Clothes','*',1,'2026-09-03T00:00:00Z','2026-09-03T00:00:00Z')");
+            statement.execute("INSERT INTO kiz_orders(id,shop_id,gtin,quantity,local_status,created_at,updated_at) VALUES(1,1,'04630000000001',1,'COMPLETED','2026-09-03T00:00:00Z','2026-09-03T00:00:00Z')");
+            statement.execute("INSERT INTO kiz_codes(id,shop_id,order_id,raw_code,display_code,gtin,status,legal_status,created_at,updated_at) VALUES(101,1,1,'010463000000000121SERIAL\\u001d91TEST\\u001d92SIG','KIZ-1','04630000000001','AVAILABLE','IN_CIRCULATION','2026-09-03T00:00:00Z','2026-09-03T00:00:00Z')");
+        }
+        var workflow = new OrderExportWorkflow((token, ids) -> Map.of(1L, new KizService.SgtinMetadata(true, null)));
+        try (var prepared = workflow.reserveExplicitPrint(List.of(order()), shop)) {
+            assertEquals("010463000000000121SERIAL\\u001d91TEST\\u001d92SIG", prepared.orders().getFirst().getKiz());
+        }
+    }
+
+    @Test void publishedRegistrationOverridesCategoryMappingEvenWithoutWbUpdate() throws Exception {
+        try (var connection = Database.getConnection(); var statement = connection.createStatement()) {
+            statement.execute("INSERT INTO wb_product_cards(shop_id,nm_id,vendor_code,subject_name,synced_at) VALUES(1,10,'ART','Clothes','2026-09-03T00:00:00Z')");
+            statement.execute("INSERT INTO znack_products(shop_id,gtin,product_name,category,synced_at) VALUES(1,'04630000000001','Old Product','Clothes','2026-09-03T00:00:00Z')");
+            statement.execute("INSERT INTO znack_gtin_mapping_rules(shop_id,gtin,subject_name,gender_value,wildcard_gender,created_at,updated_at) VALUES(1,'04630000000001','Clothes','*',1,'2026-09-03T00:00:00Z','2026-09-03T00:00:00Z')");
+            statement.execute("INSERT INTO kiz_orders(id,shop_id,gtin,quantity,local_status,created_at,updated_at) VALUES(1,1,'04630000000001',1,'COMPLETED','2026-09-03T00:00:00Z','2026-09-03T00:00:00Z')");
+            statement.execute("INSERT INTO kiz_codes(id,shop_id,order_id,raw_code,display_code,gtin,status,legal_status,created_at,updated_at) VALUES(101,1,1,'010463000000000121SERIAL\\u001d91TEST\\u001d92SIG','KIZ-1','04630000000001','AVAILABLE','IN_CIRCULATION','2026-09-03T00:00:00Z','2026-09-03T00:00:00Z')");
+
+            statement.execute("UPDATE znack_card_registrations SET status='PUBLISHED', gtin='04630000000002', wb_updated=0 WHERE nm_id=10");
+            statement.execute("INSERT INTO znack_products(shop_id,gtin,product_name,category,synced_at) VALUES(1,'04630000000002','New Product','Clothes','2026-09-03T00:00:00Z')");
+            statement.execute("INSERT INTO kiz_orders(id,shop_id,gtin,quantity,local_status,created_at,updated_at) VALUES(2,1,'04630000000002',1,'COMPLETED','2026-09-03T00:00:00Z','2026-09-03T00:00:00Z')");
+            statement.execute("INSERT INTO kiz_codes(id,shop_id,order_id,raw_code,display_code,gtin,status,legal_status,created_at,updated_at) VALUES(102,1,2,'010463000000000221SERIAL\\u001d91TEST\\u001d92SIG','KIZ-2','04630000000002','AVAILABLE','IN_CIRCULATION','2026-09-03T00:00:00Z','2026-09-03T00:00:00Z')");
+        }
+        var workflow = new OrderExportWorkflow((token, ids) -> Map.of(1L, new KizService.SgtinMetadata(true, null)));
+        try (var prepared = workflow.reserveExplicitPrint(List.of(order()), shop)) {
+            assertEquals("010463000000000221SERIAL\\u001d91TEST\\u001d92SIG", prepared.orders().getFirst().getKiz());
+        }
+    }
+
     private static Order order() {
         Order order = new Order(1L, null, "Brand", "Product", "L", "black", "ART", null, "old-barcode");
         order.setNmId(10L);

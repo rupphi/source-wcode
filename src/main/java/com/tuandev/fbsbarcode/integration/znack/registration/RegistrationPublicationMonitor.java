@@ -36,6 +36,9 @@ final class RegistrationPublicationMonitor {
                 if (sku.status() != Status.ERROR && sku.status() != Status.PUBLISHED && sku.status() != Status.WB_UPDATE_PENDING) {
                     var progress = session.catalog().progress(token, sku.feedId(), sku.gtin());
                     if (progress.failed()) {
+                        if (retryWithoutImage(shop, session, token, sku, progress)) {
+                            return;
+                        }
                         registrations.updateProgress(shop.getId(), sku.chrtId(), Status.ERROR, null, progress.goodId(), progress.errorMessage(), null);
                         store.schedule(shop.getId(), sku.chrtId(), false, Duration.ofDays(1));
                         return;
@@ -108,5 +111,30 @@ final class RegistrationPublicationMonitor {
         repository.updateProductDocuments(sku.gtin(), ZnackPermitDocumentParser.fromProductCard(card));
         var metadata = ZnackProductLabelMetadataParser.fromProductCard(card);
         repository.updateProductLabelMetadata(sku.gtin(), metadata.gender(), metadata.size());
+    }
+
+    private boolean retryWithoutImage(Shop shop, RegistrationRunner.Session session, String token,
+                                      Sku sku, ZnackNationalCatalogService.FeedProgress progress) {
+        String stored = registrations.payload(shop.getId(), sku.chrtId());
+        if (stored == null || stored.isBlank()) return false;
+        try {
+            JsonObject payload = JsonParser.parseString(stored).getAsJsonObject();
+            if (!payload.has("good_images")) return false;
+            boolean isImageErr = ZnackCardRegistrationWorkflow.onlyImageErrors(progress.errors())
+                    || ZnackCardRegistrationWorkflow.isImageError(progress.errorMessage());
+            if (!isImageErr) return false;
+
+            payload.remove("good_images");
+            registrations.updatePayload(shop.getId(), sku.chrtId(), payload.toString());
+            String newFeedId = session.catalog().submit(token, payload);
+            registrations.updateProgress(shop.getId(), sku.chrtId(), Status.FEED_SUBMITTED, newFeedId,
+                    progress.goodId(), null, null);
+            store.schedule(shop.getId(), sku.chrtId(), false, Duration.ofSeconds(30));
+            return true;
+        } catch (Exception error) {
+            org.slf4j.LoggerFactory.getLogger(RegistrationPublicationMonitor.class)
+                    .warn("Failed to retry feed without image for SKU {}: {}", sku.chrtId(), error.getMessage());
+            return false;
+        }
     }
 }

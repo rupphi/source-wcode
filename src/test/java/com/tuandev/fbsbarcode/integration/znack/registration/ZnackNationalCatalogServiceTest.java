@@ -79,6 +79,11 @@ class ZnackNationalCatalogServiceTest {
         assertEquals("", ZnackCardRegistrationWorkflow.retryImageUrl(url, mixed));
         assertEquals(url, ZnackCardRegistrationWorkflow.retryImageUrl(url, "Размер одежды не заполнен"));
         assertEquals(url, ZnackCardRegistrationWorkflow.retryImageUrl(url, null));
+        assertTrue(ZnackCardRegistrationWorkflow.isImageError(mixed));
+        assertTrue(ZnackCardRegistrationWorkflow.isImageError("Изображение не доступно по URL https://basket-29.wbbasket.ru/vol5803/part58031.... В ответе на запрос получен код отличный от кода 200."));
+        assertFalse(ZnackCardRegistrationWorkflow.isImageError("Размер одежды не заполнен"));
+        assertTrue(ZnackCardRegistrationWorkflow.isWbImageUrl("https://basket-29.wbbasket.ru/vol5803/part580313/580313481/images/c516x688/1.webp"));
+        assertFalse(ZnackCardRegistrationWorkflow.isWbImageUrl("https://example.com/photo.jpg"));
     }
 
     @Test

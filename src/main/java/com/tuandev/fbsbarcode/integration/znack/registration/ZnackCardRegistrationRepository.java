@@ -228,6 +228,21 @@ public class ZnackCardRegistrationRepository {
         }
     }
 
+    public void updatePayload(int shopId, long chrtId, String payloadJson) {
+        try (Connection connection = Database.getConnection();
+             PreparedStatement statement = connection.prepareStatement("""
+                     UPDATE znack_card_registrations SET payload_json=?, updated_at=? WHERE shop_id=? AND chrt_id=?
+                     """)) {
+            statement.setString(1, payloadJson);
+            statement.setString(2, Instant.now().toString());
+            statement.setInt(3, shopId);
+            statement.setLong(4, chrtId);
+            statement.executeUpdate();
+        } catch (SQLException error) {
+            throw new RuntimeException(error);
+        }
+    }
+
     private static Sku map(ResultSet result) throws SQLException {
         String status = result.getString("status");
         return new Sku(result.getLong("nm_id"), result.getLong("chrt_id"), result.getInt("subject_id"),

@@ -391,8 +391,8 @@ public class KizMappingRepository {
             try (ResultSet r = s.executeQuery()) {
                 if (!r.next()) return null;
                 String gtin = r.getString(1);
-                if (!"PUBLISHED".equals(r.getString(2)) || !r.getBoolean(3) || gtin == null || gtin.isBlank())
-                    throw new IllegalStateException("Registered SKU " + barcode + " is awaiting signed publication / WB confirmation.");
+                if (!"PUBLISHED".equals(r.getString(2)) || gtin == null || gtin.isBlank())
+                    throw new IllegalStateException("Registered SKU " + barcode + " is awaiting signed publication.");
                 if (r.next()) throw new IllegalStateException("Ambiguous registered WB barcode: " + barcode);
                 return GtinNormalizer.normalize(gtin);
             }

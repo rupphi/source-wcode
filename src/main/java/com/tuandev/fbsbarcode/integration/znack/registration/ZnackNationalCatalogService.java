@@ -231,16 +231,7 @@ public final class ZnackNationalCatalogService {
         categories.add(draft.categoryId());
         payload.add("categories", categories);
 
-        if (imageUrl != null && !imageUrl.isBlank()) {
-            JsonObject image = new JsonObject();
-            image.addProperty("photo_type", "default");
-            image.addProperty("photo_url", imageUrl);
-            image.addProperty("identifier", gtin);
-            image.addProperty("identifier_type", "gtin");
-            JsonArray images = new JsonArray();
-            images.add(image);
-            payload.add("good_images", images);
-        }
+        // Photos are optional in National Catalog /v3/feed and omitted to prevent 403 CDN download rejections
 
         JsonArray attributes = new JsonArray();
         draft.attributes().entrySet().stream().sorted(java.util.Map.Entry.comparingByKey()).forEach(entry -> {

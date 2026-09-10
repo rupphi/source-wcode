@@ -40,7 +40,11 @@ import javafx.scene.image.ImageView;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.Cursor;
 import javafx.util.Duration;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.tuandev.fbsbarcode.ui.report.ErrorReportDialog;
 
 import java.io.ByteArrayInputStream;
 import java.time.LocalDate;
@@ -402,6 +406,20 @@ public final class ZnackCardRegistrationController {
             workflow.resume(shop, sku, null);
             reload(); return;
         }
+        if (sku.status() == Status.ERROR && sku.gtin() != null && !sku.gtin().isBlank()) {
+            Shop selectedShop = new Shop(shop.getId(), shop.getName(), shop.getMarketplace(), shop.getClientId(), shop.getApiKey());
+            String stored = repository.payload(selectedShop.getId(), sku.chrtId());
+            if (!stored.isBlank()) {
+                try {
+                    JsonObject payload = JsonParser.parseString(stored).getAsJsonObject();
+                    Draft draft = ZnackCardRegistrationWorkflow.draftFromPayload(payload);
+                    startWorkflow(selectedShop, sku, draft);
+                    return;
+                } catch (Exception ignored) {
+                    // Fall back to preparer if payload cannot be parsed
+                }
+            }
+        }
         if (sku.status() != Status.NOT_CREATED && sku.status() != Status.ERROR) return;
         Shop selectedShop = new Shop(shop.getId(), shop.getName(), shop.getMarketplace(), shop.getClientId(), shop.getApiKey());
         bulkBusy = true; updateSelection(); productTable.refresh();
@@ -434,7 +452,7 @@ public final class ZnackCardRegistrationController {
     private void startWorkflow(Shop selectedShop, Sku sku, Draft draft) {
         boolean started = workflow.start(selectedShop, sku, draft, (status, detail) -> Platform.runLater(() -> {
             reload();
-            if (status == Status.ERROR) showWorkflowError(detail);
+            if (status == Status.ERROR) showWorkflowError(sku, detail);
             else if (status == Status.PUBLISHED && !detail.isBlank()) {
                 showInfo(tr("znack.registration.completed") + " " + detail);
             }
@@ -521,8 +539,36 @@ public final class ZnackCardRegistrationController {
         statusColumn.setCellFactory(column -> new TableCell<>() {
             @Override protected void updateItem(String item, boolean empty) {
                 super.updateItem(item, empty);
-                setText(empty ? null : item);
-                if (!empty) setStyle("-fx-font-weight: 700;");
+                if (empty || item == null) {
+                    setText(null);
+                    setGraphic(null);
+                    setCursor(Cursor.DEFAULT);
+                    setUnderline(false);
+                    setOnMouseClicked(null);
+                    return;
+                }
+                setText(item);
+                Sku sku = getTableRow() == null ? null : getTableRow().getItem();
+                boolean isError = sku != null && (sku.status() == Status.ERROR
+                        || (sku.errorMessage() != null && !sku.errorMessage().isBlank()));
+                if (isError) {
+                    setStyle("-fx-font-weight: 700; -fx-text-fill: #e53935;");
+                    setUnderline(true);
+                    setCursor(Cursor.HAND);
+                    setTooltip(new Tooltip(tr("report.dialog.title") + " - " + tr("report.button")));
+                    setOnMouseClicked(event -> {
+                        if (shop != null && sku.errorMessage() != null && !sku.errorMessage().isBlank()) {
+                            ErrorReportDialog.show(shop.getName(), sku.vendorCode() + " / " + sku.size(),
+                                    "CARD_REGISTRATION", sku.errorMessage());
+                        }
+                    });
+                } else {
+                    setStyle("-fx-font-weight: 700;");
+                    setUnderline(false);
+                    setCursor(Cursor.DEFAULT);
+                    setTooltip(null);
+                    setOnMouseClicked(null);
+                }
             }
         });
         actionColumn.setCellValueFactory(cell -> new ReadOnlyObjectWrapper<>(cell.getValue()));
@@ -540,12 +586,22 @@ public final class ZnackCardRegistrationController {
                 setGraphic(button);
             }
         });
-        productTable.setRowFactory(table -> new TableRow<>() {
-            @Override protected void updateItem(Sku item, boolean empty) {
-                super.updateItem(item, empty);
-                setTooltip(empty || item == null || item.errorMessage() == null || item.errorMessage().isBlank()
-                        ? null : new Tooltip(item.errorMessage()));
-            }
+        productTable.setRowFactory(table -> {
+            TableRow<Sku> row = new TableRow<>();
+            row.setOnMouseClicked(event -> {
+                if (event.getClickCount() == 2 && !row.isEmpty()) {
+                    Sku sku = row.getItem();
+                    if (sku != null && sku.errorMessage() != null && !sku.errorMessage().isBlank() && shop != null) {
+                        ErrorReportDialog.show(shop.getName(), sku.vendorCode() + " / " + sku.size(),
+                                "CARD_REGISTRATION", sku.errorMessage());
+                    }
+                }
+            });
+            row.itemProperty().addListener((obs, old, sku) -> {
+                row.setTooltip(sku == null || sku.errorMessage() == null || sku.errorMessage().isBlank()
+                        ? null : new Tooltip(sku.errorMessage()));
+            });
+            return row;
         });
     }
 
@@ -582,14 +638,17 @@ public final class ZnackCardRegistrationController {
     private static String first(String... values) { for (String value : values) if (value != null && !value.isBlank()) return value; return ""; }
     private static String value(String value) { return value == null ? "" : value; }
     private static String tr(String key) { return I18nService.getInstance().tr(key); }
-    private static void showError(Throwable error) {
-        AlertService.showDetailedError(ZnackErrorDetails.summary(error), ZnackErrorDetails.format(error));
+    private void showError(Throwable error) {
+        if (shop != null) {
+            ErrorReportDialog.show(shop.getName(), "Znack Registration", "CARD_REGISTRATION", ZnackErrorDetails.format(error));
+        } else {
+            AlertService.showDetailedError(ZnackErrorDetails.summary(error), ZnackErrorDetails.format(error));
+        }
     }
-    private static void showWorkflowError(String detail) {
-        String full = ZnackErrorDetails.formatStored(detail);
-        String summary = detail == null || detail.isBlank() ? "Unknown error"
-                : detail.lines().filter(line -> !line.isBlank()).findFirst().orElse(detail).replaceFirst("^Summary:\\s*", "");
-        AlertService.showDetailedError(summary, full);
+    private void showWorkflowError(Sku sku, String detail) {
+        String shopName = shop != null ? shop.getName() : "Shop";
+        String entity = sku != null ? (sku.vendorCode() + " / " + sku.size()) : "Znack Card";
+        ErrorReportDialog.show(shopName, entity, "CARD_REGISTRATION", detail);
     }
     private static void showWarning(String message) { Alert alert = new Alert(Alert.AlertType.WARNING, message, ButtonType.OK); alert.setHeaderText(null); alert.showAndWait(); }
     private static void showInfo(String message) { Alert alert = new Alert(Alert.AlertType.INFORMATION, message, ButtonType.OK); alert.setHeaderText(null); alert.showAndWait(); }

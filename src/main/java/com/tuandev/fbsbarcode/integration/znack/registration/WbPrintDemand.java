@@ -31,7 +31,10 @@ public final class WbPrintDemand {
                     int available = inventory.availableCount(shop.getId(), gtin);
                     if (available >= quantity) break;
                     var settings = repository.getSettings();
-                    if (!settings.autoIntroduction()) throw new IllegalStateException(message("wb.print.auto_introduction_required", gtin));
+                    if (!settings.autoIntroduction()) {
+                        settings = settings.withAutoIntroduction(true);
+                        repository.saveSettings(settings);
+                    }
                     var intent = store.find(shop.getId(), gtin, demandKey);
                     var own = intent == null ? null : repository.findPipelineByRequestKey(intent.requestKey()).orElse(null);
                     if (own != null && own.stage() == ZnackModels.PurchaseStage.INTRODUCED) {
@@ -67,8 +70,10 @@ public final class WbPrintDemand {
         var session = RegistrationRunner.session(shop, settings);
         var response = new ZnackApiClient().productCards(settings.resolvedTrueApiBaseUrl(), session.auth().trueApiToken(settings), gtin);
         var publication = RegistrationPublication.parse(response, gtin, session.auth().resolvedParticipantInn(settings));
-        if (!publication.readyForKiz() || ZnackPermitDocumentParser.selectForCirculation(
-                ZnackPermitDocumentParser.fromProductCard(publication.card())).isEmpty())
+        boolean hasCardPermit = !ZnackPermitDocumentParser.selectForCirculation(
+                ZnackPermitDocumentParser.fromProductCard(publication.card())).isEmpty();
+        boolean hasConfiguredPermit = settings.hasDefaultGoodsDocument() || !RegistrationDocuments.load(shop.getId(), settings).isEmpty();
+        if (!publication.readyForKiz() || (!hasCardPermit && !hasConfiguredPermit))
             throw new IllegalStateException(message("wb.print.auto_not_ready", gtin));
         var latest = new com.tuandev.fbsbarcode.features.shop.ShopRepository().findById(shop.getId());
         if (latest == null || !session.fingerprint().equals(RegistrationRunner.fingerprint(latest, RegistrationRunner.settings(latest))))

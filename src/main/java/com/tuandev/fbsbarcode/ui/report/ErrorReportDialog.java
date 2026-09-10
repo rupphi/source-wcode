@@ -46,14 +46,16 @@ public final class ErrorReportDialog {
 
         ButtonType reportButton =
                 new ButtonType(i18n.tr("report.button"), ButtonBar.ButtonData.OK_DONE);
-        ButtonType closeButton =
-                new ButtonType(i18n.tr("common.close"), ButtonBar.ButtonData.CANCEL_CLOSE);
-        dialog.getDialogPane().getButtonTypes().addAll(reportButton, closeButton);
+        ButtonType copyButton =
+                new ButtonType(i18n.tr("common.copy"), ButtonBar.ButtonData.OTHER);
+        ButtonType cancelButton =
+                new ButtonType(i18n.tr("common.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
+        dialog.getDialogPane().getButtonTypes().addAll(reportButton, copyButton, cancelButton);
 
         TextArea messageArea = new TextArea(message);
         messageArea.setEditable(false);
         messageArea.setWrapText(true);
-        messageArea.setPrefRowCount(4);
+        messageArea.setPrefRowCount(6);
 
         Label statusLabel = new Label(i18n.tr("report.hint"));
         statusLabel.setWrapText(true);
@@ -104,6 +106,19 @@ public final class ErrorReportDialog {
                             });
                     AppTaskExecutor.execute(task);
                 });
+
+        javafx.scene.Node copyNode = dialog.getDialogPane().lookupButton(copyButton);
+        if (copyNode != null) {
+            copyNode.addEventFilter(
+                    ActionEvent.ACTION,
+                    event -> {
+                        event.consume();
+                        javafx.scene.input.ClipboardContent clipboard = new javafx.scene.input.ClipboardContent();
+                        clipboard.putString(rawError != null && !rawError.isBlank() ? rawError : message);
+                        javafx.scene.input.Clipboard.getSystemClipboard().setContent(clipboard);
+                        statusLabel.setText(i18n.tr("common.copy") + ": OK");
+                    });
+        }
 
         dialog.showAndWait();
     }

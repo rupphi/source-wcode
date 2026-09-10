@@ -60,7 +60,7 @@ public final class ZnackCardRegistrationWorkflow {
         return true;
     }
 
-    static Draft draftFromPayload(JsonObject payload) {
+    public static Draft draftFromPayload(JsonObject payload) {
         var categoryValue = payload.getAsJsonArray("categories").get(0);
         long categoryId = categoryValue.isJsonObject()
                 ? categoryValue.getAsJsonObject().get("cat_id").getAsLong()
@@ -198,13 +198,25 @@ public final class ZnackCardRegistrationWorkflow {
                 draft.brand(), draft.attributes(), types);
     }
 
+    public static boolean isWbImageUrl(String url) {
+        if (url == null || url.isBlank()) return false;
+        String lower = url.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("wbbasket.ru") || lower.contains("wbcontent.net") || lower.contains("wildberries.ru");
+    }
+
+    public static boolean isImageError(String errorMessage) {
+        if (errorMessage == null || errorMessage.isBlank()) return false;
+        String lower = errorMessage.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("изображен") || lower.contains("photo")
+                || lower.contains("image") || lower.contains("url");
+    }
+
     // Photos are optional in /v3/feed. A WB CDN URL rejected by the catalog must not
     // be reintroduced when retrying a feed that also had attribute errors.
     static String retryImageUrl(String imageUrl, String previousError) {
         String error = previousError == null ? "" : previousError.toLowerCase(java.util.Locale.ROOT);
-        boolean unavailableImage = error.contains("изображение не доступно по url")
-                || error.contains("изображение недоступно по url");
-        return unavailableImage ? "" : imageUrl;
+        boolean unavailableImage = isImageError(error);
+        return unavailableImage ? "" : (imageUrl == null ? "" : imageUrl);
     }
 
     void fail(Shop shop, Sku sku, Exception error, BiConsumer<Status, String> listener) {
@@ -217,12 +229,8 @@ public final class ZnackCardRegistrationWorkflow {
         if (listener != null) listener.accept(status, detail == null ? "" : detail);
     }
 
-    private static boolean onlyImageErrors(java.util.List<String> errors) {
-        return errors != null && !errors.isEmpty() && errors.stream().allMatch(error -> {
-            String normalized = error == null ? "" : error.toLowerCase(java.util.Locale.ROOT);
-            return normalized.contains("изображен") || normalized.contains("photo")
-                    || normalized.contains("image") || normalized.contains("url");
-        });
+    public static boolean onlyImageErrors(java.util.List<String> errors) {
+        return errors != null && !errors.isEmpty() && errors.stream().allMatch(ZnackCardRegistrationWorkflow::isImageError);
     }
 
 }

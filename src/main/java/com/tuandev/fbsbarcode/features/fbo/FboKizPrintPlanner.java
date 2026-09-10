@@ -47,8 +47,13 @@ public class FboKizPrintPlanner {
         for (FboBarcodePrintItem item : safeItems) {
             if (!item.product().requiresKiz()) continue;
             String gtin = mappings.get(item.product().nmId());
-            String registered = mappingRepository.registeredGtin(shopId, item.product().nmId(), item.product().sku());
-            if (registered != null) { gtin = registered; registeredGtins.add(gtin); }
+            try {
+                String registered = mappingRepository.registeredGtin(shopId, item.product().nmId(), item.product().sku());
+                if (registered != null) { gtin = registered; registeredGtins.add(gtin); }
+            } catch (IllegalStateException error) {
+                // If no category fallback mapping exists, preserve the registration awaiting message
+                if (gtin == null) throw error;
+            }
             sizeMappings.put(item.product(), gtin);
             if (gtin == null) {
                 missing.add("nmId " + item.product().nmId() + " | article " + safe(item.product().vendorCode()));
@@ -62,13 +67,16 @@ public class FboKizPrintPlanner {
         List<Kiz> allReserved = new ArrayList<>();
         try {
             for (Map.Entry<String, Integer> entry : neededByGtin.entrySet()) {
-                if (explicitShop != null && registeredGtins.contains(entry.getKey())) {
-                    String demand = "FBO:" + safeItems.stream().map(item -> item.product().nmId() + ":"
-                            + item.product().sku() + ":" + item.quantity()).sorted().toList();
-                    try {
-                        new com.tuandev.fbsbarcode.integration.znack.registration.WbPrintDemand()
-                                .awaitAvailable(explicitShop, entry.getKey(), entry.getValue(), demand);
-                    } catch (java.io.IOException error) { throw new IllegalStateException(error.getMessage(), error); }
+                if (explicitShop != null) {
+                    int available = inventoryService.availableCount(shopId, entry.getKey());
+                    if (available < entry.getValue()) {
+                        String demand = "FBO:" + safeItems.stream().map(item -> item.product().nmId() + ":"
+                                + item.product().sku() + ":" + item.quantity()).sorted().toList();
+                        try {
+                            new com.tuandev.fbsbarcode.integration.znack.registration.WbPrintDemand()
+                                    .awaitAvailable(explicitShop, entry.getKey(), entry.getValue(), demand);
+                        } catch (java.io.IOException error) { throw new IllegalStateException(error.getMessage(), error); }
+                    }
                 }
                 if (Thread.currentThread().isInterrupted()) throw new IllegalStateException("Print cancelled before KIZ reservation.");
                 List<Kiz> reserved = inventoryService.reserveAvailable(shopId, entry.getKey(), entry.getValue());
