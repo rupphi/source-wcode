@@ -411,6 +411,7 @@ jobs:
         run: |
           if ($env:UPDATE_MANIFEST_ENABLED -ceq 'true') {
             $env:RELEASE_NOTES_JSON = ConvertTo-Json -Compress -InputObject @(
+              'Chọn loại hàng Znack theo từng nhóm danh mục và TN VED khi đăng ký đơn lẻ hoặc hàng loạt; bỏ qua nhóm chưa chọn',
               'Đăng ký thẻ Znack hàng loạt từ SKU WB, hỗ trợ cả giấy công bố và giấy chứng nhận',
               'Tự thêm GTIN đúng size trên WB sau khi thẻ được người dùng ký và xuất bản',
               'Tự mua KIZ thiếu khi chủ động in đơn WB và chờ lưu thông trước khi cấp mã',
@@ -620,6 +621,7 @@ jobs:
           notes="$(cat <<EOF
           WCode ${APP_VERSION}
 
+          - Chọn Вид товара [12] trực tiếp từ danh sách Znack cho từng nhóm danh mục WB, TN VED và danh mục Znack. Không tự suy đoán loại hàng từ tên danh mục WB. Xem sản phẩm theo nhóm, bỏ qua nhóm chưa chọn hoặc hủy trước khi tạo GTIN; áp dụng cho đăng ký đơn lẻ và hàng loạt.
           - Đăng ký thẻ Znack từ SKU Wildberries: tự điền thuộc tính, chọn từng SKU hoặc tất cả kết quả theo bộ lọc, kiểm tra dữ liệu và đăng ký hàng loạt qua hàng đợi có khôi phục.
           - Cấu hình riêng Декларация о соответствии và Сертификат соответствия; nếu nhập cả hai thì gửi cả hai vào thẻ.
           - Khi người dùng đã ký và thẻ được xuất bản trên Znack, WCode xác minh chủ sở hữu rồi thêm GTIN đúng size trên WB, giữ nguyên barcode và các size hiện có.

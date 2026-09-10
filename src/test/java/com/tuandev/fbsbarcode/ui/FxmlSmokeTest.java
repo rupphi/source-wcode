@@ -58,6 +58,60 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FxmlSmokeTest {
+    @Test
+    @SuppressWarnings("unchecked")
+    void goodsKindDialogSeparatesGroupsAndSkipsUnselected() throws Exception {
+        var task = new java.util.concurrent.FutureTask<Void>(() -> {
+            var attribute = new com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Attribute(
+                    12, "Вид товара", "string", true, false, false, false, java.util.List.of("БРЮКИ", "ЛОСИНЫ"), java.util.List.of(""));
+            var prepared = new java.util.ArrayList<com.tuandev.fbsbarcode.integration.znack.registration.RegistrationDraftPreparer.Prepared>();
+            for (int i = 0; i < 3; i++) {
+                int category = i < 2 ? 1 : 2;
+                var sku = new com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Sku(
+                        10, i + 1, category, "ART-" + i, "Леггинсы", "Brand", "Product", "black", "XXL",
+                        java.util.List.of("WB" + i), "", true, null, null, null,
+                        com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Status.NOT_CREATED, null, false);
+                var draft = new com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Draft(
+                        "6104630000", "6104", category, "Product", "Brand", java.util.Map.of(), java.util.Map.of());
+                prepared.add(new com.tuandev.fbsbarcode.integration.znack.registration.RegistrationDraftPreparer.Prepared(
+                        sku, draft, java.util.List.of(), new com.tuandev.fbsbarcode.integration.znack.registration.RegistrationDraftPreparer.KindGroup(
+                        category, "Леггинсы", "6104630000", category, "Category " + category, attribute)));
+            }
+            var dialog = com.tuandev.fbsbarcode.ui.znackregistration.RegistrationGoodsKindDialog.create("Test shop", prepared);
+            var groups = (VBox) ((ScrollPane) dialog.getDialogPane().getContent()).getContent();
+            assertEquals(2, groups.getChildren().size());
+            var first = (VBox) groups.getChildren().getFirst();
+            var choice = (ComboBox<String>) first.getChildren().get(1);
+            assertTrue(!choice.isEditable() && choice.getValue() == null);
+            var proceed = dialog.getDialogPane().getButtonTypes().getFirst();
+            assertEquals(0, dialog.getResultConverter().call(proceed).size());
+            choice.setValue("ЛОСИНЫ");
+            var result = dialog.getResultConverter().call(proceed);
+            assertEquals(2, result.size());
+            assertTrue(result.stream().allMatch(p -> "ЛОСИНЫ".equals(p.draft().attributes().get(12L))));
+            var second = (ComboBox<String>) ((VBox) groups.getChildren().get(1)).getChildren().get(1);
+            second.setValue("БРЮКИ");
+            assertEquals(3, dialog.getResultConverter().call(proceed).size());
+            assertEquals(null, dialog.getResultConverter().call(javafx.scene.control.ButtonType.CANCEL));
+            ((Button) first.getChildren().get(2)).fire();
+            assertEquals(1, dialog.getResultConverter().call(proceed).size());
+            String screenshot = System.getProperty("wcode.test.kind-screenshot");
+            if (screenshot != null) {
+                dialog.show();
+                var snapshot = dialog.getDialogPane().snapshot(null, null);
+                var image = new java.awt.image.BufferedImage((int) snapshot.getWidth(), (int) snapshot.getHeight(),
+                        java.awt.image.BufferedImage.TYPE_INT_ARGB);
+                for (int y = 0; y < image.getHeight(); y++)
+                    for (int x = 0; x < image.getWidth(); x++) image.setRGB(x, y, snapshot.getPixelReader().getArgb(x, y));
+                javax.imageio.ImageIO.write(image, "png", new java.io.File(screenshot));
+                dialog.close();
+            }
+            return null;
+        });
+        Platform.runLater(task);
+        task.get(10, TimeUnit.SECONDS);
+    }
+
     @TempDir
     static Path appDataDir;
 

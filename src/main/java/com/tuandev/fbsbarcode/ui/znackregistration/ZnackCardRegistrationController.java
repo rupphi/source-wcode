@@ -225,10 +225,14 @@ public final class ZnackCardRegistrationController {
             }
         };
         task.setOnSucceeded(event -> {
-            var valid = task.getValue().stream().filter(p -> p.draft() != null && p.missing().isEmpty()).toList();
-            var invalid = task.getValue().stream().filter(p -> p.draft() == null || !p.missing().isEmpty()).toList();
+            var chosen = RegistrationGoodsKindDialog.choose(selectedShop.getName(), task.getValue());
+            if (chosen.isEmpty()) {
+                bulkBusy = false; setLoading(false); updateSelection(); productTable.refresh(); return;
+            }
+            var valid = chosen.get().stream().filter(p -> p.draft() != null && p.missing().isEmpty()).toList();
+            var invalid = chosen.get().stream().filter(p -> p.draft() == null || !p.missing().isEmpty()).toList();
             String summary = java.text.MessageFormat.format(tr("znack.registration.batch_confirm"),
-                    selectedShop.getName(), valid.size(), invalid.size(), selected.size() - task.getValue().size());
+                    selectedShop.getName(), valid.size(), invalid.size(), selected.size() - chosen.get().size());
             Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, summary, ButtonType.OK, ButtonType.CANCEL);
             confirm.setHeaderText(tr("znack.registration.title"));
             if (!invalid.isEmpty()) {
@@ -416,7 +420,8 @@ public final class ZnackCardRegistrationController {
                         sku.vendorCode(), String.join("\n• ", result.missing())));
                 return;
             }
-            startWorkflow(selectedShop, sku, result.draft());
+            var chosen = RegistrationGoodsKindDialog.choose(selectedShop.getName(), List.of(result));
+            if (chosen.isPresent() && !chosen.get().isEmpty()) startWorkflow(selectedShop, sku, chosen.get().getFirst().draft());
         });
         task.setOnFailed(event -> {
             bulkBusy = false; updateSelection(); productTable.refresh();
