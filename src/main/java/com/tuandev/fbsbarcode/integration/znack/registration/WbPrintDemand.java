@@ -41,7 +41,7 @@ public final class WbPrintDemand {
                         store.complete(shop.getId(), gtin, demandKey);
                         intent = null; own = null; // A completed smaller wave may not cover this print demand.
                     }
-                    Long outstanding = own == null ? store.outstandingPipeline(shop.getId(), gtin) : own.id();
+                    Long outstanding = own != null ? Long.valueOf(own.id()) : store.outstandingPipeline(shop.getId(), gtin);
                     if (outstanding != null) {
                         var pipeline = repository.findPipeline(outstanding).orElseThrow();
                         if (!pipeline.active()) throw new IllegalStateException(message("wb.print.auto_action_required", gtin));

@@ -38,7 +38,7 @@ final class WbPrintDemandStore {
                 ORDER BY id DESC LIMIT 1
                 """)) {
             s.setInt(1, shopId); s.setString(2, gtin);
-            try (var r = s.executeQuery()) { return r.next() ? r.getLong(1) : null; }
+            try (var r = s.executeQuery()) { return r.next() ? Long.valueOf(r.getLong(1)) : null; }
         } catch (SQLException error) { throw new IllegalStateException(error); }
     }
 }

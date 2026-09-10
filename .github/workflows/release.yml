@@ -621,6 +621,7 @@ jobs:
           notes="$(cat <<EOF
           WCode ${APP_VERSION}
 
+          - Khắc phục lỗi NullPointerException ("cannot invoke java.lang.Long.longValue()") khi in đơn Wildberries có tự động mua KIZ thiếu.
           - Khắc phục triệt để lỗi thiếu dữ liệu catalog Ozon FBS ("product identity is missing or ambiguous"): tự động so khớp 2 chiều giữa SKU và Product ID, kết hợp fallback theo Offer ID.
           - Bảo vệ mã KIZ Ozon: pre-validate đơn hàng trước khi giữ chỗ KIZ, tuyệt đối không trừ oan KIZ khi in thất bại; tự động hoàn trả KIZ về AVAILABLE nếu gặp sự cố tải nhãn hoặc lỗi hệ thống.
           - Nâng cấp phiếu nhặt hàng Ozon: hiển thị chỉ số đơn nhiều món [Đơn N món: X/N], hiển thị (Chung đơn: N kiện) cho đơn tách kiện; cột Sticker hiển thị mã vạch sản phẩm và đuôi tem vận chuyển Ozon để đối soát đóng gói, chống dán nhầm tem.
