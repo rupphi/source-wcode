@@ -96,12 +96,12 @@ public final class OzonPrintBundleService {
                 .equals(pickingTarget.toPath().toAbsolutePath().normalize())) {
             throw new IllegalArgumentException("Ozon label bundle and picking list must use different files.");
         }
-        return exportInternal(shop, postingNumber, labelTarget, pickingTarget, true, null, null, null);
+        return exportInternal(shop, postingNumber, labelTarget, pickingTarget, true, null, null);
     }
 
     private ExportResult exportLabelOnly(Shop shop, String postingNumber, File labelTarget) throws IOException {
         requirePdfTarget(labelTarget, "label bundle");
-        return exportInternal(shop, postingNumber, labelTarget, null, false, null, null, null);
+        return exportInternal(shop, postingNumber, labelTarget, null, false, null, null);
     }
 
     private ExportResult exportInternal(
@@ -111,7 +111,7 @@ public final class OzonPrintBundleService {
             File pickingTarget,
             boolean consumeAfterPublish)
             throws IOException {
-        return exportInternal(shop, postingNumber, labelTarget, pickingTarget, consumeAfterPublish, null, null, null);
+        return exportInternal(shop, postingNumber, labelTarget, pickingTarget, consumeAfterPublish, null, null);
     }
 
     private ExportResult exportInternal(
@@ -121,7 +121,7 @@ public final class OzonPrintBundleService {
             File pickingTarget,
             boolean consumeAfterPublish,
             List<OzonPackingPlan> batchPlans) throws IOException {
-        return exportInternal(shop, postingNumber, labelTarget, pickingTarget, consumeAfterPublish, batchPlans, null, null);
+        return exportInternal(shop, postingNumber, labelTarget, pickingTarget, consumeAfterPublish, batchPlans, null);
     }
 
     private ExportResult exportInternal(
@@ -131,8 +131,7 @@ public final class OzonPrintBundleService {
             File pickingTarget,
             boolean consumeAfterPublish,
             List<OzonPackingPlan> batchPlans,
-            List<OzonProductDto> catalog,
-            List<OzonExemplarJob> newlyStagedJobs) throws IOException {
+            List<OzonProductDto> catalog) throws IOException {
         String safePosting = OzonApiClient.requireExternalId(postingNumber, "posting number");
         OzonPostingDto posting = postings.find(shop.getId(), safePosting);
         if (posting == null) throw new IOException("The selected Ozon posting is not available locally. Refresh first.");
@@ -143,10 +142,8 @@ public final class OzonPrintBundleService {
         OzonExemplarJob job = jobs.find(shop.getId(), safePosting);
         boolean requiresKiz = OzonRequirementGuard.requiresAny(
                 posting, policies.findExemptSkus(shop.getId()));
-        boolean stagedInThisRun = false;
         if (requiresKiz && !printable(job)) {
             OzonPreparationResult result = preparation.prepare(shop, safePosting);
-            stagedInThisRun = true;
             if ("NOT_REQUIRED".equals(result.stage())) {
                 throw new IOException("An Ozon item requiring KIZ cannot be omitted from the print bundle.");
             }
@@ -157,9 +154,6 @@ public final class OzonPrintBundleService {
             }
             posting = Objects.requireNonNullElse(postings.find(shop.getId(), safePosting), posting);
             job = jobs.find(shop.getId(), safePosting);
-            if (newlyStagedJobs != null && job != null) {
-                newlyStagedJobs.add(job);
-            }
             if (("ACCEPTED".equals(result.stage()) || "VALIDATED".equals(result.stage())) && !printable(job)) {
                 throw new IOException("Ozon reported printable KIZ but the durable local job is incomplete.");
             }
@@ -194,18 +188,8 @@ public final class OzonPrintBundleService {
             }
             return new ExportResult(
                     labelTarget, pickingTarget, officialPages, bindings.size(), officialPages + bindings.size() + plan.units());
-        } catch (Throwable error) {
-            if (newlyStagedJobs == null && stagedInThisRun && job != null) {
-                try {
-                    OzonExemplarJob current = jobs.find(shop.getId(), safePosting);
-                    if (current != null && current.stage() == OzonExemplarJobStage.VALIDATED) {
-                        jobs.releaseRejected(current, true, "print_failed");
-                    }
-                } catch (Exception ignored) {
-                }
-            }
-            throw error;
         } finally {
+            // Retain durable KIZ bindings on failure: another export may already have printed them.
             AtomicFilePublisher.deleteQuietly(officialStaging);
             AtomicFilePublisher.deleteQuietly(labelStaging);
             AtomicFilePublisher.deleteQuietly(pickingStaging);
@@ -242,7 +226,6 @@ public final class OzonPrintBundleService {
         Path temporaryDirectory = Files.createTempDirectory("wcode-ozon-print-");
         List<File> labelParts = new ArrayList<>();
         List<OzonPackingPlan> batchPlans = new ArrayList<>();
-        List<OzonExemplarJob> newlyStagedJobs = new ArrayList<>();
         File labelStaging = null;
         File pickingStaging = null;
         int totalPages = 0;
@@ -251,7 +234,7 @@ public final class OzonPrintBundleService {
             for (int index = 0; index < safePostings.size(); index++) {
                 File labelPart = temporaryDirectory.resolve("labels-" + index + ".pdf").toFile();
                 ExportResult result = exportInternal(
-                        shop, safePostings.get(index), labelPart, null, false, batchPlans, catalog, newlyStagedJobs);
+                        shop, safePostings.get(index), labelPart, null, false, batchPlans, catalog);
                 labelParts.add(labelPart);
                 totalPages += result.totalPages();
                 kizPages += result.kizPages();
@@ -270,18 +253,8 @@ public final class OzonPrintBundleService {
             pickingStaging = null;
             return new BatchExportResult(
                     labelTarget, pickingTarget, safePostings.size(), totalPages, kizPages);
-        } catch (Throwable error) {
-            for (OzonExemplarJob stagedJob : newlyStagedJobs) {
-                try {
-                    OzonExemplarJob current = jobs.find(shop.getId(), stagedJob.postingNumber());
-                    if (current != null && current.stage() == OzonExemplarJobStage.VALIDATED) {
-                        jobs.releaseRejected(current, true, "print_failed");
-                    }
-                } catch (Exception ignored) {
-                }
-            }
-            throw error;
         } finally {
+            // Retry the batch using the same codes; never return possibly published marks to inventory.
             AtomicFilePublisher.deleteQuietly(labelStaging);
             AtomicFilePublisher.deleteQuietly(pickingStaging);
             for (File part : labelParts) AtomicFilePublisher.deleteQuietly(part);

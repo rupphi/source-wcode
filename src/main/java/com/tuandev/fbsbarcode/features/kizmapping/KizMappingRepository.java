@@ -54,7 +54,8 @@ public class KizMappingRepository {
                 : " AND TRIM(p.category) IN (" + String.join(",", Collections.nCopies(categories.size(), "?")) + ")";
         String sql = """
                 SELECT p.gtin,p.product_name,p.category,
-                  SUM(CASE WHEN c.status='AVAILABLE' AND c.legal_status='IN_CIRCULATION' THEN 1 ELSE 0 END) available_count,
+                  SUM(CASE WHEN c.status='AVAILABLE' AND c.legal_status='IN_CIRCULATION'
+                    AND NOT EXISTS (SELECT 1 FROM ozon_exemplars e WHERE e.kiz_id=c.id) THEN 1 ELSE 0 END) available_count,
                   SUM(CASE WHEN c.status='RESERVED' AND c.legal_status='IN_CIRCULATION' THEN 1 ELSE 0 END) reserved_count,
                   SUM(CASE WHEN c.status='CONSUMED' AND c.legal_status='IN_CIRCULATION' THEN 1 ELSE 0 END) consumed_count,
                   SUM(CASE WHEN c.status='AVAILABLE' AND COALESCE(c.legal_status,'')<>'IN_CIRCULATION'
@@ -426,7 +427,8 @@ public class KizMappingRepository {
     public List<ZnackGtinInventorySummary> findGtinSummaries(int shopId) {
         String sql = """
                 SELECT p.gtin,p.product_name,p.category,
-                  SUM(CASE WHEN c.status='AVAILABLE' AND c.legal_status='IN_CIRCULATION' THEN 1 ELSE 0 END) available_count,
+                  SUM(CASE WHEN c.status='AVAILABLE' AND c.legal_status='IN_CIRCULATION'
+                    AND NOT EXISTS (SELECT 1 FROM ozon_exemplars e WHERE e.kiz_id=c.id) THEN 1 ELSE 0 END) available_count,
                   SUM(CASE WHEN c.status='RESERVED' AND c.legal_status='IN_CIRCULATION' THEN 1 ELSE 0 END) reserved_count,
                   SUM(CASE WHEN c.status='CONSUMED' AND c.legal_status='IN_CIRCULATION' THEN 1 ELSE 0 END) consumed_count,
                   SUM(CASE WHEN c.status='AVAILABLE' AND COALESCE(c.legal_status,'')<>'IN_CIRCULATION'

@@ -201,6 +201,30 @@ class OzonPrintBundleServiceTest {
     }
 
     @Test
+    void consumeFailureAfterPdfPublishKeepsOriginalBindingAndReservation() throws Exception {
+        seedPosting(1);
+        seedValidatedExemplar(RAW_KIZ);
+        try (Connection connection = Database.getConnection(); Statement statement = connection.createStatement()) {
+            statement.execute("""
+                    CREATE TRIGGER fail_ozon_consumption BEFORE UPDATE OF status ON kiz_codes
+                    WHEN OLD.id=100 AND NEW.status='CONSUMED'
+                    BEGIN SELECT RAISE(ABORT,'simulated consume failure'); END
+                    """);
+        }
+        Path labels = temporaryDirectory.resolve("published-before-consume-failure.pdf");
+
+        IOException failure = assertThrows(IOException.class, () ->
+                service(new AtomicBoolean(false)).export(
+                        shop, "POST-1", labels.toFile(), temporaryDirectory.resolve("picking.pdf").toFile()));
+
+        assertTrue(Files.isRegularFile(labels), "The label was already published before local consumption failed");
+        assertTrue(failure.getMessage().contains("PDF was created"));
+        assertEquals("RESERVED", scalar("SELECT status FROM kiz_codes WHERE id=100"));
+        assertEquals("100", scalar("SELECT kiz_id FROM ozon_exemplars WHERE job_id=51"));
+        assertEquals("VALIDATED", scalar("SELECT stage FROM ozon_exemplar_jobs WHERE id=51"));
+    }
+
+    @Test
     void failedPdfExportKeepsTheKizReservedForRetry() throws Exception {
         seedPosting(1);
         seedValidatedExemplar(RAW_KIZ);
@@ -654,7 +678,7 @@ class OzonPrintBundleServiceTest {
     }
 
     @Test
-    void failedPrintReleasesNewlyStagedKizReservationBackToAvailable() throws Exception {
+    void failedPrintKeepsNewlyStagedKizBoundToOriginalPosting() throws Exception {
         seedPosting(1, true);
         long kizId;
         try (Connection conn = Database.getConnection(); Statement stmt = conn.createStatement()) {
@@ -716,7 +740,7 @@ class OzonPrintBundleServiceTest {
                         temporaryDirectory.resolve("picking.pdf").toFile()));
 
         assertTrue(prepared.get());
-        assertEquals("AVAILABLE", scalar("SELECT status FROM kiz_codes WHERE id=" + kizId));
-        assertEquals("REJECTED", scalar("SELECT stage FROM ozon_exemplar_jobs WHERE posting_number='POST-1'"));
+        assertEquals("RESERVED", scalar("SELECT status FROM kiz_codes WHERE id=" + kizId));
+        assertEquals("VALIDATED", scalar("SELECT stage FROM ozon_exemplar_jobs WHERE posting_number='POST-1'"));
     }
 }

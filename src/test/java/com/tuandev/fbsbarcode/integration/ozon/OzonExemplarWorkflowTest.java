@@ -150,6 +150,101 @@ class OzonExemplarWorkflowTest {
         assertEquals(0, count("SELECT COUNT(*) FROM kiz_codes WHERE status='CONSUMED'"));
     }
 
+    @Test
+    void legacyReleasedBindingIsNotAvailableToAnotherPostingOrGenericExport() throws Exception {
+        seedLegacyReleasedPrint();
+        var inventory = new com.tuandev.fbsbarcode.integration.znack.ZnackGtinInventoryService();
+        assertEquals(0, inventory.availableCount(1, "04600000000001"));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> inventory.reserveAvailable(1, "04600000000001", 1));
+        server.enqueue(json(posting().replace("POST-1", "POST-2")));
+        assertEquals("kiz_unavailable", service().prepare(shop, "POST-2").safeErrorCode());
+        assertEquals("1", scalar("SELECT kiz_id FROM ozon_exemplars WHERE posting_number='POST-1'"));
+    }
+
+    @Test
+    void upgradeRecoversLegacyReleasedCodeForOriginalPostingIdempotently() throws Exception {
+        seedLegacyReleasedPrint();
+        Database.initDatabase();
+        Database.initDatabase();
+        assertEquals("RESERVED", scalar("SELECT status FROM kiz_codes WHERE id=1"));
+        assertEquals("ozon:1", scalar("SELECT reservation_token FROM kiz_codes WHERE id=1"));
+        assertEquals("0", scalar("SELECT reservation_recoverable FROM kiz_codes WHERE id=1"));
+        server.enqueue(json(posting()));
+        assertTrue(service().prepare(shop, "POST-1").shipReady());
+        assertEquals("1", scalar("SELECT kiz_id FROM ozon_exemplars WHERE posting_number='POST-1'"));
+        assertEquals(0, new com.tuandev.fbsbarcode.integration.znack.ZnackGtinInventoryService().releaseRecoverableReservations());
+        assertEquals("ok", scalar("PRAGMA integrity_check"));
+        assertNull(scalar("PRAGMA foreign_key_check"));
+    }
+
+    @Test
+    void legacyConsumedBindingIsNotDeletedOrReallocated() throws Exception {
+        seedLegacyReleasedPrint();
+        try (var connection = Database.getConnection(); var statement = connection.createStatement()) {
+            statement.execute("UPDATE kiz_codes SET status='CONSUMED',consumed_at='2026-09-11' WHERE id=1");
+        }
+        Database.initDatabase();
+        server.enqueue(json(posting()));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> service().prepare(shop, "POST-1"));
+        assertEquals("1", scalar("SELECT kiz_id FROM ozon_exemplars WHERE posting_number='POST-1'"));
+        assertEquals("CONSUMED", scalar("SELECT status FROM kiz_codes WHERE id=1"));
+    }
+
+    private void seedLegacyReleasedPrint() throws Exception {
+        server.enqueue(json(posting()));
+        assertTrue(service().prepare(shop, "POST-1").shipReady());
+        try (var connection = Database.getConnection(); var statement = connection.createStatement()) {
+            statement.execute("UPDATE kiz_codes SET status='AVAILABLE',reservation_token=NULL,reserved_at=NULL,reservation_recoverable=NULL WHERE id=1");
+            statement.execute("UPDATE ozon_exemplar_jobs SET stage='REJECTED',safe_error_code='print_failed' WHERE posting_number='POST-1'");
+        }
+    }
+
+    @Test
+    void anotherPostingSkipsLegacyBoundCodeAndCanPrintWithANewCode() throws Exception {
+        seedLegacyReleasedPrint();
+        try (var connection = Database.getConnection(); var statement = connection.createStatement()) {
+            statement.execute("INSERT INTO kiz_codes(id,shop_id,order_id,raw_code,display_code,gtin,status,legal_status,created_at,updated_at) "
+                    + "VALUES(2,1,1,'010460000000000121SECOND','SECOND','04600000000001','AVAILABLE','IN_CIRCULATION',"
+                    + "'2026-09-11','2026-09-11')");
+        }
+        server.enqueue(json(posting().replace("POST-1", "POST-2")));
+        assertTrue(service().prepare(shop, "POST-2").shipReady());
+        assertEquals("2", scalar("SELECT kiz_id FROM ozon_exemplars WHERE posting_number='POST-2'"));
+        assertEquals("1", scalar("SELECT kiz_id FROM ozon_exemplars WHERE posting_number='POST-1'"));
+    }
+
+    @Test
+    void recoveryDoesNotStealAnotherWorkflowReservation() throws Exception {
+        seedLegacyReleasedPrint();
+        try (var connection = Database.getConnection(); var statement = connection.createStatement()) {
+            statement.execute("UPDATE kiz_codes SET status='RESERVED',reservation_token='another-workflow',reservation_recoverable=1 WHERE id=1");
+        }
+        Database.initDatabase();
+        assertEquals("another-workflow", scalar("SELECT reservation_token FROM kiz_codes WHERE id=1"));
+        assertEquals("REJECTED", scalar("SELECT stage FROM ozon_exemplar_jobs WHERE posting_number='POST-1'"));
+        assertEquals(0, new com.tuandev.fbsbarcode.integration.znack.ZnackGtinInventoryService().releaseRecoverableReservations());
+    }
+
+    @Test
+    void conclusiveRemoteRejectionUnlinksBeforeReturningKizToInventory() throws Exception {
+        server.enqueue(json(posting()));
+        assertTrue(service().prepare(shop, "POST-1").shipReady());
+        var repository = new OzonExemplarJobRepository();
+        var job = repository.find(1, "POST-1");
+
+        var rejected = repository.releaseRejected(job, true, "validation_rejected");
+
+        assertEquals(OzonExemplarJobStage.REJECTED, rejected.stage());
+        assertEquals("AVAILABLE", scalar("SELECT status FROM kiz_codes WHERE id=1"));
+        assertNull(scalar("SELECT kiz_id FROM ozon_exemplars WHERE posting_number='POST-1'"));
+        assertEquals(1, new com.tuandev.fbsbarcode.integration.znack.ZnackGtinInventoryService()
+                .availableCount(1, "04600000000001"));
+        assertEquals(OzonExemplarJobStage.CREATED, repository.reopenRejectedForPrint(rejected).stage());
+        assertEquals(0, count("SELECT COUNT(*) FROM ozon_exemplars WHERE posting_number='POST-1'"));
+    }
+
     private OzonExemplarService service() {
         return new OzonExemplarService(
                 new OzonPostingRepository(),

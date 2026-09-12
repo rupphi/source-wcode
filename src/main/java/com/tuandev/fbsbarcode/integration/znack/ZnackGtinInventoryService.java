@@ -73,7 +73,8 @@ public class ZnackGtinInventoryService {
     public int availableCount(int shopId, String gtin) {
         try (Connection c = Database.getConnection(); PreparedStatement ps = c.prepareStatement(
                 "SELECT COUNT(*) FROM kiz_codes WHERE shop_id=? AND gtin=? "
-                        + "AND status='AVAILABLE' AND legal_status='IN_CIRCULATION'")) {
+                        + "AND status='AVAILABLE' AND legal_status='IN_CIRCULATION' "
+                        + "AND NOT EXISTS (SELECT 1 FROM ozon_exemplars e WHERE e.kiz_id=kiz_codes.id)")) {
             ps.setInt(1, shopId);
             ps.setString(2, GtinNormalizer.normalize(gtin));
             try (ResultSet rs = ps.executeQuery()) {
@@ -163,6 +164,7 @@ public class ZnackGtinInventoryService {
                 UPDATE kiz_codes SET status='AVAILABLE',reservation_token=NULL,reserved_at=NULL,
                 reservation_recoverable=NULL,updated_at=?
                 WHERE status='RESERVED' AND reservation_recoverable=1
+                  AND NOT EXISTS (SELECT 1 FROM ozon_exemplars e WHERE e.kiz_id=kiz_codes.id)
                 """)) {
             ps.setString(1, now);
             int released = ps.executeUpdate();
@@ -179,6 +181,7 @@ public class ZnackGtinInventoryService {
         try (PreparedStatement ps = c.prepareStatement("""
                 SELECT id,raw_code FROM kiz_codes
                 WHERE shop_id=? AND gtin=? AND status='AVAILABLE' AND legal_status='IN_CIRCULATION'
+                  AND NOT EXISTS (SELECT 1 FROM ozon_exemplars e WHERE e.kiz_id=kiz_codes.id)
                 ORDER BY id LIMIT ?
                 """)) {
             ps.setInt(1, shopId);

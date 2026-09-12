@@ -144,6 +144,9 @@ public final class OzonExemplarJobRepository {
     /** Reopens an old, locally released Ozon rejection so its KIZ can be reserved for printing. */
     public OzonExemplarJob reopenRejectedForPrint(OzonExemplarJob job) {
         if (job.stage() != OzonExemplarJobStage.REJECTED) return job;
+        if (!bindings(job.id()).isEmpty()) {
+            throw new IllegalStateException("The rejected Ozon print job still owns KIZ bindings and requires reconciliation.");
+        }
         try (Connection connection = Database.getConnection()) {
             connection.setAutoCommit(false);
             try (PreparedStatement clear = connection.prepareStatement(
@@ -388,16 +391,35 @@ public final class OzonExemplarJobRepository {
         }
         try (Connection connection = Database.getConnection()) {
             connection.setAutoCommit(false);
-            try (PreparedStatement release = connection.prepareStatement("""
+            try (PreparedStatement count = connection.prepareStatement("""
+                    SELECT COUNT(*) FROM ozon_exemplars WHERE job_id=? AND kiz_id IS NOT NULL
+                    """);
+                    PreparedStatement release = connection.prepareStatement("""
                     UPDATE kiz_codes SET status='AVAILABLE',reservation_token=NULL,reserved_at=NULL,
                         reservation_recoverable=NULL,updated_at=?
                     WHERE id IN (SELECT kiz_id FROM ozon_exemplars WHERE job_id=? AND kiz_id IS NOT NULL)
                       AND status='RESERVED' AND reservation_token=?
+                    """);
+                    PreparedStatement unlink = connection.prepareStatement("""
+                    UPDATE ozon_exemplars SET kiz_id=NULL,updated_at=? WHERE job_id=? AND kiz_id IS NOT NULL
                     """)) {
-                release.setString(1, Instant.now().toString());
+                count.setLong(1, job.id());
+                int linked;
+                try (ResultSet result = count.executeQuery()) {
+                    linked = result.next() ? result.getInt(1) : 0;
+                }
+                String now = Instant.now().toString();
+                release.setString(1, now);
                 release.setLong(2, job.id());
                 release.setString(3, "ozon:" + job.id());
-                release.executeUpdate();
+                if (release.executeUpdate() != linked) {
+                    throw new IllegalStateException("One or more Ozon KIZ bindings are no longer owned by the rejected job.");
+                }
+                unlink.setString(1, now);
+                unlink.setLong(2, job.id());
+                if (unlink.executeUpdate() != linked) {
+                    throw new IllegalStateException("Ozon KIZ bindings changed while releasing a rejected job.");
+                }
                 transition(connection, job.id(), job.stage(), OzonExemplarJobStage.REJECTED,
                         job.requestFingerprint(), safeError, false);
                 connection.commit();
@@ -565,6 +587,7 @@ public final class OzonExemplarJobRepository {
         try (PreparedStatement statement = connection.prepareStatement("""
                 SELECT id FROM kiz_codes
                 WHERE shop_id=? AND gtin=? AND status='AVAILABLE' AND legal_status='IN_CIRCULATION'
+                  AND NOT EXISTS (SELECT 1 FROM ozon_exemplars e WHERE e.kiz_id=kiz_codes.id)
                 ORDER BY id LIMIT ?
                 """)) {
             statement.setInt(1, shopId);

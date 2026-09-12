@@ -411,6 +411,7 @@ jobs:
         run: |
           if ($env:UPDATE_MANIFEST_ENABLED -ceq 'true') {
             $env:RELEASE_NOTES_JSON = ConvertTo-Json -Compress -InputObject @(
+              'Khắc phục lỗi trùng KIZ khi in Ozon; giữ mã theo đúng đơn và tự phục hồi dữ liệu từ bản cũ',
               'Chọn loại hàng Znack theo từng nhóm danh mục và TN VED khi đăng ký đơn lẻ hoặc hàng loạt; bỏ qua nhóm chưa chọn',
               'Đăng ký thẻ Znack hàng loạt từ SKU WB, hỗ trợ cả giấy công bố và giấy chứng nhận',
               'Tự thêm GTIN đúng size trên WB sau khi thẻ được người dùng ký và xuất bản',
@@ -621,10 +622,13 @@ jobs:
           notes="$(cat <<EOF
           WCode ${APP_VERSION}
 
+          - Khắc phục lỗi SQLite UNIQUE constraint failed: ozon_exemplars.kiz_id khi in Ozon. KIZ đã gắn với một đơn không còn bị cấp lại cho đơn khác; lần in lại tiếp tục dùng đúng mã cũ.
+          - Tự phục hồi an toàn các liên kết KIZ Ozon bị bản cũ trả nhầm về kho. Chỉ khôi phục khi xác minh đúng cửa hàng, đúng đơn, KIZ đã lưu thông và chưa bị workflow khác sử dụng.
+          - Nếu tải hoặc tạo PDF Ozon thất bại, WCode giữ nguyên KIZ cho lần thử lại. Nếu PDF đã lưu nhưng bước ghi nhận cuối lỗi, KIZ cũng không bị cấp lại gây dán trùng.
           - Khắc phục lỗi "Waiting for the user to select this shop before signing" khi in đơn Wildberries: tự động ủy quyền phiên ký điện tử CryptoPro cho đúng cửa hàng đang in, cho phép mở cửa sổ nhập PIN / ký mua và lưu thông KIZ mượt mà mà không bị chặn bởi bảo vệ chạy ngầm.
           - Khắc phục lỗi NullPointerException ("cannot invoke java.lang.Long.longValue()") khi in đơn Wildberries có tự động mua KIZ thiếu.
           - Khắc phục triệt để lỗi thiếu dữ liệu catalog Ozon FBS ("product identity is missing or ambiguous"): tự động so khớp 2 chiều giữa SKU và Product ID, kết hợp fallback theo Offer ID.
-          - Bảo vệ mã KIZ Ozon: pre-validate đơn hàng trước khi giữ chỗ KIZ, tuyệt đối không trừ oan KIZ khi in thất bại; tự động hoàn trả KIZ về AVAILABLE nếu gặp sự cố tải nhãn hoặc lỗi hệ thống.
+          - Bảo vệ mã KIZ Ozon: pre-validate đơn hàng trước khi giữ chỗ KIZ và giữ liên kết bền vững theo đúng đơn để in lại an toàn khi gặp sự cố tải nhãn hoặc lỗi hệ thống.
           - Nâng cấp phiếu nhặt hàng Ozon: hiển thị chỉ số đơn nhiều món [Đơn N món: X/N], hiển thị (Chung đơn: N kiện) cho đơn tách kiện; cột Sticker hiển thị mã vạch sản phẩm và đuôi tem vận chuyển Ozon để đối soát đóng gói, chống dán nhầm tem.
           - Chọn Вид товара [12] trực tiếp từ danh sách Znack cho từng nhóm danh mục WB, TN VED và danh mục Znack. Không tự suy đoán loại hàng từ tên danh mục WB. Xem sản phẩm theo nhóm, bỏ qua nhóm chưa chọn hoặc hủy trước khi tạo GTIN; áp dụng cho đăng ký đơn lẻ và hàng loạt.
           - Đăng ký thẻ Znack từ SKU Wildberries: tự điền thuộc tính, chọn từng SKU hoặc tất cả kết quả theo bộ lọc, kiểm tra dữ liệu và đăng ký hàng loạt qua hàng đợi có khôi phục.
