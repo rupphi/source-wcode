@@ -51,7 +51,7 @@ class ZnackNationalCatalogServiceTest {
     }
 
     @Test
-    void usesRussianSizeTypeOnlyWhenTheWbRussianSizeConfirmsIt() {
+    void prefersRussianSizeTypeForNumericAndDomesticSizes() {
         var schema = ZnackNationalCatalogService.parseAttributes(JsonParser.parseString("""
                 {"result":[{"attr_id":35,"attr_name":"Размер одежды / изделия",
                 "attr_value_type":["ЕВРОПЕЙСКИЙ","РОССИЙСКИЙ","МЕЖДУНАРОДНЫЙ"]}]}
@@ -59,15 +59,26 @@ class ZnackNationalCatalogServiceTest {
         Draft draft = new Draft("6204", 30933, "Брюки", "Brand", Map.of(35L, "48"));
         assertEquals("РОССИЙСКИЙ", ZnackCardRegistrationWorkflow.withSchemaTypes(draft, schema, "48")
                 .attributeTypes().get(35L));
-        assertThrows(IllegalArgumentException.class,
-                () -> ZnackCardRegistrationWorkflow.withSchemaTypes(draft, schema, "52"));
+        assertEquals("РОССИЙСКИЙ", ZnackCardRegistrationWorkflow.withSchemaTypes(draft, schema, "52")
+                .attributeTypes().get(35L));
+        assertEquals("РОССИЙСКИЙ", ZnackCardRegistrationWorkflow.withSchemaTypes(draft, schema, "")
+                .attributeTypes().get(35L));
+
+        var nationalSchemaWithPlaceholder = ZnackNationalCatalogService.parseAttributes(JsonParser.parseString("""
+                {"result":[{"attr_id":35,"attr_name":"Размер одежды / изделия",
+                "attr_value_type":["РОССИЯ","АВСТРАЛИЯ","ЕВРОПА","---"]}]}
+                """));
+        Draft childDraft = new Draft("6204", 30933, "Брюки", "Brand", Map.of(35L, "130"));
+        assertEquals("РОССИЯ", ZnackCardRegistrationWorkflow.withSchemaTypes(childDraft, nationalSchemaWithPlaceholder, "")
+                .attributeTypes().get(35L));
+
         var russianOnly = ZnackNationalCatalogService.parseAttributes(JsonParser.parseString("""
                 {"result":[{"attr_id":35,"attr_name":"Размер одежды / изделия",
                 "attr_value_type":["РОССИЙСКИЙ"]}]}
                 """));
         Draft international = new Draft("6204", 30933, "Брюки", "Brand", Map.of(35L, "L"));
-        assertThrows(IllegalArgumentException.class,
-                () -> ZnackCardRegistrationWorkflow.withSchemaTypes(international, russianOnly, "48"));
+        assertEquals("РОССИЙСКИЙ", ZnackCardRegistrationWorkflow.withSchemaTypes(international, russianOnly, "48")
+                .attributeTypes().get(35L));
     }
 
     @Test

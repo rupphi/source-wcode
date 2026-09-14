@@ -126,6 +126,54 @@ class ZnackWbAttributeMapperTest {
         assertEquals("Унисекс", result.attributes().get(14013L));
     }
 
+    @Test
+    void resolvesRussianSizeForNumericClothesSizesInsteadOfPlaceholder() {
+        Attribute sizeAttr = new Attribute(35, "Размер одежды / изделия", "text", false, false, true, false,
+                List.of(), List.of("РОССИЯ", "АВСТРАЛИЯ", "АНГЛИЯ", "БЕЛОРУССИЯ", "ВЕЛИКОБРИТАНИЯ", "ЕВРОПА", "---"));
+
+        assertEquals("РОССИЯ", ZnackWbAttributeMapper.resolveValueType(sizeAttr, "130", ""));
+        assertEquals("РОССИЯ", ZnackWbAttributeMapper.resolveValueType(sizeAttr, "130", "130"));
+        assertEquals("РОССИЯ", ZnackWbAttributeMapper.resolveValueType(sizeAttr, "130", "128-134"));
+    }
+
+    @Test
+    void resolvesRussianSizeForAdultNumericSizesEvenWhenWbSizeBlank() {
+        Attribute sizeAttr = new Attribute(35, "Размер одежды / изделия", "text", false, false, true, false,
+                List.of(), List.of("ЕВРОПЕЙСКИЙ", "РОССИЙСКИЙ", "МЕЖДУНАРОДНЫЙ", "---"));
+
+        assertEquals("РОССИЙСКИЙ", ZnackWbAttributeMapper.resolveValueType(sizeAttr, "44", ""));
+        assertEquals("РОССИЙСКИЙ", ZnackWbAttributeMapper.resolveValueType(sizeAttr, "48", null));
+    }
+
+    @Test
+    void resolvesInternationalSizeWhenPresentInSchema() {
+        Attribute sizeAttr = new Attribute(35, "Размер одежды / изделия", "text", false, false, true, false,
+                List.of(), List.of("РОССИЯ", "МЕЖДУНАРОДНЫЙ", "---"));
+
+        assertEquals("МЕЖДУНАРОДНЫЙ", ZnackWbAttributeMapper.resolveValueType(sizeAttr, "M", ""));
+        assertEquals("МЕЖДУНАРОДНЫЙ", ZnackWbAttributeMapper.resolveValueType(sizeAttr, "2XL", ""));
+        assertEquals("МЕЖДУНАРОДНЫЙ", ZnackWbAttributeMapper.resolveValueType(sizeAttr, "ONE SIZE", ""));
+    }
+
+    @Test
+    void fallsBackToRussianSizeForInternationalSizeWhenSchemaHasNoInternationalType() {
+        Attribute sizeAttr = new Attribute(35, "Размер одежды / изделия", "text", false, false, true, false,
+                List.of(), List.of("РОССИЯ", "ЕВРОПА", "---"));
+
+        assertEquals("РОССИЯ", ZnackWbAttributeMapper.resolveValueType(sizeAttr, "M", ""));
+    }
+
+    @Test
+    void selectsChildrenTechnicalRegulationWhenAdultTrNotPreset() {
+        Attribute trAttr = new Attribute(13836, "Номер технического регламента", "text", true, false, true, false,
+                List.of("ТР ТС 007/2011 О безопасности продукции, предназначенной для детей и подростков"));
+        Sku sku = new Sku(1, 2, 3, "ART-1", "Платье детское", "Brand", "Платье",
+                "", "130", List.of(), "", true, "", null, "", Status.NOT_CREATED, "", false);
+
+        String tr = ZnackWbAttributeMapper.automaticValue(trAttr, sku, List.of(), "6204", "6204");
+        assertEquals("ТР ТС 007/2011 О безопасности продукции, предназначенной для детей и подростков", tr);
+    }
+
     private static Attribute attribute(long id, String name) {
         return new Attribute(id, name, "text", false, false, true, false, List.of());
     }

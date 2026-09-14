@@ -94,25 +94,74 @@ public final class ZnackWbAttributeMapper {
         if (types.isEmpty()) return "";
         if (attribute.id() == MODEL) {
             for (String type : types) if (normalize(type).contains("артикул")) return type;
+            for (String type : types) if (normalize(type).contains("модель")) return type;
+            String nonPlaceholder = firstNonPlaceholder(types);
+            if (nonPlaceholder != null) return nonPlaceholder;
         }
-        if (attribute.id() == SIZE) {
+        if (isSizeAttribute(attribute)) {
             String size = clean(value).toUpperCase(Locale.ROOT);
-            boolean international = size.matches("(?:[2-9]?[XSML]+)(?:[-/](?:[2-9]?[XSML]+))*");
+            boolean international = size.matches("(?:[2-9]?[XSML]+)(?:[-/](?:[2-9]?[XSML]+))*")
+                    || size.contains("ONE SIZE") || size.contains("ONESIZE");
+
+            // 1. If explicitly international size (XS, S, M, L, XL, etc.) and schema offers an international type:
+            if (international) {
+                for (String type : types) {
+                    String normalized = normalize(type);
+                    if (normalized.contains("международ") || normalized.equals("int")) return type;
+                }
+            }
+
+            // 2. ALWAYS prefer Russian size (РОССИЯ / РОССИЙСКИЙ) for Znack cards:
             for (String type : types) {
                 String normalized = normalize(type);
-                if (international && (normalized.contains("международ") || normalized.equals("int"))) return type;
-                if (!international && !clean(wbSize).isBlank() && clean(wbSize).equalsIgnoreCase(clean(value))
-                        && normalized.contains("росси")) return type;
+                if (isRussianType(normalized)) return type;
             }
-            // Numeric techSize alone cannot distinguish Russian, EU, US or other sizing.
-            // Do not label an international size as Russian just because it is the sole option.
+
+            // 3. If international size and no Russian type was found, try international:
+            if (international) {
+                for (String type : types) {
+                    String normalized = normalize(type);
+                    if (normalized.contains("международ") || normalized.equals("int")) return type;
+                }
+            }
+
+            // 4. Fallback to any concrete non-placeholder type (never pick "---" or "..." if a valid type exists):
+            String nonPlaceholder = firstNonPlaceholder(types);
+            if (nonPlaceholder != null) return nonPlaceholder;
+
             if (types.contains("")) return "";
             if (types.contains("---")) return "---";
             return null;
         }
+
+        String nonPlaceholder = firstNonPlaceholder(types);
+        if (nonPlaceholder != null) return nonPlaceholder;
+
         if (types.size() == 1) return types.getFirst();
         if (types.contains("")) return "";
         if (types.contains("---")) return "---";
+        return null;
+    }
+
+    static boolean isSizeAttribute(Attribute attribute) {
+        if (attribute.id() == SIZE) return true;
+        String name = normalize(attribute.name());
+        return name.contains("размер одежды") || name.contains("размер изделия")
+                || name.contains("размер обуви") || name.equals("размер")
+                || name.startsWith("размер");
+    }
+
+    private static boolean isRussianType(String normalized) {
+        return normalized.contains("росси") || normalized.equals("рф")
+                || normalized.equals("ru") || normalized.equals("rus");
+    }
+
+    private static String firstNonPlaceholder(List<String> types) {
+        for (String type : types) {
+            if (type != null && !type.isBlank() && !type.equals("---") && !type.equals("...") && !type.equals("-")) {
+                return type;
+            }
+        }
         return null;
     }
 
@@ -128,7 +177,10 @@ public final class ZnackWbAttributeMapper {
         if (id == MODEL || name.contains("артикул производителя") || name.contains("модель")) {
             return clean(sku.vendorCode());
         }
-        if (id == SIZE || name.contains("размер одежды") || name.equals("размер")) return clean(sku.size());
+        if (id == SIZE || name.contains("размер одежды") || name.contains("размер изделия")
+                || name.contains("размер обуви") || name.equals("размер") || name.startsWith("размер")) {
+            return clean(sku.size());
+        }
         if (id == COLOR || name.contains("цвет")) return firstCharacteristic(characteristics,
                 List.of("цвет"), clean(sku.color()));
         if (id == COMPOSITION || name.contains("состав")) return firstCharacteristic(characteristics,
@@ -138,7 +190,11 @@ public final class ZnackWbAttributeMapper {
         }
         if (id == GOODS_KIND || name.contains("вид товара")) return clean(sku.subjectName());
         if (name.contains("технического регламента") || name.contains("технический регламент")) {
-            return presetContaining(attribute, "017/2011");
+            String tr017 = presetContaining(attribute, "017/2011");
+            if (!tr017.isBlank()) return tr017;
+            String tr007 = presetContaining(attribute, "007/2011");
+            if (!tr007.isBlank()) return tr007;
+            if (!attribute.presets().isEmpty()) return attribute.presets().getFirst();
         }
 
         String exact = matchingCharacteristic(characteristics, name);
@@ -146,7 +202,7 @@ public final class ZnackWbAttributeMapper {
         if (name.contains("страна происхождения") || name.contains("страна производства")) {
             return firstCharacteristic(characteristics, List.of("страна производства", "страна происхождения"), "");
         }
-        if (name.contains("производител")) {
+        if (name.contains("производител") || name.contains("изготовител")) {
             return firstCharacteristic(characteristics, List.of("производитель", "изготовитель"), "");
         }
         return "";

@@ -239,7 +239,9 @@ public final class ZnackNationalCatalogService {
             JsonObject attribute = new JsonObject();
             attribute.addProperty("attr_id", entry.getKey());
             attribute.addProperty("attr_value", entry.getValue().trim());
-            attribute.addProperty("attr_value_type", draft.attributeTypes().getOrDefault(entry.getKey(), ""));
+            String type = draft.attributeTypes().getOrDefault(entry.getKey(), "");
+            if ("---".equals(type) || "...".equals(type)) type = "";
+            attribute.addProperty("attr_value_type", type);
             attributes.add(attribute);
         });
         payload.add("good_attrs", attributes);

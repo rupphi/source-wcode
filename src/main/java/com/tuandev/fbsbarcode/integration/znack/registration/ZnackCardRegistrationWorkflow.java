@@ -184,7 +184,12 @@ public final class ZnackCardRegistrationWorkflow {
             String value = draft.attributes().get(attribute.id());
             if (value == null || value.isBlank()) continue;
             String type = types.get(attribute.id());
-            if (type == null || (!attribute.valueTypes().isEmpty() && !attribute.valueTypes().contains(type))) {
+            boolean needsResolution = type == null
+                    || type.isBlank()
+                    || type.equals("---")
+                    || type.equals("...")
+                    || (!attribute.valueTypes().isEmpty() && !attribute.valueTypes().contains(type));
+            if (needsResolution) {
                 type = ZnackWbAttributeMapper.resolveValueType(attribute, value, wbSize);
             }
             if (type == null) {
