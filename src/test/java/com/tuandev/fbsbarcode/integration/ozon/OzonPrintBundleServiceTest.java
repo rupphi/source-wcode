@@ -166,9 +166,9 @@ class OzonPrintBundleServiceTest {
         assertEquals(2, result.kizPages());
         try (PDDocument document = Loader.loadPDF(labels.toFile())) {
             assertTrue(pageText(document, 0).contains("OZN3583"));
-            assertTrue(pageText(document, 2).contains("OZN3583"));
+            assertTrue(pageText(document, 1).contains("OZN3583"));
             assertEquals(KizService.scannerSafeCode(RAW_KIZ),
-                    KizService.scannerSafeCode(decodeRenderedDataMatrixResult(document, 1, 300).getText()));
+                    KizService.scannerSafeCode(decodeRenderedDataMatrixResult(document, 2, 300).getText()));
             assertEquals(KizService.scannerSafeCode(secondKiz),
                     KizService.scannerSafeCode(decodeRenderedDataMatrixResult(document, 3, 300).getText()));
             assertEquals("OFFICIAL-1", pageText(document, 4).strip());
@@ -296,7 +296,7 @@ class OzonPrintBundleServiceTest {
     }
 
     @Test
-    void printAllMergesEveryPostingIntoOneLabelFileAndOnePickingFile() throws Exception {
+    void printAllKeepsEachPostingBundleTogetherInRequestedOrder() throws Exception {
         seedUnmarkedPosting("POST-1", "SKU-1", "offer-black-64");
         seedUnmarkedPosting("POST-2", "SKU-2", "offer-blue-68");
         OzonProductKizPolicyRepository policies = new OzonProductKizPolicyRepository();

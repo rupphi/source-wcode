@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 public class WbProductSyncService {
@@ -31,22 +32,29 @@ public class WbProductSyncService {
     }
 
     public int sync(Shop shop) throws IOException {
-        WbShopSyncState state = syncStateRepository.getShopSyncState(shop.getId());
         long runId = syncRunRepository.startSyncRun(shop.getId(), "products");
         int read = 0;
         int written = 0;
-        String cursorUpdatedAt = state.productsCursorUpdatedAt();
-        Long cursorNmId = state.productsCursorNmId();
+        String cursorUpdatedAt = null;
+        Long cursorNmId = null;
+        Set<Long> activeNmIds = new LinkedHashSet<>();
         try {
             while (true) {
                 WbProductCardsResponse response = apiClient.getProductCards(shop.getApiKey(), "ru", cursorUpdatedAt, cursorNmId, PAGE_LIMIT);
-                if (response == null || response.getCards() == null || response.getCards().isEmpty()) {
+                validateSnapshotPage(response);
+                if (response.getCards().isEmpty()) {
+                    written += productRepository.deleteProductsMissingFromSnapshot(shop.getId(), activeNmIds);
                     syncStateRepository.updateProductsCursor(shop.getId(), cursorUpdatedAt, cursorNmId, Instant.now().toString());
                     syncRunRepository.finishSyncRun(runId, true, read, written, null, null);
                     return written;
                 }
 
                 productRepository.saveProductBatch(shop.getId(), response.getCards());
+                response.getCards().stream()
+                        .map(WbProductCard::getNmID)
+                        .filter(Objects::nonNull)
+                        .filter(nmId -> nmId > 0)
+                        .forEach(activeNmIds::add);
                 read += response.getCards().size();
                 written += response.getCards().size();
 
@@ -58,6 +66,7 @@ public class WbProductSyncService {
                 syncStateRepository.updateProductsCursor(shop.getId(), cursorUpdatedAt, cursorNmId, Instant.now().toString());
                 Integer total = response.getCursor() == null ? null : response.getCursor().getTotal();
                 if (total == null || total < PAGE_LIMIT) {
+                    written += productRepository.deleteProductsMissingFromSnapshot(shop.getId(), activeNmIds);
                     syncRunRepository.finishSyncRun(runId, true, read, written, null, null);
                     return written;
                 }
@@ -71,6 +80,15 @@ public class WbProductSyncService {
             syncStateRepository.saveSyncError(shop.getId(), ex.getMessage());
             syncRunRepository.finishSyncRun(runId, false, read, written, ex instanceof WbApiException wb ? String.valueOf(wb.getStatusCode()) : "local_error", ex.getMessage());
             throw ex;
+        }
+    }
+
+    private void validateSnapshotPage(WbProductCardsResponse response) throws IOException {
+        if (response == null || response.getCards() == null) {
+            throw new IOException("WB product catalog response is incomplete; local cards were kept unchanged.");
+        }
+        if (response.getCursor() == null || response.getCursor().getTotal() == null) {
+            throw new IOException("WB product catalog cursor is incomplete; local cards were kept unchanged.");
         }
     }
 

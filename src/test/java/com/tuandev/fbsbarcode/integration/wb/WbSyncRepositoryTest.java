@@ -10,9 +10,53 @@ import java.sql.Statement;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 class WbSyncRepositoryTest {
     private static final Gson GSON = new Gson();
+
+    @Test
+    void shouldChangeStoredPhotoUrlWhenWbReplacesImageAtSameCdnUrl() throws Exception {
+        try (Connection conn = DriverManager.getConnection("jdbc:sqlite::memory:")) {
+            try (Statement st = conn.createStatement()) {
+                st.execute("PRAGMA foreign_keys = ON");
+                st.execute("CREATE TABLE shops(id INTEGER PRIMARY KEY, name TEXT NOT NULL, api_key TEXT NOT NULL)");
+                st.execute("CREATE TABLE categories(id INTEGER PRIMARY KEY, name TEXT NOT NULL)");
+                st.execute("INSERT INTO shops(id, name, api_key) VALUES (1, 'Shop 1', 'token')");
+            }
+            WbSchemaSupport.initialize(conn);
+            WbProductRepository repository = new WbProductRepository();
+            String stableCdnUrl = "https://basket-22.wbbasket.ru/vol1/part1/1/images/c246x328/1.webp";
+
+            WbProductCard first = productCardWithPhoto(stableCdnUrl, "2026-09-01T10:00:00Z");
+            repository.saveProductBatch(conn, 1, List.of(first));
+            String firstStoredUrl = scalarString(conn,
+                    "SELECT c246x328_url FROM wb_product_photos WHERE shop_id = 1 AND nm_id = 12345678");
+
+            WbProductCard changed = productCardWithPhoto(stableCdnUrl, "2026-09-02T10:00:00Z");
+            repository.saveProductBatch(conn, 1, List.of(changed));
+            String changedStoredUrl = scalarString(conn,
+                    "SELECT c246x328_url FROM wb_product_photos WHERE shop_id = 1 AND nm_id = 12345678");
+
+            assertNotEquals(firstStoredUrl, changedStoredUrl);
+        }
+    }
+
+    private WbProductCard productCardWithPhoto(String imageUrl, String updatedAt) {
+        return GSON.fromJson("""
+                {
+                  "nmID": 12345678,
+                  "vendorCode": "article-1",
+                  "title": "Product",
+                  "photos": [{"c246x328":"%s"}],
+                  "sizes": [],
+                  "characteristics": [],
+                  "tags": [],
+                  "createdAt": "2026-08-01T10:00:00Z",
+                  "updatedAt": "%s"
+                }
+                """.formatted(imageUrl, updatedAt), WbProductCard.class);
+    }
 
     @Test
     void shouldUpsertProductAndOrderDataIntoNormalizedTables() throws Exception {

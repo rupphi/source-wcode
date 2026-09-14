@@ -9,10 +9,25 @@ import java.io.IOException;
 
 public class WbSyncWorkflow {
     private static final Logger LOGGER = LoggerFactory.getLogger(WbSyncWorkflow.class);
-    private final WbProductSyncService productSyncService = new WbProductSyncService();
-    private final WbSupplySyncService supplySyncService = new WbSupplySyncService();
-    private final WbOrderSyncService orderSyncService = new WbOrderSyncService();
-    private final WbSyncStateRepository syncStateRepository = new WbSyncStateRepository();
+    private final WbProductSyncService productSyncService;
+    private final WbSupplySyncService supplySyncService;
+    private final WbOrderSyncService orderSyncService;
+    private final WbSyncStateRepository syncStateRepository;
+
+    public WbSyncWorkflow() {
+        this(new WbProductSyncService(), new WbSupplySyncService(), new WbOrderSyncService(),
+                new WbSyncStateRepository());
+    }
+
+    WbSyncWorkflow(WbProductSyncService productSyncService,
+                   WbSupplySyncService supplySyncService,
+                   WbOrderSyncService orderSyncService,
+                   WbSyncStateRepository syncStateRepository) {
+        this.productSyncService = productSyncService;
+        this.supplySyncService = supplySyncService;
+        this.orderSyncService = orderSyncService;
+        this.syncStateRepository = syncStateRepository;
+    }
 
     public int syncProducts(Shop shop) throws IOException {
         MarketplaceGuard.requireWildberries(shop);
@@ -22,13 +37,11 @@ public class WbSyncWorkflow {
     public WbSyncReport syncOverview(Shop shop) throws IOException {
         MarketplaceGuard.requireWildberries(shop);
         WbShopSyncState state = syncStateRepository.getShopSyncState(shop.getId());
-        boolean needsInitialProductSync = state.productsLastSyncedAt() == null || state.productsLastSyncedAt().isBlank();
         boolean needsInitialSupplySync = state.suppliesLastSyncedAt() == null || state.suppliesLastSyncedAt().isBlank();
 
-        int products = 0;
-        if (needsInitialProductSync) {
-            products = syncProductsIfAvailable(shop);
-        }
+        // Refresh the authoritative active-card snapshot to pick up seller edits and
+        // remove local cards which have been deleted or moved to WB's trash.
+        int products = syncProductsIfAvailable(shop);
 
         if (needsInitialSupplySync) {
             int supplies = supplySyncService.syncUntilOpenSuppliesFound(shop);

@@ -241,7 +241,7 @@ public final class OzonPrintBundleService {
             }
             labelStaging = AtomicFilePublisher.stagingFile(labelTarget, ".batch.pdf");
             pickingStaging = AtomicFilePublisher.stagingFile(pickingTarget, ".batch-picking.pdf");
-            merge(labelParts, labelStaging);
+            mergePostingBundles(labelParts, labelStaging);
             pickingLists.exportPlans(pickingStaging, shop, batchPlans);
             AtomicFilePublisher.publish(labelStaging, labelTarget);
             labelStaging = null;
@@ -265,7 +265,8 @@ public final class OzonPrintBundleService {
         }
     }
 
-    private static void merge(List<File> parts, File target) throws IOException {
+    /** Keeps each posting together in the requested order before moving to the next posting. */
+    private static void mergePostingBundles(List<File> parts, File target) throws IOException {
         try (PdfDocument destination = new PdfDocument(new PdfWriter(target))) {
             for (File part : parts) {
                 try (PdfDocument source = new PdfDocument(new PdfReader(part))) {
@@ -297,9 +298,11 @@ public final class OzonPrintBundleService {
             for (var line : plan.lines()) {
                 for (int unit = 0; unit < line.item().quantity(); unit++) {
                     OzonProductBarcodeAppender.append(destination, line);
-                    if (!line.bindings().isEmpty()) {
-                        kizLabels.appendUnit(destination, line, unit);
-                    }
+                }
+            }
+            for (var line : plan.lines()) {
+                for (int unit = 0; unit < line.item().quantity(); unit++) {
+                    if (!line.bindings().isEmpty()) kizLabels.appendUnit(destination, line, unit);
                 }
             }
             // All official pages belong to the posting, not an arbitrary item index.

@@ -2,12 +2,19 @@ package com.tuandev.fbsbarcode.integration.wb;
 
 import com.tuandev.fbsbarcode.config.Database;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static com.tuandev.fbsbarcode.integration.wb.WbRepositorySupport.safeLong;
 import static com.tuandev.fbsbarcode.integration.wb.WbRepositorySupport.setNullableBoolean;
@@ -36,6 +43,64 @@ public class WbProductRepository {
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    /**
+     * Removes cards which were not present in a successfully completed WB catalog snapshot.
+     * The comparison and deletion are scoped to one shop and committed atomically.
+     */
+    public int deleteProductsMissingFromSnapshot(int shopId, Set<Long> activeNmIds) {
+        if (shopId <= 0) throw new IllegalArgumentException("Invalid WB shop id.");
+        Set<Long> active = activeNmIds == null ? Set.of() : activeNmIds.stream()
+                .filter(Objects::nonNull)
+                .filter(value -> value > 0)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        try (Connection conn = Database.getConnection()) {
+            conn.setAutoCommit(false);
+            try {
+                List<Long> missing = findProductIds(conn, shopId).stream()
+                        .filter(nmId -> !active.contains(nmId))
+                        .toList();
+                int deleted = deleteProducts(conn, shopId, missing);
+                conn.commit();
+                return deleted;
+            } catch (Exception ex) {
+                conn.rollback();
+                throw ex;
+            } finally {
+                conn.setAutoCommit(true);
+            }
+        } catch (SQLException ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    private List<Long> findProductIds(Connection conn, int shopId) throws SQLException {
+        try (PreparedStatement statement = conn.prepareStatement(
+                "SELECT nm_id FROM wb_product_cards WHERE shop_id = ?")) {
+            statement.setInt(1, shopId);
+            try (var result = statement.executeQuery()) {
+                List<Long> ids = new ArrayList<>();
+                while (result.next()) ids.add(result.getLong(1));
+                return ids;
+            }
+        }
+    }
+
+    private int deleteProducts(Connection conn, int shopId, List<Long> nmIds) throws SQLException {
+        int deleted = 0;
+        for (int start = 0; start < nmIds.size(); start += IN_CLAUSE_BATCH_SIZE) {
+            List<Long> batch = nmIds.subList(start, Math.min(start + IN_CLAUSE_BATCH_SIZE, nmIds.size()));
+            String placeholders = String.join(", ", Collections.nCopies(batch.size(), "?"));
+            try (PreparedStatement statement = conn.prepareStatement(
+                    "DELETE FROM wb_product_cards WHERE shop_id = ? AND nm_id IN (" + placeholders + ")")) {
+                statement.setInt(1, shopId);
+                int parameter = 2;
+                for (Long nmId : batch) statement.setLong(parameter++, nmId);
+                deleted += statement.executeUpdate();
+            }
+        }
+        return deleted;
     }
 
     void saveProductBatch(Connection conn, int shopId, List<WbProductCard> cards) throws SQLException {
@@ -170,7 +235,7 @@ public class WbProductRepository {
                 if (nmId <= 0) {
                     continue;
                 }
-                addPhotosBatch(photosPs, shopId, nmId, card.getPhotos());
+                addPhotosBatch(photosPs, shopId, nmId, card.getPhotos(), card.getUpdatedAt());
                 addSizesBatch(sizesPs, skusPs, shopId, nmId, card.getSizes());
                 addCharacteristicsBatch(characteristicsPs, shopId, nmId, card.getCharacteristics());
                 addTagsBatch(tagsPs, shopId, nmId, card.getTags());
@@ -183,7 +248,8 @@ public class WbProductRepository {
         }
     }
 
-    private void addPhotosBatch(PreparedStatement ps, int shopId, long nmId, List<WbProductCard.Photo> photos) throws SQLException {
+    private void addPhotosBatch(PreparedStatement ps, int shopId, long nmId,
+                                List<WbProductCard.Photo> photos, String updatedAt) throws SQLException {
         if (photos == null || photos.isEmpty()) {
             return;
         }
@@ -192,14 +258,28 @@ public class WbProductRepository {
             ps.setInt(1, shopId);
             ps.setLong(2, nmId);
             ps.setInt(3, i);
-            ps.setString(4, photo.getBig());
-            ps.setString(5, photo.getC246x328());
-            ps.setString(6, photo.getC516x688());
-            ps.setString(7, photo.getHq());
-            ps.setString(8, photo.getSquare());
-            ps.setString(9, photo.getTm());
+            ps.setString(4, versionPhotoUrl(photo.getBig(), updatedAt));
+            ps.setString(5, versionPhotoUrl(photo.getC246x328(), updatedAt));
+            ps.setString(6, versionPhotoUrl(photo.getC516x688(), updatedAt));
+            ps.setString(7, versionPhotoUrl(photo.getHq(), updatedAt));
+            ps.setString(8, versionPhotoUrl(photo.getSquare(), updatedAt));
+            ps.setString(9, versionPhotoUrl(photo.getTm(), updatedAt));
             ps.addBatch();
         }
+    }
+
+    /**
+     * WB keeps the same CDN path when a seller replaces a product image. The card's
+     * updatedAt value changes, so include it in the local URL identity to prevent the
+     * persistent and in-memory image caches from serving the previous bytes.
+     */
+    static String versionPhotoUrl(String imageUrl, String updatedAt) {
+        if (imageUrl == null || imageUrl.isBlank() || updatedAt == null || updatedAt.isBlank()) {
+            return imageUrl;
+        }
+        String separator = imageUrl.contains("?") ? "&" : "?";
+        return imageUrl + separator + "wcode_revision="
+                + URLEncoder.encode(updatedAt.strip(), StandardCharsets.UTF_8);
     }
 
     private void addSizesBatch(PreparedStatement psSize, PreparedStatement psSku, int shopId, long nmId, List<WbProductCard.Size> sizes) throws SQLException {
