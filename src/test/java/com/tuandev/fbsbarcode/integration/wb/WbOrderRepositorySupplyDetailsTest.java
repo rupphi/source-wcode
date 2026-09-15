@@ -243,7 +243,7 @@ class WbOrderRepositorySupplyDetailsTest {
     }
 
     @Test
-    void shouldUseLocalSupplyOrderLinksBeforeSupplyOrderCount() throws Exception {
+    void shouldPreferAuthoritativeSupplyOrderCountWhenLocalLinksAreIncomplete() throws Exception {
         System.setProperty("wcode.appdata.dir", tempDir.toString());
         Database.initDatabase();
         try (Connection conn = Database.getConnection();
@@ -263,10 +263,78 @@ class WbOrderRepositorySupplyDetailsTest {
                     """);
         }
 
-        List<WbSupplySummary> supplies = new WbSupplyRepository().getSupplySummaries(1);
+        WbSupplyRepository repository = new WbSupplyRepository();
+        List<WbSupplySummary> supplies = repository.getSupplySummaries(1);
+        WbSupplySummary detail = repository.findSupplySummary(1, "WB-GI-LINKS");
+        WbSupplyRepository.SupplyPage page = repository.findSupplyPage(1, "", false, 25, 0);
 
         assertEquals(1, supplies.size());
-        assertEquals(2, supplies.getFirst().getItemCount());
+        assertEquals(3, supplies.getFirst().getItemCount());
+        assertEquals(3, detail.getItemCount());
+        assertEquals(1, page.items().size());
+        assertEquals(3, page.items().getFirst().getItemCount());
+    }
+
+    @Test
+    void shouldMoveOrdersOutOfStaleSupplyLinksDuringAuthoritativeReplacement() throws Exception {
+        System.setProperty("wcode.appdata.dir", tempDir.toString());
+        Database.initDatabase();
+        try (Connection conn = Database.getConnection();
+             Statement st = conn.createStatement()) {
+            st.execute("INSERT INTO shops(id, name, api_key) VALUES (1, 'Shop', 'token')");
+            st.execute("""
+                    INSERT INTO wb_supplies(shop_id, supply_id, done, order_count, synced_at)
+                    VALUES (1, 'WB-OLD', 0, 0, 'now'), (1, 'WB-NEW', 0, 2, 'now')
+                    """);
+            st.execute("""
+                    INSERT INTO wb_orders(shop_id, order_id, supply_id, synced_at)
+                    VALUES (1, 8101, 'WB-NEW', 'now'), (1, 8102, 'WB-NEW', 'now')
+                    """);
+            st.execute("""
+                    INSERT INTO wb_supply_orders(shop_id, supply_id, order_id)
+                    VALUES
+                      (1, 'WB-OLD', 8101), (1, 'WB-OLD', 8102),
+                      (1, 'WB-NEW', 8101), (1, 'WB-NEW', 8102)
+                    """);
+        }
+
+        WbOrderRepository repository = new WbOrderRepository();
+        repository.replaceSupplyOrders(1, "WB-NEW", List.of(8101L, 8102L));
+
+        assertEquals(List.of(), repository.getOrderIdsForSupply(1, "WB-OLD"));
+        assertEquals(List.of(8101L, 8102L), repository.getOrderIdsForSupply(1, "WB-NEW"));
+        assertEquals("WB-NEW", supplyIdForOrder(8101L));
+        assertEquals("WB-NEW", supplyIdForOrder(8102L));
+    }
+
+    @Test
+    void emptyStaleSupplySyncMustNotClearCurrentOrderAssignment() throws Exception {
+        System.setProperty("wcode.appdata.dir", tempDir.toString());
+        Database.initDatabase();
+        try (Connection conn = Database.getConnection();
+             Statement st = conn.createStatement()) {
+            st.execute("INSERT INTO shops(id, name, api_key) VALUES (1, 'Shop', 'token')");
+            st.execute("""
+                    INSERT INTO wb_supplies(shop_id, supply_id, done, order_count, synced_at)
+                    VALUES (1, 'WB-OLD', 0, 1, 'now'), (1, 'WB-NEW', 0, 1, 'now')
+                    """);
+            st.execute("""
+                    INSERT INTO wb_orders(shop_id, order_id, supply_id, synced_at)
+                    VALUES (1, 8201, 'WB-NEW', 'now')
+                    """);
+            st.execute("""
+                    INSERT INTO wb_supply_orders(shop_id, supply_id, order_id)
+                    VALUES (1, 'WB-OLD', 8201), (1, 'WB-NEW', 8201)
+                    """);
+        }
+
+        WbOrderRepository repository = new WbOrderRepository();
+        repository.replaceSupplyOrders(1, "WB-OLD", List.of());
+
+        assertEquals(List.of(), repository.getOrderIdsForSupply(1, "WB-OLD"));
+        assertEquals(List.of(8201L), repository.getOrderIdsForSupply(1, "WB-NEW"));
+        assertEquals("WB-NEW", supplyIdForOrder(8201L));
+        assertEquals(0, new WbSupplyRepository().findSupplySummary(1, "WB-OLD").getItemCount());
     }
 
     @Test
@@ -286,6 +354,17 @@ class WbOrderRepositorySupplyDetailsTest {
 
         assertEquals(1, supplies.size());
         assertEquals(0, supplies.getFirst().getItemCount());
+    }
+
+    private String supplyIdForOrder(long orderId) throws Exception {
+        try (Connection connection = Database.getConnection();
+             var statement = connection.prepareStatement(
+                     "SELECT supply_id FROM wb_orders WHERE shop_id = 1 AND order_id = ?")) {
+            statement.setLong(1, orderId);
+            try (var resultSet = statement.executeQuery()) {
+                return resultSet.next() ? resultSet.getString(1) : null;
+            }
+        }
     }
 
     @Test

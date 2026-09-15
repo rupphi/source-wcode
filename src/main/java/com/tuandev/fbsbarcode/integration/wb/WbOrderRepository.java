@@ -10,7 +10,9 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 import static com.tuandev.fbsbarcode.integration.wb.WbRepositorySupport.safeLong;
 import static com.tuandev.fbsbarcode.integration.wb.WbRepositorySupport.setNullableBoolean;
@@ -185,13 +187,17 @@ public class WbOrderRepository {
     }
 
     public void replaceSupplyOrders(int shopId, String supplyId, List<Long> orderIds) {
-        List<Long> safeOrderIds = orderIds == null ? Collections.emptyList() : orderIds;
+        List<Long> safeOrderIds = orderIds == null ? Collections.emptyList() : orderIds.stream()
+                .filter(orderId -> orderId != null && orderId > 0)
+                .distinct()
+                .toList();
         try (Connection conn = Database.getConnection()) {
             conn.setAutoCommit(false);
             try (PreparedStatement clearDetached = conn.prepareStatement("""
                          UPDATE wb_orders
                          SET supply_id = NULL
                          WHERE shop_id = ?
+                           AND supply_id = ?
                            AND order_id IN (
                                SELECT order_id
                                FROM wb_supply_orders
@@ -199,14 +205,17 @@ public class WbOrderRepository {
                            )
                          """);
                  PreparedStatement delete = conn.prepareStatement("DELETE FROM wb_supply_orders WHERE shop_id = ? AND supply_id = ?");
+                 PreparedStatement deleteCompeting = conn.prepareStatement(
+                         "DELETE FROM wb_supply_orders WHERE shop_id = ? AND order_id = ? AND supply_id <> ?");
                  PreparedStatement insert = conn.prepareStatement(
                          "INSERT OR IGNORE INTO wb_supply_orders (shop_id, supply_id, order_id) " +
                                  "SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM wb_orders WHERE shop_id = ? AND order_id = ?)");
                  PreparedStatement updateOrders = conn.prepareStatement(
                          "UPDATE wb_orders SET supply_id = ? WHERE shop_id = ? AND order_id = ?")) {
                 clearDetached.setInt(1, shopId);
-                clearDetached.setInt(2, shopId);
-                clearDetached.setString(3, supplyId);
+                clearDetached.setString(2, supplyId);
+                clearDetached.setInt(3, shopId);
+                clearDetached.setString(4, supplyId);
                 clearDetached.executeUpdate();
 
                 delete.setInt(1, shopId);
@@ -214,6 +223,11 @@ public class WbOrderRepository {
                 delete.executeUpdate();
 
                 for (Long orderId : safeOrderIds) {
+                    deleteCompeting.setInt(1, shopId);
+                    deleteCompeting.setLong(2, orderId);
+                    deleteCompeting.setString(3, supplyId);
+                    deleteCompeting.addBatch();
+
                     insert.setInt(1, shopId);
                     insert.setString(2, supplyId);
                     insert.setLong(3, orderId);
@@ -226,6 +240,7 @@ public class WbOrderRepository {
                     updateOrders.setLong(3, orderId);
                     updateOrders.addBatch();
                 }
+                deleteCompeting.executeBatch();
                 insert.executeBatch();
                 updateOrders.executeBatch();
                 updateSupplyOrderCount(conn, shopId, supplyId, safeOrderIds.size());
@@ -238,6 +253,41 @@ public class WbOrderRepository {
             }
         } catch (SQLException e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    public List<Long> getMissingOrderIds(int shopId, List<Long> orderIds) {
+        Set<Long> missing = new LinkedHashSet<>();
+        if (orderIds != null) {
+            orderIds.stream()
+                    .filter(orderId -> orderId != null && orderId > 0)
+                    .forEach(missing::add);
+        }
+        if (missing.isEmpty()) {
+            return List.of();
+        }
+        List<Long> requested = new ArrayList<>(missing);
+        try (Connection conn = Database.getConnection()) {
+            for (int start = 0; start < requested.size(); start += IN_CLAUSE_BATCH_SIZE) {
+                List<Long> batch = requested.subList(start, Math.min(start + IN_CLAUSE_BATCH_SIZE, requested.size()));
+                String placeholders = String.join(", ", Collections.nCopies(batch.size(), "?"));
+                String sql = "SELECT order_id FROM wb_orders WHERE shop_id = ? AND order_id IN (" + placeholders + ")";
+                try (PreparedStatement statement = conn.prepareStatement(sql)) {
+                    statement.setInt(1, shopId);
+                    int index = 2;
+                    for (Long orderId : batch) {
+                        statement.setLong(index++, orderId);
+                    }
+                    try (ResultSet resultSet = statement.executeQuery()) {
+                        while (resultSet.next()) {
+                            missing.remove(resultSet.getLong("order_id"));
+                        }
+                    }
+                }
+            }
+            return List.copyOf(missing);
+        } catch (SQLException exception) {
+            throw new RuntimeException(exception);
         }
     }
 

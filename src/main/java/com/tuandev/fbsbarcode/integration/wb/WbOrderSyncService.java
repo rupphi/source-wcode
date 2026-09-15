@@ -7,13 +7,16 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class WbOrderSyncService {
     private static final Logger LOGGER = LoggerFactory.getLogger(WbOrderSyncService.class);
     private static final int PAGE_LIMIT = 1000;
     private static final int STATUS_BATCH_SIZE = 1000;
+    private static final int SUPPLY_BACKFILL_DAYS = 30;
+    private static final int SUPPLY_BACKFILL_PAGE_LIMIT = 100;
 
     private final WbApiClient apiClient;
     private final WbOrderRepository orderRepository;
@@ -117,7 +120,13 @@ public class WbOrderSyncService {
         long runId = syncRunRepository.startSyncRun(shop.getId(), "supply_orders");
         try {
             WbSupplyOrderIdsResponse response = apiClient.getSupplyOrderIds(shop.getApiKey(), supplyId);
-            List<Long> orderIds = response == null || response.getOrderIds() == null ? List.of() : new ArrayList<>(response.getOrderIds());
+            List<Long> orderIds = response == null || response.getOrderIds() == null
+                    ? List.of()
+                    : response.getOrderIds().stream()
+                            .filter(orderId -> orderId != null && orderId > 0)
+                            .distinct()
+                            .toList();
+            backfillMissingSupplyOrders(shop, supplyId, orderIds);
             orderRepository.replaceSupplyOrders(shop.getId(), supplyId, orderIds);
             supplyRepository.updateSupplyOrderCount(shop.getId(), supplyId, orderIds.size());
             syncRunRepository.finishSyncRun(runId, true, orderIds.size(), orderIds.size(), null, null);
@@ -127,6 +136,46 @@ public class WbOrderSyncService {
             syncStateRepository.saveSyncError(shop.getId(), ex.getMessage());
             syncRunRepository.finishSyncRun(runId, false, 0, 0, ex instanceof WbApiException wb ? String.valueOf(wb.getStatusCode()) : "local_error", ex.getMessage());
             throw ex;
+        }
+    }
+
+    private void backfillMissingSupplyOrders(Shop shop, String supplyId, List<Long> orderIds) throws IOException {
+        Set<Long> missing = new HashSet<>(orderRepository.getMissingOrderIds(shop.getId(), orderIds));
+        if (missing.isEmpty()) {
+            return;
+        }
+
+        Instant now = Instant.now();
+        long dateFrom = now.minus(SUPPLY_BACKFILL_DAYS, ChronoUnit.DAYS).getEpochSecond();
+        long dateTo = now.getEpochSecond();
+        long next = 0L;
+        for (int page = 0; page < SUPPLY_BACKFILL_PAGE_LIMIT && !missing.isEmpty(); page++) {
+            WbOrdersResponse response = apiClient.getOrders(shop.getApiKey(), next, PAGE_LIMIT, dateFrom, dateTo);
+            List<WbOrderDto> orders = response == null || response.getOrders() == null
+                    ? List.of()
+                    : response.getOrders();
+            if (orders.isEmpty()) {
+                break;
+            }
+
+            List<WbOrderDto> matched = orders.stream()
+                    .filter(order -> missing.contains(WbRepositorySupport.safeLong(order.getId())))
+                    .toList();
+            if (!matched.isEmpty()) {
+                orderRepository.saveOrders(shop.getId(), matched);
+                matched.forEach(order -> missing.remove(WbRepositorySupport.safeLong(order.getId())));
+            }
+
+            Long responseNext = response.getNext();
+            if (orders.size() < PAGE_LIMIT || responseNext == null || responseNext <= 0 || responseNext == next) {
+                break;
+            }
+            next = responseNext;
+        }
+
+        if (!missing.isEmpty()) {
+            LOGGER.warn("Không thể backfill {} / {} đơn của supply {} trong cửa sổ {} ngày cho shop {}",
+                    missing.size(), orderIds.size(), supplyId, SUPPLY_BACKFILL_DAYS, shop.getId());
         }
     }
 }

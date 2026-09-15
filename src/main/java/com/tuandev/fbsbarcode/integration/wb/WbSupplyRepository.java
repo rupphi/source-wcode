@@ -101,12 +101,12 @@ public class WbSupplyRepository {
                        s.done,
                        s.is_b2b,
                        s.created_at,
-                       COALESCE(NULLIF((
+                       COALESCE(s.order_count, (
                            SELECT COUNT(*)
                            FROM wb_supply_orders so
                            WHERE so.shop_id = s.shop_id
                              AND so.supply_id = s.supply_id
-                       ), 0), s.order_count, 0) AS item_count
+                       ), 0) AS item_count
                 FROM wb_supplies s
                 WHERE s.shop_id = ?
                 ORDER BY s.done ASC, s.created_at DESC, s.supply_id DESC
@@ -141,12 +141,12 @@ public class WbSupplyRepository {
                        s.done,
                        s.is_b2b,
                        s.created_at,
-                       COALESCE(NULLIF((
+                       COALESCE(s.order_count, (
                            SELECT COUNT(*)
                            FROM wb_supply_orders so
                            WHERE so.shop_id = s.shop_id
                              AND so.supply_id = s.supply_id
-                       ), 0), s.order_count, 0) AS item_count
+                       ), 0) AS item_count
                 FROM wb_supplies s
                 WHERE s.shop_id = ? AND s.supply_id = ?
                 """;
@@ -187,12 +187,12 @@ public class WbSupplyRepository {
                        s.done,
                        s.is_b2b,
                        s.created_at,
-                       COALESCE(NULLIF((
+                       COALESCE(s.order_count, (
                            SELECT COUNT(*)
                            FROM wb_supply_orders so
                            WHERE so.shop_id = s.shop_id
                              AND so.supply_id = s.supply_id
-                       ), 0), s.order_count, 0) AS item_count
+                       ), 0) AS item_count
                 FROM wb_supplies s
                 WHERE s.shop_id = ?
                 """ + searchClause + statusClause + """
