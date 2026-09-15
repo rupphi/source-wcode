@@ -164,6 +164,36 @@ class ZnackWbAttributeMapperTest {
     }
 
     @Test
+    void mapsScarfSizeFromWbLengthAndWidthUsingTheCatalogLengthWidthType() {
+        Sku sku = new Sku(177816909L, 294403063L, 69, "2337_03", "Шарфы", "Olie Two",
+                "Шарф женский", "Черный", "0", List.of("2038647016007"), "", true,
+                "", null, "", Status.NOT_CREATED, "", false);
+        List<WbCharacteristic> characteristics = List.of(
+                new WbCharacteristic(90673, "Ширина предмета", List.of("70.0")),
+                new WbCharacteristic(90675, "Длина предмета", List.of("180.0"))
+        );
+        Attribute sizeAttr = new Attribute(35, "Размер одежды / изделия", "text", false, false,
+                true, false, List.of(), List.of("РОСТ-ОШ-ОГ-ОТ", "ДЛИНА", "ДЛИНА-ШИРИНА", "---"));
+
+        var result = new ZnackWbAttributeMapper().map(sku, characteristics, List.of(sizeAttr),
+                "6214100000", "6214",
+                new ZnackModels.GoodsDocument("CONFORMITY_DECLARATION", "DOC-1", "2026-09-15"));
+
+        assertTrue(result.complete(), result.missingFields().toString());
+        assertEquals("180-70", result.attributes().get(35L));
+        assertEquals("ДЛИНА-ШИРИНА", result.attributeTypes().get(35L));
+        assertTrue(result.goodName().endsWith("размер 180-70"), result.goodName());
+    }
+
+    @Test
+    void ignoresInvalidOrIncompleteWbDimensions() {
+        assertEquals("", ZnackWbAttributeMapper.lengthWidthSize(List.of(
+                new WbCharacteristic(90673, "Ширина предмета", List.of("70")),
+                new WbCharacteristic(90675, "Длина предмета", List.of("0"))
+        )));
+    }
+
+    @Test
     void selectsChildrenTechnicalRegulationWhenAdultTrNotPreset() {
         Attribute trAttr = new Attribute(13836, "Номер технического регламента", "text", true, false, true, false,
                 List.of("ТР ТС 007/2011 О безопасности продукции, предназначенной для детей и подростков"));

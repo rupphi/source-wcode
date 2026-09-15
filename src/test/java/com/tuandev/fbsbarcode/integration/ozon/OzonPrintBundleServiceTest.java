@@ -152,7 +152,7 @@ class OzonPrintBundleServiceTest {
     }
 
     @Test
-    void appendsOneKizPageForEveryAcceptedExemplar() throws Exception {
+    void interleavesEachProductBarcodeWithItsAcceptedKiz() throws Exception {
         String secondKiz = "010464558878115421SERIAL-0002\u001d91ABCD\u001d92SIGNATURE";
         seedPosting(2);
         seedAcceptedExemplars(List.of(RAW_KIZ, secondKiz));
@@ -166,9 +166,9 @@ class OzonPrintBundleServiceTest {
         assertEquals(2, result.kizPages());
         try (PDDocument document = Loader.loadPDF(labels.toFile())) {
             assertTrue(pageText(document, 0).contains("OZN3583"));
-            assertTrue(pageText(document, 1).contains("OZN3583"));
             assertEquals(KizService.scannerSafeCode(RAW_KIZ),
-                    KizService.scannerSafeCode(decodeRenderedDataMatrixResult(document, 2, 300).getText()));
+                    KizService.scannerSafeCode(decodeRenderedDataMatrixResult(document, 1, 300).getText()));
+            assertTrue(pageText(document, 2).contains("OZN3583"));
             assertEquals(KizService.scannerSafeCode(secondKiz),
                     KizService.scannerSafeCode(decodeRenderedDataMatrixResult(document, 3, 300).getText()));
             assertEquals("OFFICIAL-1", pageText(document, 4).strip());

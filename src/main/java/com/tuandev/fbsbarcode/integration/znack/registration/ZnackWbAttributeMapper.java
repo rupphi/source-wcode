@@ -5,6 +5,7 @@ import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrati
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.Sku;
 import com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.WbCharacteristic;
 
+import java.math.BigDecimal;
 import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -37,7 +38,11 @@ public final class ZnackWbAttributeMapper {
 
     public MappingResult mapDocuments(Sku sku, List<WbCharacteristic> characteristics, List<Attribute> required,
                              String fullTnved, String feedTnved, List<ZnackModels.GoodsDocument> documents) {
-        String goodName = defaultName(sku);
+        String lengthWidthSize = lengthWidthSize(characteristics);
+        boolean useLengthWidthSize = !lengthWidthSize.isBlank() && required.stream()
+                .anyMatch(attribute -> isSizeAttribute(attribute) && supportsLengthWidth(attribute));
+        String effectiveSize = useLengthWidthSize ? lengthWidthSize : clean(sku.size());
+        String goodName = defaultName(sku, effectiveSize);
         String brand = brand(sku, characteristics);
         Map<Long, String> values = new LinkedHashMap<>();
         Map<Long, String> types = new LinkedHashMap<>();
@@ -57,7 +62,9 @@ public final class ZnackWbAttributeMapper {
             if (id == ZnackNationalCatalogService.DECLARATION_ATTRIBUTE_ID
                     || id == ZnackNationalCatalogService.CERTIFICATE_ATTRIBUTE_ID) continue;
 
-            String automatic = automaticValue(attribute, sku, characteristics, fullTnved, feedTnved);
+            String automatic = useLengthWidthSize && isSizeAttribute(attribute)
+                    ? lengthWidthSize
+                    : automaticValue(attribute, sku, characteristics, fullTnved, feedTnved);
             String resolved = resolvePreset(attribute, automatic);
             if (resolved.isBlank()) missing.add(attribute.name() + " [" + attribute.id() + "]");
             else {
@@ -100,6 +107,9 @@ public final class ZnackWbAttributeMapper {
         }
         if (isSizeAttribute(attribute)) {
             String size = clean(value).toUpperCase(Locale.ROOT);
+            if (isLengthWidthValue(size)) {
+                for (String type : types) if (isLengthWidthType(type)) return type;
+            }
             boolean international = size.matches("(?:[2-9]?[XSML]+)(?:[-/](?:[2-9]?[XSML]+))*")
                     || size.contains("ONE SIZE") || size.contains("ONESIZE");
 
@@ -154,6 +164,56 @@ public final class ZnackWbAttributeMapper {
     private static boolean isRussianType(String normalized) {
         return normalized.contains("росси") || normalized.equals("рф")
                 || normalized.equals("ru") || normalized.equals("rus");
+    }
+
+    private static boolean supportsLengthWidth(Attribute attribute) {
+        return attribute.valueTypes().stream().anyMatch(ZnackWbAttributeMapper::isLengthWidthType);
+    }
+
+    private static boolean isLengthWidthType(String value) {
+        return normalize(value).replaceAll("[^\\p{L}\\p{N}]+", " ").trim().equals("длина ширина");
+    }
+
+    private static boolean isLengthWidthValue(String value) {
+        return clean(value).matches("\\d+(?:[.,]\\d+)?\\s*-\\s*\\d+(?:[.,]\\d+)?");
+    }
+
+    /** National Catalog expects length before width for attr_value_type ДЛИНА-ШИРИНА. */
+    static String lengthWidthSize(List<WbCharacteristic> characteristics) {
+        String length = characteristicNumber(characteristics, 90675, "длина предмета");
+        String width = characteristicNumber(characteristics, 90673, "ширина предмета");
+        return length.isBlank() || width.isBlank() ? "" : length + "-" + width;
+    }
+
+    private static String characteristicNumber(List<WbCharacteristic> characteristics, int preferredId,
+                                                String expectedName) {
+        for (WbCharacteristic characteristic : safe(characteristics)) {
+            if (characteristic.id() == preferredId) {
+                String value = firstPositiveNumber(characteristic.values());
+                if (!value.isBlank()) return value;
+            }
+        }
+        for (WbCharacteristic characteristic : safe(characteristics)) {
+            if (normalize(characteristic.name()).equals(expectedName)) {
+                String value = firstPositiveNumber(characteristic.values());
+                if (!value.isBlank()) return value;
+            }
+        }
+        return "";
+    }
+
+    private static String firstPositiveNumber(List<String> values) {
+        if (values == null) return "";
+        for (String raw : values) {
+            String value = clean(raw).replace(',', '.');
+            try {
+                BigDecimal number = new BigDecimal(value);
+                if (number.signum() > 0) return number.stripTrailingZeros().toPlainString();
+            } catch (NumberFormatException ignored) {
+                // WB dimensions are numeric. Ignore malformed values and retain the safe fallback.
+            }
+        }
+        return "";
     }
 
     private static String firstNonPlaceholder(List<String> types) {
@@ -317,12 +377,16 @@ public final class ZnackWbAttributeMapper {
     }
 
     public static String defaultName(Sku sku) {
+        return defaultName(sku, clean(sku.size()));
+    }
+
+    private static String defaultName(Sku sku, String effectiveSize) {
         List<String> parts = new ArrayList<>();
         add(parts, first(sku.title(), sku.subjectName()));
         add(parts, sku.brand());
         if (!clean(sku.vendorCode()).isBlank()) add(parts, "арт. " + clean(sku.vendorCode()));
         if (!clean(sku.color()).isBlank()) add(parts, "цвет " + clean(sku.color()));
-        if (!clean(sku.size()).isBlank()) add(parts, "размер " + clean(sku.size()));
+        if (!clean(effectiveSize).isBlank()) add(parts, "размер " + clean(effectiveSize));
         return String.join(", ", parts).replaceAll("\\s+", " ").trim();
     }
 

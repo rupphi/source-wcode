@@ -625,7 +625,7 @@ jobs:
           WCode ${APP_VERSION}
 
           - Đồng bộ lại toàn bộ catalog đang hoạt động của Wildberries khi mở/cập nhật cửa hàng: ảnh và thông tin card thay đổi được làm mới; card đã xoá hoặc chuyển vào thùng rác trên WB được dọn khỏi app. WCode chỉ dọn dữ liệu sau khi nhận đủ snapshot, nên lỗi mạng hoặc phản hồi WB không đầy đủ không làm mất card cục bộ.
-          - Khắc phục thứ tự file in Ozon theo từng đơn: toàn bộ barcode sản phẩm → KIZ → mã vận chuyển của chính đơn đó, rồi mới chuyển sang đơn tiếp theo.
+          - Khắc phục thứ tự file in Ozon theo từng đơn vị hàng: barcode sản phẩm → KIZ tương ứng, lặp lại cho từng sản phẩm rồi mới đến mã vận chuyển của chính đơn đó.
           - Khắc phục lỗi SQLite UNIQUE constraint failed: ozon_exemplars.kiz_id khi in Ozon. KIZ đã gắn với một đơn không còn bị cấp lại cho đơn khác; lần in lại tiếp tục dùng đúng mã cũ.
           - Tự phục hồi an toàn các liên kết KIZ Ozon bị bản cũ trả nhầm về kho. Chỉ khôi phục khi xác minh đúng cửa hàng, đúng đơn, KIZ đã lưu thông và chưa bị workflow khác sử dụng.
           - Nếu tải hoặc tạo PDF Ozon thất bại, WCode giữ nguyên KIZ cho lần thử lại. Nếu PDF đã lưu nhưng bước ghi nhận cuối lỗi, KIZ cũng không bị cấp lại gây dán trùng.
@@ -635,6 +635,7 @@ jobs:
           - Bảo vệ mã KIZ Ozon: pre-validate đơn hàng trước khi giữ chỗ KIZ và giữ liên kết bền vững theo đúng đơn để in lại an toàn khi gặp sự cố tải nhãn hoặc lỗi hệ thống.
           - Nâng cấp phiếu nhặt hàng Ozon: hiển thị chỉ số đơn nhiều món [Đơn N món: X/N], hiển thị (Chung đơn: N kiện) cho đơn tách kiện; cột Sticker hiển thị mã vạch sản phẩm và đuôi tem vận chuyển Ozon để đối soát đóng gói, chống dán nhầm tem.
           - Chọn Вид товара [12] trực tiếp từ danh sách Znack cho từng nhóm danh mục WB, TN VED và danh mục Znack. Không tự suy đoán loại hàng từ tên danh mục WB. Xem sản phẩm theo nhóm, bỏ qua nhóm chưa chọn hoặc hủy trước khi tạo GTIN; áp dụng cho đăng ký đơn lẻ và hàng loạt.
+          - Với khăn có kích thước dài và rộng trong card Wildberries, tự điền Размер одежды / изделия theo dạng dài-rộng và chọn kiểu ДЛИНА-ШИРИНА của National Catalog.
           - Đăng ký thẻ Znack từ SKU Wildberries: tự điền thuộc tính, chọn từng SKU hoặc tất cả kết quả theo bộ lọc, kiểm tra dữ liệu và đăng ký hàng loạt qua hàng đợi có khôi phục.
           - Cấu hình riêng Декларация о соответствии và Сертификат соответствия; nếu nhập cả hai thì gửi cả hai vào thẻ.
           - Khi người dùng đã ký và thẻ được xuất bản trên Znack, WCode xác minh chủ sở hữu rồi thêm GTIN đúng size trên WB, giữ nguyên barcode và các size hiện có.

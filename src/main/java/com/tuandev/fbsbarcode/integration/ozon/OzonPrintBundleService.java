@@ -298,10 +298,6 @@ public final class OzonPrintBundleService {
             for (var line : plan.lines()) {
                 for (int unit = 0; unit < line.item().quantity(); unit++) {
                     OzonProductBarcodeAppender.append(destination, line);
-                }
-            }
-            for (var line : plan.lines()) {
-                for (int unit = 0; unit < line.item().quantity(); unit++) {
                     if (!line.bindings().isEmpty()) kizLabels.appendUnit(destination, line, unit);
                 }
             }
