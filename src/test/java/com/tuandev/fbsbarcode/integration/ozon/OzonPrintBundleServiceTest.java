@@ -32,7 +32,6 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -65,7 +64,6 @@ class OzonPrintBundleServiceTest {
     Path temporaryDirectory;
 
     private Shop shop;
-    private Path officialPdf;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -81,8 +79,6 @@ class OzonPrintBundleServiceTest {
             statement.setString(4, shop.getApiKey());
             statement.executeUpdate();
         }
-        officialPdf = temporaryDirectory.resolve("official.pdf");
-        writeOfficialTwoPagePdf(officialPdf);
     }
 
     @AfterEach
@@ -104,12 +100,11 @@ class OzonPrintBundleServiceTest {
         assertFalse(prepared.get(), "An accepted durable job must not push KIZ again while reprinting");
         assertEquals(2, result.officialPages());
         assertEquals(1, result.kizPages());
-        assertEquals(4, result.totalPages());
+        assertEquals(3, result.totalPages());
         try (PDDocument document = Loader.loadPDF(labels.toFile())) {
-            assertEquals(4, document.getNumberOfPages());
+            assertEquals(3, document.getNumberOfPages());
             assertTrue(pageText(document, 0).contains("OZN3583"), "Product barcode must be the first label");
-            assertEquals("OFFICIAL-1", pageText(document, 2).strip());
-            assertEquals("OFFICIAL-2", pageText(document, 3).strip());
+            assertEquals("SHIPPING POST-1", pageText(document, 2).strip());
             assertPageMillimeters(document, 0, 58, 40);
             assertPageMillimeters(document, 1, 58, 40);
             assertPageMillimeters(document, 2, 58, 40);
@@ -162,7 +157,7 @@ class OzonPrintBundleServiceTest {
         OzonPrintBundleService.ExportResult result = service(new AtomicBoolean()).export(
                 shop, "POST-1", labels.toFile(), picking.toFile());
 
-        assertEquals(6, result.totalPages());
+        assertEquals(5, result.totalPages());
         assertEquals(2, result.kizPages());
         try (PDDocument document = Loader.loadPDF(labels.toFile())) {
             assertTrue(pageText(document, 0).contains("OZN3583"));
@@ -171,8 +166,7 @@ class OzonPrintBundleServiceTest {
             assertTrue(pageText(document, 2).contains("OZN3583"));
             assertEquals(KizService.scannerSafeCode(secondKiz),
                     KizService.scannerSafeCode(decodeRenderedDataMatrixResult(document, 3, 300).getText()));
-            assertEquals("OFFICIAL-1", pageText(document, 4).strip());
-            assertEquals("OFFICIAL-2", pageText(document, 5).strip());
+            assertEquals("SHIPPING POST-1", pageText(document, 4).strip());
         }
     }
 
@@ -309,15 +303,13 @@ class OzonPrintBundleServiceTest {
                 shop, List.of("POST-1", "POST-2"), labels.toFile(), picking.toFile());
 
         assertEquals(2, result.postingCount());
-        assertEquals(6, result.totalPages());
+        assertEquals(4, result.totalPages());
         try (PDDocument document = Loader.loadPDF(labels.toFile())) {
-            assertEquals(6, document.getNumberOfPages());
+            assertEquals(4, document.getNumberOfPages());
             assertTrue(pageText(document, 0).contains("BC-SKU-1"));
-            assertEquals("OFFICIAL-1", pageText(document, 1).strip());
-            assertEquals("OFFICIAL-2", pageText(document, 2).strip());
-            assertTrue(pageText(document, 3).contains("BC-SKU-2"));
-            assertEquals("OFFICIAL-1", pageText(document, 4).strip());
-            assertEquals("OFFICIAL-2", pageText(document, 5).strip());
+            assertEquals("SHIPPING POST-1", pageText(document, 1).strip());
+            assertTrue(pageText(document, 2).contains("BC-SKU-2"));
+            assertEquals("SHIPPING POST-2", pageText(document, 3).strip());
         }
         try (PDDocument document = Loader.loadPDF(picking.toFile())) {
             assertEquals(1, document.getNumberOfPages());
@@ -350,14 +342,13 @@ class OzonPrintBundleServiceTest {
         OzonPrintBundleService.ExportResult result = service(new AtomicBoolean()).export(
                 shop, "POST-1", labels.toFile(), picking.toFile());
 
-        assertEquals(5, result.totalPages());
+        assertEquals(4, result.totalPages());
         assertEquals(0, result.kizPages());
         try (PDDocument document = Loader.loadPDF(labels.toFile())) {
             assertTrue(pageText(document, 0).contains("BC-SKU-2"));
             assertTrue(pageText(document, 1).contains("BC-SKU-2"));
             assertTrue(pageText(document, 2).contains("BC-SKU-1"));
-            assertEquals("OFFICIAL-1", pageText(document, 3).strip());
-            assertEquals("OFFICIAL-2", pageText(document, 4).strip());
+            assertEquals("SHIPPING POST-1", pageText(document, 3).strip());
         }
         try (PDDocument document = Loader.loadPDF(picking.toFile())) {
             String text = new PDFTextStripper().getText(document);
@@ -407,7 +398,10 @@ class OzonPrintBundleServiceTest {
                     throw new AssertionError("accepted jobs must not prepare again");
                 },
                 (selectedShop, postingNumber, target) -> {
-                    Files.copy(officialPdf, target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                    OzonPostingDto posting = new OzonPostingRepository().find(selectedShop.getId(), postingNumber);
+                    OzonPackingPlan plan = OzonPackingPlan.create(
+                            posting, new OzonCatalogRepository().findAll(selectedShop.getId()), List.of());
+                    writeOfficialPdf(target.toPath(), plan);
                     return target;
                 });
     }
@@ -545,12 +539,17 @@ class OzonPrintBundleServiceTest {
         }
     }
 
-    private static void writeOfficialTwoPagePdf(Path target) throws IOException {
+    private static void writeOfficialPdf(Path target, OzonPackingPlan plan) throws IOException {
         try (PdfDocument document = new PdfDocument(new PdfWriter(target.toFile()))) {
-            for (int page = 1; page <= 2; page++) {
-                new PdfCanvas(document.addNewPage(new PageSize(LABEL_WIDTH, LABEL_HEIGHT)))
-                        .beginText().setFontAndSize(PdfFontFactory.createFont(), 10)
-                        .moveText(10, 50).showText("OFFICIAL-" + page).endText();
+            new PdfCanvas(document.addNewPage(new PageSize(LABEL_WIDTH, LABEL_HEIGHT)))
+                    .beginText().setFontAndSize(PdfFontFactory.createFont(), 10)
+                    .moveText(10, 50).showText("SHIPPING " + plan.posting().postingNumber()).endText();
+            for (var line : plan.lines()) {
+                for (int unit = 0; unit < line.item().quantity(); unit++) {
+                    new PdfCanvas(document.addNewPage(new PageSize(LABEL_WIDTH, LABEL_HEIGHT)))
+                            .beginText().setFontAndSize(PdfFontFactory.createFont(), 10)
+                            .moveText(10, 50).showText("BARCODE " + line.barcode()).endText();
+                }
             }
         }
     }
@@ -644,7 +643,7 @@ class OzonPrintBundleServiceTest {
         OzonPrintBundleService.ExportResult result = service(new AtomicBoolean()).export(
                 shop, "POST-REAL", labels.toFile(), picking.toFile());
 
-        assertEquals(3, result.totalPages());
+        assertEquals(2, result.totalPages());
         assertTrue(Files.isRegularFile(labels));
         try (PDDocument document = Loader.loadPDF(labels.toFile())) {
             assertTrue(pageText(document, 0).contains("OZN5549801365"));

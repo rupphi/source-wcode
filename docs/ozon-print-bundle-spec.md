@@ -4,7 +4,7 @@
 
 Add the JavaFX Ozon print flow that mirrors the useful parts of the existing WB workflow without reusing WB mutations. A single print action must idempotently prepare Ozon exemplars, download the official Ozon shipping document, append one physical KIZ label for every accepted exemplar, and create a separate A4 picking list.
 
-For the common posting with one product and quantity one, the label bundle contains three pages: the two official Ozon pages followed by one 58 x 40 mm KIZ page. For larger postings the page count is `official Ozon pages + accepted exemplars`; it is not fixed at three pages per posting.
+For the common posting with one product and quantity one, the label bundle contains three pages: the official Ozon product barcode, one 58 x 40 mm KIZ page, and the official Ozon shipping label. For larger postings the page count is `official Ozon pages + accepted exemplars`; it is not fixed at three pages per posting. WCode must not generate an additional duplicate product barcode.
 
 Printing does not ship, cancel, change stock, or change prices.
 
@@ -43,7 +43,7 @@ if (markingIsRequested(posting) && !accepted(job)) {
 }
 ```
 
-The official Ozon pages are copied without scaling. Raw KIZ values are used only while rendering DataMatrix and are never logged, shown in the UI, or written to evidence.
+The official Ozon pages are copied without scaling. The trailing official product-barcode pages are interleaved with their KIZ pages, while the leading posting-level shipping page(s) are moved to the end. Raw KIZ values are used only while rendering DataMatrix and are never logged, shown in the UI, or written to evidence.
 
 The picking PDF is intentionally minimal: it contains only a product table with columns `#`, `Image`, `Product`, `SKU`, `Offer ID`, and `Qty`. It contains no title/metadata block, no KIZ column, no KIZ explanatory note, and no posting footer. The product image comes from the synchronized Ozon catalog and is embedded in the PDF; an unavailable or invalid image renders a stable placeholder instead of aborting the whole print job.
 
@@ -51,7 +51,7 @@ The physical KIZ page has no border, brand/shop heading, or Ozon status text. It
 
 ## Testing Strategy
 
-- Unit/integration test that a two-page official PDF plus one accepted exemplar produces three pages.
+- Unit/integration test that a two-page official PDF plus one accepted exemplar produces exactly three pages in `official barcode -> KIZ -> official shipping label` order, with no WCode-generated duplicate barcode.
 - Decode the generated DataMatrix, require GS1 symbology identifier `]d2`, and compare it with the persisted KIZ inside the test process.
 - Verify multiple exemplars append one KIZ page each in stable item/exemplar order.
 - Verify an accepted durable job does not invoke preparation again.
@@ -70,7 +70,7 @@ The physical KIZ page has no border, brand/shop heading, or Ozon status text. It
 
 ## Success Criteria
 
-- One-item/quantity-one accepted posting exports two official pages plus one 58 x 40 mm KIZ page.
+- One-item/quantity-one accepted posting exports the official barcode, one 58 x 40 mm KIZ page and the official shipping label in that order.
 - Each additional accepted exemplar adds exactly one KIZ page.
 - A separate A4 picking PDF is exported for the posting.
 - The picking PDF starts with the product table, embeds catalog images to the left of product names, and contains no KIZ or order-metadata prose.

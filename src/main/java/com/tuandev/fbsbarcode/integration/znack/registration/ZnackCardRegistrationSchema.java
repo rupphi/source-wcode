@@ -1,6 +1,7 @@
 package com.tuandev.fbsbarcode.integration.znack.registration;
 
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 
@@ -29,7 +30,9 @@ public final class ZnackCardRegistrationSchema {
                         shop_id INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
                         chrt_id INTEGER NOT NULL, sku_json TEXT NOT NULL, draft_json TEXT NOT NULL,
                         credential_fingerprint TEXT NOT NULL, phase TEXT NOT NULL DEFAULT 'QUEUED',
-                        created_at TEXT NOT NULL, PRIMARY KEY(shop_id,chrt_id))
+                        created_at TEXT NOT NULL, attempt_count INTEGER NOT NULL DEFAULT 0,
+                        next_attempt_at TEXT NOT NULL DEFAULT '', last_attempt_at TEXT,
+                        last_error TEXT, PRIMARY KEY(shop_id,chrt_id))
                     """);
             statement.execute("""
                     CREATE TABLE IF NOT EXISTS znack_registration_documents(
@@ -69,6 +72,23 @@ public final class ZnackCardRegistrationSchema {
                     ON znack_card_registrations(shop_id, gtin)
                     WHERE gtin IS NOT NULL AND TRIM(gtin) <> ''
                     """);
+        }
+        addColumnIfMissing(connection, "znack_registration_queue", "attempt_count",
+                "INTEGER NOT NULL DEFAULT 0");
+        addColumnIfMissing(connection, "znack_registration_queue", "next_attempt_at",
+                "TEXT NOT NULL DEFAULT ''");
+        addColumnIfMissing(connection, "znack_registration_queue", "last_attempt_at", "TEXT");
+        addColumnIfMissing(connection, "znack_registration_queue", "last_error", "TEXT");
+    }
+
+    private static void addColumnIfMissing(Connection connection, String table, String column,
+                                           String declaration) throws SQLException {
+        try (Statement statement = connection.createStatement();
+             ResultSet columns = statement.executeQuery("PRAGMA table_info(" + table + ")")) {
+            while (columns.next()) if (column.equalsIgnoreCase(columns.getString("name"))) return;
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + declaration);
         }
     }
 }

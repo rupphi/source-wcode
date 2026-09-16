@@ -4,6 +4,7 @@ import com.tuandev.fbsbarcode.config.Database;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 import static com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.*;
@@ -42,6 +43,41 @@ class RegistrationQueueStoreTest {
         store.recoverInterrupted();
         assertTrue(store.pending().isEmpty(), "Uncertain allocation must not generate another GTIN on restart");
         assertEquals("PAUSED", store.phase(1, 1));
+    }
+
+    @Test void transientFailureUsesDurableExponentialBackoff() throws Exception {
+        var sku = RegistrationSelectionTest.sku(1, Status.NOT_CREATED);
+        var draft = new Draft("6104", "6104", 1, "Trousers", "Brand", Map.of(), Map.of());
+        var store = new RegistrationQueueStore();
+        assertTrue(store.enqueue(1, sku, draft, "fingerprint", false));
+        Instant now = Instant.parse("2099-09-16T00:00:00Z");
+        var first = store.retryLater(1, 1, "timeout", now);
+        assertEquals(1, first.attempt());
+        assertEquals(now.plusSeconds(30), first.nextAttemptAt());
+        assertEquals("RETRY_WAIT", store.phase(1, 1));
+        assertTrue(store.pending().isEmpty(), "A future retry must not run early");
+        assertEquals(30, RegistrationQueueStore.retryDelaySeconds(1));
+        assertEquals(60, RegistrationQueueStore.retryDelaySeconds(2));
+        assertEquals(900, RegistrationQueueStore.retryDelaySeconds(20));
+    }
+
+    @Test void gs1AccountFailureIsVisibleAndDoesNotRemainQueued() throws Exception {
+        var store = new RegistrationQueueStore();
+        var draft = new Draft("6104", "6104", 1, "Trousers", "Brand", Map.of(), Map.of());
+        assertTrue(store.enqueue(1, RegistrationSelectionTest.sku(1, Status.NOT_CREATED), draft, "fingerprint", false));
+        assertTrue(store.enqueue(1, RegistrationSelectionTest.sku(2, Status.NOT_CREATED), draft, "fingerprint", false));
+        assertEquals(2, store.failAccount(1, "GS1 quota exhausted"));
+        assertTrue(store.pending().isEmpty());
+        try (var connection = Database.getConnection(); var statement = connection.prepareStatement(
+                "SELECT status,error_message FROM znack_card_registrations WHERE shop_id=1 ORDER BY chrt_id")) {
+            try (var rows = statement.executeQuery()) {
+                assertTrue(rows.next()); assertEquals("ERROR", rows.getString(1));
+                assertEquals("GS1 quota exhausted", rows.getString(2));
+                assertTrue(rows.next()); assertEquals("ERROR", rows.getString(1));
+                assertFalse(rows.next());
+            }
+        }
+        assertEquals("FAILED", store.phase(1, 1));
     }
     @Test void processedRegistrationCannotBeRequeuedAsNew() {
         var sku = RegistrationSelectionTest.sku(1, Status.NOT_CREATED);

@@ -177,7 +177,7 @@ public final class OzonPrintBundleService {
                 pickingStaging = AtomicFilePublisher.stagingFile(pickingTarget, ".picking.pdf");
             }
             labels.download(shop, safePosting, officialStaging);
-            int officialPages = compose(officialStaging, labelStaging, shop, plan);
+            int officialPages = compose(officialStaging, labelStaging, plan);
             if (pickingStaging != null) pickingLists.exportPlans(pickingStaging, shop, List.of(plan));
             AtomicFilePublisher.publish(labelStaging, labelTarget);
             labelStaging = null;
@@ -187,7 +187,7 @@ public final class OzonPrintBundleService {
                 pickingStaging = null;
             }
             return new ExportResult(
-                    labelTarget, pickingTarget, officialPages, bindings.size(), officialPages + bindings.size() + plan.units());
+                    labelTarget, pickingTarget, officialPages, bindings.size(), officialPages + bindings.size());
         } finally {
             // Retain durable KIZ bindings on failure: another export may already have printed them.
             AtomicFilePublisher.deleteQuietly(officialStaging);
@@ -286,7 +286,6 @@ public final class OzonPrintBundleService {
     private int compose(
             File official,
             File target,
-            Shop shop,
             OzonPackingPlan plan) throws IOException {
         if (!Files.isRegularFile(official.toPath())) {
             throw new IOException("Ozon did not provide an official shipping label PDF.");
@@ -295,14 +294,25 @@ public final class OzonPrintBundleService {
                 PdfDocument destination = new PdfDocument(new PdfWriter(target))) {
             int officialPages = source.getNumberOfPages();
             if (officialPages < 1) throw new IOException("The official Ozon shipping label PDF has no pages.");
+            int units = plan.units();
+            int shippingPages = officialPages - units;
+            if (shippingPages < 1) {
+                throw new IOException("The official Ozon PDF does not contain both product barcodes and a shipping label.");
+            }
+            int productBarcodePage = shippingPages + 1;
             for (var line : plan.lines()) {
                 for (int unit = 0; unit < line.item().quantity(); unit++) {
-                    OzonProductBarcodeAppender.append(destination, line);
+                    // Ozon's PDF contains the shipping page(s) first and one official product
+                    // barcode page per physical unit after them. Reuse that official barcode;
+                    // generating another WCode barcode produces a duplicate fourth label.
+                    source.copyPagesTo(productBarcodePage, productBarcodePage, destination);
+                    productBarcodePage++;
                     if (!line.bindings().isEmpty()) kizLabels.appendUnit(destination, line, unit);
                 }
             }
-            // All official pages belong to the posting, not an arbitrary item index.
-            source.copyPagesTo(1, officialPages, destination);
+            // Keep each unit together (official barcode -> optional KIZ), then append the
+            // posting-level shipping pages. This is the physical order used while packing.
+            source.copyPagesTo(1, shippingPages, destination);
             return officialPages;
         } catch (IOException exception) {
             throw exception;

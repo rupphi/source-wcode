@@ -32,19 +32,13 @@ class RegistrationQueueRecoveryTest {
         assertTrue(queue.pending(Set.of()).isEmpty());
     }
 
-    @Test void pausedAccountStaysPausedAcrossRestartAndNewSelectionsUntilExplicitResume() {
+    @Test void legacyAccountPauseIsAutomaticallyRecoveredAfterUpgrade() {
         enqueue(701, 1); enqueue(701, 2); enqueue(702, 3);
         queue.phase(701, 1, "RUNNING");
         queue.pauseAccount(701);
         enqueue(701, 4);
         var restarted = new RegistrationQueueStore();
         restarted.recoverInterrupted();
-        assertTrue(restarted.isAccountPaused(701));
-        assertEquals(1, restarted.pending(Set.of(701, 702)).size());
-        assertEquals(702, restarted.pending(Set.of(701, 702)).getFirst().shopId());
-        assertThrows(IllegalStateException.class, () -> restarted.resumeAccount(701, "changed-fingerprint"));
-        assertTrue(restarted.isAccountPaused(701));
-        assertEquals(3, restarted.resumeAccount(701, "fingerprint"));
         assertFalse(restarted.isAccountPaused(701));
         assertEquals(3, restarted.pending(Set.of(701)).size());
         assertTrue(restarted.pending(Set.of(701)).stream()
@@ -76,10 +70,15 @@ class RegistrationQueueRecoveryTest {
     }
 
     @Test void accountErrorsPauseButCardValidationDoesNotPauseOtherProducts() {
-        assertTrue(RegistrationRunner.accountWideFailure(new ZnackApiClient.ZnackApiException("failure", 401, "")));
-        assertTrue(RegistrationRunner.accountWideFailure(new ZnackApiClient.ZnackApiException("failure", 429, "")));
-        assertTrue(RegistrationRunner.accountWideFailure(new java.io.IOException("connection lost")));
-        assertTrue(RegistrationRunner.accountWideFailure(new IllegalStateException("GS1/GTIN quota is unavailable or exhausted")));
+        var unauthorized = new ZnackApiClient.ZnackApiException("failure", 401, "");
+        assertTrue(RegistrationRunner.accountActionRequired(unauthorized));
+        assertFalse(RegistrationRunner.transientFailure(unauthorized));
+        var rateLimited = new ZnackApiClient.ZnackApiException("failure", 429, "");
+        assertTrue(RegistrationRunner.transientFailure(rateLimited));
+        assertFalse(RegistrationRunner.accountActionRequired(rateLimited));
+        assertTrue(RegistrationRunner.transientFailure(new java.io.IOException("connection lost")));
+        assertTrue(RegistrationRunner.accountActionRequired(
+                new IllegalStateException("GS1/GTIN quota is unavailable or exhausted")));
         assertFalse(RegistrationRunner.accountWideFailure(new IllegalStateException("National Catalog rejected feed: invalid size")));
         assertFalse(RegistrationRunner.accountWideFailure(new ZnackApiClient.ZnackApiException("failure", 400, "invalid size")));
     }

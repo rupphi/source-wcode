@@ -411,6 +411,8 @@ jobs:
         run: |
           if ($env:UPDATE_MANIFEST_ENABLED -ceq 'true') {
             $env:RELEASE_NOTES_JSON = ConvertTo-Json -Compress -InputObject @(
+              'Tự retry lỗi tạm thời của hàng đợi đăng ký thẻ Znack; lỗi GS1 hoặc tài khoản được hiển thị rõ để người dùng xử lý',
+              'Loại bỏ barcode Ozon bị in thừa và giữ đúng thứ tự theo từng sản phẩm: barcode chính thức, KIZ, rồi mã vận chuyển',
               'Đồng bộ lại catalog WB để cập nhật ảnh và tự xoá card đã bị xoá trên WB sau khi xác minh snapshot đầy đủ',
               'Giữ đúng thứ tự nhãn theo từng đơn Ozon: barcode, KIZ, rồi mã vận chuyển',
               'Khắc phục lỗi trùng KIZ khi in Ozon; giữ mã theo đúng đơn và tự phục hồi dữ liệu từ bản cũ',
@@ -624,6 +626,8 @@ jobs:
           notes="$(cat <<EOF
           WCode ${APP_VERSION}
 
+          - Hàng đợi đăng ký thẻ Znack tự retry lỗi tạm thời bằng backoff và tự phục hồi các tác vụ cũ bị kẹt. Nếu GS1, hạn mức hoặc cấu hình tài khoản có vấn đề, tác vụ chuyển sang lỗi rõ ràng và có thể bấm để xem chi tiết, không còn nằm “trong hàng đợi” vô thời hạn.
+          - Loại bỏ barcode sản phẩm Ozon do WCode tự tạo bị in thừa. Mỗi đơn vị hàng chỉ còn barcode chính thức của Ozon → KIZ tương ứng; mã vận chuyển của đơn luôn nằm cuối.
           - Đồng bộ lại toàn bộ catalog đang hoạt động của Wildberries khi mở/cập nhật cửa hàng: ảnh và thông tin card thay đổi được làm mới; card đã xoá hoặc chuyển vào thùng rác trên WB được dọn khỏi app. WCode chỉ dọn dữ liệu sau khi nhận đủ snapshot, nên lỗi mạng hoặc phản hồi WB không đầy đủ không làm mất card cục bộ.
           - Khắc phục thứ tự file in Ozon theo từng đơn vị hàng: barcode sản phẩm → KIZ tương ứng, lặp lại cho từng sản phẩm rồi mới đến mã vận chuyển của chính đơn đó.
           - Khắc phục lỗi SQLite UNIQUE constraint failed: ozon_exemplars.kiz_id khi in Ozon. KIZ đã gắn với một đơn không còn bị cấp lại cho đơn khác; lần in lại tiếp tục dùng đúng mã cũ.

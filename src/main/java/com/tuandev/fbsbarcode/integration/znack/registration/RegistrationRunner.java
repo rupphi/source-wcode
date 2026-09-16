@@ -2,6 +2,8 @@ package com.tuandev.fbsbarcode.integration.znack.registration;
 
 import com.tuandev.fbsbarcode.integration.znack.*;
 import com.tuandev.fbsbarcode.integration.znack.signature.CryptoProSignatureProvider;
+import com.tuandev.fbsbarcode.integration.znack.signature.CryptoProErrorCode;
+import com.tuandev.fbsbarcode.integration.znack.signature.CryptoProException;
 import com.tuandev.fbsbarcode.models.Shop;
 import com.tuandev.fbsbarcode.features.shop.ShopRepository;
 import java.time.Duration;
@@ -91,21 +93,20 @@ public final class RegistrationRunner {
                     flow.execute(shop, retrySnapshot(current, job.sku().status()), job.draft(), listener);
                     QUEUE.phase(job.shopId(), current.chrtId(), "DONE");
                 } catch (Exception error) {
-                    if (accountWideFailure(error)) {
-                        QUEUE.pauseAccount(job.shopId());
-                        Sku checkpoint = REPOSITORY.find(job.shopId(), job.sku().chrtId());
-                        if (checkpoint != null && checkpoint.feedId() != null && !checkpoint.feedId().isBlank()
-                                && checkpoint.status() != Status.ERROR) {
-                            // A temporary account failure after submission must not convert resume into resubmit.
-                            REPOSITORY.updateProgress(job.shopId(), checkpoint.chrtId(), checkpoint.status(), null,
-                                    null, ZnackErrorDetails.summary(error), null);
-                            if (listener != null) listener.accept(Status.ERROR, ZnackErrorDetails.format(error));
-                        } else flow.fail(shop, job.sku(), error, listener);
+                    String summary = ZnackErrorDetails.summary(error);
+                    if (transientFailure(error)) {
+                        QUEUE.retryLater(job.shopId(), job.sku().chrtId(), summary);
+                        REPOSITORY.updateProgress(job.shopId(), job.sku().chrtId(), Status.RETRYING,
+                                null, null, summary, null);
+                        if (listener != null) listener.accept(Status.RETRYING, summary);
+                    } else if (accountActionRequired(error)) {
+                        QUEUE.failAccount(job.shopId(), summary);
+                        if (listener != null) listener.accept(Status.ERROR, ZnackErrorDetails.format(error));
                     } else {
                         QUEUE.phase(job.shopId(), job.sku().chrtId(), "FAILED");
                         flow.fail(shop, job.sku(), error, listener);
                     }
-                    break; // Account pause is durable: later ticks cannot drain the remaining batch.
+                    break;
                 }
                 break; // Bound remote work to one card per tick.
             }
@@ -115,28 +116,44 @@ public final class RegistrationRunner {
         }
     }
 
-    static boolean accountWideFailure(Throwable error) {
+    static boolean transientFailure(Throwable error) {
         for (Throwable cause = error; cause != null; cause = cause.getCause()) {
             if (cause instanceof ZnackApiClient.ZnackApiException api) {
                 int status = api.statusCode();
-                if (status == 401 || status == 403 || status == 429 || status >= 500) return true;
+                if (status == 408 || status == 425 || status == 429 || status >= 500) return true;
                 String message = java.util.Objects.toString(api.getMessage(), "").toLowerCase(java.util.Locale.ROOT);
-                if (message.contains("quota") || message.contains("gs1") || message.contains("1090")) return true;
-                // An HTTP 400/404 for one card is not a network failure.
+                if (message.contains("1090")) return true;
                 return false;
             }
-            if (cause instanceof com.tuandev.fbsbarcode.integration.znack.signature.CryptoProException
-                    || cause instanceof java.io.IOException) return true;
-            String message = java.util.Objects.toString(cause.getMessage(), "");
-            if (message.startsWith("GS1/GTIN quota") || message.startsWith("Shop credentials changed;")) return true;
+            if (cause instanceof CryptoProException crypto) return crypto.code() == CryptoProErrorCode.TIMEOUT;
+            if (cause instanceof java.io.IOException) return true;
+            String message = java.util.Objects.toString(cause.getMessage(), "").toLowerCase(java.util.Locale.ROOT);
+            if (message.equals("timeout") || message.contains("timed out") || message.contains("temporarily unavailable")) return true;
         }
         return false;
     }
 
+    static boolean accountActionRequired(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof ZnackApiClient.ZnackApiException api) {
+                if (api.statusCode() == 401 || api.statusCode() == 403) return true;
+            }
+            if (cause instanceof CryptoProException crypto) return crypto.code() != CryptoProErrorCode.TIMEOUT;
+            String message = java.util.Objects.toString(cause.getMessage(), "").toLowerCase(java.util.Locale.ROOT);
+            if (message.contains("gs1") || message.contains("гс1") || message.contains("quota")
+                    || message.contains("членств") || message.contains("лимит")
+                    || message.startsWith("shop credentials changed;")) return true;
+        }
+        return false;
+    }
+
+    /** Kept for source compatibility with older diagnostics and tests. */
+    static boolean accountWideFailure(Throwable error) {
+        return transientFailure(error) || accountActionRequired(error);
+    }
+
     static Sku retrySnapshot(Sku current, Status original) {
-        boolean submittedCheckpoint = current.feedId() != null && !current.feedId().isBlank()
-                && (current.status() == Status.FEED_SUBMITTED || current.status() == Status.PROCESSING
-                    || current.status() == Status.READY_TO_SIGN || current.status() == Status.SIGNING);
+        boolean submittedCheckpoint = current.feedId() != null && !current.feedId().isBlank();
         if (original != Status.ERROR || submittedCheckpoint) return current;
         return new Sku(current.nmId(), current.chrtId(), current.subjectId(), current.vendorCode(), current.subjectName(),
                 current.brand(), current.title(), current.color(), current.size(), current.barcodes(), current.imageUrl(),

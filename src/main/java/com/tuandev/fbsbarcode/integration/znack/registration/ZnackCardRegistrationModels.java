@@ -10,6 +10,7 @@ public final class ZnackCardRegistrationModels {
     public enum Status {
         NOT_CREATED,
         QUEUED,
+        RETRYING,
         CHECKING,
         GTIN_GENERATED,
         FEED_SUBMITTED,

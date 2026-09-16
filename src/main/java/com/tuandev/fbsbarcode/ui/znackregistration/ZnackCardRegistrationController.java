@@ -188,7 +188,7 @@ public final class ZnackCardRegistrationController {
         page = Math.max(0, Math.min(page, pages - 1));
         productTable.getItems().setAll(matching.subList(page * PAGE_SIZE, Math.min(matching.size(), (page + 1) * PAGE_SIZE)));
         pageLabel.setText((page + 1) + " / " + pages + " · " + matching.size());
-        long queued = matching.stream().filter(s -> s.status() == Status.QUEUED).count();
+        long queued = matching.stream().filter(s -> s.status() == Status.QUEUED || s.status() == Status.RETRYING).count();
         long submitted = matching.stream().filter(s -> s.status() == Status.FEED_SUBMITTED || s.status() == Status.PROCESSING).count();
         long waiting = matching.stream().filter(s -> s.status() == Status.READY_TO_SIGN || s.status() == Status.WB_UPDATE_PENDING).count();
         long failed = matching.stream().filter(s -> s.status() == Status.ERROR).count();
@@ -549,8 +549,7 @@ public final class ZnackCardRegistrationController {
                 }
                 setText(item);
                 Sku sku = getTableRow() == null ? null : getTableRow().getItem();
-                boolean isError = sku != null && (sku.status() == Status.ERROR
-                        || (sku.errorMessage() != null && !sku.errorMessage().isBlank()));
+                boolean isError = sku != null && sku.status() == Status.ERROR;
                 if (isError) {
                     setStyle("-fx-font-weight: 700; -fx-text-fill: #e53935;");
                     setUnderline(true);
@@ -562,6 +561,13 @@ public final class ZnackCardRegistrationController {
                                     "CARD_REGISTRATION", sku.errorMessage());
                         }
                     });
+                } else if (sku != null && sku.status() == Status.RETRYING) {
+                    setStyle("-fx-font-weight: 700; -fx-text-fill: #f59e0b;");
+                    setUnderline(false);
+                    setCursor(Cursor.DEFAULT);
+                    setTooltip(sku.errorMessage() == null || sku.errorMessage().isBlank()
+                            ? null : new Tooltip(sku.errorMessage()));
+                    setOnMouseClicked(null);
                 } else {
                     setStyle("-fx-font-weight: 700;");
                     setUnderline(false);
