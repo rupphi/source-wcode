@@ -6,6 +6,13 @@ Add the JavaFX Ozon print flow that mirrors the useful parts of the existing WB 
 
 For the common posting with one product and quantity one, the label bundle contains three pages: the official Ozon product barcode, one 58 x 40 mm KIZ page, and the official Ozon shipping label. For larger postings the page count is `official Ozon pages + accepted exemplars`; it is not fixed at three pages per posting. WCode must not generate an additional duplicate product barcode.
 
+When the official PDF contains only one shipping-label page, generate one product
+barcode per unit from the synchronized catalog using the existing product-label
+renderer. Interleave each barcode with its optional KIZ, then copy the official
+shipping page unchanged. In this case the total is `units + KIZ pages + 1`.
+Continue reusing official barcode pages for combined PDFs. Reject ambiguous
+multi-page PDFs with page/unit counts and the posting number in the error.
+
 Printing does not ship, cancel, change stock, or change prices.
 
 ## Tech Stack

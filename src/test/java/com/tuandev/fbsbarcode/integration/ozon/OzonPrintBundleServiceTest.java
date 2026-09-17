@@ -87,6 +87,47 @@ class OzonPrintBundleServiceTest {
     }
 
     @Test
+    void shippingOnlyPdfPrintsCatalogBarcodeThenKizThenUnchangedShippingPage() throws Exception {
+        seedPosting(1);
+        seedAcceptedExemplars(List.of(RAW_KIZ));
+        Path labels = temporaryDirectory.resolve("shipping-only-bundle.pdf");
+        var result = service(new AtomicBoolean(), true).export(shop, "POST-1", labels.toFile(),
+                temporaryDirectory.resolve("shipping-only-picking.pdf").toFile());
+        assertEquals(1, result.officialPages());
+        assertEquals(1, result.kizPages());
+        assertEquals(3, result.totalPages());
+        try (PDDocument document = Loader.loadPDF(labels.toFile())) {
+            assertEquals(3, document.getNumberOfPages());
+            BufferedImage barcode = new PDFRenderer(document).renderImageWithDPI(0, 300, ImageType.GRAY);
+            Result decoded = new com.google.zxing.oned.Code128Reader().decode(new BinaryBitmap(
+                    new HybridBinarizer(new BufferedImageLuminanceSource(barcode))));
+            assertEquals("OZN3583", decoded.getText());
+            assertEquals(KizService.scannerSafeCode(RAW_KIZ),
+                    KizService.scannerSafeCode(decodeRenderedDataMatrixResult(document, 1, 300).getText()));
+            assertEquals("SHIPPING POST-1", pageText(document, 2).strip());
+            assertPageMillimeters(document, 2, 58, 40);
+        }
+    }
+
+    @Test
+    void shippingOnlyPdfPrintsEveryUnitWithoutRequiringKiz() throws Exception {
+        seedPosting(2);
+        new OzonProductKizPolicyRepository().setRequired(1, "SKU-3583", false);
+        Path labels = temporaryDirectory.resolve("shipping-only-two.pdf");
+        var result = service(new AtomicBoolean(), true).export(shop, "POST-1", labels.toFile(),
+                temporaryDirectory.resolve("shipping-only-two-picking.pdf").toFile());
+        assertEquals(1, result.officialPages());
+        assertEquals(0, result.kizPages());
+        assertEquals(3, result.totalPages());
+        try (PDDocument document = Loader.loadPDF(labels.toFile())) {
+            assertEquals(3, document.getNumberOfPages());
+            assertTrue(pageText(document, 0).contains("OZN3583"));
+            assertTrue(pageText(document, 1).contains("OZN3583"));
+            assertEquals("SHIPPING POST-1", pageText(document, 2).strip());
+        }
+    }
+
+    @Test
     void acceptedSingleUnitPrintsProductThenKizThenAllOfficialPages() throws Exception {
         seedPosting(1);
         seedAcceptedExemplars(List.of(RAW_KIZ));
@@ -291,6 +332,15 @@ class OzonPrintBundleServiceTest {
 
     @Test
     void printAllKeepsEachPostingBundleTogetherInRequestedOrder() throws Exception {
+        assertPrintAllKeepsPostingOrder(false);
+    }
+
+    @Test
+    void printAllShippingOnlyPdfsCountsGeneratedPagesAndKeepsPostingOrder() throws Exception {
+        assertPrintAllKeepsPostingOrder(true);
+    }
+
+    private void assertPrintAllKeepsPostingOrder(boolean shippingOnly) throws Exception {
         seedUnmarkedPosting("POST-1", "SKU-1", "offer-black-64");
         seedUnmarkedPosting("POST-2", "SKU-2", "offer-blue-68");
         OzonProductKizPolicyRepository policies = new OzonProductKizPolicyRepository();
@@ -299,7 +349,7 @@ class OzonPrintBundleServiceTest {
         Path labels = temporaryDirectory.resolve("all-labels.pdf");
         Path picking = temporaryDirectory.resolve("all-picking.pdf");
 
-        OzonPrintBundleService.BatchExportResult result = service(new AtomicBoolean()).exportAll(
+        OzonPrintBundleService.BatchExportResult result = service(new AtomicBoolean(), shippingOnly).exportAll(
                 shop, List.of("POST-1", "POST-2"), labels.toFile(), picking.toFile());
 
         assertEquals(2, result.postingCount());
@@ -390,6 +440,10 @@ class OzonPrintBundleServiceTest {
     }
 
     private OzonPrintBundleService service(AtomicBoolean prepared) {
+        return service(prepared, false);
+    }
+
+    private OzonPrintBundleService service(AtomicBoolean prepared, boolean shippingOnly) {
         return new OzonPrintBundleService(
                 new OzonPostingRepository(),
                 new OzonExemplarJobRepository(),
@@ -401,7 +455,13 @@ class OzonPrintBundleServiceTest {
                     OzonPostingDto posting = new OzonPostingRepository().find(selectedShop.getId(), postingNumber);
                     OzonPackingPlan plan = OzonPackingPlan.create(
                             posting, new OzonCatalogRepository().findAll(selectedShop.getId()), List.of());
-                    writeOfficialPdf(target.toPath(), plan);
+                    if (shippingOnly) {
+                        try (PdfDocument document = new PdfDocument(new PdfWriter(target))) {
+                            new PdfCanvas(document.addNewPage(new PageSize(LABEL_WIDTH, LABEL_HEIGHT)))
+                                    .beginText().setFontAndSize(PdfFontFactory.createFont(), 10)
+                                    .moveText(10, 50).showText("SHIPPING " + postingNumber).endText();
+                        }
+                    } else writeOfficialPdf(target.toPath(), plan);
                     return target;
                 });
     }

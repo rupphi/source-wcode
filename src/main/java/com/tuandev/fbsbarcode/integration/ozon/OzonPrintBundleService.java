@@ -177,7 +177,7 @@ public final class OzonPrintBundleService {
                 pickingStaging = AtomicFilePublisher.stagingFile(pickingTarget, ".picking.pdf");
             }
             labels.download(shop, safePosting, officialStaging);
-            int officialPages = compose(officialStaging, labelStaging, plan);
+            Composition composition = compose(officialStaging, labelStaging, plan);
             if (pickingStaging != null) pickingLists.exportPlans(pickingStaging, shop, List.of(plan));
             AtomicFilePublisher.publish(labelStaging, labelTarget);
             labelStaging = null;
@@ -187,7 +187,7 @@ public final class OzonPrintBundleService {
                 pickingStaging = null;
             }
             return new ExportResult(
-                    labelTarget, pickingTarget, officialPages, bindings.size(), officialPages + bindings.size());
+                    labelTarget, pickingTarget, composition.officialPages(), bindings.size(), composition.totalPages());
         } finally {
             // Retain durable KIZ bindings on failure: another export may already have printed them.
             AtomicFilePublisher.deleteQuietly(officialStaging);
@@ -283,7 +283,7 @@ public final class OzonPrintBundleService {
         }
     }
 
-    private int compose(
+    private Composition compose(
             File official,
             File target,
             OzonPackingPlan plan) throws IOException {
@@ -295,31 +295,39 @@ public final class OzonPrintBundleService {
             int officialPages = source.getNumberOfPages();
             if (officialPages < 1) throw new IOException("The official Ozon shipping label PDF has no pages.");
             int units = plan.units();
-            int shippingPages = officialPages - units;
+            boolean shippingOnly = officialPages == 1;
+            int shippingPages = shippingOnly ? 1 : officialPages - units;
             if (shippingPages < 1) {
-                throw new IOException("The official Ozon PDF does not contain both product barcodes and a shipping label.");
+                throw new IOException("Cannot identify the shipping and product pages in the Ozon PDF for posting "
+                        + plan.posting().postingNumber() + " (PDF pages: " + officialPages + ", product units: " + units
+                        + "). Expected one shipping-only page or shipping pages followed by one barcode per unit.");
             }
             int productBarcodePage = shippingPages + 1;
             for (var line : plan.lines()) {
                 for (int unit = 0; unit < line.item().quantity(); unit++) {
-                    // Ozon's PDF contains the shipping page(s) first and one official product
-                    // barcode page per physical unit after them. Reuse that official barcode;
-                    // generating another WCode barcode produces a duplicate fourth label.
-                    source.copyPagesTo(productBarcodePage, productBarcodePage, destination);
-                    productBarcodePage++;
+                    // A shipping-only PDF has no separate product barcode pages. For a
+                    // combined PDF, reuse the official product pages without duplicating them.
+                    if (shippingOnly) {
+                        OzonProductBarcodeAppender.append(destination, line);
+                    } else {
+                        source.copyPagesTo(productBarcodePage, productBarcodePage, destination);
+                        productBarcodePage++;
+                    }
                     if (!line.bindings().isEmpty()) kizLabels.appendUnit(destination, line, unit);
                 }
             }
             // Keep each unit together (official barcode -> optional KIZ), then append the
             // posting-level shipping pages. This is the physical order used while packing.
             source.copyPagesTo(1, shippingPages, destination);
-            return officialPages;
+            return new Composition(officialPages, destination.getNumberOfPages());
         } catch (IOException exception) {
             throw exception;
         } catch (RuntimeException exception) {
             throw new IOException("The Ozon print bundle could not be composed.", exception);
         }
     }
+
+    private record Composition(int officialPages, int totalPages) { }
 
     private static void validatePrintableJob(
             OzonExemplarJob job,
