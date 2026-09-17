@@ -43,7 +43,7 @@ public class ZnackKizOrderService {
             } catch (Exception e) {
                 throw new ZnackOrderCreationAmbiguousException("Order creation result is ambiguous; automatic retry is blocked.",e);
             }
-        }catch(Exception e){try{repository.updateOrder(id,null,null,OrderStatus.FAILED,e.getMessage());}catch(RuntimeException auditError){e.addSuppressed(auditError);}throw e;}
+        }catch(Exception e){try{repository.updateOrder(id,null,null,OrderStatus.FAILED,ZnackErrorDetails.forStorage(e));}catch(RuntimeException auditError){e.addSuppressed(auditError);}throw e;}
     }
     public KizOrder refresh(Settings s,long id)throws Exception{
         ZnackSafety.requireSigned(s,true);

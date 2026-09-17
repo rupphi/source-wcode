@@ -41,16 +41,34 @@ public final class ZnackErrorDetails {
         StringWriter stackTrace = new StringWriter();
         error.printStackTrace(new PrintWriter(stackTrace));
         details.append("\n\nSTACK TRACE\n").append(stackTrace);
-        return ZnackSanitizer.diagnostic(details.toString());
+        return ZnackSanitizer.report(details.toString());
+    }
+
+    /** Preserve established plain status messages unless this failure carries HTTP diagnostics. */
+    public static String forStorage(Throwable error) {
+        Throwable current = error;
+        for (int depth = 0; current != null && depth < 12; depth++, current = current.getCause()) {
+            if (current instanceof ZnackApiClient.ZnackApiException) return format(error);
+            for (Throwable context : current.getSuppressed()) {
+                if (context instanceof ZnackRequestDiagnostics) return format(error);
+            }
+        }
+        return summary(error);
     }
 
     public static String formatStored(String details) {
-        String safeDetails = ZnackSanitizer.diagnostic(details == null ? "" : details);
+        String safeDetails = ZnackSanitizer.report(details == null ? "" : details);
         if (safeDetails.startsWith("Summary:") || safeDetails.startsWith("WCode version:")) {
             return safeDetails;
         }
         return "Summary: " + (safeDetails.isBlank() ? "Unknown error" : safeDetails)
                 + "\n" + contextHeader() + "\n\nERROR\n" + safeDetails;
+    }
+
+    public static String storedSummary(String details) {
+        if (details == null) return "";
+        if (!details.startsWith("Summary:")) return details;
+        return details.substring("Summary:".length()).lines().findFirst().orElse("").trim();
     }
 
     private static String contextHeader() {

@@ -30,7 +30,7 @@ public final class RegistrationQueueStore {
             try (PreparedStatement s = c.prepareStatement("""
                     INSERT INTO znack_card_registrations(shop_id,chrt_id,nm_id,vendor_code,source_barcode,status,created_at,updated_at)
                     VALUES(?,?,?,?,?,'QUEUED',?,?)
-                    ON CONFLICT(shop_id,chrt_id) DO UPDATE SET status='QUEUED',error_message=NULL
+                    ON CONFLICT(shop_id,chrt_id) DO UPDATE SET status='QUEUED',error_message=NULL,feed_id=NULL
                     WHERE ?=1 AND znack_card_registrations.status='ERROR' AND znack_card_registrations.nm_id=excluded.nm_id
                     """)) {
                 s.setInt(1, shopId); s.setLong(2, sku.chrtId()); s.setLong(3, sku.nmId());

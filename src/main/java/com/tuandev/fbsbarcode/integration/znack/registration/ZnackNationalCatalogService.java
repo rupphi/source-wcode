@@ -148,8 +148,8 @@ public final class ZnackNationalCatalogService {
     }
 
     public FeedProgress progress(String token, String feedId, String gtin) throws Exception {
-        JsonObject result = resultObject(api.nationalCatalogFeedStatus(
-                settings.resolvedTrueApiBaseUrl(), token, feedId));
+        JsonElement response = api.nationalCatalogFeedStatus(settings.resolvedTrueApiBaseUrl(), token, feedId);
+        JsonObject result = resultObject(response);
         String status = string(result, "status");
         List<String> errors = new ArrayList<>();
         Long goodId = null;
@@ -162,20 +162,44 @@ public final class ZnackNationalCatalogService {
             String message = first(string(item, "message"), string(item, "status_message"));
             int code = item.has("status_code") && !item.get("status_code").isJsonNull()
                     ? item.get("status_code").getAsInt() : 0;
-            if (code != 0 && !message.isBlank()) errors.add(message);
+            if (code != 0 && !message.isBlank()) errors.add(attributeError(item, message));
         }
         JsonObject details = object(result.get("error_details"));
         for (JsonElement element : array(details.get("items"))) {
             if (!element.isJsonObject()) continue;
             JsonObject item = element.getAsJsonObject();
+            String itemGtin = string(item, "gtin");
+            if (!itemGtin.isBlank() && !itemGtin.equals(gtin)) continue;
             for (JsonElement error : array(item.get("errors"))) {
                 if (error.isJsonObject()) {
                     String text = string(error.getAsJsonObject(), "text");
-                    if (!text.isBlank()) errors.add(text);
+                    if (!text.isBlank()) errors.add(attributeError(error.getAsJsonObject(), text));
                 }
             }
         }
-        return new FeedProgress(status, goodId, List.copyOf(errors));
+        return new FeedProgress(status, goodId, List.copyOf(errors),
+                com.tuandev.fbsbarcode.integration.znack.ZnackRequestDiagnostics.safeBody(
+                        response == null ? null : response.toString()));
+    }
+
+    IllegalStateException rejectedFeed(FeedProgress progress, JsonObject payload, String feedId) {
+        var error = new IllegalStateException(progress.errorMessage().isBlank()
+                ? "National Catalog rejected feed " + feedId : progress.errorMessage());
+        String base = ZnackApiClient.nationalCatalogBase(settings.resolvedTrueApiBaseUrl());
+        error.addSuppressed(new com.tuandev.fbsbarcode.integration.znack.ZnackRequestDiagnostics(
+                "POST", base + "/v3/feed", payload.toString(), null,
+                "[earlier submission accepted; feed_id=" + feedId + "; original response not retained]"));
+        error.addSuppressed(new com.tuandev.fbsbarcode.integration.znack.ZnackRequestDiagnostics(
+                "GET", base + "/v3/feed-status?verbose=true&feed_id="
+                        + java.net.URLEncoder.encode(feedId, StandardCharsets.UTF_8), "", null, progress.responseBody()));
+        return error;
+    }
+
+    private static String attributeError(JsonObject error, String message) {
+        String id = first(string(error, "attribute_id"), string(error, "attr_id"));
+        String name = first(string(error, "attribute_name"), string(error, "attr_name"));
+        String context = name + (id.isBlank() ? "" : (name.isBlank() ? "[" : " [") + id + "]");
+        return context.isBlank() ? message : context + ": " + message;
     }
 
     public long sign(String token, String gtin) throws Exception {
@@ -469,7 +493,7 @@ public final class ZnackNationalCatalogService {
 
     public record Preflight(String tnved, String categoryTnved, Gs1Status gs1,
                             List<Category> categories, String token) { }
-    public record FeedProgress(String status, Long goodId, List<String> errors) {
+    public record FeedProgress(String status, Long goodId, List<String> errors, String responseBody) {
         public boolean failed() { return "Rejected".equalsIgnoreCase(status) || !errors.isEmpty(); }
         public boolean readyToSign() { return "Moderated".equalsIgnoreCase(status) && errors.isEmpty(); }
         public boolean signed() { return "Signed".equalsIgnoreCase(status); }

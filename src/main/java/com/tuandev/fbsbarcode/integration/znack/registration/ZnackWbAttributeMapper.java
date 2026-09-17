@@ -42,13 +42,11 @@ public final class ZnackWbAttributeMapper {
         boolean useLengthWidthSize = !lengthWidthSize.isBlank() && required.stream()
                 .anyMatch(attribute -> isSizeAttribute(attribute) && supportsLengthWidth(attribute));
         String effectiveSize = useLengthWidthSize ? lengthWidthSize : clean(sku.size());
-        String goodName = defaultName(sku, effectiveSize);
         String brand = brand(sku, characteristics);
         Map<Long, String> values = new LinkedHashMap<>();
         Map<Long, String> types = new LinkedHashMap<>();
         List<String> missing = new ArrayList<>();
 
-        if (goodName.isBlank()) missing.add("Наименование товара");
         for (Attribute attribute : required) {
             long id = attribute.id();
             if (id == TNVED_GROUP) {
@@ -89,6 +87,14 @@ public final class ZnackWbAttributeMapper {
                     : ZnackNationalCatalogService.DECLARATION_ATTRIBUTE_ID;
             values.put(documentAttribute, clean(document.number()) + ":::" + clean(document.date()));
         }
+        // Presets and WB characteristics can change these values. Build the name from
+        // the same resolved values that will be submitted for moderation.
+        String resolvedSize = required.stream().filter(ZnackWbAttributeMapper::isSizeAttribute)
+                .map(attribute -> values.get(attribute.id())).filter(value -> value != null)
+                .findFirst().orElse(effectiveSize);
+        String goodName = defaultName(sku, brand, values.getOrDefault(MODEL, clean(sku.vendorCode())),
+                values.getOrDefault(COLOR, clean(sku.color())), resolvedSize);
+        if (goodName.isBlank()) missing.add("Наименование товара");
         values.put(GOOD_NAME, goodName);
         values.put(BRAND, brand);
         return new MappingResult(goodName, brand, Map.copyOf(values),
@@ -139,8 +145,8 @@ public final class ZnackWbAttributeMapper {
             String nonPlaceholder = firstNonPlaceholder(types);
             if (nonPlaceholder != null) return nonPlaceholder;
 
-            if (types.contains("")) return "";
-            if (types.contains("---")) return "---";
+            // An offered list containing only placeholders does not identify a
+            // measurement system. Let preflight/retry report the missing type.
             return null;
         }
 
@@ -381,11 +387,15 @@ public final class ZnackWbAttributeMapper {
     }
 
     private static String defaultName(Sku sku, String effectiveSize) {
+        return defaultName(sku, sku.brand(), sku.vendorCode(), sku.color(), effectiveSize);
+    }
+
+    private static String defaultName(Sku sku, String brand, String model, String color, String effectiveSize) {
         List<String> parts = new ArrayList<>();
         add(parts, first(sku.title(), sku.subjectName()));
-        add(parts, sku.brand());
-        if (!clean(sku.vendorCode()).isBlank()) add(parts, "арт. " + clean(sku.vendorCode()));
-        if (!clean(sku.color()).isBlank()) add(parts, "цвет " + clean(sku.color()));
+        add(parts, brand);
+        if (!clean(model).isBlank()) add(parts, "арт. " + clean(model));
+        if (!clean(color).isBlank()) add(parts, "цвет " + clean(color));
         if (!clean(effectiveSize).isBlank()) add(parts, "размер " + clean(effectiveSize));
         return String.join(", ", parts).replaceAll("\\s+", " ").trim();
     }

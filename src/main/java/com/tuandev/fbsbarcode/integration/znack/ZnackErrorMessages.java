@@ -42,6 +42,7 @@ public final class ZnackErrorMessages {
     /** Mã lỗi Znack (nếu có), ví dụ "1110"; rỗng nếu không tìm thấy. */
     public static String errorCode(String raw) {
         if (raw == null) return "";
+        raw = ZnackErrorDetails.storedSummary(raw);
         Matcher matcher = ERROR_CODE.matcher(raw);
         return matcher.find() ? matcher.group(1) : "";
     }
@@ -49,6 +50,7 @@ public final class ZnackErrorMessages {
     /** Human-readable form of a stored error; falls back to the raw text when nothing better is found. */
     public static String display(String raw) {
         if (raw == null || raw.isBlank()) return "";
+        raw = ZnackErrorDetails.storedSummary(raw);
         if (isSuzAuthError(raw)) {
             return com.tuandev.fbsbarcode.shared.I18nService.getInstance().tr("znack.error.suz_auth_invalid");
         }
@@ -77,6 +79,7 @@ public final class ZnackErrorMessages {
      * The raw diagnostic remains stored for audit and retry decisions.
      */
     public static String displayForPipeline(String stage, String raw) {
+        raw = ZnackErrorDetails.storedSummary(raw);
         if (isExpectedReadinessProgress(stage, raw) || isMissingDocumentsWait(stage, raw)
                 || isPendingKizBuffer(raw) || isSuzAuthError(raw)
                 || isClosedKizOrder(raw) || isDocumentVisibilityDelay(stage, raw)) return "";

@@ -158,7 +158,7 @@ public class ZnackPurchaseCoordinator {
         } catch (Exception error) {
             ZnackPurchasePipelineState current = repository.findPipeline(pipelineId).orElse(null);
             if (current != null && current.stage() == PurchaseStage.VALIDATING) {
-                repository.updatePipeline(pipelineId, null, PurchaseStage.FAILED, error.getMessage());
+                repository.updatePipeline(pipelineId, null, PurchaseStage.FAILED, ZnackErrorDetails.forStorage(error));
                 repository.log("PURCHASE_PIPELINE", current.gtin(), "ERROR", error.getMessage(), httpStatus(error));
             }
         } finally {
@@ -405,6 +405,7 @@ public class ZnackPurchaseCoordinator {
             } catch (Exception e) {
                 PurchaseStage current = repository.findPipeline(pipelineId).map(ZnackPurchasePipelineState::stage)
                         .orElse(PurchaseStage.FAILED);
+                String failureDetails = ZnackErrorDetails.forStorage(e);
                 if (e instanceof ZnackSigningSession.SigningDeferredException) {
                     repository.updatePipeline(pipelineId, null, current, ZnackSigningSession.WAITING_MESSAGE);
                     LOGGER.info("Znack signing deferred until explicit shop selection. shopId={}, pipelineId={}, stage={}",
@@ -414,7 +415,7 @@ public class ZnackPurchaseCoordinator {
                         || current == PurchaseStage.POLLING_ORDER || current == PurchaseStage.DOWNLOADING_CODES
                         || current == PurchaseStage.WAITING_INTRODUCTION_READINESS
                         || current == PurchaseStage.POLLING_INTRODUCTION) {
-                    repository.updatePipeline(pipelineId, null, current, e.getMessage());
+                    repository.updatePipeline(pipelineId, null, current, failureDetails);
                 } else if (current == PurchaseStage.SUBMITTING_INTRODUCTION) {
                     if (e instanceof ZnackIntroductionService.PermitDocumentsUnavailableException unavailable) {
                         Long orderId=repository.findPipeline(pipelineId).map(ZnackPurchasePipelineState::orderId).orElse(null);
@@ -431,16 +432,16 @@ public class ZnackPurchaseCoordinator {
                     } else {
                         // Codes are already bought; keep a definitive local/signature failure available
                         // for an explicit retry without risking a duplicate introduction document.
-                        repository.updatePipeline(pipelineId, null, PurchaseStage.INTRODUCTION_FAILED, e.getMessage());
+                        repository.updatePipeline(pipelineId, null, PurchaseStage.INTRODUCTION_FAILED, failureDetails);
                     }
                 } else if (current == PurchaseStage.CREATING_ORDER
                         && !(e instanceof ZnackOrderCreationAmbiguousException)) {
                     Long failedOrderId = repository.findLatestUnlinkedOrder(pipeline.gtin(), pipeline.quantity(),
                                     repository.findPipeline(pipelineId).orElseThrow().updatedAt().minusSeconds(30))
                             .map(KizOrder::id).orElse(null);
-                    repository.updatePipeline(pipelineId, failedOrderId, PurchaseStage.FAILED, e.getMessage());
+                    repository.updatePipeline(pipelineId, failedOrderId, PurchaseStage.FAILED, failureDetails);
                 } else if (current != PurchaseStage.CREATING_ORDER && current != PurchaseStage.FAILED) {
-                    repository.updatePipeline(pipelineId, null, PurchaseStage.FAILED, e.getMessage());
+                    repository.updatePipeline(pipelineId, null, PurchaseStage.FAILED, failureDetails);
                 }
                 LOGGER.error("Znack purchase pipeline failed. shopId={}, pipelineId={}, gtin={}, stage={}, details={}",
                         repository.shop().shopId(), pipelineId, pipeline.gtin(), current, ZnackSanitizer.error(e), e);

@@ -20,6 +20,49 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ZnackNationalCatalogServiceTest {
     @Test
+    void retryRejectsUnresolvedSizeTypeBeforeSubmitting() {
+        var schema = ZnackNationalCatalogService.parseAttributes(JsonParser.parseString("""
+                {"result":[{"attr_id":35,"attr_name":"Размер одежды / изделия",
+                "attr_value_type":["", "---", "...", "-"]}]}
+                """));
+        for (String placeholder : List.of("", "---", "...", "-")) {
+            Draft draft = new Draft("6204", "6204", 30933, "Брюки", "GRANIA",
+                    Map.of(35L, "164"), Map.of(35L, placeholder));
+            var error = assertThrows(IllegalArgumentException.class,
+                    () -> ZnackCardRegistrationWorkflow.withSchemaTypes(draft, schema, ""));
+            assertTrue(error.getMessage().contains("[35]"));
+        }
+    }
+
+    @Test
+    void feedErrorsRetainAttributeContextAndOnlyIncludeTheRequestedGtin() throws Exception {
+        ZnackApiClient api = new ZnackApiClient() {
+            @Override public JsonElement nationalCatalogFeedStatus(String base, String token, String feedId) {
+                return JsonParser.parseString("""
+                        {"result":{"status":"Rejected",
+                        "item":[{"gtin":"04631993764363","attribute_id":36,"attribute_name":"Цвет",
+                        "status_code":1,"message":"Не соответствует полному наименованию"}],
+                        "error_details":{"items":[
+                        {"gtin":"04631993764363","errors":[{"attr_id":"35","text":"Выберите систему измерения"}]},
+                        {"gtin":"other","errors":[{"attr_id":"12","text":"Unrelated error"}]}]}}}
+                        """);
+            }
+        };
+        var progress = service(api).progress("token", "feed", "04631993764363");
+        assertTrue(progress.failed());
+        assertEquals(List.of("Цвет [36]: Не соответствует полному наименованию",
+                "[35]: Выберите систему измерения"), progress.errors());
+        var payload = JsonParser.parseString("{\"gtin\":\"04631993764363\",\"good_attrs\":[{\"attr_id\":35,\"attr_value\":\"164\"}]}").getAsJsonObject();
+        String report = com.tuandev.fbsbarcode.integration.znack.ZnackErrorDetails.format(
+                service(api).rejectedFeed(progress, payload, "feed"));
+        assertTrue(report.contains("Request payload:"));
+        assertTrue(report.contains("164"));
+        assertTrue(report.contains("/v3/feed-status?verbose=true&feed_id=feed"));
+        assertTrue(report.contains("error_details"));
+        assertTrue(report.contains("\"attr_id\":\"35\""));
+    }
+
+    @Test
     void retainsSchemaValueTypesAndSendsThemWithArticleAndSize() {
         var schema = ZnackNationalCatalogService.parseAttributes(JsonParser.parseString("""
                 {"result":[

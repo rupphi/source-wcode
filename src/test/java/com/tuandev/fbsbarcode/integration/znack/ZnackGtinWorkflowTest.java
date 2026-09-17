@@ -65,6 +65,25 @@ class ZnackGtinWorkflowTest {
         System.clearProperty("wcode.appdata.dir");
     }
 
+    @Test void purchaseFailurePreservesRequestDiagnosticsForAdminReport() throws Exception {
+        long order = repository.createDraft(A, 2);
+        repository.updateOrder(order, "remote-order", "READY", OrderStatus.CODES_READY, null);
+        long pipeline = repository.enqueuePipeline(A, 2, null);
+        repository.updatePipeline(pipeline, order, PurchaseStage.DOWNLOADING_CODES, null);
+        var failure = new java.io.IOException("Upstream unavailable");
+        failure.addSuppressed(new ZnackRequestDiagnostics("GET", "https://example.test/codes", "", 503,
+                "validation detail; ".repeat(200) + " RESPONSE_END"));
+        var codes = new ZnackKizCodeService(null, null, repository) {
+            @Override public int download(Settings ignored, long id) throws Exception { throw failure; }
+        };
+        assertThrows(java.io.IOException.class,
+                () -> new ZnackPurchaseCoordinator(repository, null, codes, null).advance(testedSettings(), pipeline));
+        String stored = repository.findPipeline(pipeline).orElseThrow().errorMessage();
+        assertTrue(stored.contains("Request payload:"));
+        assertTrue(stored.contains("RESPONSE_END"));
+        assertEquals("Upstream unavailable", ZnackErrorMessages.display(stored));
+    }
+
     @Test void softDeletedGtinReleasesItsCategoryForAnotherGtinAndStaysHiddenUntilRestored() {
         mappings.replaceRulesForGtin(
                 1, A, List.of(new ZnackGtinMappingSelection("Shoes", null, true)));

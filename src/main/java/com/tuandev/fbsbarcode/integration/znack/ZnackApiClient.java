@@ -161,9 +161,14 @@ public class ZnackApiClient {
     private JsonElement execute(Request request,boolean allowNotFoundBody,boolean allowRetry)throws IOException{return execute(request,allowNotFoundBody,allowRetry,false);}
     private JsonElement execute(Request request,boolean allowNotFoundBody,boolean allowRetry,boolean emptyOnNotFound)throws IOException{
         long rateLimitDelayUsed=0;
+        boolean authenticationRequest = request.url().encodedPath().toLowerCase(java.util.Locale.ROOT).contains("/auth/");
         for(int attempt=1;;attempt++){
+            Integer diagnosticStatus = null;
+            String diagnosticResponse = null;
             try(Response response=client.newCall(request).execute()){
+                diagnosticStatus = response.code();
                 String body=response.body()==null?"":response.body().string();
+                diagnosticResponse = authenticationRequest ? "[authentication response omitted]" : body;
                 if(emptyOnNotFound&&response.code()==404){
                     LOGGER.info("Znack API returned no existing resource; continuing with an empty result. method={}, url={}",
                             request.method(),request.url());
@@ -189,8 +194,8 @@ public class ZnackApiClient {
                     }
                     LOGGER.error("Znack API request failed. method={}, url={}, httpStatus={}, contentType={}, responseBody={}",
                             request.method(),request.url(),response.code(),response.header("Content-Type",""),
-                            ZnackSanitizer.diagnostic(body));
-                    throw new ZnackApiException("Znack API request failed",response.code(),body,
+                            ZnackSanitizer.diagnostic(diagnosticResponse));
+                    throw new ZnackApiException("Znack API request failed",response.code(),diagnosticResponse,
                             request.method(),request.url().toString());
                 }
                 if(body.isBlank())return JsonNull.INSTANCE;
@@ -199,10 +204,13 @@ public class ZnackApiClient {
                 }catch(JsonParseException e){
                     LOGGER.error("Znack API returned invalid JSON. method={}, url={}, httpStatus={}, contentType={}, responseBody={}",
                             request.method(),request.url(),response.code(),response.header("Content-Type",""),
-                            ZnackSanitizer.diagnostic(body),e);
+                            ZnackSanitizer.diagnostic(diagnosticResponse),e);
                     throw new IOException("Znack API returned invalid JSON (HTTP "+response.code()+"): "
-                            +ZnackSanitizer.message(body),e);
+                            +ZnackSanitizer.message(diagnosticResponse),e);
                 }
+            } catch (IOException | RuntimeException error) {
+                ZnackRequestDiagnostics.attach(error, request, diagnosticStatus, diagnosticResponse);
+                throw error;
             }
         }
     }
@@ -240,7 +248,7 @@ public class ZnackApiClient {
     }
     static String authBase(String base) { return trueApiBase(base, 3); }
     static String trueApiBase(String base, int version) { return apiRoot(base) + "/api/v" + version + "/true-api"; }
-    static String nationalCatalogBase(String trueApiBase) {
+    public static String nationalCatalogBase(String trueApiBase) {
         String normalized=trueApiBase==null?"":trueApiBase.trim().toLowerCase(java.util.Locale.ROOT);
         if(normalized.contains("sandbox"))return ZnackModels.SANDBOX_NATIONAL_CATALOG;
         if(normalized.isBlank()||normalized.contains("markirovka.crpt.ru"))return ZnackModels.PRODUCTION_NATIONAL_CATALOG;
@@ -256,7 +264,7 @@ public class ZnackApiClient {
         public ZnackApiException(String message,int statusCode,String body,String method,String url){
             super(message+" (HTTP "+statusCode+"): "+ZnackSanitizer.message(body));
             this.statusCode=statusCode;
-            this.responseBody=ZnackSanitizer.diagnostic(body);
+            this.responseBody=ZnackRequestDiagnostics.safeBody(body);
             this.method=method==null?"":method;
             this.url=ZnackSanitizer.diagnostic(url);
         }

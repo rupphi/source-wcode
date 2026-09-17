@@ -53,7 +53,7 @@ public class ReportApiClient {
         body.addProperty("action", nz(report.action()));
         body.addProperty("entity", nz(report.entity()));
         body.addProperty("errorCode", nz(report.errorCode()));
-        body.addProperty("message", nz(report.message()));
+        body.addProperty("message", com.tuandev.fbsbarcode.integration.znack.ZnackSanitizer.report(nz(report.message())));
         body.addProperty("appVersion", nz(report.appVersion()));
         Request request =
                 new Request.Builder()

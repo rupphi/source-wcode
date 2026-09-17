@@ -4,6 +4,7 @@ import com.tuandev.fbsbarcode.BuildConfig;
 import com.tuandev.fbsbarcode.integration.license.DeviceFingerprint;
 import com.tuandev.fbsbarcode.integration.license.ReportApiClient;
 import com.tuandev.fbsbarcode.integration.znack.ZnackErrorMessages;
+import com.tuandev.fbsbarcode.integration.znack.ZnackErrorDetails;
 import com.tuandev.fbsbarcode.shared.AlertService;
 import com.tuandev.fbsbarcode.shared.AppTaskExecutor;
 import com.tuandev.fbsbarcode.shared.ConfigService;
@@ -34,7 +35,8 @@ public final class ErrorReportDialog {
     }
 
     private void open(String shopName, String entity, String action, String rawError) {
-        String message = ZnackErrorMessages.display(rawError);
+        String diagnostics = ZnackErrorDetails.formatStored(rawError);
+        String message = ZnackErrorMessages.display(diagnostics);
         String errorCode = ZnackErrorMessages.errorCode(rawError);
 
         Dialog<ButtonType> dialog = new Dialog<>();
@@ -88,7 +90,7 @@ public final class ErrorReportDialog {
                                     action,
                                     entity,
                                     errorCode,
-                                    message,
+                                    diagnostics,
                                     BuildConfig.getAppVersion());
                     Task<Void> task =
                             new Task<>() {
@@ -114,7 +116,7 @@ public final class ErrorReportDialog {
                     event -> {
                         event.consume();
                         javafx.scene.input.ClipboardContent clipboard = new javafx.scene.input.ClipboardContent();
-                        clipboard.putString(rawError != null && !rawError.isBlank() ? rawError : message);
+                        clipboard.putString(diagnostics);
                         javafx.scene.input.Clipboard.getSystemClipboard().setContent(clipboard);
                         statusLabel.setText(i18n.tr("common.copy") + ": OK");
                     });

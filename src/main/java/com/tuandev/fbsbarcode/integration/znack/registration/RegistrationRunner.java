@@ -93,15 +93,15 @@ public final class RegistrationRunner {
                     flow.execute(shop, retrySnapshot(current, job.sku().status()), job.draft(), listener);
                     QUEUE.phase(job.shopId(), current.chrtId(), "DONE");
                 } catch (Exception error) {
-                    String summary = ZnackErrorDetails.summary(error);
+                    String details = ZnackErrorDetails.format(error);
                     if (transientFailure(error)) {
-                        QUEUE.retryLater(job.shopId(), job.sku().chrtId(), summary);
+                        QUEUE.retryLater(job.shopId(), job.sku().chrtId(), details);
                         REPOSITORY.updateProgress(job.shopId(), job.sku().chrtId(), Status.RETRYING,
-                                null, null, summary, null);
-                        if (listener != null) listener.accept(Status.RETRYING, summary);
+                                null, null, details, null);
+                        if (listener != null) listener.accept(Status.RETRYING, details);
                     } else if (accountActionRequired(error)) {
-                        QUEUE.failAccount(job.shopId(), summary);
-                        if (listener != null) listener.accept(Status.ERROR, ZnackErrorDetails.format(error));
+                        QUEUE.failAccount(job.shopId(), details);
+                        if (listener != null) listener.accept(Status.ERROR, details);
                     } else {
                         QUEUE.phase(job.shopId(), job.sku().chrtId(), "FAILED");
                         flow.fail(shop, job.sku(), error, listener);
@@ -153,7 +153,10 @@ public final class RegistrationRunner {
     }
 
     static Sku retrySnapshot(Sku current, Status original) {
-        boolean submittedCheckpoint = current.feedId() != null && !current.feedId().isBlank();
+        // QUEUED after an explicit retry can still contain a legacy rejected feed.
+        // A newly submitted feed is persisted before polling and must survive retries.
+        boolean submittedCheckpoint = current.status() != Status.QUEUED
+                && current.feedId() != null && !current.feedId().isBlank();
         if (original != Status.ERROR || submittedCheckpoint) return current;
         return new Sku(current.nmId(), current.chrtId(), current.subjectId(), current.vendorCode(), current.subjectName(),
                 current.brand(), current.title(), current.color(), current.size(), current.barcodes(), current.imageUrl(),

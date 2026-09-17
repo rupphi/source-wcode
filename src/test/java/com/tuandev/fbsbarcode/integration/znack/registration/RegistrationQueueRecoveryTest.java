@@ -69,6 +69,15 @@ class RegistrationQueueRecoveryTest {
         assertEquals(Status.PROCESSING, RegistrationRunner.retrySnapshot(processing, Status.ERROR).status());
     }
 
+    @Test void explicitRetryDoesNotTreatTheRejectedFeedAsANewSubmissionCheckpoint() {
+        Sku queued = new Sku(10, 1, 1, "ART", "Trousers", "Brand", "Name", "black", "164",
+                java.util.List.of("old"), "", true, "04631993764363", null, "rejected-feed",
+                Status.QUEUED, null, false);
+        var retry = RegistrationRunner.retrySnapshot(queued, Status.ERROR);
+        assertEquals(Status.ERROR, retry.status(), "An explicit retry must rebuild and submit the corrected draft");
+        assertEquals(queued.gtin(), retry.gtin(), "Retry must reuse the allocated GTIN");
+    }
+
     @Test void accountErrorsPauseButCardValidationDoesNotPauseOtherProducts() {
         var unauthorized = new ZnackApiClient.ZnackApiException("failure", 401, "");
         assertTrue(RegistrationRunner.accountActionRequired(unauthorized));

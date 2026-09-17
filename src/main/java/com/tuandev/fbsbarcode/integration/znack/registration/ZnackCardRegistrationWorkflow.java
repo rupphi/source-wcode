@@ -145,8 +145,7 @@ public final class ZnackCardRegistrationWorkflow {
                     attempt = -1;
                     continue;
                 }
-                throw new IllegalStateException(progress.errorMessage().isBlank()
-                        ? "National Catalog rejected feed " + feedId : progress.errorMessage());
+                throw catalog.rejectedFeed(progress, payload, feedId);
             }
             if (progress.signed()) {
                 published = true;
@@ -188,6 +187,7 @@ public final class ZnackCardRegistrationWorkflow {
                     || type.isBlank()
                     || type.equals("---")
                     || type.equals("...")
+                    || type.equals("-")
                     || (!attribute.valueTypes().isEmpty() && !attribute.valueTypes().contains(type));
             if (needsResolution) {
                 type = ZnackWbAttributeMapper.resolveValueType(attribute, value, wbSize);
@@ -219,15 +219,15 @@ public final class ZnackCardRegistrationWorkflow {
     // Photos are optional in /v3/feed. A WB CDN URL rejected by the catalog must not
     // be reintroduced when retrying a feed that also had attribute errors.
     static String retryImageUrl(String imageUrl, String previousError) {
-        String error = previousError == null ? "" : previousError.toLowerCase(java.util.Locale.ROOT);
+        String error = ZnackErrorDetails.storedSummary(previousError).toLowerCase(java.util.Locale.ROOT);
         boolean unavailableImage = isImageError(error);
         return unavailableImage ? "" : (imageUrl == null ? "" : imageUrl);
     }
 
     void fail(Shop shop, Sku sku, Exception error, BiConsumer<Status, String> listener) {
-        String message = ZnackErrorDetails.summary(error);
-        registrations.updateProgress(shop.getId(), sku.chrtId(), Status.ERROR, null, null, message, null);
-        notify(listener, Status.ERROR, ZnackErrorDetails.format(error));
+        String details = ZnackErrorDetails.format(error);
+        registrations.updateProgress(shop.getId(), sku.chrtId(), Status.ERROR, null, null, details, null);
+        notify(listener, Status.ERROR, details);
     }
 
     private static void notify(BiConsumer<Status, String> listener, Status status, String detail) {

@@ -19,6 +19,42 @@ class RegistrationQueueStoreTest {
         }
     }
     @AfterEach void cleanup() { System.clearProperty("wcode.appdata.dir"); }
+    @Test void explicitRetryClearsRejectedFeedButRetainsAllocatedGtin() throws Exception {
+        var sku = RegistrationSelectionTest.sku(1, Status.ERROR);
+        var repository = new ZnackCardRegistrationRepository();
+        repository.saveGenerated(1, sku, "04631993764363", "6104", 1, "Trousers", "{}");
+        repository.updateProgress(1, 1, Status.ERROR, "rejected-feed", null, "Invalid size", false);
+        assertTrue(new RegistrationQueueStore().enqueue(1, sku,
+                new Draft("6104", "6104", 1, "Corrected name", "Brand", Map.of(), Map.of()), "account", true));
+        try (var c = Database.getConnection(); var s = c.createStatement();
+             var rows = s.executeQuery("SELECT gtin,feed_id FROM znack_card_registrations WHERE shop_id=1 AND chrt_id=1")) {
+            assertTrue(rows.next());
+            assertEquals("04631993764363", rows.getString("gtin"));
+            assertNull(rows.getString("feed_id"));
+        }
+    }
+    @Test void storedRegistrationFailureRetainsTheSameDiagnosticsAsTheLiveReport() throws Exception {
+        var sku = RegistrationSelectionTest.sku(1, Status.NOT_CREATED);
+        var repository = new ZnackCardRegistrationRepository();
+        repository.saveGenerated(1, sku, "04631993764363", "6104", 1, "Trousers", "{}");
+        var error = new IllegalStateException("Invalid size");
+        error.addSuppressed(new com.tuandev.fbsbarcode.integration.znack.ZnackRequestDiagnostics(
+                "POST", "https://example.test/v3/feed", "{\"attr_value\":\"164\",\"token\":\"private-token\"}",
+                422, "{\"error_details\":\"invalid size\"}"));
+        var live = new java.util.concurrent.atomic.AtomicReference<String>();
+        new ZnackCardRegistrationWorkflow(repository).fail(new com.tuandev.fbsbarcode.models.Shop(
+                1, "test", com.tuandev.fbsbarcode.integration.marketplace.Marketplace.WILDBERRIES, "", ""),
+                sku, error, (status, details) -> live.set(details));
+        try (var c = Database.getConnection(); var s = c.createStatement();
+             var rows = s.executeQuery("SELECT error_message FROM znack_card_registrations WHERE shop_id=1 AND chrt_id=1")) {
+            assertTrue(rows.next());
+            String stored = rows.getString(1);
+            assertEquals(live.get(), stored);
+            assertTrue(stored.contains("164"));
+            assertTrue(stored.contains("error_details"));
+            assertFalse(stored.contains("private-token"));
+        }
+    }
     @Test void publicationRetainsOriginalAccountIdentityEvenAfterQueueFinishes() {
         var store = new RegistrationQueueStore();
         assertNull(store.credentialFingerprint(1, 1));

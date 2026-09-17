@@ -13,6 +13,36 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ZnackWbAttributeMapperTest {
     @Test
+    void cannotCompleteSizeMappingWithOnlyPlaceholderMeasurementTypes() {
+        Sku sku = new Sku(1, 2, 3, "Qa-01/темно-синий", "Брюки", "GRANIA", "Брюки",
+                "темно-синий", "164", List.of(), "", true, "", null, "", Status.NOT_CREATED, "", false);
+        Attribute size = new Attribute(35, "Размер одежды / изделия", "text", false, false,
+                true, false, List.of(), List.of("", "---", "...", "-"));
+        var result = new ZnackWbAttributeMapper().map(sku, List.of(), List.of(size), "6204", "6204",
+                new ZnackModels.GoodsDocument("CONFORMITY_DECLARATION", "DOC-1", "2026-09-17"));
+
+        assertFalse(result.complete());
+        assertTrue(result.missingFields().stream().anyMatch(field -> field.contains("[35]")));
+    }
+
+    @Test
+    void fullNameUsesTheSameResolvedValuesAsTheSubmittedAttributes() {
+        Sku sku = new Sku(1, 2, 3, "Qa-01/темно-синий", "Брюки", "", "Брюки",
+                "темно-синий", "164", List.of(), "", true, "", null, "", Status.NOT_CREATED, "", false);
+        var result = new ZnackWbAttributeMapper().map(sku, List.of(
+                        new WbCharacteristic(1, "Цвет", List.of("синий")),
+                        new WbCharacteristic(2, "Бренд", List.of("GRANIA"))),
+                List.of(attribute(2478, "Полное наименование товара"),
+                        preset(36, "Цвет", "СИНИЙ"), preset(35, "Размер", "158-164")),
+                "6204", "6204",
+                new ZnackModels.GoodsDocument("CONFORMITY_DECLARATION", "DOC-1", "2026-09-17"));
+
+        assertTrue(result.complete(), result.missingFields().toString());
+        assertEquals("Брюки, GRANIA, арт. Qa-01/темно-синий, цвет СИНИЙ, размер 158-164", result.goodName());
+        assertEquals(result.goodName(), result.attributes().get(2478L));
+    }
+
+    @Test
     void mapsTheWbCardAndSizeSchemaWithoutManualInput() {
         Sku sku = new Sku(1110091485L, 98765L, 2789, "01-besang", "Брюки",
                 "Lyxury", "Брюки палаццо широкие", "Черный", "L", List.of("2039000000012"),

@@ -6,6 +6,31 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ZnackErrorDetailsTest {
+    @Test void longQuotedSecretsAreRedactedWithoutLosingFollowingFields() {
+        String raw = "{\"password\":\"" + "private value ".repeat(3000) + "\",\"attr_value\":\"164\"}";
+        String safe = ZnackSanitizer.diagnostic(raw);
+        assertTrue(safe.contains("164"));
+        assertFalse(safe.contains("private value"));
+    }
+    @Test void userMessageStaysShortWhileStoredReportRetainsDiagnostics() {
+        String details = "Summary: Invalid size\nWCode version: test\nRequest payload:\n{\"attr_value\":\"164\"}";
+        org.junit.jupiter.api.Assertions.assertEquals("Invalid size", ZnackErrorMessages.display(details));
+        assertTrue(ZnackErrorDetails.formatStored(details).contains("Request payload:"));
+    }
+    @Test
+    void redactsQuotedCredentialsAndUrlParametersWithoutRemovingUsefulFields() {
+        String safe = ZnackSanitizer.diagnostic("""
+                https://example.test/feed?api_key=private-key&feed_id=123&token=private-token
+                {"password":"two words \\"secret\\"","Authorization":"Basic private-auth",
+                 "client_secret":"private-client","good_name":"Брюки","attr_value":"164"}
+                """);
+        assertTrue(safe.contains("feed_id=123"));
+        assertTrue(safe.contains("164"));
+        assertFalse(safe.contains("private-"));
+        assertFalse(safe.contains("two words"));
+        assertFalse(safe.contains("\\\"secret\\\""));
+    }
+
     @Test
     void includesFullHttpContextAndRedactsSecrets() {
         String longMessage = "validation detail; ".repeat(90);

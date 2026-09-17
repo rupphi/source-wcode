@@ -42,8 +42,6 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.Cursor;
 import javafx.util.Duration;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.tuandev.fbsbarcode.ui.report.ErrorReportDialog;
 
 import java.io.ByteArrayInputStream;
@@ -406,20 +404,8 @@ public final class ZnackCardRegistrationController {
             workflow.resume(shop, sku, null);
             reload(); return;
         }
-        if (sku.status() == Status.ERROR && sku.gtin() != null && !sku.gtin().isBlank()) {
-            Shop selectedShop = new Shop(shop.getId(), shop.getName(), shop.getMarketplace(), shop.getClientId(), shop.getApiKey());
-            String stored = repository.payload(selectedShop.getId(), sku.chrtId());
-            if (!stored.isBlank()) {
-                try {
-                    JsonObject payload = JsonParser.parseString(stored).getAsJsonObject();
-                    Draft draft = ZnackCardRegistrationWorkflow.draftFromPayload(payload);
-                    startWorkflow(selectedShop, sku, draft);
-                    return;
-                } catch (Exception ignored) {
-                    // Fall back to preparer if payload cannot be parsed
-                }
-            }
-        }
+        // Re-prepare rejected cards from current WB data and catalog schema. The
+        // workflow retains sku.gtin(), so correcting attributes does not allocate again.
         if (sku.status() != Status.NOT_CREATED && sku.status() != Status.ERROR) return;
         Shop selectedShop = new Shop(shop.getId(), shop.getName(), shop.getMarketplace(), shop.getClientId(), shop.getApiKey());
         bulkBusy = true; updateSelection(); productTable.refresh();
@@ -566,7 +552,7 @@ public final class ZnackCardRegistrationController {
                     setUnderline(false);
                     setCursor(Cursor.DEFAULT);
                     setTooltip(sku.errorMessage() == null || sku.errorMessage().isBlank()
-                            ? null : new Tooltip(sku.errorMessage()));
+                            ? null : new Tooltip(com.tuandev.fbsbarcode.integration.znack.ZnackErrorMessages.display(sku.errorMessage())));
                     setOnMouseClicked(null);
                 } else {
                     setStyle("-fx-font-weight: 700;");
@@ -605,7 +591,7 @@ public final class ZnackCardRegistrationController {
             });
             row.itemProperty().addListener((obs, old, sku) -> {
                 row.setTooltip(sku == null || sku.errorMessage() == null || sku.errorMessage().isBlank()
-                        ? null : new Tooltip(sku.errorMessage()));
+                        ? null : new Tooltip(com.tuandev.fbsbarcode.integration.znack.ZnackErrorMessages.display(sku.errorMessage())));
             });
             return row;
         });
