@@ -626,38 +626,10 @@ jobs:
           notes="$(cat <<EOF
           WCode ${APP_VERSION}
 
-          - Hàng đợi đăng ký thẻ Znack tự retry lỗi tạm thời bằng backoff và tự phục hồi các tác vụ cũ bị kẹt. Nếu GS1, hạn mức hoặc cấu hình tài khoản có vấn đề, tác vụ chuyển sang lỗi rõ ràng và có thể bấm để xem chi tiết, không còn nằm “trong hàng đợi” vô thời hạn.
-          - Loại bỏ barcode sản phẩm Ozon do WCode tự tạo bị in thừa. Mỗi đơn vị hàng chỉ còn barcode chính thức của Ozon → KIZ tương ứng; mã vận chuyển của đơn luôn nằm cuối.
-          - Đồng bộ lại toàn bộ catalog đang hoạt động của Wildberries khi mở/cập nhật cửa hàng: ảnh và thông tin card thay đổi được làm mới; card đã xoá hoặc chuyển vào thùng rác trên WB được dọn khỏi app. WCode chỉ dọn dữ liệu sau khi nhận đủ snapshot, nên lỗi mạng hoặc phản hồi WB không đầy đủ không làm mất card cục bộ.
-          - Khắc phục thứ tự file in Ozon theo từng đơn vị hàng: barcode sản phẩm → KIZ tương ứng, lặp lại cho từng sản phẩm rồi mới đến mã vận chuyển của chính đơn đó.
-          - Khắc phục lỗi SQLite UNIQUE constraint failed: ozon_exemplars.kiz_id khi in Ozon. KIZ đã gắn với một đơn không còn bị cấp lại cho đơn khác; lần in lại tiếp tục dùng đúng mã cũ.
-          - Tự phục hồi an toàn các liên kết KIZ Ozon bị bản cũ trả nhầm về kho. Chỉ khôi phục khi xác minh đúng cửa hàng, đúng đơn, KIZ đã lưu thông và chưa bị workflow khác sử dụng.
-          - Nếu tải hoặc tạo PDF Ozon thất bại, WCode giữ nguyên KIZ cho lần thử lại. Nếu PDF đã lưu nhưng bước ghi nhận cuối lỗi, KIZ cũng không bị cấp lại gây dán trùng.
-          - Khắc phục lỗi "Waiting for the user to select this shop before signing" khi in đơn Wildberries: tự động ủy quyền phiên ký điện tử CryptoPro cho đúng cửa hàng đang in, cho phép mở cửa sổ nhập PIN / ký mua và lưu thông KIZ mượt mà mà không bị chặn bởi bảo vệ chạy ngầm.
-          - Khắc phục lỗi NullPointerException ("cannot invoke java.lang.Long.longValue()") khi in đơn Wildberries có tự động mua KIZ thiếu.
-          - Khắc phục triệt để lỗi thiếu dữ liệu catalog Ozon FBS ("product identity is missing or ambiguous"): tự động so khớp 2 chiều giữa SKU và Product ID, kết hợp fallback theo Offer ID.
-          - Bảo vệ mã KIZ Ozon: pre-validate đơn hàng trước khi giữ chỗ KIZ và giữ liên kết bền vững theo đúng đơn để in lại an toàn khi gặp sự cố tải nhãn hoặc lỗi hệ thống.
-          - Nâng cấp phiếu nhặt hàng Ozon: hiển thị chỉ số đơn nhiều món [Đơn N món: X/N], hiển thị (Chung đơn: N kiện) cho đơn tách kiện; cột Sticker hiển thị mã vạch sản phẩm và đuôi tem vận chuyển Ozon để đối soát đóng gói, chống dán nhầm tem.
-          - Chọn Вид товара [12] trực tiếp từ danh sách Znack cho từng nhóm danh mục WB, TN VED và danh mục Znack. Không tự suy đoán loại hàng từ tên danh mục WB. Xem sản phẩm theo nhóm, bỏ qua nhóm chưa chọn hoặc hủy trước khi tạo GTIN; áp dụng cho đăng ký đơn lẻ và hàng loạt.
-          - Với khăn có kích thước dài và rộng trong card Wildberries, tự điền Размер одежды / изделия theo dạng dài-rộng và chọn kiểu ДЛИНА-ШИРИНА của National Catalog.
-          - Đăng ký thẻ Znack từ SKU Wildberries: tự điền thuộc tính, chọn từng SKU hoặc tất cả kết quả theo bộ lọc, kiểm tra dữ liệu và đăng ký hàng loạt qua hàng đợi có khôi phục.
-          - Cấu hình riêng Декларация о соответствии và Сертификат соответствия; nếu nhập cả hai thì gửi cả hai vào thẻ.
-          - Khi người dùng đã ký và thẻ được xuất bản trên Znack, WCode xác minh chủ sở hữu rồi thêm GTIN đúng size trên WB, giữ nguyên barcode và các size hiện có.
-          - Khi chủ động in đơn WB, tự mua KIZ thiếu cho các SKU đã đăng ký và chờ lưu thông thành công trước khi cấp mã; giữ lại pipeline để tránh mua trùng.
-          - Nhãn Ozon theo thứ tự barcode sản phẩm → KIZ cho từng đơn vị → vận đơn. File nhặt hàng cùng thứ tự, có ảnh, size, màu, article và định danh vận đơn; không gửi KIZ lên Ozon.
-          - Giao diện Ozon gọn hơn và hỗ trợ lọc nhiều danh mục trong đóng hàng FBO và mapping.
-          - Chỉ KIZ có trạng thái pháp lý IN_CIRCULATION mới được hiển thị là khả dụng và cấp cho WB/Ozon; KIZ đang chờ hoặc lưu thông lỗi được giữ lại để xử lý nhưng không thể dùng nhầm.
-          - Thêm nút xuất tem KIZ 58×40: chọn số lượng, lưu PDF gồm DataMatrix, tên sản phẩm, giới tính và size, sau đó tự mở file.
-          - Thêm thao tác lưu trữ KIZ lỗi; chỉ KIZ thuộc pipeline INTRODUCTION_FAILED mới được phép lưu trữ, không ảnh hưởng KIZ đang chờ hay còn có thể tiếp tục.
-          - Khi Znack trả lỗi 3590 do không đủ tiền, WCode hiện thông báo và nút Thử lại để tiếp tục đúng pipeline mua KIZ đã lưu, không tạo đơn mua trùng.
-          - Đồng bộ và lưu thông GTIN hỗ trợ cả Декларация о соответствии và Сертификат соответствия, ưu tiên giấy công bố rồi dùng giấy chứng nhận khi cần.
-          - Đọc đúng giấy chứng nhận, ngày giấy tờ, giới tính và size từ cả schema API chính thức lẫn schema thẻ GTIN của National Catalog; GTIN hợp lệ trong thùng rác được tự khôi phục.
-          - Khi mở app hoặc chủ động chọn cửa hàng có pipeline cũ đang chờ giấy tờ, WCode tự đồng bộ GTIN và tiếp tục lưu thông bằng chính KIZ đã mua, không mua trùng và không spam cửa sổ ký của cửa hàng khác.
-          - GTIN thiếu giấy tờ được thông báo bằng một dialog gọn có mã GTIN và tên sản phẩm; chi tiết kỹ thuật lặp lại không còn chiếm chỗ dưới từng item.
-          - Khi Znack trả lỗi 3055, WCode hướng dẫn vào Маркировка → tên người dùng → Документы от оператора để ký điều khoản mới và chờ hệ thống xử lý tối đa 48 giờ.
-          - Tem KIZ 58×40 dùng DataMatrix vector lớn, chữ rõ hơn, logo Честный ЗНАК và ưu tiên giới tính/size đồng bộ trực tiếp từ thẻ GTIN.
-          - Trạng thái kiểm tra KIZ EMITTED được hiển thị gọn là “Đang chờ lưu thông”.
-          - Tự xoá supply WB cũ khỏi danh sách khi WB xác nhận supply không còn tồn tại bằng 404; lỗi tạm thời không làm mất dữ liệu.
+          - Sửa lỗi in Ozon khi PDF chính thức chỉ có một trang nhãn vận chuyển: tạo mã vạch sản phẩm từ catalog, ghép KIZ theo từng đơn vị rồi giữ nhãn vận chuyển ở cuối. PDF có sẵn mã vạch sản phẩm vẫn được tái sử dụng để tránh in trùng.
+          - Đồng bộ tên đầy đủ trên thẻ Znack với màu, size và nhãn hiệu đã chuẩn hóa; chặn hệ đo chỉ có giá trị placeholder và hiển thị ID thuộc tính bị từ chối.
+          - Khi thử lại thẻ Znack bị từ chối, chuẩn bị lại dữ liệu WB, bỏ feed cũ và giữ GTIN đã cấp; tiếp tục theo dõi feed mới nếu tác vụ bị gián đoạn sau khi gửi.
+          - Báo cáo lỗi admin giữ request, payload, response và trạng thái HTTP khi có, kể cả khi mở lại lỗi đã lưu. Che thông tin xác thực và đánh dấu dữ liệu quá dài. License-server đã được nâng giới hạn lưu báo cáo để tránh mất chi tiết.
 
           Tự động theo dõi hoạt động khi app mở và tài khoản cửa hàng đã được kích hoạt trong phiên. Người dùng tự ký thẻ trên Znack; WCode không ký thẻ thay người dùng. Cập nhật GTIN lên WB và mua KIZ là thao tác thật trên tài khoản đã cấu hình. Hủy chuẩn bị in không hủy đơn KIZ đã gửi.
 
