@@ -626,12 +626,13 @@ jobs:
           notes="$(cat <<EOF
           WCode ${APP_VERSION}
 
-          - Sửa lỗi in Ozon khi PDF chính thức chỉ có một trang nhãn vận chuyển: tạo mã vạch sản phẩm từ catalog, ghép KIZ theo từng đơn vị rồi giữ nhãn vận chuyển ở cuối. PDF có sẵn mã vạch sản phẩm vẫn được tái sử dụng để tránh in trùng.
-          - Đồng bộ tên đầy đủ trên thẻ Znack với màu, size và nhãn hiệu đã chuẩn hóa; chặn hệ đo chỉ có giá trị placeholder và hiển thị ID thuộc tính bị từ chối.
-          - Khi thử lại thẻ Znack bị từ chối, chuẩn bị lại dữ liệu WB, bỏ feed cũ và giữ GTIN đã cấp; tiếp tục theo dõi feed mới nếu tác vụ bị gián đoạn sau khi gửi.
-          - Báo cáo lỗi admin giữ request, payload, response và trạng thái HTTP khi có, kể cả khi mở lại lỗi đã lưu. Che thông tin xác thực và đánh dấu dữ liệu quá dài. License-server đã được nâng giới hạn lưu báo cáo để tránh mất chi tiết.
+          - Tự động ký thẻ Znack sau khi được kiểm duyệt bằng cấu hình chữ ký của cửa hàng, không cần bật tùy chọn riêng. Kiểm tra đúng GTIN, chủ sở hữu và tài khoản ký; chỉ cập nhật GTIN lên WB sau khi xác nhận thẻ đã xuất bản.
+          - Đăng ký thẻ bằng size Nga của WB thay vì techSize; đồng bộ size trong tên đầy đủ. Quần jean không còn bị nhận nhầm thành hệ dài–rộng do dấu gạch ngang; hệ dài–rộng chỉ dùng cho nhóm khăn có đủ kích thước.
+          - Cho phép chọn tất cả thẻ bị lỗi để đăng ký lại, giữ GTIN đã cấp.
+          - Tự động thử lại timeout ở các bước tra cứu và tiếp tục tác vụ Znack đang xử lý; đối soát trạng thái trước khi thử lại thao tác có thể đã được máy chủ nhận.
+          - Sửa in FBO WB: mỗi đơn vị hàng có một tem chứa barcode và KIZ tương ứng; hàng không cần KIZ chỉ in barcode.
 
-          Tự động theo dõi hoạt động khi app mở và tài khoản cửa hàng đã được kích hoạt trong phiên. Người dùng tự ký thẻ trên Znack; WCode không ký thẻ thay người dùng. Cập nhật GTIN lên WB và mua KIZ là thao tác thật trên tài khoản đã cấu hình. Hủy chuẩn bị in không hủy đơn KIZ đã gửi.
+          Tiến trình tự động hoạt động khi app mở và tài khoản cửa hàng đã được kích hoạt trong phiên. Tự ký cần CryptoPro đã cấu hình; thiết bị ký có thể yêu cầu PIN. Ký thẻ, cập nhật GTIN lên WB và mua KIZ là thao tác thật trên tài khoản đã cấu hình. Hủy chuẩn bị in không hủy đơn KIZ đã gửi.
 
           Khi nâng cấp từ 1.1.9, dữ liệu hiện có được sao chép an toàn sang thư mục WCodeData trước khi áp dụng schema mới. Bản chính không dùng chung dữ liệu hay kênh cập nhật với bản test. Các gói macOS hiện chưa được Apple notarize.${windows_trust_note}
           EOF
