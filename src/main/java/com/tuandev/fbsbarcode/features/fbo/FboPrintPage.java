@@ -3,7 +3,8 @@ package com.tuandev.fbsbarcode.features.fbo;
 public record FboPrintPage(FboProductSku product, String kizCode, int pairNumber, Kind kind) {
     public enum Kind {
         BARCODE,
-        KIZ
+        KIZ,
+        COMBINED
     }
 
     public static FboPrintPage barcode(FboProductSku product, int pairNumber) {
@@ -12,5 +13,9 @@ public record FboPrintPage(FboProductSku product, String kizCode, int pairNumber
 
     public static FboPrintPage kiz(FboProductSku product, String kizCode, int pairNumber) {
         return new FboPrintPage(product, kizCode, pairNumber, Kind.KIZ);
+    }
+
+    public static FboPrintPage combined(FboProductSku product, String kizCode, int pairNumber) {
+        return new FboPrintPage(product, kizCode, pairNumber, Kind.COMBINED);
     }
 }

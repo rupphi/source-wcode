@@ -86,8 +86,8 @@ public class FboBarcodePdfExporter {
         order.setColor(product.color());
         order.setSize(product.size());
         order.setRuSize(product.ruSize());
-        order.setBarcode(page.kind() == FboPrintPage.Kind.BARCODE ? product.sku() : null);
-        order.setKiz(page.kind() == FboPrintPage.Kind.KIZ ? page.kizCode() : null);
+        order.setBarcode(page.kind() == FboPrintPage.Kind.KIZ ? null : product.sku());
+        order.setKiz(page.kind() == FboPrintPage.Kind.BARCODE ? null : page.kizCode());
         order.setStickerTail(String.valueOf(Math.max(1, page.pairNumber())));
         order.setImageUrl(product.imageUrl());
         order.setRequiresKiz(product.requiresKiz());

@@ -100,11 +100,9 @@ public class FboKizPrintPlanner {
                     String gtin = sizeMappings.get(item.product());
                     code = reservedByGtin.get(gtin).get(nextIndex.merge(gtin, 1, Integer::sum) - 1).getCode();
                 }
-                pages.add(FboPrintPage.barcode(item.product(), pairNumber));
-                pages.add(FboPrintPage.barcode(item.product(), pairNumber));
-                if (code != null && !code.isBlank()) {
-                    pages.add(FboPrintPage.kiz(item.product(), code, pairNumber));
-                }
+                pages.add(item.product().requiresKiz()
+                        ? FboPrintPage.combined(item.product(), code, pairNumber)
+                        : FboPrintPage.barcode(item.product(), pairNumber));
                 pairNumber++;
             }
         }

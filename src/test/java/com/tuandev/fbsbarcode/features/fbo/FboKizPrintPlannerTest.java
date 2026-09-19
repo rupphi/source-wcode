@@ -28,13 +28,27 @@ class FboKizPrintPlannerTest {
     void reservesOneAtomicGtinPoolForFboPages() throws Exception {
         fixture(true, 2);
         FboPrintPlan plan = new FboKizPrintPlanner().plan(1, List.of(new FboBarcodePrintItem(product(true), 2)));
-        assertEquals(6, plan.pages().size());
-        assertEquals(List.of(
-                        FboPrintPage.Kind.BARCODE, FboPrintPage.Kind.BARCODE, FboPrintPage.Kind.KIZ,
-                        FboPrintPage.Kind.BARCODE, FboPrintPage.Kind.BARCODE, FboPrintPage.Kind.KIZ),
-                plan.pages().stream().map(FboPrintPage::kind).toList());
-        assertEquals(java.util.Arrays.asList(null, null, "KIZ-1", null, null, "KIZ-2"),
+        assertEquals(2, plan.pages().size());
+        assertEquals(List.of("COMBINED", "COMBINED"),
+                plan.pages().stream().map(page -> page.kind().name()).toList());
+        assertEquals(List.of("KIZ-1", "KIZ-2"),
                 plan.pages().stream().map(FboPrintPage::kizCode).toList());
+        assertEquals(List.of(1, 2), plan.pages().stream().map(FboPrintPage::pairNumber).toList());
+        assertEquals(2, plan.usedKizs().size());
+    }
+
+    @Test
+    void mixedWbProductsKeepOneLabelPerUnitAndReserveOnlyRequiredKiz() throws Exception {
+        fixture(true, 2);
+        FboPrintPlan plan = new FboKizPrintPlanner().plan(1, List.of(
+                new FboBarcodePrintItem(product(true), 2),
+                new FboBarcodePrintItem(product(false), 1)));
+
+        assertEquals(3, plan.pages().size());
+        assertEquals(List.of(1, 2, 3), plan.pages().stream().map(FboPrintPage::pairNumber).toList());
+        assertEquals(java.util.Arrays.asList("KIZ-1", "KIZ-2", null),
+                plan.pages().stream().map(FboPrintPage::kizCode).toList());
+        assertEquals(FboPrintPage.Kind.BARCODE, plan.pages().getLast().kind());
         assertEquals(2, plan.usedKizs().size());
     }
 
@@ -55,7 +69,7 @@ class FboKizPrintPlannerTest {
     void skipsInventoryForUnmarkedProduct() throws Exception {
         fixture(false, 0);
         FboPrintPlan plan = new FboKizPrintPlanner().plan(1, List.of(new FboBarcodePrintItem(product(false), 2)));
-        assertEquals(4, plan.pages().size());
+        assertEquals(2, plan.pages().size());
         assertTrue(plan.pages().stream().allMatch(page -> page.kind() == FboPrintPage.Kind.BARCODE));
         assertTrue(plan.pages().stream().allMatch(page -> page.kizCode() == null));
     }
