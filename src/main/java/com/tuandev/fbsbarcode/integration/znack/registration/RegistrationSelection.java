@@ -17,7 +17,10 @@ public final class RegistrationSelection {
         this.filter = filter;
     }
     public static boolean eligible(Sku sku) {
-        return sku != null && sku.status() == Status.NOT_CREATED
+        if (sku == null) return false;
+        // Failed cards retry with their allocated GTIN, just like the single-row retry.
+        if (sku.status() == Status.ERROR) return true;
+        return sku.status() == Status.NOT_CREATED
                 && (sku.gtin() == null || sku.gtin().isBlank())
                 && (sku.feedId() == null || sku.feedId().isBlank());
     }

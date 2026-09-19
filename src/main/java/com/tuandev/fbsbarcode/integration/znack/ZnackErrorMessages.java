@@ -80,6 +80,9 @@ public final class ZnackErrorMessages {
      */
     public static String displayForPipeline(String stage, String raw) {
         raw = ZnackErrorDetails.storedSummary(raw);
+        if (ZnackTimeouts.isStoredTimeout(raw) && Set.of("VALIDATING", "RECONCILING_ORDER", "POLLING_ORDER",
+                "DOWNLOADING_CODES", "WAITING_INTRODUCTION_READINESS", "POLLING_INTRODUCTION")
+                .contains(stage == null ? "" : stage.toUpperCase(java.util.Locale.ROOT))) return "";
         if (isExpectedReadinessProgress(stage, raw) || isMissingDocumentsWait(stage, raw)
                 || isPendingKizBuffer(raw) || isSuzAuthError(raw)
                 || isClosedKizOrder(raw) || isDocumentVisibilityDelay(stage, raw)) return "";

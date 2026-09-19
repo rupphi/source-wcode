@@ -60,6 +60,9 @@ public final class ZnackCardRegistrationController {
     private final ZnackCardRegistrationWorkflow workflow = new ZnackCardRegistrationWorkflow(repository);
     private final FboProductImageService imageService = new FboProductImageService();
     private final PauseTransition debounce = new PauseTransition(Duration.millis(250));
+    private final PauseTransition preparationRetry = new PauseTransition(Duration.seconds(30));
+    private boolean waitingPreparationRetry;
+    private int preparationTimeouts;
     private final List<String> selectedSubjects = new ArrayList<>();
     private final List<CheckBox> subjectChecks = new ArrayList<>();
     private Shop shop;
@@ -119,6 +122,7 @@ public final class ZnackCardRegistrationController {
     }
 
     public void setShop(Shop shop) {
+        cancelPreparationRetry();
         this.shop = shop != null && shop.getMarketplace() == Marketplace.WILDBERRIES ? shop : null;
         selection.clear();
         page = 0;
@@ -166,6 +170,7 @@ public final class ZnackCardRegistrationController {
     }
 
     private void filtersChanged() {
+        cancelPreparationRetry();
         ++loadGeneration;
         page = 0;
         selection.clear();
@@ -210,6 +215,7 @@ public final class ZnackCardRegistrationController {
         if (bulkBusy || shop == null || selection.snapshot().isEmpty()) return;
         Shop selectedShop = new Shop(shop.getId(), shop.getName(), shop.getMarketplace(), shop.getClientId(), shop.getApiKey());
         var selected = selection.snapshot();
+        long preparationGeneration = loadGeneration;
         bulkBusy = true; updateSelection(); productTable.refresh(); setLoading(true);
         Task<List<RegistrationDraftPreparer.Prepared>> task = new Task<>() {
             @Override protected List<RegistrationDraftPreparer.Prepared> call() throws Exception {
@@ -227,6 +233,7 @@ public final class ZnackCardRegistrationController {
             }
         };
         task.setOnSucceeded(event -> {
+            preparationTimeouts = 0;
             var chosen = RegistrationGoodsKindDialog.choose(selectedShop.getName(), task.getValue());
             if (chosen.isEmpty()) {
                 bulkBusy = false; setLoading(false); updateSelection(); productTable.refresh(); return;
@@ -260,7 +267,10 @@ public final class ZnackCardRegistrationController {
             enqueue.setOnFailed(done -> { bulkBusy = false; setLoading(false); updateSelection(); reload(); showError(enqueue.getException()); });
             AppTaskExecutor.execute(enqueue);
         });
-        task.setOnFailed(event -> { bulkBusy = false; setLoading(false); updateSelection(); productTable.refresh(); showError(task.getException()); });
+        task.setOnFailed(event -> {
+            if (retryPreparation(task.getException(), selectedShop, preparationGeneration, this::onRegisterSelected)) return;
+            bulkBusy = false; setLoading(false); updateSelection(); productTable.refresh(); showError(task.getException());
+        });
         AppTaskExecutor.execute(task);
     }
 
@@ -407,6 +417,7 @@ public final class ZnackCardRegistrationController {
         // Re-prepare rejected cards from current WB data and catalog schema. The
         // workflow retains sku.gtin(), so correcting attributes does not allocate again.
         if (sku.status() != Status.NOT_CREATED && sku.status() != Status.ERROR) return;
+        long preparationGeneration = loadGeneration;
         Shop selectedShop = new Shop(shop.getId(), shop.getName(), shop.getMarketplace(), shop.getClientId(), shop.getApiKey());
         bulkBusy = true; updateSelection(); productTable.refresh();
         setLoading(true);
@@ -416,6 +427,7 @@ public final class ZnackCardRegistrationController {
             }
         };
         task.setOnSucceeded(event -> {
+            preparationTimeouts = 0;
             bulkBusy = false; updateSelection(); productTable.refresh();
             setLoading(false);
             var result = task.getValue();
@@ -428,6 +440,7 @@ public final class ZnackCardRegistrationController {
             if (chosen.isPresent() && !chosen.get().isEmpty()) startWorkflow(selectedShop, sku, chosen.get().getFirst().draft());
         });
         task.setOnFailed(event -> {
+            if (retryPreparation(task.getException(), selectedShop, preparationGeneration, () -> createCard(sku))) return;
             bulkBusy = false; updateSelection(); productTable.refresh();
             setLoading(false);
             showError(task.getException());
@@ -445,6 +458,33 @@ public final class ZnackCardRegistrationController {
         }));
         if (!started) showInfo(tr("znack.registration.already_running"));
         reload();
+    }
+
+    private boolean retryPreparation(Throwable error, Shop requestedShop, long generation, Runnable retry) {
+        if (!com.tuandev.fbsbarcode.integration.znack.ZnackTimeouts.isTimeout(error)) return false;
+        if (shop == null || shop.getId() != requestedShop.getId() || generation != loadGeneration) {
+            bulkBusy = false; setLoading(false); updateSelection();
+            return true;
+        }
+        waitingPreparationRetry = true;
+        preparationRetry.setDuration(Duration.seconds(Math.min(300, 30L << Math.min(preparationTimeouts++, 4))));
+        preparationRetry.setOnFinished(event -> {
+            waitingPreparationRetry = false;
+            bulkBusy = false; setLoading(false); updateSelection(); productTable.refresh();
+            if (shop != null && shop.getId() == requestedShop.getId() && generation == loadGeneration) retry.run();
+        });
+        preparationRetry.playFromStart();
+        return true;
+    }
+
+    private void cancelPreparationRetry() {
+        preparationRetry.stop();
+        preparationTimeouts = 0;
+        if (waitingPreparationRetry) {
+            waitingPreparationRetry = false;
+            bulkBusy = false;
+            setLoading(false);
+        }
     }
 
     private void resumePending(List<Sku> values) {

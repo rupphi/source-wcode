@@ -209,6 +209,10 @@ public class ZnackApiClient {
                             +ZnackSanitizer.message(diagnosticResponse),e);
                 }
             } catch (IOException | RuntimeException error) {
+                if (allowRetry && safeTimeoutRetry(request) && ZnackTimeouts.isTimeout(error) && attempt < 3) {
+                    sleepRateLimit(1_000L << (attempt - 1));
+                    continue;
+                }
                 ZnackRequestDiagnostics.attach(error, request, diagnosticStatus, diagnosticResponse);
                 throw error;
             }
@@ -216,6 +220,14 @@ public class ZnackApiClient {
     }
     private static OkHttpClient defaultClient(){return new OkHttpClient.Builder().callTimeout(Duration.ofSeconds(40)).build();}
     private static boolean isIdempotent(Request request){return "GET".equals(request.method())||"HEAD".equals(request.method());}
+    private static boolean safeTimeoutRetry(Request request) {
+        String path = request.url().encodedPath();
+        // Some GET endpoints allocate GTINs or consume code buffers; method alone is insufficient.
+        if (isIdempotent(request)) return !path.endsWith("/codes") && !path.endsWith("/codes/retry")
+                && (!path.endsWith("/generate-gtins") || "1".equals(request.url().queryParameter("exist")));
+        return path.endsWith("/product/info") || path.endsWith("/rd-info-by-gtin")
+                || path.endsWith("/cises/info") || path.contains("/auth/simpleSignIn");
+    }
     private static long rateLimitDelay(String retryAfter,int attempt){
         if(retryAfter!=null)try{
             long seconds=Long.parseLong(retryAfter.trim());

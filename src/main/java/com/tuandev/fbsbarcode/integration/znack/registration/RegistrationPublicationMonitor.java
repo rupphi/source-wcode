@@ -10,7 +10,7 @@ import java.time.Instant;
 import java.util.List;
 import static com.tuandev.fbsbarcode.integration.znack.registration.ZnackCardRegistrationModels.*;
 
-/** Only observes user signatures; never generates GTINs, submits feeds or signs cards. */
+/** Reconciles publication and automatically signs approved cards using the shop signing session. */
 final class RegistrationPublicationMonitor {
     private final RegistrationPublicationStore store = new RegistrationPublicationStore();
     private final ZnackCardRegistrationRepository registrations = new ZnackCardRegistrationRepository();
@@ -33,7 +33,8 @@ final class RegistrationPublicationMonitor {
                     throw new IllegalArgumentException("Registration account identity changed; review this card before updating WB.");
                 var session = RegistrationRunner.session(shop, settings);
                 String token = session.auth().trueApiToken(settings);
-                if (sku.status() != Status.ERROR && sku.status() != Status.PUBLISHED && sku.status() != Status.WB_UPDATE_PENDING) {
+                if (sku.status() != Status.ERROR && sku.status() != Status.PUBLISHED && sku.status() != Status.WB_UPDATE_PENDING
+                        && sku.status() != Status.READY_TO_SIGN && sku.status() != Status.SIGNING) {
                     var progress = session.catalog().progress(token, sku.feedId(), sku.gtin());
                     if (progress.failed()) {
                         if (retryWithoutImage(shop, session, token, sku, progress)) {
@@ -54,6 +55,13 @@ final class RegistrationPublicationMonitor {
                 if (sku.goodId() != null && sku.goodId() != publication.goodId())
                     throw new IllegalArgumentException("National Catalog good_id changed; review the registered card.");
                 if (!publication.published()) {
+                    if (RegistrationAutoSigner.signIfReady(publication,
+                            session.catalog(), token, sku.gtin(), () -> checkSigningIdentity(shop.getId(), session.fingerprint()))) {
+                        registrations.updateProgress(shop.getId(), sku.chrtId(), Status.SIGNING,
+                                null, publication.goodId(), null, null);
+                        // A successful signature response is not proof of publication. Read the card again on the next tick.
+                        return;
+                    }
                     registrations.updateProgress(shop.getId(), sku.chrtId(), publication.needsSignature() ? Status.READY_TO_SIGN : Status.PROCESSING,
                             null, publication.goodId(), null, null);
                     return;
@@ -75,6 +83,13 @@ final class RegistrationPublicationMonitor {
             }
             return; // One remote reconciliation per tick, independent of visible tab/page.
         }
+    }
+
+    private static void checkSigningIdentity(int shopId, String fingerprint) {
+        Shop latest = new ShopRepository().findById(shopId);
+        if (latest == null || !ZnackSigningSession.isShopAuthorized(shopId)
+                || !fingerprint.equals(RegistrationRunner.fingerprint(latest, RegistrationRunner.settings(latest))))
+            throw new IllegalStateException("Signing session or shop identity changed.");
     }
 
     boolean writeBack(Shop shop, Sku sku, String gtin) throws java.io.IOException {

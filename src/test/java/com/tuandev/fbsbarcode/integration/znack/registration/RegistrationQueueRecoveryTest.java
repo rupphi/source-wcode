@@ -45,6 +45,28 @@ class RegistrationQueueRecoveryTest {
                 .allMatch(job -> job.fingerprint().equals("fingerprint")));
     }
 
+    @Test void legacyTimeoutRecoversExistingFeedButValidationErrorStaysFailed() throws Exception {
+        enqueue(701, 1); enqueue(701, 2);
+        var registrations = new ZnackCardRegistrationRepository();
+        registrations.saveGenerated(701, RegistrationSelectionTest.sku(1, Status.ERROR),
+                "04631993764363", "6104", 1, "Name", "{}");
+        registrations.updateProgress(701, 1, Status.ERROR, "accepted-feed", null,
+                com.tuandev.fbsbarcode.integration.znack.ZnackErrorDetails.format(new java.net.SocketTimeoutException("timeout")), false);
+        registrations.updateProgress(701, 2, Status.ERROR, null, null, "Invalid size", false);
+        queue.phase(701, 1, "FAILED"); queue.phase(701, 2, "FAILED");
+        queue.recoverInterrupted();
+        assertEquals("RETRY_WAIT", queue.phase(701, 1));
+        assertEquals("FAILED", queue.phase(701, 2));
+        try (var c = Database.getConnection(); var s = c.createStatement();
+             var rows = s.executeQuery("SELECT status,gtin,feed_id FROM znack_card_registrations WHERE shop_id=701 AND chrt_id=1")) {
+            assertTrue(rows.next());
+            assertEquals("RETRYING", rows.getString(1));
+            assertEquals("04631993764363", rows.getString(2));
+            assertEquals("accepted-feed", rows.getString(3));
+        }
+        assertTrue(new RegistrationPublicationStore().due(Set.of(701)).isEmpty());
+    }
+
     @Test void publicationQueryFiltersAuthorizedShopsBeforeApplyingItsLimit() {
         var registrations = new ZnackCardRegistrationRepository();
         for (int id = 1; id <= 101; id++) {

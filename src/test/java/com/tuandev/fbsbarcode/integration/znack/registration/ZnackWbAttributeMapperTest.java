@@ -13,9 +13,38 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ZnackWbAttributeMapperTest {
     @Test
+    void jeansUseRussianSizeEvenWithHyphensAndItemDimensions() {
+        for (String russian : List.of("50", "48-50")) {
+            Sku sku = new Sku(1, 2, 3, "Q63361", "Джинсы", "Royal", "Джинсы",
+                    "Черный", "34-172", List.of(), "", true, "", null, "", Status.NOT_CREATED, "", false, russian);
+            Attribute size = new Attribute(35, "Размер", "text", false, false, true, false,
+                    List.of(), List.of("ДЛИНА-ШИРИНА", "РОССИЙСКИЙ", "МЕЖДУНАРОДНЫЙ"));
+            var result = new ZnackWbAttributeMapper().map(sku, List.of(
+                    new WbCharacteristic(90675, "Длина предмета", List.of("110")),
+                    new WbCharacteristic(90673, "Ширина предмета", List.of("40"))), List.of(size), "6204", "6204",
+                    new ZnackModels.GoodsDocument("CONFORMITY_DECLARATION", "DOC", "2026-09-19"));
+            assertTrue(result.complete(), result.missingFields().toString());
+            assertEquals(russian, result.attributes().get(35L));
+            assertEquals("РОССИЙСКИЙ", result.attributeTypes().get(35L));
+            assertTrue(result.goodName().endsWith("размер " + russian));
+            assertFalse(result.goodName().contains("34-172"));
+        }
+    }
+
+    @Test
+    void missingRussianSizeDoesNotFallBackToTechSize() {
+        Sku sku = new Sku(1, 2, 3, "Q", "Джинсы", "Royal", "Джинсы",
+                "", "34-172", List.of(), "", true, "", null, "", Status.NOT_CREATED, "", false, "");
+        var result = new ZnackWbAttributeMapper().map(sku, List.of(), List.of(attribute(35, "Размер")),
+                "6204", "6204", new ZnackModels.GoodsDocument("CONFORMITY_DECLARATION", "DOC", "2026-09-19"));
+        assertFalse(result.complete());
+        assertFalse(result.attributes().containsKey(35L));
+    }
+
+    @Test
     void cannotCompleteSizeMappingWithOnlyPlaceholderMeasurementTypes() {
         Sku sku = new Sku(1, 2, 3, "Qa-01/темно-синий", "Брюки", "GRANIA", "Брюки",
-                "темно-синий", "164", List.of(), "", true, "", null, "", Status.NOT_CREATED, "", false);
+                "темно-синий", "164", List.of(), "", true, "", null, "", Status.NOT_CREATED, "", false, "164");
         Attribute size = new Attribute(35, "Размер одежды / изделия", "text", false, false,
                 true, false, List.of(), List.of("", "---", "...", "-"));
         var result = new ZnackWbAttributeMapper().map(sku, List.of(), List.of(size), "6204", "6204",
@@ -28,7 +57,7 @@ class ZnackWbAttributeMapperTest {
     @Test
     void fullNameUsesTheSameResolvedValuesAsTheSubmittedAttributes() {
         Sku sku = new Sku(1, 2, 3, "Qa-01/темно-синий", "Брюки", "", "Брюки",
-                "темно-синий", "164", List.of(), "", true, "", null, "", Status.NOT_CREATED, "", false);
+                "темно-синий", "164", List.of(), "", true, "", null, "", Status.NOT_CREATED, "", false, "164");
         var result = new ZnackWbAttributeMapper().map(sku, List.of(
                         new WbCharacteristic(1, "Цвет", List.of("синий")),
                         new WbCharacteristic(2, "Бренд", List.of("GRANIA"))),
@@ -47,7 +76,7 @@ class ZnackWbAttributeMapperTest {
         Sku sku = new Sku(1110091485L, 98765L, 2789, "01-besang", "Брюки",
                 "Lyxury", "Брюки палаццо широкие", "Черный", "L", List.of("2039000000012"),
                 "https://basket-22.wbbasket.ru/vol3891/part38915/389151234/images/c516x688/1.webp",
-                true, "", null, "", Status.NOT_CREATED, "", false);
+                true, "", null, "", Status.NOT_CREATED, "", false, "48");
         List<WbCharacteristic> characteristics = List.of(
                 new WbCharacteristic(1, "Состав", List.of("полиэстер 20%, лайкра 5%, хлопок 75%")),
                 new WbCharacteristic(2, "Пол", List.of("Женский")),
@@ -76,7 +105,7 @@ class ZnackWbAttributeMapperTest {
 
         assertTrue(result.complete(), result.missingFields().toString());
         assertEquals("01-besang", result.attributes().get(13914L));
-        assertEquals("L", result.attributes().get(35L));
+        assertEquals("48", result.attributes().get(35L));
         assertEquals("ЧЕРНЫЙ", result.attributes().get(36L));
         assertEquals("ЖЕНСКИЙ", result.attributes().get(14013L));
         assertEquals("БРЮКИ", result.attributes().get(12L));

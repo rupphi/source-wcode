@@ -84,6 +84,30 @@ class ZnackGtinWorkflowTest {
         assertEquals("Upstream unavailable", ZnackErrorMessages.display(stored));
     }
 
+    @Test void downloadTimeoutKeepsExistingPipelineForSilentAutomaticRetry() throws Exception {
+        long order = repository.createDraft(A, 2);
+        repository.updateOrder(order, "remote-order", "READY", OrderStatus.CODES_READY, null);
+        long pipeline = repository.enqueuePipeline(A, 2, null);
+        repository.updatePipeline(pipeline, order, PurchaseStage.DOWNLOADING_CODES, null);
+        var codes = new ZnackKizCodeService(null, null, repository) {
+            @Override public int download(Settings ignored, long id) throws Exception {
+                throw new java.net.SocketTimeoutException("timeout");
+            }
+        };
+        AtomicInteger scheduled = new AtomicInteger();
+        var coordinator = new ZnackPurchaseCoordinator(repository, null, codes, null) {
+            @Override void schedule(long id) { assertEquals(pipeline, id); scheduled.incrementAndGet(); }
+        };
+        assertDoesNotThrow(() -> coordinator.advance(testedSettings(), pipeline));
+        var current = repository.findPipeline(pipeline).orElseThrow();
+        assertEquals(PurchaseStage.DOWNLOADING_CODES, current.stage());
+        assertEquals(order, current.orderId());
+        assertEquals(1, scheduled.get());
+        assertTrue(current.errorMessage().contains("timeout"));
+        assertEquals("", ZnackErrorMessages.displayForPipeline(current.stage().name(), current.errorMessage()));
+        assertEquals("timeout", ZnackErrorMessages.displayForPipeline("FAILED", "timeout"));
+    }
+
     @Test void softDeletedGtinReleasesItsCategoryForAnotherGtinAndStaysHiddenUntilRestored() {
         mappings.replaceRulesForGtin(
                 1, A, List.of(new ZnackGtinMappingSelection("Shoes", null, true)));

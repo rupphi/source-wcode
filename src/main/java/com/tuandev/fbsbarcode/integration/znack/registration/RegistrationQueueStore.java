@@ -194,6 +194,7 @@ public final class RegistrationQueueStore {
         } catch (SQLException error) { throw new IllegalStateException(error); }
     }
     public void recoverInterrupted() {
+        recoverTimeoutFailures();
         // A process crash can occur between remote GTIN allocation and the local checkpoint.
         // Keep uncertain work paused; never silently allocate another code.
         try (Connection c = Database.getConnection(); Statement s = c.createStatement()) {
@@ -229,6 +230,39 @@ public final class RegistrationQueueStore {
                     WHERE EXISTS(SELECT 1 FROM znack_registration_queue q WHERE q.shop_id=znack_card_registrations.shop_id
                     AND q.chrt_id=znack_card_registrations.chrt_id AND q.phase='PAUSED')
                     """);
+        } catch (SQLException error) { throw new IllegalStateException(error); }
+    }
+
+    private void recoverTimeoutFailures() {
+        try (Connection c = Database.getConnection()) {
+            c.setAutoCommit(false);
+            List<long[]> targets = new ArrayList<>();
+            try (Statement s = c.createStatement(); ResultSet rows = s.executeQuery("""
+                    SELECT r.shop_id,r.chrt_id,r.error_message
+                    FROM znack_card_registrations r JOIN znack_registration_queue q
+                    ON q.shop_id=r.shop_id AND q.chrt_id=r.chrt_id
+                    WHERE r.status='ERROR' AND q.phase='FAILED'
+                    """)) {
+                while (rows.next()) {
+                    if (com.tuandev.fbsbarcode.integration.znack.ZnackTimeouts.isStoredTimeout(rows.getString(3)))
+                        targets.add(new long[]{rows.getLong(1), rows.getLong(2)});
+                }
+            }
+            try (PreparedStatement q = c.prepareStatement("""
+                    UPDATE znack_registration_queue SET phase='RETRY_WAIT',next_attempt_at='',attempt_count=0
+                    WHERE shop_id=? AND chrt_id=? AND phase='FAILED'
+                    """); PreparedStatement r = c.prepareStatement("""
+                    UPDATE znack_card_registrations SET status='RETRYING'
+                    WHERE shop_id=? AND chrt_id=? AND status='ERROR'
+                    """)) {
+                for (long[] target : targets) {
+                    q.setLong(1, target[0]); q.setLong(2, target[1]);
+                    if (q.executeUpdate() == 1) {
+                        r.setLong(1, target[0]); r.setLong(2, target[1]); r.executeUpdate();
+                    }
+                }
+            }
+            c.commit();
         } catch (SQLException error) { throw new IllegalStateException(error); }
     }
 }

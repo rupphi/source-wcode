@@ -406,6 +406,17 @@ public class ZnackPurchaseCoordinator {
                 PurchaseStage current = repository.findPipeline(pipelineId).map(ZnackPurchasePipelineState::stage)
                         .orElse(PurchaseStage.FAILED);
                 String failureDetails = ZnackErrorDetails.forStorage(e);
+                if (ZnackTimeouts.isTimeout(e) && switch (current) {
+                    case VALIDATING, RECONCILING_ORDER, POLLING_ORDER, DOWNLOADING_CODES,
+                            WAITING_INTRODUCTION_READINESS, POLLING_INTRODUCTION -> true;
+                    default -> false;
+                }) {
+                    repository.updatePipeline(pipelineId, null, current, failureDetails);
+                    LOGGER.info("Znack timeout; retrying existing pipeline. shopId={}, pipelineId={}, stage={}",
+                            repository.shop().shopId(), pipelineId, current);
+                    schedule(pipelineId);
+                    return;
+                }
                 if (e instanceof ZnackSigningSession.SigningDeferredException) {
                     repository.updatePipeline(pipelineId, null, current, ZnackSigningSession.WAITING_MESSAGE);
                     LOGGER.info("Znack signing deferred until explicit shop selection. shopId={}, pipelineId={}, stage={}",

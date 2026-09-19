@@ -154,7 +154,7 @@ public final class ZnackCardRegistrationWorkflow {
             }
             if (progress.readyToSign()) {
                 update(shop, sku, Status.READY_TO_SIGN, feedId, goodId, listener);
-                return; // User signs the card in National Catalog; background work only observes.
+                return; // Publication monitor automatically signs the approved card using the shop signing session.
             }
             update(shop, sku, Status.PROCESSING, feedId, goodId, listener);
         }

@@ -39,9 +39,9 @@ public final class ZnackWbAttributeMapper {
     public MappingResult mapDocuments(Sku sku, List<WbCharacteristic> characteristics, List<Attribute> required,
                              String fullTnved, String feedTnved, List<ZnackModels.GoodsDocument> documents) {
         String lengthWidthSize = lengthWidthSize(characteristics);
-        boolean useLengthWidthSize = !lengthWidthSize.isBlank() && required.stream()
+        boolean useLengthWidthSize = allowsLengthWidth(sku) && !lengthWidthSize.isBlank() && required.stream()
                 .anyMatch(attribute -> isSizeAttribute(attribute) && supportsLengthWidth(attribute));
-        String effectiveSize = useLengthWidthSize ? lengthWidthSize : clean(sku.size());
+        String effectiveSize = useLengthWidthSize ? lengthWidthSize : clean(sku.wbSize());
         String brand = brand(sku, characteristics);
         Map<Long, String> values = new LinkedHashMap<>();
         Map<Long, String> types = new LinkedHashMap<>();
@@ -67,7 +67,7 @@ public final class ZnackWbAttributeMapper {
             if (resolved.isBlank()) missing.add(attribute.name() + " [" + attribute.id() + "]");
             else {
                 values.put(id, resolved);
-                String type = resolveValueType(attribute, resolved, sku.wbSize());
+                String type = resolveValueType(attribute, resolved, sku.wbSize(), useLengthWidthSize);
                 if (type == null) {
                     missing.add(attribute.name() + " [" + id + "]: attr_value_type "
                             + attribute.valueTypes());
@@ -103,6 +103,10 @@ public final class ZnackWbAttributeMapper {
 
     /** Return the literal type from the catalog schema, never the attr_field_type. */
     static String resolveValueType(Attribute attribute, String value, String wbSize) {
+        return resolveValueType(attribute, value, wbSize, false);
+    }
+
+    private static String resolveValueType(Attribute attribute, String value, String wbSize, boolean lengthWidth) {
         List<String> types = attribute.valueTypes();
         if (types.isEmpty()) return "";
         if (attribute.id() == MODEL) {
@@ -113,7 +117,7 @@ public final class ZnackWbAttributeMapper {
         }
         if (isSizeAttribute(attribute)) {
             String size = clean(value).toUpperCase(Locale.ROOT);
-            if (isLengthWidthValue(size)) {
+            if (lengthWidth && isLengthWidthValue(size)) {
                 for (String type : types) if (isLengthWidthType(type)) return type;
             }
             boolean international = size.matches("(?:[2-9]?[XSML]+)(?:[-/](?:[2-9]?[XSML]+))*")
@@ -141,10 +145,7 @@ public final class ZnackWbAttributeMapper {
                 }
             }
 
-            // 4. Fallback to any concrete non-placeholder type (never pick "---" or "..." if a valid type exists):
-            String nonPlaceholder = firstNonPlaceholder(types);
-            if (nonPlaceholder != null) return nonPlaceholder;
-
+            // Never assign an arbitrary foreign or dimensional system to a Russian size.
             // An offered list containing only placeholders does not identify a
             // measurement system. Let preflight/retry report the missing type.
             return null;
@@ -170,6 +171,12 @@ public final class ZnackWbAttributeMapper {
     private static boolean isRussianType(String normalized) {
         return normalized.contains("росси") || normalized.equals("рф")
                 || normalized.equals("ru") || normalized.equals("rus");
+    }
+
+    private static boolean allowsLengthWidth(Sku sku) {
+        String category = normalize(sku.subjectName());
+        return category.contains("полотенц") || category.contains("шарф")
+                || category.contains("платк") || category.contains("палантин");
     }
 
     private static boolean supportsLengthWidth(Attribute attribute) {
@@ -245,7 +252,7 @@ public final class ZnackWbAttributeMapper {
         }
         if (id == SIZE || name.contains("размер одежды") || name.contains("размер изделия")
                 || name.contains("размер обуви") || name.equals("размер") || name.startsWith("размер")) {
-            return clean(sku.size());
+            return clean(sku.wbSize());
         }
         if (id == COLOR || name.contains("цвет")) return firstCharacteristic(characteristics,
                 List.of("цвет"), clean(sku.color()));
@@ -383,7 +390,7 @@ public final class ZnackWbAttributeMapper {
     }
 
     public static String defaultName(Sku sku) {
-        return defaultName(sku, clean(sku.size()));
+        return defaultName(sku, clean(sku.wbSize()));
     }
 
     private static String defaultName(Sku sku, String effectiveSize) {

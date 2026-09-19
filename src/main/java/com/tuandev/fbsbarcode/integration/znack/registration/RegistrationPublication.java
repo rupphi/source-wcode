@@ -42,7 +42,8 @@ record RegistrationPublication(long goodId, boolean published, boolean readyForK
         long goodId = card.has("good_id") ? card.get("good_id").getAsLong() : 0;
         if (goodId <= 0) throw new IllegalArgumentException("Missing National Catalog good_id.");
         return new RegistrationPublication(goodId, published,
-                published && bool(card, "good_mark_flag") && bool(card, "good_turn_flag"), statuses.contains("notsigned"), card.deepCopy());
+                published && bool(card, "good_mark_flag") && bool(card, "good_turn_flag"), !bool(card, "good_signed") && statuses.contains("notsigned")
+                        && java.util.Collections.disjoint(statuses, Set.of("archived", "errors", "draft", "moderation", "published")), card.deepCopy());
     }
     static boolean bool(JsonObject object, String key) {
         var value = object.get(key);

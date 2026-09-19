@@ -203,6 +203,10 @@ public final class ZnackNationalCatalogService {
     }
 
     public long sign(String token, String gtin) throws Exception {
+        return sign(token, gtin, null, () -> {});
+    }
+
+    long sign(String token, String gtin, Long expectedGoodId, Runnable checkIdentity) throws Exception {
         JsonObject request = new JsonObject();
         JsonArray gtins = new JsonArray();
         gtins.add(gtin);
@@ -215,9 +219,14 @@ public final class ZnackNationalCatalogService {
             String error = firstError(document);
             throw new IllegalStateException(error.isBlank() ? "The card is not ready for signing." : error);
         }
+        if (xmls.size() != 1) throw new IllegalArgumentException("Ambiguous National Catalog signing document.");
         JsonObject xmlItem = xmls.get(0).getAsJsonObject();
         long goodId = xmlItem.get("goodId").getAsLong();
+        if (goodId <= 0 || (expectedGoodId != null && goodId != expectedGoodId))
+            throw new IllegalArgumentException("National Catalog signing document does not match the verified card.");
         String xml = string(xmlItem, "xml");
+        if (xml.isBlank()) throw new IllegalArgumentException("Empty National Catalog signing document.");
+        checkIdentity.run();
         byte[] xmlBytes = xml.getBytes(StandardCharsets.UTF_8);
         byte[] signature = signer.sign(xmlBytes, ZnackSignatureContext.TRUE_API_DOCUMENT).cms();
         JsonObject signed = new JsonObject();
@@ -226,6 +235,7 @@ public final class ZnackNationalCatalogService {
         signed.addProperty("signature", Base64.getEncoder().encodeToString(signature));
         JsonArray batch = new JsonArray();
         batch.add(signed);
+        checkIdentity.run();
         JsonObject response = resultObject(api.signNationalCatalogProduct(
                 settings.resolvedTrueApiBaseUrl(), token, batch));
         for (JsonElement id : array(response.get("signed"))) if (id.getAsLong() == goodId) return goodId;

@@ -23,6 +23,9 @@ final class RegistrationPublicationStore {
                 LEFT JOIN znack_registration_publication p ON p.shop_id=r.shop_id AND p.chrt_id=r.chrt_id
                 WHERE COALESCE(r.gtin,'')<>'' AND COALESCE(r.feed_id,'')<>''
                 AND r.status NOT IN ('QUEUED','CHECKING','GTIN_GENERATED')
+                AND NOT EXISTS(SELECT 1 FROM znack_registration_queue q
+                    WHERE q.shop_id=r.shop_id AND q.chrt_id=r.chrt_id
+                    AND q.phase IN ('QUEUED','RUNNING','RETRY_WAIT'))
                 AND (r.wb_updated=0 OR COALESCE(p.ready_for_kiz,0)=0)
                 AND COALESCE(p.next_check_at,'')<=?
                 """ + shopFilter + " ORDER BY COALESCE(p.next_check_at,''),r.updated_at LIMIT 100")) {
